@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- PR 本体仓库根目录（PromeRotation 的 bin/Debug 提供运行时程序集引用），可用 /p:PromeRotationRoot=... 覆盖 -->
+    <PromeRotationRoot Condition="'$(PromeRotationRoot)'==''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblyName>MasterPlayer</AssemblyName>
+    <RootNamespace>MasterPlayer</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Release' ">
+    <OutputPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\pluginConfigs\PromeRotation\Plugins\MasterPlayer</OutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(CI)' == 'true' ">
+    <OutputPath>$(MSBuildProjectDirectory)\bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Dalamud">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Dalamud.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Dalamud.Bindings.ImGui">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Dalamud.Bindings.ImGui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ECommons">
+      <HintPath>$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FFXIVClientStructs">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\FFXIVClientStructs.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="InteropGenerator.Runtime">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\InteropGenerator.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Lumina">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Lumina.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Lumina.Excel.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>$(PromeRotationRoot)PromeRotation\bin\Debug\Microsoft.CodeAnalysis.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp">
+      <HintPath>$(PromeRotationRoot)PromeRotation\bin\Debug\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PromeRotation">
+      <HintPath>$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PromeRotation.Scripting">
+      <HintPath>$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.Scripting.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- PR 子插件需要 PromeRotation.Scripting.dll 在插件目录（PR 加载器在该目录解析子插件依赖） -->
+  <Target Name="CopyPromeRotationScripting" AfterTargets="Build">
+    <Copy SourceFiles="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.Scripting.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
