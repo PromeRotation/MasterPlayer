@@ -158,6 +158,135 @@ internal static class CrucibleMechanicRegression
             });
         }
 
+        run("B23 breath cones originate from the arena center on the turning cast's facing", () =>
+        {
+            using var fight = new CastFight("B23MorbolHandler");
+            var center = new Vector3(920f, 15f, -420f); // CastFight 默认激活位置 = 无锁定场地时的场心
+            var bossPos = center + new Vector3(12f, 0f, 9f);
+            fight.CasterPosition = bossPos;
+            fight.CastActionId = 48671;
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48671, SourceId = 1, CastTime = 4.2f,
+                SourcePosition = bossPos, EffectPosition = bossPos, SourceRotation = 0.5f,
+            });
+            var cones = fight.Areas.Select(a => (FanGeometry)a.Geometry).ToArray();
+            Check(cones.Length == 5, "The turning cast must register all five cones at once.");
+            foreach (var cone in cones)
+                Check(Vector3.Distance(cone.Position, center) < 0.001f, "Every cone must originate from the arena center, not the boss.");
+            Check(cones[0].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f, 30f))
+                && !cones[0].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f + MathF.PI / 4f + 0.01f, 30f)),
+                "The first cone must keep the turning cast's facing with a 45-degree half-angle.");
+            Check(cones[1].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f - MathF.PI / 4f, 30f))
+                && cones[4].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f - MathF.PI, 30f)),
+                "Left-turning breath must step -45 degrees per cone from the first cast's facing.");
+            var close = (CircleGeometry)fight.Goals.Single().Geometry;
+            Check(Vector3.Distance(close.Position, center) < 0.001f && close.Radius == 11f,
+                "The hugging safe zone must share the cones' arena-center origin.");
+        });
+
+        run("B29 ground-targeted casts anchor the cast location instead of following the caster", () =>
+        {
+            using var fight = new CastFight();
+            var origin = new Vector3(120f, 15f, -433f);
+            fight.CasterPosition = origin + new Vector3(10f, 0f, 15f);
+            fight.CasterRotation = 0.9f;
+            fight.CastActionId = 48781;
+            fight.CastRotation = 0.3f;
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48781, SourceId = 1, CastTime = 2f,
+                EffectPosition = origin, SourcePosition = fight.CasterPosition, SourceRotation = 0.9f,
+            });
+            var acorn = (CircleGeometry)fight.Areas.Single().Geometry;
+            Check(acorn.Position == origin && acorn.Radius == 3.35f, "The acorn must anchor the cast location with BMR's R3 plus the global danger margin.");
+            fight.CasterPosition += new Vector3(-15f, 0f, 20f);
+            Check(((CircleGeometry)fight.Areas.Single().Geometry).Position == origin, "The acorn must not follow the moving treant.");
+            fight.CastActionId = 48783;
+            var sapOrigin = origin + new Vector3(2f, 0f, 1f);
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48783, SourceId = 1, CastTime = 2.5f,
+                EffectPosition = sapOrigin, SourcePosition = fight.CasterPosition, SourceRotation = 0.9f,
+            });
+            var sap = (CircleGeometry)fight.Areas.Select(a => a.Geometry).Single(g => g is CircleGeometry { Radius: 5.35f });
+            Check(sap.Position == sapOrigin, "The sap must anchor its own cast location with BMR's R5 plus the global danger margin.");
+        });
+
+        run("B29 web screen keeps the cast location and native cast facing", () =>
+        {
+            using var fight = new CastFight();
+            var origin = new Vector3(120f, 15f, -433f);
+            fight.CasterPosition = origin + new Vector3(8f, 0f, 8f);
+            fight.CasterRotation = -2f;
+            fight.CastActionId = 48785;
+            fight.CastRotation = 0.7f;
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48785, SourceId = 1, CastTime = 3.5f,
+                EffectPosition = origin, SourcePosition = fight.CasterPosition, SourceRotation = -2f,
+            });
+            var web = fight.Areas.Single().Geometry;
+            Check(web.Contains(GeometryHelper.PointFromRotationDistanceXZ(origin, 0.7f, 30f)), "The web must cover the cast's native facing.");
+            Check(!web.Contains(GeometryHelper.PointFromRotationDistanceXZ(origin, -2f, 30f)), "The web must not fall back to the actor's facing.");
+            Check(!web.Contains(GeometryHelper.PointFromRotationDistanceXZ(origin, 0.7f + MathF.PI / 2f, 3f)), "The web must not exceed its 2y half-width.");
+            fight.CasterPosition += new Vector3(-20f, 0f, 10f);
+            fight.CastRotation = 1.4f;
+            var frozen = fight.Areas.Single().Geometry;
+            Check(frozen.Contains(GeometryHelper.PointFromRotationDistanceXZ(origin, 0.7f, 30f))
+                && !frozen.Contains(GeometryHelper.PointFromRotationDistanceXZ(origin, 1.4f, 30f)),
+                "The registered web must keep its original location and facing.");
+        });
+
+        run("B31 landing center waits for the outer ring before entering the solver", () =>
+        {
+            using var fight = new CastFight("B31DragonHandler");
+            var center = new Vector3(920f, 15f, -420f);
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48816, SourceId = 1, CastTime = 5f,
+                EffectPosition = center, SourcePosition = center, SourceRotation = 0f,
+            });
+            Check(fight.Goals.Single().Geometry is CircleGeometry { Radius: 5f }, "The outer cast must first guide players toward the landing point.");
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48828, SourceId = 1, CastTime = 6f,
+                EffectPosition = center, SourcePosition = center, SourceRotation = 0f,
+            });
+            Check(fight.Areas.Count == 0, "While the outer ring is pending, the center circle must stay a display-only preview.");
+            fight.SendEffect(new LogSystemActionEffectEvent { ActionId = 48816, SourceId = 1 });
+            var landed = (CircleGeometry)fight.Areas.Single().Geometry;
+            Check(landed.Radius == 6.35f && landed.Position == center, "The outer hit must register the pending center circle at the cast location with the global danger margin.");
+        });
+
+        run("B31 landing center without a pending outer ring registers immediately", () =>
+        {
+            using var fight = new CastFight("B31DragonHandler");
+            var center = new Vector3(920f, 15f, -420f);
+            fight.Send(new LogSystemCastStartEvent
+            {
+                ActionId = 48828, SourceId = 1, CastTime = 6f,
+                EffectPosition = center, SourcePosition = center, SourceRotation = 0f,
+            });
+            Check(fight.Areas.Single().Geometry is CircleGeometry { Radius: 6.35f }, "An unpaired center cast must not wait for an outer ring.");
+        });
+
+        run("B31 landing center hit prepares the next bait route for the previous target", () =>
+        {
+            using var fight = new BaitFight();
+            var outer = MathF.Sqrt(18.3f * 18.3f - 7f * 7f);
+            var route0 = new Vector3(920f - 7f, 15f, -420f - (outer - 7f));
+            fight.SendTether();
+            fight.Update(0.4f);
+            fight.SendCancel(1u, 0xBEA9u);
+            Check(fight.Goals.Count == 0, "Ending the bait round must clear its guide first.");
+            fight.SendEffect(new LogSystemActionEffectEvent { ActionId = 48828, SourceId = 1 });
+            fight.Update(0.4f);
+            var guide = (CircleGeometry)fight.Goals.Single().Geometry;
+            Check(Vector3.Distance(guide.Position, route0) < 0.01f && guide.Radius == 1.5f,
+                "The landing hit must guide the previous bait target toward the next round's first point.");
+        });
+
         foreach (var (rotation, expected) in new[]
         {
             (0f, new Vector3(920f, 15f, -440f)),
@@ -193,7 +322,7 @@ internal static class CrucibleMechanicRegression
         })
             run($"cast-facing mechanics reject {name} without drawing an invented direction", () =>
             {
-                foreach (var (handler, action) in new[] { ("B29TreantHandler", (ushort)48778), ("B31DragonHandler", (ushort)48807) })
+                foreach (var (handler, action) in new[] { ("B29TreantHandler", (ushort)48778), ("B29TreantHandler", (ushort)48785), ("B31DragonHandler", (ushort)48807) })
                 {
                     using var fight = new CastFight(handler);
                     fight.CastActionId = action;
@@ -326,6 +455,8 @@ internal static class CrucibleMechanicRegression
 
         public void Send(LogSystemCastStartEvent e) => _type.GetMethod("OnCastStart")!.Invoke(_handler, [e]);
 
+        public void SendEffect(LogSystemActionEffectEvent e) => _type.GetMethod("OnEffect")!.Invoke(_handler, [e]);
+
         public void Dispose()
         {
             _data.SetValue(null, _originalData);
@@ -431,6 +562,10 @@ internal static class CrucibleMechanicRegression
 
         public void SendTether()
             => _type.GetMethod("OnTether")!.Invoke(_handler, [new LogSystemTetherEvent { SourceId = 1, TargetId = 2, TetherId = 0x11 }]);
+
+        public void SendEffect(LogSystemActionEffectEvent e) => _type.GetMethod("OnEffect")!.Invoke(_handler, [e]);
+
+        public void SendCancel(uint sourceId, uint actionId) => _type.GetMethod("OnCastCancel")!.Invoke(_handler, [sourceId, actionId]);
 
         public void SpawnPool(Vector3 pos)
             => _poolObject = ScriptServiceProxy.Create<IGameObject>((method, _) => method switch
