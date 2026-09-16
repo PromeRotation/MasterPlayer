@@ -87,10 +87,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 }
 ```
 
-- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw`。
+- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，开关设置面板）。
 - `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回）。
-- `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 面板"` 调 `_mainWindow.Toggle()`。
-- `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
+- `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
+- `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
 - `SafeZoneActivation`：雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用宿主 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的开关，保留本体原先已启用的功能；运行中手动关闭宿主开关不会被每帧覆写，面板显示原因。
 
 **Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
@@ -110,7 +110,11 @@ public sealed class MasterPlayerSettings
     public bool RadarRotateWithCamera = true;   // 画面随摄像机方位角旋转
     public float RadarScale = 1.0f;             // 缩放倍率
     public bool RadarOverlayLock = false;       // 锁定位置（鼠标穿透）
-    public bool RadarOverlayTransparent = true; // 透明背景
+    public float RadarBackgroundOpacity = 0.55f;    // 圆盘背景不透明度，0 = 不要圆盘背景
+    public bool RadarShowCompass = true;            // 罗盘方位字母
+    public bool RadarShowRangeRings = true;         // 距离参考环
+    public bool RadarPulseDanger = true;            // 危险区即将判定时描边脉冲
+    public bool RadarOnlyWithScript = true;         // 仅在有机制脚本的区域显示
 
     public AoeViewSettings WorldAoe = new();
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
@@ -260,6 +264,8 @@ public sealed class MainWindow : IDisposable
     public void Dispose();
 }
 ```
+
+- 面板为分页签布局：总览（五个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、诊断（调试模式、本体状态、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突）。
 
 **Scripting 脚本框架**（`Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
 
@@ -503,13 +509,15 @@ public readonly record struct GreenMovePoint(
 
 ### 5.7 雷达悬浮窗（`Radar\RadarOverlayWindow.cs`）
 
-BMR MiniArena 式 2D 俯视小地图，原生 ImGui 窗口，由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
+圆形 HUD 式 2D 俯视小地图，原生 ImGui 窗口（无标题栏、无边框、`NoBackground`），由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
 
-- **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时，以边界中心为原点、按边界包围盒（`GeometryBounds.Width/Height` 较大者 + 3 码 padding）定视野半径；模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定 25 码视野。
+- **显示门槛**：`RadarOnlyWithScript`（默认开）开启时，仅当存在运行中的**区域专属脚本**（`Territorys` 非空且匹配当前区域；通用脚本不算，未启用/未运行不算）才显示——即「只在有脚本的区域出现」。
+- **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时，以边界中心为原点、按边界轮廓顶点的**外接圆半径**（最远顶点距离 + 3 码 padding）定视野半径——完整显示整个场地，非正方形场地的角落不被圆盘裁掉；模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定 25 码视野。
 - **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
-- **数据源**：`SafeZoneManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。多边形填充用 PR `PolygonTriangulator.TryTriangulate`，月环用双轮廓三角带；解算路径来自 `SafeZoneMovementStatus.LatestSolution.ExecutablePath`，队友来自 `PartyHelper.GetParty()`，敌人来自对象表。
+- **圆盘裁剪（`Radar\RadarCanvas.cs`）**：所有图形内容裁剪到屏幕圆盘内——填充多边形经 Sutherland–Hodgman 凸域裁剪（64 边形逼近圆盘）后再三角化（PR `PolygonTriangulator`，月环按四边形条带逐段裁剪），线段经凸域参数裁剪（Cyrus–Beck）。圆盘外圈辉光、深色半透明底（`RadarBackgroundOpacity` 控制，0 = 无底盘）、距离参考环（按视野自动选 2/5/10/20/40 码步长）、方位刻度与罗盘字母（FFXIV 世界方位：X 西→东、Z 北→南，北 = −Z）。
+- **数据源**：`SafeZoneManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `SafeZoneMovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
-- 窗口外观：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarOverlayTransparent`（无背景）、`RadarScale`（0.5~3 缩放）。
+- **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 缩放）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整面圆盘即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
 
 ## 6. 铁律（违反任何一条都等于 bug）
 

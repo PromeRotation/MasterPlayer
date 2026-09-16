@@ -36,9 +36,10 @@ public sealed class AoeViewSettings
 
     public static AoeViewSettings CreateRadarDefaults() => new()
     {
-        DangerOutline = new Vector4(1f, 0f, 0f, 0.9f),
-        SafeFill = new Vector4(0f, 1f, 0f, 0.22f),
-        SafeOutline = new Vector4(0f, 1f, 0f, 0.8f),
+        DangerFill = new Vector4(1f, 0.14f, 0.10f, 0.42f),
+        DangerOutline = new Vector4(1f, 0.30f, 0.24f, 0.95f),
+        SafeFill = new Vector4(0.25f, 1f, 0.45f, 0.16f),
+        SafeOutline = new Vector4(0.35f, 1f, 0.55f, 0.85f),
     };
 
     public DrawStyle GetDangerStyle(DangerAreaSnapshot danger, DateTime now)

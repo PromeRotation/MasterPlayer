@@ -27,7 +27,11 @@ public sealed class MasterPlayerSettings
     public bool RadarRotateWithCamera = true;
     public float RadarScale = 1.0f;
     public bool RadarOverlayLock = false;
-    public bool RadarOverlayTransparent = true;
+    public float RadarBackgroundOpacity = 0.55f;    // 圆盘背景不透明度，0 = 不要圆盘背景
+    public bool RadarShowCompass = true;            // 罗盘方位字母
+    public bool RadarShowRangeRings = true;         // 距离参考环
+    public bool RadarPulseDanger = true;            // 危险区即将判定时描边脉冲
+    public bool RadarOnlyWithScript = true;         // 仅在有机制脚本的区域显示
 
     public AoeViewSettings WorldAoe = new();
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();

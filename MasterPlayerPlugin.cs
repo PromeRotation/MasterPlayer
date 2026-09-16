@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
@@ -14,6 +15,7 @@ namespace MasterPlayer;
     version: "0.1.0.0")]
 public sealed class MasterPlayerPlugin : IPromePlugin
 {
+    private const string PanelCommand = "/prmp";
     private Radar.RadarRenderer? _radar;
     private Dodge.DodgeController? _dodge;
     private Mechanics.MechanicDispatcher? _mechanics;
@@ -52,15 +54,24 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw;
+        Svc.Commands.AddHandler(PanelCommand, new CommandInfo(OnPanelCommand)
+        {
+            HelpMessage = "打开/关闭 MasterPlayer 设置面板",
+        });
 
         Svc.Log.Info("[MasterPlayer] Initialized");
     }
 
     public void DrawConfigUI()
     {
-        if (ImGui.Button("打开 MasterPlayer 面板"))
+        if (ImGui.Button("打开 MasterPlayer 设置面板"))
             _mainWindow?.Toggle();
+        ImGui.SameLine();
+        ImGui.TextDisabled($"或输入 {PanelCommand}");
     }
+
+    private void OnPanelCommand(string command, string args)
+        => _mainWindow?.Toggle();
 
     private void OnFrameworkUpdate(IFramework framework)
     {
@@ -85,6 +96,21 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             Svc.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
         if (_radarOverlay != null)
             Svc.PluginInterface.UiBuilder.Draw -= _radarOverlay.Draw;
+
+        try
+        {
+            Svc.Commands.RemoveHandler(PanelCommand);
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                Svc.Log.Warning(ex, "[MasterPlayer] 移除聊天指令失败");
+            }
+            catch
+            {
+            }
+        }
 
         SafeDispose(ref _mainWindow);
         SafeDispose(ref _follow);
