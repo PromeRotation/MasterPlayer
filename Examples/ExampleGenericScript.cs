@@ -2,16 +2,14 @@ using System.Collections.Generic;
 using System.Numerics;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
 using PromeRotation.Spatial.SafeZone;
 
 namespace MasterPlayer.Examples;
 
 /// <summary>
 /// 通用机制示例：任意区域生效。被点名（TargetIcon）玩家脚下画一个跟随圈，
-/// 同时注册一个 3 码圆圈的临时危险区（到期单次命中判定）。
-/// 演示 [UserSetting] 每脚本设置、GetMechanisms 机制开关、Draw / SafeZone 门面。
+/// 注册可配置半径的临时危险区（到期单次命中判定），由两种视图按用户偏好绘制。
+/// 演示 [UserSetting] 每脚本设置、GetMechanisms 机制开关、AOE 绘制分组。
 /// </summary>
 [MechanicScript(
     name: "示例-通用点名圈",
@@ -45,17 +43,9 @@ public sealed class ExampleGenericScript : MasterPlayerScript
         var countdownSeconds = Settings.GetFloat(nameof(CountdownSeconds), CountdownSeconds);
         var targetId = (uint)e.TargetId;
 
-        // 跟随被点名玩家的圈，倒计时结束自动消失
-        Draw.AddBound(
-            "target_icon_circle",
-            new CircleGeometry(Vector3.Zero, radius),
-            DrawBinding.Follow(targetId),
-            DrawStyle.Danger,
-            durationMs: countdownSeconds * 1000f);
-
-        // 倒计时结束瞬间的单次命中危险区（3 码圆圈，跟随目标位置）
+        using var drawingGroup = SafeZone.BeginDrawingGroup("画圈提示");
         SafeZone.AddDelayedHit(
-            new CircleTemplate(3f),
+            new CircleTemplate(radius),
             new FollowEntityPosition(targetId, Vector2.Zero, 0f, MissingEntityPolicy.DisableArea),
             delaySeconds: countdownSeconds);
 

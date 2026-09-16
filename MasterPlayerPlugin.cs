@@ -21,6 +21,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Radar.RadarOverlayWindow? _radarOverlay;
     private Follow.FollowController? _follow;
     private Windows.MainWindow? _mainWindow;
+    private SafeZoneActivation? _safeZoneActivation;
+    internal Radar.AoeVisibilityRegistry? AoeVisibility { get; private set; }
     private bool _disposed;
 
     public static MasterPlayerPlugin? Instance { get; private set; }
@@ -34,6 +36,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         Instance = this;
 
         var settings = MasterPlayerSettings.Instance;
+        AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility);
+        _safeZoneActivation = new SafeZoneActivation(PromeRotation.Plugin.Instance.SafeZoneSetting);
+        _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge);
 
         _radar = new Radar.RadarRenderer();
         _dodge = new Dodge.DodgeController();
@@ -59,6 +64,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        var settings = MasterPlayerSettings.Instance;
+        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge);
+        AoeVisibility?.Update(PromeRotation.Plugin.Instance.SafeZoneManager);
         _radar?.Update();
         _dodge?.Update();
         _mechanics?.Update();
@@ -85,6 +93,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _mechanics);
         SafeDispose(ref _dodge);
         SafeDispose(ref _radar);
+        SafeDispose(ref _safeZoneActivation);
+        AoeVisibility = null;
 
         Instance = null;
         Svc.Log.Info("[MasterPlayer] Disposed");

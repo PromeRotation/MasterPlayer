@@ -29,6 +29,10 @@ public sealed class MasterPlayerSettings
     public bool RadarOverlayLock = false;
     public bool RadarOverlayTransparent = true;
 
+    public AoeViewSettings WorldAoe = new();
+    public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
+    public Dictionary<string, AoeVisibility> AoeVisibility = new();
+
     public bool EnableFollow = false;
     public int FollowSlot = 0;
     public bool FollowTargetWhenNoSlot = true;
@@ -50,7 +54,11 @@ public sealed class MasterPlayerSettings
             if (File.Exists(ConfigFilePath))
             {
                 var json = File.ReadAllText(ConfigFilePath);
-                return JsonSerializer.Deserialize<MasterPlayerSettings>(json, JsonOptions) ?? new MasterPlayerSettings();
+                var settings = JsonSerializer.Deserialize<MasterPlayerSettings>(json, JsonOptions) ?? new MasterPlayerSettings();
+                settings.WorldAoe ??= new AoeViewSettings();
+                settings.RadarAoe ??= AoeViewSettings.CreateRadarDefaults();
+                settings.AoeVisibility ??= new Dictionary<string, AoeVisibility>();
+                return settings;
             }
         }
         catch (Exception ex)

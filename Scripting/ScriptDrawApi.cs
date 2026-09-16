@@ -13,15 +13,24 @@ namespace MasterPlayer.Scripting;
 public sealed class ScriptDrawApi
 {
     private readonly string _idPrefix;
+    private readonly ScriptSafeZoneApi _safeZone;
 
-    internal ScriptDrawApi(string idPrefix)
+    internal ScriptDrawApi(string idPrefix, ScriptSafeZoneApi safeZone)
     {
         _idPrefix = idPrefix;
+        _safeZone = safeZone;
     }
 
     private static DrawManager Manager => PromeRotation.Plugin.Instance.DrawManager;
 
     private string Id(string id) => _idPrefix + id;
+
+    /// <summary>只供显示的世界坐标 AOE 预览；服从两种视图的配色和分组开关，不进入解算。</summary>
+    public void AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f)
+    {
+        var (key, name) = _safeZone.DrawingSource;
+        MasterPlayerPlugin.Instance?.AoeVisibility?.AddPreview(Id(id), geometry, safe, durationMs, key, name);
+    }
 
     /// <summary>静态几何绘制（世界坐标）。</summary>
     public DrawHandle Add(
@@ -69,8 +78,15 @@ public sealed class ScriptDrawApi
         => Manager.AddTether(Id(id), startEntityId, endEntityId, style, durationMs: durationMs);
 
     /// <summary>按 id 移除本脚本的单个元素。</summary>
-    public bool Remove(string id) => Manager.Remove(Id(id));
+    public bool Remove(string id)
+    {
+        var removed = MasterPlayerPlugin.Instance?.AoeVisibility?.RemovePreview(Id(id)) ?? false;
+        return Manager.Remove(Id(id)) || removed;
+    }
 
     internal void Cleanup()
-        => Manager.RemoveByRegex("^" + Regex.Escape(_idPrefix));
+    {
+        MasterPlayerPlugin.Instance?.AoeVisibility?.RemovePreviews(_idPrefix);
+        Manager.RemoveByRegex("^" + Regex.Escape(_idPrefix));
+    }
 }

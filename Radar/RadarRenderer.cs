@@ -21,7 +21,6 @@ public sealed class RadarRenderer : IDisposable
     private const float SelfExpireMs = 500f;
 
     private static readonly DrawStyle BoundaryStyle = new(null, new Vector4(1f, 1f, 1f, 0.9f));
-    private static readonly DrawStyle ObstacleStyle = new(new Vector4(0.5f, 0.5f, 0.5f, 0.3f), new Vector4(0.7f, 0.7f, 0.7f, 0.9f));
     private static readonly DrawStyle PathLineStyle = new(null, new Vector4(0f, 1f, 1f, 0.6f));
     private static readonly DrawStyle PathDotStyle = new(new Vector4(0f, 1f, 1f, 0.7f), new Vector4(0f, 1f, 1f, 1f));
 
@@ -95,6 +94,8 @@ public sealed class RadarRenderer : IDisposable
     {
         var now = DateTime.UtcNow;
         var snapshot = plugin.SafeZoneManager.BuildSnapshot(now);
+        var appearance = MasterPlayerSettings.Instance.WorldAoe;
+        var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var draw = plugin.DrawManager;
         var frameIds = _frameIds;
         frameIds.Clear();
@@ -108,24 +109,40 @@ public sealed class RadarRenderer : IDisposable
 
         foreach (var obstacle in snapshot.HardObstacles)
         {
+            if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).World ?? true))
+                continue;
             var id = $"{IdPrefix}Obstacle_{obstacle.Handle.Id}";
-            draw.Add(id, obstacle.Geometry, ObstacleStyle, durationMs: SelfExpireMs);
+            draw.Add(id, obstacle.Geometry, appearance.GetDangerStyle(), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
         foreach (var goal in snapshot.GoalAreas)
         {
+            if (!appearance.IsVisible(goal.Geometry, true, visibility?.GetVisibility(goal.Handle).World ?? true))
+                continue;
             var id = $"{IdPrefix}Goal_{goal.Handle.Id}";
-            draw.Add(id, goal.Geometry, DrawStyle.Safe, durationMs: SelfExpireMs);
+            draw.Add(id, goal.Geometry, appearance.GetSafeStyle(), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
         foreach (var danger in snapshot.DangerAreas)
         {
+            if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).World ?? true))
+                continue;
             var id = $"{IdPrefix}Danger_{danger.Handle.Id}";
-            draw.Add(id, danger.Geometry, DangerStyle(danger, now), durationMs: SelfExpireMs);
+            draw.Add(id, danger.Geometry, appearance.GetDangerStyle(danger, now), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
+
+        if (visibility != null)
+            foreach (var preview in visibility.GetPreviews(now))
+            {
+                if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.World))
+                    continue;
+                var id = IdPrefix + "Preview_" + preview.Id;
+                draw.Add(id, preview.Geometry, preview.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+                frameIds.Add(id);
+            }
 
         DrawPath(plugin, frameIds);
 
@@ -165,24 +182,4 @@ public sealed class RadarRenderer : IDisposable
         }
     }
 
-    private static DrawStyle DangerStyle(DangerAreaSnapshot danger, DateTime now)
-    {
-        var progress = 0f;
-        var windows = danger.DangerWindows;
-        if (windows.Count == 0)
-        {
-            progress = 1f;
-        }
-        else
-        {
-            for (var i = 0; i < windows.Count; i++)
-            {
-                progress = MathF.Max(progress, windows[i].TelegraphProgressAt(now));
-            }
-        }
-
-        var rgb = DrawStyle.DangerPresetColor;
-        var fillAlpha = 0.12f + 0.43f * progress;
-        return new DrawStyle(new Vector4(rgb, fillAlpha), new Vector4(rgb, 1f));
-    }
 }

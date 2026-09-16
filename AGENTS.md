@@ -1,6 +1,6 @@
 # MasterPlayer — 项目总文档（AGENTS.md）
 
-面向后续 AI 代理与开发者的项目权威文档。动手写代码前先读完本文；涉及 PromeRotation 本体 API 的具体签名，**一律以本体源码为准**（路径见下）。
+面向后续 AI 代理与开发者的项目权威文档。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
 
 ## 1. 项目定位
 
@@ -16,7 +16,11 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 | 仓库 | 路径 | 用途 |
 |---|---|---|
 | PromePainter | `C:\Users\xiaos\Documents\GitHub\PromePainter` | 插件模板：同为 PR 卫星插件，入口/csproj/设置持久化/Dispose 模式照抄它；脚本系统（Roslyn 编译 + PromeEventBus owner 作用域 + 描述符注册表）也照抄它 |
-| PromeRotation 本体源码 | `C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork`（本体项目在 `PromeRotation\` 子目录） | API 签名的唯一权威来源 |
+| PromeRotation 本体源码 | `C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork`（本体项目在 `PromeRotation\` 子目录） | PromeRotation API 签名的唯一权威来源 |
+| Dalamud（卫月）主仓库 | `C:\Users\xiaos\Documents\GitHub\Dalamud` | 查询卫月本体的服务接口、事件、插件接口及 API 用法，以接口定义、实现和源码注释为准 |
+| FFXIVClientStructs（FFCS） | `C:\Users\xiaos\Documents\GitHub\FFXIVClientStructs` | 查询游戏原生结构、字段布局、指针及成员函数等互操作 API 的定义与用法 |
+
+查询 API 时按归属查阅对应仓库：PR 封装查 PromeRotation，卫月服务与接口查 Dalamud，游戏原生结构与函数查 FFCS。核对具体签名、类型和调用约束，不凭记忆臆造成员；同时确认源码版本与当前编译引用及运行环境匹配。
 
 > **警告：编译必须引用用户实际运行的那份 PromeRotation.dll**（csproj 经 `PromeRotationRoot` 指向本体仓库的 `bin\Debug`）。PR 本体更新后必须重新编译本插件，否则运行时出现 `MissingMethodException` / 类型身份不一致。分发时目标用户的 PR 版本必须与编译引用版本一致。
 
@@ -28,7 +32,8 @@ MasterPlayer/
 ├── MasterPlayer.csproj        # 构建配置（引用 PR 本体 bin，产物直出到 PR 插件目录）
 ├── AGENTS.md                  # 本文档
 ├── Settings/
-│   └── MasterPlayerSettings.cs    # 全局设置单例（MasterPlayer.json，System.Text.Json）
+│   ├── MasterPlayerSettings.cs    # 全局设置单例（MasterPlayer.json，System.Text.Json）
+│   └── SafeZoneActivation.cs      # 功能开关到 PR 安全区/自动移动开关的生命周期联动
 ├── Radar/
 │   ├── RadarOverlayWindow.cs      # 雷达悬浮窗：BMR 式 2D 俯视小地图（UiBuilder.Draw 主线程 ImGui 绘制）
 │   └── RadarRenderer.cs           # 真实世界绘制：DrawManager 3D 世界范围提示（AOE 预告/安全点等）
@@ -81,10 +86,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 }
 ```
 
-- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw`。
-- `OnFrameworkUpdate(IFramework framework)`：`_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回，热重载防抖仍照常处理）。
+- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw`。
+- `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回，热重载防抖仍照常处理）。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 面板"` 调 `_mainWindow.Toggle()`。
-- `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `SafeDispose` 七个模块，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `Instance = null`。
+- `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
+- `SafeZoneActivation`：雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用宿主 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的开关，保留本体原先已启用的功能；运行中手动关闭宿主开关不会被每帧覆写，面板显示原因。
 
 **Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
 
@@ -104,6 +110,10 @@ public sealed class MasterPlayerSettings
     public float RadarScale = 1.0f;             // 缩放倍率
     public bool RadarOverlayLock = false;       // 锁定位置（鼠标穿透）
     public bool RadarOverlayTransparent = true; // 透明背景
+
+    public AoeViewSettings WorldAoe = new();
+    public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
+    public Dictionary<string, AoeVisibility> AoeVisibility = new(); // 来源键 → 名称、World/Radar 开关
 
     // 战斗中跟随（FollowController）
     public bool EnableFollow = false;
@@ -173,7 +183,7 @@ public sealed class DodgeController : IDisposable
 }
 ```
 
-- 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
+- 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；雷达悬浮窗、真实世界绘制、智能躲避任一开启即识别读条，避免只开启绘制时没有危险区数据。注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
 
 **Dodge.DangerMarginInflator**（`Dodge\DangerMarginInflator.cs`）
 
@@ -189,7 +199,7 @@ public static class DangerMarginInflator
 **Dodge AOE 形状数据库**（`Dodge\AoeShapeDatabase.cs`）
 
 ```csharp
-public enum AoeShapeKind { Circle, Donut, Fan, Rectangle }
+public enum AoeShapeKind { Circle, Donut, Fan, Rectangle, RayRectangle }
 
 public sealed record AoeShapeDescriptor(
     AoeShapeKind Kind, float Param1, float Param2, bool FollowCaster, float ExtraDelaySeconds);
@@ -308,6 +318,9 @@ public interface IScriptHostContext
 public sealed class ScriptSafeZoneApi { /* internal 构造；AddDelayedHit/AddTimedDanger/AddPersistentDanger/AddPersistentSafeArea/AddTimedSafeArea/AddObstacle/Remove(SafeZoneAreaHandle)（签名镜像本体 SafeZoneRegistry，见 §5.2）；Add*Danger 注册前按 DodgeDangerMargin 经 DangerMarginInflator 外扩（SafeArea/Obstacle 不外扩）；internal void Cleanup() */ }
 public sealed class ScriptMoveApi { /* internal 构造；IsRunning/GetStatus()/MoveTo(GreenMovePoint)/MoveTo(IReadOnlyList<GreenMovePoint>)/Append(GreenMovePoint)/Stop()/ClearQueue()/SkipCurrent()；internal void Cleanup() */ }
 public sealed class ScriptDrawApi { /* internal 构造；Add/AddBound/AddTether/Remove(string id)（签名镜像本体 DrawManager 的 id 重载，见 §5.2），id 自动加 "MasterPlayer_Script_{guid}_" 前缀；internal void Cleanup() */ }
+
+// ScriptSafeZoneApi.BeginDrawingGroup(string name) → IDisposable：为本作用域注册的区域指定 AOE 显示分组，嵌套名称组合，退出恢复。
+// ScriptDrawApi.AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f)：只供显示的世界几何，使用当前分组，不注册到解算器。
 
 public sealed class ScriptManager : IDisposable
 {
@@ -478,8 +491,9 @@ public readonly record struct GreenMovePoint(
 BMR MiniArena 式 2D 俯视小地图，原生 ImGui 窗口，由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
 
 - **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时，以边界中心为原点、按边界包围盒（`GeometryBounds.Width/Height` 较大者 + 3 码 padding）定视野半径；模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定 25 码视野。
-- **旋转**：`RadarRotateWithCamera` 开时画面随摄像机方位角旋转，方位角取自 `CameraManager.Instance()->GetActiveCamera()->DirH + π`（unsafe，FFXIVClientStructs）；世界→屏幕变换 `screen = screenCenter + rotated(dx, dz) × scale`（`x' = x·cosAz − y·sinAz`，`y' = y·cosAz + x·sinAz`）。
-- **数据源**：`SafeZoneManager.BuildSnapshot`（边界描边 / 障碍灰 / 目标区绿 / 危险区红，填充透明度随 `DangerWindow.TelegraphProgressAt` 充能；多边形填充走 `PolygonTriangulator.TryTriangulate` 三角化，月环按双轮廓环形三角带填充）+ `SafeZoneMovementStatus.LatestSolution.ExecutablePath`（解算路径折线）+ `PartyHelper.GetParty()`（队友蓝点）与 `Svc.Objects` 里 Hostile 且 Targetable 的 `IBattleNpc`（敌人红点）+ 玩家朝向三角标。
+- **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
+- **数据源**：`SafeZoneManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。多边形填充用 PR `PolygonTriangulator.TryTriangulate`，月环用双轮廓三角带；解算路径来自 `SafeZoneMovementStatus.LatestSolution.ExecutablePath`，队友来自 `PartyHelper.GetParty()`，敌人来自对象表。
+- **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
 - 窗口外观：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarOverlayTransparent`（无背景）、`RadarScale`（0.5~3 缩放）。
 
 ## 6. 铁律（违反任何一条都等于 bug）

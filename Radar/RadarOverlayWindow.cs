@@ -6,6 +6,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using MasterPlayer.Settings;
+using PromeRotation.Helpers;
 using PromeRotation.Spatial.Geometry;
 using PromeRotation.Spatial.SafeZone;
 
@@ -14,8 +15,7 @@ namespace MasterPlayer.Radar;
 /// <summary>
 /// 雷达悬浮窗：BMR MiniArena 式 2D 俯视小地图（原生 ImGui 窗口，UiBuilder.Draw 主线程驱动）。
 /// 游戏内 3D 范围提示由 RadarRenderer（真实世界绘制）负责，本窗口才是「雷达」。
-/// 世界→屏幕变换与 BMR 一致：screen = screenCenter + rotated(dx, dz) × scale，
-/// rotated: x' = x·cosAz − y·sinAz，y' = y·cosAz + x·sinAz（世界 X 东 Z 南）。
+/// 世界轮廓经 PR GeometryHelper.WorldToLocal 转为雷达局部坐标（右为 +X，前为 -Y）。
 /// </summary>
 public sealed class RadarOverlayWindow : IDisposable
 {
@@ -26,11 +26,6 @@ public sealed class RadarOverlayWindow : IDisposable
 
     private static readonly Vector4 BoundaryColor = new(1f, 1f, 1f, 0.9f);
     private static readonly Vector4 FallbackCircleColor = new(1f, 1f, 1f, 0.35f);
-    private static readonly Vector4 ObstacleFill = new(0.5f, 0.5f, 0.5f, 0.3f);
-    private static readonly Vector4 ObstacleStroke = new(0.7f, 0.7f, 0.7f, 0.9f);
-    private static readonly Vector4 GoalFill = new(0f, 1f, 0f, 0.22f);
-    private static readonly Vector4 GoalStroke = new(0f, 1f, 0f, 0.8f);
-    private static readonly Vector4 DangerStroke = new(1f, 0f, 0f, 0.9f);
     private static readonly Vector4 PathColor = new(0f, 1f, 1f, 0.6f);
     private static readonly Vector4 SelfColor = new(1f, 1f, 1f, 1f);
     private static readonly Vector4 PartyColor = new(0.35f, 0.6f, 1f, 1f);
@@ -38,9 +33,7 @@ public sealed class RadarOverlayWindow : IDisposable
 
     private Vector2 _screenCenter;
     private Vector3 _center;
-    private float _scale = 1f;
-    private float _sinAz;
-    private float _cosAz = 1f;
+    private RadarProjection _projection;
     private bool _disposed;
     private DateTime _lastErrorLogUtc;
 
@@ -117,6 +110,8 @@ public sealed class RadarOverlayWindow : IDisposable
         var player = Svc.Objects.LocalPlayer;
         var now = DateTime.UtcNow;
         var snapshot = plugin.SafeZoneManager.BuildSnapshot(now);
+        var appearance = settings.RadarAoe;
+        var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
 
         float visibleRadius;
         if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary)
@@ -136,25 +131,43 @@ public sealed class RadarOverlayWindow : IDisposable
             visibleRadius = DefaultVisibleRadius;
         }
 
-        var azimuth = settings.RadarRotateWithCamera ? GetCameraAzimuth() : 0f;
-        (_sinAz, _cosAz) = MathF.SinCos(azimuth);
-        _scale = ScreenHalfSize / MathF.Max(visibleRadius, 1f) * MathF.Max(settings.RadarScale, 0.05f);
+        var rotation = settings.RadarRotateWithCamera ? GetCameraAzimuth() : RadarProjection.NorthUpRotation;
+        var scale = ScreenHalfSize / MathF.Max(visibleRadius, 1f) * MathF.Max(settings.RadarScale, 0.05f);
+        _projection = new RadarProjection(_center, _screenCenter, scale, rotation);
 
         DrawBoundary(drawList, snapshot);
         foreach (var obstacle in snapshot.HardObstacles)
         {
-            FillGeometry(drawList, obstacle.Geometry, ObstacleFill, ObstacleStroke);
+            if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).Radar ?? true))
+                continue;
+            var style = appearance.GetDangerStyle();
+            FillGeometry(drawList, obstacle.Geometry, style.FillColor!.Value, style.StrokeColor!.Value);
         }
 
         foreach (var goal in snapshot.GoalAreas)
         {
-            FillGeometry(drawList, goal.Geometry, GoalFill, GoalStroke);
+            if (!appearance.IsVisible(goal.Geometry, true, visibility?.GetVisibility(goal.Handle).Radar ?? true))
+                continue;
+            var style = appearance.GetSafeStyle();
+            FillGeometry(drawList, goal.Geometry, style.FillColor!.Value, style.StrokeColor!.Value);
         }
 
         foreach (var danger in snapshot.DangerAreas)
         {
-            FillGeometry(drawList, danger.Geometry, DangerFill(danger, now), DangerStroke);
+            if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).Radar ?? true))
+                continue;
+            var style = appearance.GetDangerStyle(danger, now);
+            FillGeometry(drawList, danger.Geometry, style.FillColor!.Value, style.StrokeColor!.Value);
         }
+
+        if (visibility != null)
+            foreach (var preview in visibility.GetPreviews(now))
+            {
+                if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.Radar))
+                    continue;
+                var style = preview.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle();
+                FillGeometry(drawList, preview.Geometry, style.FillColor!.Value, style.StrokeColor!.Value);
+            }
 
         DrawSolutionPath(drawList, plugin);
         DrawActors(drawList, player, visibleRadius);
@@ -341,9 +354,9 @@ public sealed class RadarOverlayWindow : IDisposable
 
     private void DrawSelfMarker(ImDrawListPtr drawList, IPlayerCharacter player)
     {
-        var dirX = MathF.Sin(player.Rotation);
-        var dirZ = MathF.Cos(player.Rotation);
-        var dir = new Vector2(dirX * _cosAz - dirZ * _sinAz, dirZ * _cosAz + dirX * _sinAz);
+        var selfPos = WorldToScreen(player.Position);
+        var forward = GeometryHelper.PointFromRotationDistanceXZ(player.Position, player.Rotation, 1f);
+        var dir = WorldToScreen(forward) - selfPos;
         if (dir.LengthSquared() <= float.Epsilon)
         {
             dir = new Vector2(0f, -1f);
@@ -354,46 +367,16 @@ public sealed class RadarOverlayWindow : IDisposable
         }
 
         var ortho = new Vector2(dir.Y, -dir.X);
-        var selfPos = WorldToScreen(player.Position);
         var apex = selfPos + dir * 7f;
         var baseCenter = selfPos - dir * 4f;
         drawList.AddTriangleFilled(apex, baseCenter + ortho * 4.5f, baseCenter - ortho * 4.5f, ImGui.GetColorU32(SelfColor));
     }
 
     private bool WithinRange(Vector3 position, float maxDistSq)
-    {
-        var dx = position.X - _center.X;
-        var dz = position.Z - _center.Z;
-        return dx * dx + dz * dz <= maxDistSq;
-    }
+        => GeometryHelper.DistanceSquaredXZ(position, _center) <= maxDistSq;
 
     private Vector2 WorldToScreen(Vector3 world)
-    {
-        var dx = world.X - _center.X;
-        var dz = world.Z - _center.Z;
-        var rx = dx * _cosAz - dz * _sinAz;
-        var ry = dz * _cosAz + dx * _sinAz;
-        return _screenCenter + new Vector2(rx, ry) * _scale;
-    }
-
-    private static Vector4 DangerFill(DangerAreaSnapshot danger, DateTime now)
-    {
-        var progress = 0f;
-        var windows = danger.DangerWindows;
-        if (windows.Count == 0)
-        {
-            progress = 1f;
-        }
-        else
-        {
-            for (var i = 0; i < windows.Count; i++)
-            {
-                progress = MathF.Max(progress, windows[i].TelegraphProgressAt(now));
-            }
-        }
-
-        return new Vector4(1f, 0f, 0f, 0.12f + 0.43f * progress);
-    }
+        => _projection.Project(world);
 
     private static unsafe float GetCameraAzimuth()
     {
@@ -402,20 +385,20 @@ public sealed class RadarOverlayWindow : IDisposable
             var manager = CameraManager.Instance();
             if (manager == null)
             {
-                return 0f;
+                return RadarProjection.NorthUpRotation;
             }
 
             var camera = manager->GetActiveCamera();
             if (camera == null)
             {
-                return 0f;
+                return RadarProjection.NorthUpRotation;
             }
 
             return camera->DirH + MathF.PI;
         }
         catch
         {
-            return 0f;
+            return RadarProjection.NorthUpRotation;
         }
     }
 }

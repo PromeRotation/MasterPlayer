@@ -26,7 +26,8 @@ public sealed class DodgeController : IDisposable
     // PromeEventBus 在主线程派发（底层是 Plugin.Instance.LogSystem.Events），回调里直接注册危险区。
     private void HandleStartCast(LogSystemCastStartEvent e)
     {
-        if (_disposed || !MasterPlayerSettings.Instance.EnableAutoDodge)
+        var settings = MasterPlayerSettings.Instance;
+        if (_disposed || !(settings.EnableAutoDodge || settings.EnableRadar || settings.EnableRadarOverlay))
         {
             return;
         }
@@ -51,7 +52,7 @@ public sealed class DodgeController : IDisposable
             return;
         }
 
-        var template = CreateTemplate(descriptor);
+        var template = AoeShapeDatabase.CreateTemplate(descriptor);
         if (template is null)
         {
             return;
@@ -71,6 +72,10 @@ public sealed class DodgeController : IDisposable
             if (handle.IsValid)
             {
                 _registeredHandles.Add(handle);
+                var action = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Action>().GetRowOrDefault(e.ActionId);
+                var actionName = action?.Name.ToString();
+                var label = string.IsNullOrWhiteSpace(actionName) ? $"读条技能 {e.ActionId}" : $"{actionName}（{e.ActionId}）";
+                MasterPlayerPlugin.Instance?.AoeVisibility?.Track(handle, $"action/{e.ActionId}", label);
                 if (MasterPlayerSettings.Instance.DebugMode)
                 {
                     Svc.Log.Info($"[MasterPlayer] 注册躲避危险区 ActionId={e.ActionId} Kind={descriptor.Kind} Delay={delaySeconds:0.0}s");
@@ -80,23 +85,6 @@ public sealed class DodgeController : IDisposable
         catch (Exception ex)
         {
             Svc.Log.Error(ex, $"[MasterPlayer] 注册躲避危险区失败 (ActionId={e.ActionId})");
-        }
-    }
-
-    private static GeometryTemplate? CreateTemplate(AoeShapeDescriptor descriptor)
-    {
-        switch (descriptor.Kind)
-        {
-            case AoeShapeKind.Circle when descriptor.Param1 > 0f:
-                return new CircleTemplate(descriptor.Param1);
-            case AoeShapeKind.Donut when descriptor.Param1 >= 0f && descriptor.Param2 > descriptor.Param1:
-                return new DonutTemplate(descriptor.Param1, descriptor.Param2);
-            case AoeShapeKind.Fan when descriptor.Param1 > 0f && descriptor.Param2 > 0f:
-                return new FanTemplate(descriptor.Param1, MathF.Min(descriptor.Param2, MathF.PI * 2f));
-            case AoeShapeKind.Rectangle when descriptor.Param1 > 0f && descriptor.Param2 > 0f:
-                return new RectangleTemplate(descriptor.Param1, descriptor.Param2);
-            default:
-                return null;
         }
     }
 
@@ -121,6 +109,7 @@ public sealed class DodgeController : IDisposable
             {
                 if (!manager.ContainsArea(_registeredHandles[i]))
                 {
+                    MasterPlayerPlugin.Instance?.AoeVisibility?.Remove(_registeredHandles[i]);
                     _registeredHandles.RemoveAt(i);
                 }
             }
@@ -156,6 +145,7 @@ public sealed class DodgeController : IDisposable
                 try
                 {
                     registry.Remove(handle);
+                    MasterPlayerPlugin.Instance?.AoeVisibility?.Remove(handle);
                 }
                 catch (Exception ex)
                 {

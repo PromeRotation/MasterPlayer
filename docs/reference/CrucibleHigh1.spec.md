@@ -109,7 +109,7 @@
 - 瘴气布防 0xBE4B：圆 R6 落点。荒芜新星 0xBE57：RayRect Symmetric(7, 60)。沥青圈 0xBE59：圆 R6 落点。
 - **瘴气地雷**：瘴气球（NameID 14609/OID 0x4CC3）与本体间 tether 0x01AA = 已布防 → 对球位置 AddObstacle R1.8（接触即爆语义）；命中 0xBE4C → 清该球障碍。每帧 Update 兜底扫存活球+其 tether 状态。
 - **圆环连斩**：0xBE4F 读条开始 → 注册钢铁 圆 R13（delay=读条剩余+0.3+0.6）+ 月环 DonutTemplate(6,30)（delay=钢铁+2s）；0xBE50/0xBE51 实际读条出现时按新读条校正（移除旧句柄重注册）。提示"先远离 R13，2s 内进怀中"。
-- **冲锋双向半场斩**：效果包 0xC6F4（OnActionEffect，SourceId=本体）→ TargetXZ=冲刺落点，注册第一刀 FanTemplate(60, 180°) 朝向=效果包朝向（delay 2.8s，hit 0.3s），第二刀 +180°（delay 4.85s，hit 0.3s）；0xBE4E 第一刀命中后按施法者实际位置重算第二刀（delay 2.05s）。
+- **冲锋双向半场斩**：效果包 0xC6F4（SourceDataId=0x4CC2、落点距场心 X/Z 各不超过 25y）→ TargetXZ=冲刺落点，注册第一刀 FanTemplate(60, 180°)（delay 2.8s，hit 0.3s），第二刀反向 +180°（delay 4.85s，hit 0.3s）。两刀伤害均为 **0xBE4E**：先按 GlobalSequence 去重（PR 按目标展开同一动作），第一次立即移除第一刀、按命中时施法者位置与朝向反向校正第二刀（delay 2.05s）；第二次立即清空，不能再生成预测。第一刀事件缺失且已超过其 activation+0.5s 时，下一次伤害直接结束序列；第二刀也以 activation+0.5s 兜底收尾。BMR 伤害分支不限定 SourceId，保留辅助体发出伤害的可能。来源：`CrucibleHigh1Sequences.cs` 的 `CrucibleGargoyleCharge`。
 - **五连斩击退链**：0xC607→预测击退 delay+9.5s；0xC608→+9.0s；0xBE54→+0.6s；0xBE55→即刻。链上任一出现即提示"五连斩最后一击 20y 击退：提前靠中，避开瘴气与电网"，并在预测时刻前注册场心方向安全区引导（AddTimedSafeArea 场心 R5）。落点校验降级为文字提示。
 - 文字：0xBE4D、0xBE51、0xBE55。
 
@@ -127,7 +127,8 @@
 
 ### B29 树精（树精场 R20）
 - **巨木龙卷五连**：0xBE83~0xBE87 五条同开读 → 中心=各自 EffectPosition（相同，场心北 13y）：注册 圆 R12 / 环12-18 / 18-24 / 24-30 / 30-36，activation 依次为 读条剩余+0.3 + 0/2/4/6/8s，hit 1.5s。提示"由内向外依次结算，先站 12 内或 36 外"。
-- 簌簌轻风 0xBE8A：FanTemplate(60, 90°)；0xBE8B/0xBE8C：FanTemplate(60, 150°)。橡果炸弹 0xBE8D：R3；释放汁液 0xBE8F：R5；蛛网屏 0xBE91：RayRect Symmetric(4, 40)。
+- 簌簌轻风 0xBE8A：FanTemplate(60, 90°)；0xBE8B/0xBE8C：FanTemplate(60, 150°)。**三者均以读条 EffectPosition 为原点、SourceRotation 为朝向，使用 StaticTransform 锁定，不跟随施法者位置或转身**。BMR `CrucibleTreantAOEs.ConfigFor` 为它们指定 LocationTargeted=true，`ReplayValidatedCastAOEs` 保存 `spell.LocXZ / spell.Rotation`；半径和半角来自 `CrucibleSpells`，无额外偏转。通用 `AoeShapeDatabase` 也配置相同精确形状和静态绑定，避免另一路按 Action 表推断出不同范围。
+- 橡果炸弹 0xBE8D：R3；释放汁液 0xBE8F：R5；蛛网屏 0xBE91：RayRect Symmetric(4, 40)。
 - 文字：0xBE8E 治疗之水"优先打断/击杀治疗花苗"。
 
 ### B30 榴弹怪（圆场 R20）

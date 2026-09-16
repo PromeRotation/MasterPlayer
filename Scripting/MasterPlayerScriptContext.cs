@@ -28,9 +28,9 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         _settings = settings;
         _ownerId = PromeOwnerRegistry.CreateScriptSessionOwnerId();
         PromeOwnerRegistry.Bind(this, _ownerId);
-        _safeZone = new ScriptSafeZoneApi();
+        _safeZone = new ScriptSafeZoneApi(metadata.Id, metadata.Name);
         _move = new ScriptMoveApi(Log);
-        _draw = new ScriptDrawApi($"MasterPlayer_Script_{SanitizeId(metadata.Id)}_");
+        _draw = new ScriptDrawApi($"MasterPlayer_Script_{SanitizeId(metadata.Id)}_", _safeZone);
     }
 
     public ScriptSafeZoneApi SafeZone => _safeZone;

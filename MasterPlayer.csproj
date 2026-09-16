@@ -23,6 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
     <Reference Include="Dalamud">
       <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Dalamud.dll</HintPath>
       <Private>false</Private>

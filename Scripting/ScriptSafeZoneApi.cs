@@ -15,12 +15,29 @@ namespace MasterPlayer.Scripting;
 public sealed class ScriptSafeZoneApi
 {
     private readonly List<SafeZoneAreaHandle> _handles = new();
+    private readonly string _scriptKey;
+    private readonly string _scriptName;
+    private string? _drawingGroup;
 
-    internal ScriptSafeZoneApi()
+    internal ScriptSafeZoneApi(string scriptId, string scriptName)
     {
+        _scriptKey = "script/" + Uri.EscapeDataString(scriptId);
+        _scriptName = scriptName;
+    }
+
+    /// <summary>为作用域内新注册的 AOE 指定绘制分组；只控制显示，不影响解算。</summary>
+    public IDisposable BeginDrawingGroup(string name)
+    {
+        var previous = _drawingGroup;
+        _drawingGroup = previous is null ? name : $"{previous} / {name}";
+        return new DrawingGroupScope(this, previous);
     }
 
     private static SafeZoneRegistry Registry => PromeRotation.Plugin.Instance.SafeZoneRegistry;
+
+    internal (string Key, string Name) DrawingSource => (
+        _scriptKey + "/" + Uri.EscapeDataString(_drawingGroup ?? ""),
+        _drawingGroup is null ? _scriptName : $"{_scriptName} / {_drawingGroup}");
 
     // ── 危险区 ─────────────────────────────────────────
 
@@ -71,6 +88,7 @@ public sealed class ScriptSafeZoneApi
     public bool Remove(SafeZoneAreaHandle handle)
     {
         _handles.Remove(handle);
+        MasterPlayerPlugin.Instance?.AoeVisibility?.Remove(handle);
         return Registry.Remove(handle);
     }
 
@@ -81,6 +99,7 @@ public sealed class ScriptSafeZoneApi
             try
             {
                 Registry.Remove(handle);
+                MasterPlayerPlugin.Instance?.AoeVisibility?.Remove(handle);
             }
             catch (Exception ex)
             {
@@ -94,10 +113,27 @@ public sealed class ScriptSafeZoneApi
     private SafeZoneAreaHandle Track(SafeZoneAreaHandle handle)
     {
         if (handle.IsValid)
+        {
             _handles.Add(handle);
+            var (key, name) = DrawingSource;
+            MasterPlayerPlugin.Instance?.AoeVisibility?.Track(handle, key, name);
+        }
         return handle;
     }
 
     private static GeometryTemplate WithDangerMargin(GeometryTemplate template)
         => DangerMarginInflator.Inflate(template, MasterPlayerSettings.Instance.DodgeDangerMargin);
+
+    private sealed class DrawingGroupScope(ScriptSafeZoneApi owner, string? previous) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+            owner._drawingGroup = previous;
+        }
+    }
 }

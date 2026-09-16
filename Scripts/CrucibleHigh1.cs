@@ -21,7 +21,7 @@ namespace MasterPlayer.Scripts;
     name: "斗兽棋·高一",
     territorys: [],
     guid: "masterplayer.crucible.high1",
-    version: "1.0.0",
+    version: "1.0.1",
     author: "XSZ",
     note: "斗兽奇弈高段第一盘 B22-B31 全机制 + AI 躲避（迁移自 BossModReborn）")]
 public sealed class CrucibleHigh1Script : MasterPlayerScript
@@ -324,6 +324,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 _tracker.CancelGroup(h.Group); // 含该组经共享 tracker 注册的读条危险区
                 continue;
             }
+            using var drawingGroup = SafeZone.BeginDrawingGroup(h.Mechanism);
             h.Update(deltaTime);
         }
     }
@@ -400,6 +401,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         if (h.LockedArena is { } arena)
             AcquireFence(arena.FenceIndex, pos.Y);
         RefreshBoundary();
+        using var drawingGroup = SafeZone.BeginDrawingGroup(h.Mechanism);
         h.Activate(pos);
         Log($"【斗兽棋高一】检测到 {h.Mechanism}（场地：{h.LockedArena?.Label ?? "无固定"}），机制已激活");
     }
@@ -429,9 +431,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         var bestDistSq = 60f * 60f;
         foreach (var field in ArenaFields)
         {
-            var dx = pos.X - field.Center.X;
-            var dz = pos.Z - field.Center.Z;
-            var distSq = dx * dx + dz * dz;
+            var distSq = PromeRotation.Helpers.GeometryHelper.DistanceSquaredXZ(pos, field.Center);
             if (distSq < bestDistSq)
             {
                 bestDistSq = distSq;
@@ -547,6 +547,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
     private List<SafeZoneAreaHandle> RegisterFenceShapes(int fenceIndex, float y)
     {
+        using var drawingGroup = SafeZone.BeginDrawingGroup("场地电网");
         var handles = new List<SafeZoneAreaHandle>();
         switch (fenceIndex)
         {
@@ -585,68 +586,58 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
     private bool IsLive(GroupHandler h) => _activeGroups.Contains(h.Group) && IsMechanismEnabled(h.Mechanism);
 
-    private void DispatchCastStart(LogSystemCastStartEvent e)
+    private void DispatchHandlers(Action<GroupHandler> callback)
     {
         foreach (var h in _handlers)
             if (IsLive(h))
             {
+                using var drawingGroup = SafeZone.BeginDrawingGroup(h.Mechanism);
                 _tracker.CurrentGroup = h.Group; // 注册条目打组标记，供 CancelGroup 按组撤除
-                h.OnCastStart(e);
+                try { callback(h); }
+                finally { _tracker.CurrentGroup = BattleGroup.None; }
             }
-        _tracker.CurrentGroup = BattleGroup.None;
     }
+
+    private void DispatchCastStart(LogSystemCastStartEvent e)
+        => DispatchHandlers(h => h.OnCastStart(e));
 
     private void DispatchCastEnd(uint sourceId, uint actionId)
     {
         _tracker.Cancel(sourceId, actionId);
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnCastCancel(sourceId, actionId);
+        DispatchHandlers(h => h.OnCastCancel(sourceId, actionId));
     }
 
     private void DispatchActionEffect(LogSystemActionEffectEvent e)
-    {
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnEffect(e);
-    }
+        => DispatchHandlers(h => h.OnEffect(e));
 
     private void DispatchTether(LogSystemTetherEvent e)
-    {
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnTether(e);
-    }
+        => DispatchHandlers(h => h.OnTether(e));
 
     private void DispatchTetherCancel(LogSystemTetherCancelEvent e)
-    {
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnTetherCancel(e);
-    }
+        => DispatchHandlers(h => h.OnTetherCancel(e));
 
     private void DispatchEObjAnim(LogSystemEObjAnimationEvent e)
-    {
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnEObjAnim(e);
-    }
+        => DispatchHandlers(h => h.OnEObjAnim(e));
 
     private void DispatchEObjState(LogSystemEObjSetStateEvent e)
-    {
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnEObjState(e);
-    }
+        => DispatchHandlers(h => h.OnEObjState(e));
 
     private void DispatchMapEffect(LogSystemMapEffectEvent e)
     {
         var state = e.Param1 | ((uint)e.Param2 << 16);
         if ((state is MapEffectOn or MapEffectOff) && e.Position <= 2)
             SetFenceState((int)e.Position, state == MapEffectOn);
-        foreach (var h in _handlers)
-            if (IsLive(h)) h.OnMapEffect(e.Position, state);
+        DispatchHandlers(h => h.OnMapEffect(e.Position, state));
     }
 
     // ════════════════ 宿主辅助（供 handler 使用）════════════════
 
     // 危险区统一注册：圆/月环半径 +0.35，生效提前 0.25s（规格 §0 全局余量）
-    private SafeZoneAreaHandle RegisterDanger(GeometryTemplate template, TransformBinding binding, float delaySeconds, float hitDurationSeconds = 0.6f)
-        => SafeZone.AddDelayedHit(ApplyMargin(template), binding, MathF.Max(0.05f, delaySeconds - DangerTimeMargin), hitDurationSeconds);
+    private SafeZoneAreaHandle RegisterDanger(GeometryTemplate template, TransformBinding binding, float delaySeconds, float hitDurationSeconds = 0.6f, string? drawingGroup = null)
+    {
+        using var scope = drawingGroup is null ? null : SafeZone.BeginDrawingGroup(drawingGroup);
+        return SafeZone.AddDelayedHit(ApplyMargin(template), binding, MathF.Max(0.05f, delaySeconds - DangerTimeMargin), hitDurationSeconds);
+    }
 
     private SafeZoneAreaHandle RegisterPersistentDanger(GeometryTemplate template, TransformBinding binding)
         => SafeZone.AddPersistentDanger(ApplyMargin(template), binding);
@@ -683,10 +674,12 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
     }
 
     private static float DistanceXZ(Vector3 a, Vector3 b)
+        => PromeRotation.Helpers.GeometryHelper.DistanceXZ(a, b);
+
+    private static string ActionDrawingName(uint actionId)
     {
-        var dx = a.X - b.X;
-        var dz = a.Z - b.Z;
-        return MathF.Sqrt(dx * dx + dz * dz);
+        var name = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Action>()?.GetRowOrDefault(actionId)?.Name.ToString();
+        return $"{(string.IsNullOrWhiteSpace(name) ? "读条 AOE" : name)} ({actionId})";
     }
 
     // EObj EventState（FFCS GameObject+0x70）；7 = 物件休眠/消失
@@ -733,7 +726,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 host.SafeZone.Remove(list[index].Handle);
                 list.RemoveAt(index);
             }
-            var handle = host.RegisterDanger(template, binding, delay, hitDuration);
+            var handle = host.RegisterDanger(template, binding, delay, hitDuration, ActionDrawingName(e.ActionId));
             list.Add(new Entry(handle, activation, activation.AddSeconds(hitDuration + 2.0), e.EffectPosition, CurrentGroup));
             return handle;
         }
@@ -793,7 +786,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
     // ════════════════ 基础设施：常驻池监视（规格 §3.2，EObj → 障碍）════════════════
 
-    private sealed class VoidzoneWatcher(CrucibleHigh1Script host, uint dataId, float radius, float armDelaySeconds = 0f)
+    private sealed class VoidzoneWatcher(CrucibleHigh1Script host, uint dataId, float radius, string drawingGroup, float armDelaySeconds = 0f)
     {
         private sealed class PoolState
         {
@@ -822,6 +815,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (_accum < 0.3f)
                 return;
             _accum = 0f;
+            using var scope = host.SafeZone.BeginDrawingGroup(drawingGroup);
             var now = DateTime.UtcNow;
             _alive.Clear();
             for (var i = 0; i < Svc.Objects.Length; i++)
@@ -1015,7 +1009,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             public DateTime ActivationUtc;
             public bool Shown;
             public readonly List<SafeZoneAreaHandle> PadHandles = [];
-            public readonly List<string> DrawIds = [];
         }
 
         public override void OnCastStart(LogSystemCastStartEvent e)
@@ -1133,7 +1126,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             H.Draw.Remove($"b22_gust_line_{caster}");
         }
 
-        // 章节魔法 0xBE11/12/13：读条剩余 ≤3s 起在 pad 上注册安全圈 + 绿圈，判定后撤
+        // 章节魔法 0xBE11/12/13：读条剩余 ≤3s 起在 pad 上注册安全圈，判定后撤
         private void StartChapter(LogSystemCastStartEvent e)
         {
             ClearChapter();
@@ -1165,6 +1158,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
         private void TryShowChapter(ChapterState c, DateTime now)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup(ActionDrawingName(c.ActionId));
             var duration = (float)(c.ActivationUtc - now).TotalSeconds + 4f;
             var found = false;
             for (var i = 0; i < Svc.Objects.Length; i++)
@@ -1174,9 +1168,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     continue;
                 found = true;
                 c.PadHandles.Add(H.SafeZone.AddTimedSafeArea(new CircleTemplate(6f), At(obj.Position), duration));
-                var drawId = $"b22_pad_{obj.EntityId}";
-                c.DrawIds.Add(drawId);
-                H.Draw.Add(drawId, new CircleGeometry(obj.Position, 6f), DrawStyle.Safe, duration * 1000f);
             }
             if (!found)
                 return; // pad 尚未刷出，下一帧重试
@@ -1192,8 +1183,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 return;
             foreach (var handle in c.PadHandles)
                 H.SafeZone.Remove(handle);
-            foreach (var id in c.DrawIds)
-                H.Draw.Remove(id);
             _chapter = null;
         }
     }
@@ -1206,7 +1195,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         public override string Mechanism => MechB23;
         public override uint[] NameIds => [NameMorbol, NameMorbolSeedling, NameMorbolMouth, NameMorbolSap];
 
-        private readonly VoidzoneWatcher _pools = new(host, EObjMorbolPool, 6f);
+        private readonly VoidzoneWatcher _pools = new(host, EObjMorbolPool, 6f, "毒池");
         private BreathSequence? _breath;
 
         private sealed class BreathSequence
@@ -1280,6 +1269,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         // 恶臭气五连锥：4.2s 视觉读条开始即注册 5 道（朝向 = 当前朝向 + i×45° 步进，每 2.1s 一道）
         private void StartBreath(LogSystemCastStartEvent e)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup("恶臭气五连锥");
             var now = DateTime.UtcNow;
             var firstActivation = now.AddSeconds(e.CastTime + NpcCastPadding + 0.5f);
             if (_breath is { } seq && seq.BossId == e.SourceId
@@ -1307,6 +1297,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         // 0xBE21/0xBE23 实际伤害读条：按最近道 ±1s 窗口校正
         private void CorrectBreath(LogSystemCastStartEvent e)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup("恶臭气五连锥");
             var now = DateTime.UtcNow;
             var activation = now.AddSeconds(e.CastTime + NpcCastPadding);
             if (_breath is { } seq)
@@ -1381,7 +1372,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         public override string Mechanism => MechB25;
         public override uint[] NameIds => [NameIceDragon, NameIceSprite];
 
-        private readonly VoidzoneWatcher _pools = new(host, EObjIcePool, 9f);
+        private readonly VoidzoneWatcher _pools = new(host, EObjIcePool, 9f, "冰池");
 
         public override void OnCastStart(LogSystemCastStartEvent e)
         {
@@ -1431,6 +1422,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         private SafeZoneAreaHandle _cleaveB;
         private DateTime _cleaveAExpireUtc;
         private DateTime _cleaveBExpireUtc;
+        private uint _chargeCaster;
+        private bool _firstCleaveResolved;
         private readonly HashSet<uint> _chargeSeq = [];
         // 五连斩击退链（20y，降级：提示 + 场心安全区引导）
         private int _kbStage;
@@ -1459,18 +1452,18 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     break;
                 case AidB26SteelActual: // 钢铁实际读条：按新读条校正
                     RemoveIfValid(ref _steel);
-                    _steel = H.RegisterDanger(new CircleTemplate(13f), At(CastOrigin(e)), e.CastTime + NpcCastPadding, 0.6f);
+                    _steel = H.RegisterDanger(new CircleTemplate(13f), At(CastOrigin(e)), e.CastTime + NpcCastPadding, 0.6f, ActionDrawingName(AidB26SteelActual));
                     _steelExpireUtc = DateTime.UtcNow.AddSeconds(e.CastTime + NpcCastPadding + 1.6);
                     // 已预测的月环保留（BMR 语义：0xBE51 月环实际读条 2s 后会再校正一次；规格文字已按此修订）
                     if (!_ring.IsValid)
                     {
-                        _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(CastOrigin(e)), e.CastTime + NpcCastPadding + 2f, 1.0f);
+                        _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(CastOrigin(e)), e.CastTime + NpcCastPadding + 2f, 1.0f, ActionDrawingName(AidB26RingActual));
                         _ringExpireUtc = DateTime.UtcNow.AddSeconds(e.CastTime + NpcCastPadding + 4.0);
                     }
                     break;
                 case AidB26RingActual: // 月环实际读条：按新读条校正
                     RemoveIfValid(ref _ring);
-                    _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(CastOrigin(e)), e.CastTime + NpcCastPadding, 1.0f);
+                    _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(CastOrigin(e)), e.CastTime + NpcCastPadding, 1.0f, ActionDrawingName(AidB26RingActual));
                     _ringExpireUtc = DateTime.UtcNow.AddSeconds(e.CastTime + NpcCastPadding + 2.0);
                     H.Hint("b26_ring", "【B26 石像鬼】钢铁后靠近首领，躲避月环！");
                     break;
@@ -1524,13 +1517,14 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 StartCharge(e);
                 return;
             }
-            if (e.ActionId == AidB26HalfCleave) // 第一刀命中：按施法者实际位置重算第二刀
+            if (e.ActionId == AidB26HalfCleave) // 两刀共用同一技能 ID，按去重后的命中推进
             {
                 CorrectCharge(e);
                 return;
             }
             if (e.ActionId == AidB26Chain2 && _kbStage == 0)
             {
+                using var scope = H.SafeZone.BeginDrawingGroup("五连斩击退引导");
                 // 0xC608 命中兜底：热重载错过链首读条时按 +9s 补预测（BMR 同）
                 _kbStage = 2;
                 _kbExpireUtc = DateTime.UtcNow.AddSeconds(11.0);
@@ -1580,8 +1574,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 RemoveIfValid(ref _ring);
             if (_cleaveA.IsValid && now > _cleaveAExpireUtc)
                 RemoveIfValid(ref _cleaveA);
-            if (_cleaveB.IsValid && now > _cleaveBExpireUtc)
-                RemoveIfValid(ref _cleaveB);
+            if (_chargeCaster != 0 && now > _cleaveBExpireUtc)
+                ClearCharge();
             if (_kbStage != 0 && now > _kbExpireUtc)
             {
                 _kbStage = 0;
@@ -1620,8 +1614,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             ClearInOut();
             var pos = CastOrigin(e);
             var steelDelay = e.CastTime + NpcCastPadding + 0.6f;
-            _steel = H.RegisterDanger(new CircleTemplate(13f), At(pos), steelDelay, 0.6f);
-            _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(pos), steelDelay + 2f, 1.0f);
+            _steel = H.RegisterDanger(new CircleTemplate(13f), At(pos), steelDelay, 0.6f, ActionDrawingName(AidB26SteelActual));
+            _ring = H.RegisterDanger(new DonutTemplate(6f, 30f), At(pos), steelDelay + 2f, 1.0f, ActionDrawingName(AidB26RingActual));
             var now = DateTime.UtcNow;
             _steelExpireUtc = now.AddSeconds(steelDelay + 1.6);
             _ringExpireUtc = now.AddSeconds(steelDelay + 4.0);
@@ -1648,37 +1642,46 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 return;
             var rot = e.SourceRotation ?? 0f;
             ClearCharge();
+            _chargeCaster = (uint)e.SourceId;
             var now = DateTime.UtcNow;
-            _cleaveA = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rot), 2.8f, 0.3f);
-            _cleaveAExpireUtc = now.AddSeconds(3.8);
-            _cleaveB = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rot + MathF.PI), 4.85f, 0.3f);
-            _cleaveBExpireUtc = now.AddSeconds(5.85);
+            _cleaveA = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rot), 2.8f, 0.3f, "冲锋半场斩·第一刀");
+            _cleaveAExpireUtc = now.AddSeconds(3.3);
+            _cleaveB = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rot + MathF.PI), 4.85f, 0.3f, "冲锋半场斩·第二刀");
+            _cleaveBExpireUtc = now.AddSeconds(5.35);
         }
 
-        // 0xBE4E 第一刀命中后：按施法者实际位置重算第二刀（+180°，2.05s）
+        // 0xBE4E：第一刀移除并校正第二刀（+180°，2.05s）；第二刀命中即清空。
         private void CorrectCharge(LogSystemActionEffectEvent e)
         {
-            if (!_chargeSeq.Add(e.GlobalSequence))
+            if (_chargeCaster == 0 || !_chargeSeq.Add(e.GlobalSequence))
                 return;
-            if (!_cleaveB.IsValid)
+            var now = DateTime.UtcNow;
+            if (_firstCleaveResolved || now > _cleaveAExpireUtc)
+            {
+                ClearCharge();
+                return;
+            }
+            _firstCleaveResolved = true;
+            RemoveIfValid(ref _cleaveA);
+            if ((e.SourcePosition ?? e.EffectPosition) is not { } origin || e.SourceRotation is not { } rotation)
                 return;
             RemoveIfValid(ref _cleaveB);
-            if ((e.SourcePosition ?? e.EffectPosition) is not { } origin)
-                return;
-            var rot = (e.SourceRotation ?? 0f) + MathF.PI;
-            _cleaveB = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rot), 2.05f, 0.3f);
-            _cleaveBExpireUtc = DateTime.UtcNow.AddSeconds(3.05);
+            _cleaveB = H.RegisterDanger(new FanTemplate(60f, Fan180), At(origin, rotation + MathF.PI), 2.05f, 0.3f, "冲锋半场斩·第二刀");
+            _cleaveBExpireUtc = now.AddSeconds(2.55);
         }
 
         private void ClearCharge()
         {
             RemoveIfValid(ref _cleaveA);
             RemoveIfValid(ref _cleaveB);
+            _chargeCaster = 0;
+            _firstCleaveResolved = false;
         }
 
         // 五连斩击退链：0xC607→+9.5s / 0xC608→+9.0s / 0xBE54→+0.6s / 0xBE55→即刻
         private void StartKbChain(LogSystemCastStartEvent e)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup("五连斩击退引导");
             var (stage, extra) = e.ActionId switch
             {
                 AidB26Chain1 => (1, 9.5f),
@@ -1702,6 +1705,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
         private void ArmMine(uint id)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup("瘴气地雷");
             if (!_armedMines.Add(id))
                 return;
             if (Svc.Objects.SearchByEntityId(id) is not { IsDead: false })
@@ -1888,7 +1892,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (Svc.Objects.SearchByEntityId((uint)e.TargetId) is not { IsDead: false } target)
                 return;
             RemoveJumpPredict();
-            _jumpPredict = H.RegisterDanger(new DonutTemplate(5f, 50f), At(target.Position), 6f, 1f);
+            _jumpPredict = H.RegisterDanger(new DonutTemplate(5f, 50f), At(target.Position), 6f, 1f, ActionDrawingName(AidB28JumpRingActual));
             _jumpPredictExpireUtc = DateTime.UtcNow.AddSeconds(7.0);
         }
 
@@ -1920,7 +1924,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     activation = prev.ActivationUtc; // 重复/乱序动画不得推迟预警
                 H.SafeZone.Remove(prev.Handle);
             }
-            var handle = H.RegisterDanger(shape, At(pos), (float)(activation - now).TotalSeconds, 1f);
+            var actionId = shape is CircleTemplate ? AidB28RockFallCircle : AidB28RockFallDonut;
+            var handle = H.RegisterDanger(shape, At(pos), (float)(activation - now).TotalSeconds, 1f, ActionDrawingName(actionId));
             _rocks[id] = new RockPrediction { Handle = handle, ActivationUtc = activation, Pos = pos };
         }
 
@@ -1943,6 +1948,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 return;
             if (state == MapEffectOn)
             {
+                using var scope = H.SafeZone.BeginDrawingGroup("岩墙障碍");
                 if (_collapseCaster == 0 || _walls.ContainsKey(index))
                     return;
                 var offset = (int)index - 17;
@@ -2074,11 +2080,12 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     H.Tracker.Register(e, new DonutTemplate(30f, 36f), At(e.EffectPosition), 0f, 1.5f);
                     break;
                 case AidB29GustA: // 簌簌轻风：R60 半角 45°
-                    H.Tracker.Register(e, new FanTemplate(60f, Fan90), FollowCaster(e.SourceId));
+                    // BMR LocationTargeted=true：锁定读条落点和朝向，不随施法者转身。
+                    H.Tracker.Register(e, new FanTemplate(60f, Fan90), At(e.EffectPosition, e.SourceRotation));
                     break;
                 case AidB29GustB: // 半角 75°
                 case AidB29GustC:
-                    H.Tracker.Register(e, new FanTemplate(60f, Fan150), FollowCaster(e.SourceId));
+                    H.Tracker.Register(e, new FanTemplate(60f, Fan150), At(e.EffectPosition, e.SourceRotation));
                     break;
                 case AidB29Acorn: // 橡果炸弹：R3 施法者位
                     H.Tracker.Register(e, new CircleTemplate(3f), FollowCaster(e.SourceId));
@@ -2104,7 +2111,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         public override string Mechanism => MechB30;
         public override uint[] NameIds => [NameBombQueen, NameGrenade, NameFireBomb, NameIceBomb, NameFlameBall];
 
-        private readonly VoidzoneWatcher _pools = new(host, EObjBombPool, 6f);
+        private readonly VoidzoneWatcher _pools = new(host, EObjBombPool, 6f, "火焰池");
         private readonly Dictionary<uint, SafeZoneAreaHandle> _bombs = new();
         private readonly HashSet<uint> _meltdownSeq = [];
         private readonly List<uint> _scratch = [];
@@ -2144,7 +2151,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             // 熔毁：效果包预告 → 40×12（施法者位置/朝向，0.9s 后判定）
             if (e.SourcePosition is not { } pos)
                 return;
-            H.RegisterDanger(RayRectangleTemplate.Symmetric(12f, 40f), At(pos, e.SourceRotation ?? 0f), 0.9f, 1f);
+            H.RegisterDanger(RayRectangleTemplate.Symmetric(12f, 40f), At(pos, e.SourceRotation ?? 0f), 0.9f, 1f, "熔毁");
         }
 
         // 移动爆弹：火弹 R6 / 冰弹 R10 持久危险区跟随实体
@@ -2162,6 +2169,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 var radius = bc.NameId == NameFireBomb ? 6f : bc.NameId == NameIceBomb ? 10f : 0f;
                 if (radius <= 0f || _bombs.ContainsKey(bc.EntityId))
                     continue;
+                using var scope = H.SafeZone.BeginDrawingGroup(bc.NameId == NameFireBomb ? "移动火弹" : "移动冰弹");
                 _bombs[bc.EntityId] = H.RegisterPersistentDanger(new CircleTemplate(radius),
                     new FollowEntityPosition(bc.EntityId, Vector2.Zero, 0f, MissingEntityPolicy.RemoveArea));
             }
@@ -2198,7 +2206,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         public override string Mechanism => MechB31;
         public override uint[] NameIds => [NameGrudgeDragon, NameToxicSubstance, NamePoisonCloud];
 
-        private readonly VoidzoneWatcher _pools = new(host, EObjPoisonPool, 6f, 2f); // 毒池出现 2s 后激活
+        private readonly VoidzoneWatcher _pools = new(host, EObjPoisonPool, 6f, "毒池", 2f); // 毒池出现 2s 后激活
         // 猛毒吐息六连（安全点 = 场心 − 20×读条朝向）
         private SafeZoneAreaHandle _breathArea;
         private DateTime _breathFirstPulseUtc;
@@ -2265,10 +2273,10 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 }
                 case AidB31LandingOuter: // 空降外环：期间先靠近落点中心
                 {
+                    using var scope = H.SafeZone.BeginDrawingGroup(ActionDrawingName(AidB31LandingOuter));
                     var duration = e.CastTime + NpcCastPadding + 1f;
                     RemoveIfValid(ref _landingArea);
                     _landingArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(5f), At(e.EffectPosition), duration);
-                    H.Draw.Add("b31_landing", new CircleGeometry(e.EffectPosition, 5f), DrawStyle.Safe, duration * 1000f);
                     _landingExpireUtc = DateTime.UtcNow.AddSeconds(duration);
                     H.Hint("b31_landing", "【B31 怨毒龙】空降：先靠近绿圈，外环判定后立即出中心");
                     break;
@@ -2291,7 +2299,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (actionId == AidB31LandingOuter)
             {
                 RemoveIfValid(ref _landingArea);
-                H.Draw.Remove("b31_landing");
             }
         }
 
@@ -2306,8 +2313,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     && e.SourcePosition is { } src)
                 {
                     H.SafeZone.Remove(_breathArea);
+                    using var scope = H.SafeZone.BeginDrawingGroup("猛毒吐息安全点");
                     _breathArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(7f), At(src), 6.5f);
-                    H.Draw.Add("b31_breath", new CircleGeometry(src, 7f), DrawStyle.Safe, 6500f);
                     _breathCorrected = true;
                 }
                 return;
@@ -2353,7 +2360,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (_landingArea.IsValid && now > _landingExpireUtc)
             {
                 RemoveIfValid(ref _landingArea);
-                H.Draw.Remove("b31_landing");
             }
             // 热重载/错过 tether 兜底：无轮次时每秒扫在途 0xBEA9 读条补开一轮（BMR 同样以读条做迟到恢复）
             if (_round == null)
@@ -2400,21 +2406,20 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             }
             _cloudMotion.Clear();
             RemoveIfValid(ref _landingArea);
-            H.Draw.Remove("b31_landing");
         }
 
         // 猛毒吐息 0xBEA7：读条开始即给安全点（场心 − 20×朝向），全程不动直到六连结束
         private void StartBreath(LogSystemCastStartEvent e)
         {
+            using var scope = H.SafeZone.BeginDrawingGroup("猛毒吐息安全点");
             var firstPulse = DateTime.UtcNow.AddSeconds(e.CastTime + NpcCastPadding + 2.4f);
             if (_breathArea.IsValid && Math.Abs((firstPulse - _breathFirstPulseUtc).TotalSeconds) < 0.75)
                 return; // 重复读条
             RemoveBreath();
-            var forward = new Vector3(MathF.Sin(e.SourceRotation), 0f, MathF.Cos(e.SourceRotation));
+            var forward = PromeRotation.Helpers.GeometryHelper.ForwardVector3FromRotation(e.SourceRotation);
             var spot = ArenaCenter - forward * 20f;
             var duration = e.CastTime + NpcCastPadding + 2.4f + 8f;
             _breathArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(7f), At(spot), duration);
-            H.Draw.Add("b31_breath", new CircleGeometry(spot, 7f), DrawStyle.Safe, duration * 1000f);
             _breathFirstPulseUtc = firstPulse;
             _breathCorrected = false;
             H.Hint("b31_breath", "【B31 怨毒龙】猛毒吐息六连：提前站进绿圈安全点，全程不动");
@@ -2423,7 +2428,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         private void RemoveBreath()
         {
             RemoveIfValid(ref _breathArea);
-            H.Draw.Remove("b31_breath");
         }
 
         // ── 连线放毒四点引导 ──
@@ -2527,6 +2531,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             ClearBaitGuide();
             r.GuideStep = r.Step;
             var remain = (float)(r.ExpiresUtc - now).TotalSeconds;
+            using var scope = H.SafeZone.BeginDrawingGroup("连线放毒引导");
             r.Guide = H.SafeZone.AddTimedSafeArea(new CircleTemplate(1.5f), At(r.Route[r.Step]), remain);
             for (var i = r.Step; i < 4; i++)
             {
@@ -2573,8 +2578,11 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 var id = bc.EntityId;
                 _aliveScratch.Add(id);
                 if (!_clouds.ContainsKey(id))
+                {
+                    using var scope = H.SafeZone.BeginDrawingGroup("毒气团");
                     _clouds[id] = H.SafeZone.AddObstacle(new CircleTemplate(2f),
                         new FollowEntityPosition(id, Vector2.Zero, 0f, MissingEntityPolicy.RemoveArea));
+                }
                 if (_cloudMotion.TryGetValue(id, out var m))
                 {
                     var elapsed = (float)(now - m.AtUtc).TotalSeconds;
@@ -2619,9 +2627,10 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     H.Draw.Remove($"b31_cloud_{id}");
                     continue;
                 }
-                var rotation = MathF.Atan2(m.Velocity.X, m.Velocity.Y);
-                H.Draw.Add($"b31_cloud_{id}",
-                    new RayRectangleGeometry(m.Pos, rotation, 4f, MathF.Max(0.3f, speed * 1.2f)), DrawStyle.Danger, 250f);
+                var rotation = PromeRotation.Helpers.GeometryHelper.AngleTo(Vector2.Zero, m.Velocity);
+                using var scope = H.SafeZone.BeginDrawingGroup("毒气团移动预览");
+                H.Draw.AddAoe($"b31_cloud_{id}",
+                    new RayRectangleGeometry(m.Pos, rotation, 4f, MathF.Max(0.3f, speed * 1.2f)), durationMs: 250f);
             }
         }
     }

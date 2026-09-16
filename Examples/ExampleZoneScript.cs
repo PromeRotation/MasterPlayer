@@ -39,20 +39,26 @@ public sealed class ExampleZoneScript : MasterPlayerScript
         switch (e.ActionId)
         {
             case ActionCircleAoe:
+            {
+                using var scope = SafeZone.BeginDrawingGroup("圆形读条");
                 // 以施法者为圆心的 8 码圆形，读条结束瞬间判定
                 SafeZone.AddDelayedHit(
                     new CircleTemplate(8f),
                     new FollowEntityPositionAndRotation((uint)e.SourceId, Vector2.Zero, MissingEntityPolicy.RemoveArea),
                     delaySeconds: e.CastTime);
                 break;
+            }
 
             case ActionFanAoe:
+            {
+                using var scope = SafeZone.BeginDrawingGroup("扇形读条");
                 // 施法者前方 20 码 120° 扇形（跟随施法者位置与朝向）
                 SafeZone.AddDelayedHit(
                     new FanTemplate(20f, float.DegreesToRadians(120f)),
                     new FollowEntityPositionAndRotation((uint)e.SourceId, Vector2.Zero, MissingEntityPolicy.RemoveArea),
                     delaySeconds: e.CastTime);
                 break;
+            }
         }
     }
 

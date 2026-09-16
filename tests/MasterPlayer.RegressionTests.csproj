@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PromeRotationRoot Condition="'$(PromeRotationRoot)' == ''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
+    <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
+    <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
+    <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
+    <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
+    <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
+    <Compile Include="..\Scripts\CrucibleHigh1.cs" Link="CrucibleHigh1.cs" />
+    <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
+    <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)InteropGenerator.Runtime.dll" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)Lumina.dll" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)Lumina.Excel.dll" />
+  </ItemGroup>
+</Project>
