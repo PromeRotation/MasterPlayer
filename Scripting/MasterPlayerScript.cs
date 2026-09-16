@@ -36,6 +36,9 @@ public abstract class MasterPlayerScript
     /// <summary>机制是否被用户开启。</summary>
     public bool IsMechanismEnabled(string mechanism) => Host.IsMechanismEnabled(mechanism);
 
+    /// <summary>声明本脚本接管的读条技能 ID：脚本运行期间，通用躲避跳过这些技能的自动危险区，避免与脚本重复注册。在 OnStart 里声明一次即可。</summary>
+    protected void SuppressGenericDodge(params uint[] actionIds) => Host.SuppressGenericDodge(actionIds);
+
     // ── 生命周期（宿主驱动）────────────────────────────────
 
     /// <summary>脚本启动（事件订阅在这里做）。</summary>

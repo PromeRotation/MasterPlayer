@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Enums;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
 using PromeRotation.Hosting;
 using PromeRotation.LogSystem;
 using PromeRotation.Spatial.SafeZone;
+using NativeActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
+using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
 namespace MasterPlayer.Dodge;
 
@@ -47,12 +49,23 @@ public sealed class DodgeController : IDisposable
 
     private void ProcessCast(LogSystemCastStartEvent e)
     {
-        if (!AoeShapeDatabase.TryGetShape(e.ActionId, out var descriptor) || descriptor is null)
+        // 运行中脚本声明接管的技能：通用躲避让位，避免与脚本重复注册同一危险区
+        if (MasterPlayerPlugin.Instance?.Scripts?.IsGenericDodgeSuppressed(e.ActionId) == true)
         {
             return;
         }
 
-        var template = AoeShapeDatabase.CreateTemplate(descriptor);
+        if (!IsHostileCaster(e, out var casterHitboxRadius))
+        {
+            return;
+        }
+
+        if (!AoeShapeDatabase.TryGetShape(e.ActionId, casterHitboxRadius, out var descriptor) || descriptor is null)
+        {
+            return;
+        }
+
+        var template = AoeShapeDatabase.CreateTemplate(descriptor, e);
         if (template is null)
         {
             return;
@@ -60,10 +73,11 @@ public sealed class DodgeController : IDisposable
 
         template = DangerMarginInflator.Inflate(template, MasterPlayerSettings.Instance.DodgeDangerMargin);
 
-        var sourceId = (uint)e.SourceId;
-        var binding = descriptor.FollowCaster && sourceId != 0u
-            ? (TransformBinding)new FollowEntityPositionAndRotation(sourceId, Vector2.Zero, MissingEntityPolicy.KeepLastResolved)
-            : new StaticTransform(e.EffectPosition, e.SourceRotation);
+        if (!AoeShapeDatabase.TryCreateBinding(e, descriptor, out var binding))
+        {
+            Svc.Log.Warning($"[MasterPlayer] 无法读取当前施法朝向，跳过 AOE 预测 (ActionId={e.ActionId}, SourceId={e.SourceId:X})");
+            return;
+        }
         var delaySeconds = MathF.Max(0f, e.CastTime + descriptor.ExtraDelaySeconds);
 
         try
@@ -86,6 +100,34 @@ public sealed class DodgeController : IDisposable
         {
             Svc.Log.Error(ex, $"[MasterPlayer] 注册躲避危险区失败 (ActionId={e.ActionId})");
         }
+    }
+
+    // 敌我过滤（对齐 BMR AIHintsBuilder.OnCastStarted / WorldStateGameSync 的 IsAlly 判定）：
+    // 只响应敌对 BattleNpc 的读条；玩家、宠物、坐骑、事件 NPC 一律不算。
+    // 友方战斗 NPC（剧情/Trust 等同盟单位）类型也是 BattleNpc，用游戏原生 ActionManager.ClassifyTarget 甄别（!= Enemy 即盟友）。
+    // 对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。
+    private static unsafe bool IsHostileCaster(LogSystemCastStartEvent e, out float casterHitboxRadius)
+    {
+        casterHitboxRadius = 0f;
+        var sourceId = (uint)e.SourceId;
+        if (sourceId == 0)
+        {
+            return false;
+        }
+
+        if (Svc.Objects.SearchByEntityId(sourceId) is not { } caster)
+        {
+            return true;
+        }
+
+        casterHitboxRadius = caster.HitboxRadius;
+        if (caster.ObjectKind != ObjectKind.BattleNpc || caster.Address == nint.Zero)
+        {
+            return false;
+        }
+
+        return NativeActionManager.ClassifyTarget((NativeCharacter*)caster.Address)
+            == NativeActionManager.TargetCategory.Enemy;
     }
 
     private void PruneHandles()

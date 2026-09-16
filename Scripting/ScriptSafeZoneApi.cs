@@ -59,21 +59,21 @@ public sealed class ScriptSafeZoneApi
 
     // ── 目标区（安全点）─────────────────────────────────
 
-    /// <summary>从现在开始、永不结束的持续目标区。</summary>
+    /// <summary>从现在开始、永不结束的持续目标区。落点偏好默认 Nearest（贴边：走到离玩家最近的区域内点），传 Center 可回到区域几何中心。</summary>
     public SafeZoneAreaHandle AddPersistentSafeArea(
         GeometryTemplate template,
         TransformBinding binding,
         int priority = 0,
-        PositionPreference preference = PositionPreference.Center)
+        PositionPreference preference = PositionPreference.Nearest)
         => Track(Registry.AddPersistentSafeArea(template, binding, priority, preference));
 
-    /// <summary>从现在开始、持续 durationSeconds 秒的目标区。</summary>
+    /// <summary>从现在开始、持续 durationSeconds 秒的目标区。落点偏好默认 Nearest（贴边），传 Center 可回到区域几何中心。</summary>
     public SafeZoneAreaHandle AddTimedSafeArea(
         GeometryTemplate template,
         TransformBinding binding,
         float durationSeconds,
         int priority = 0,
-        PositionPreference preference = PositionPreference.Center)
+        PositionPreference preference = PositionPreference.Nearest)
         => Track(Registry.AddTimedSafeArea(template, binding, durationSeconds, priority, preference));
 
     // ── 障碍 ───────────────────────────────────────────

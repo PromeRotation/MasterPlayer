@@ -22,13 +22,15 @@ public abstract class MasterPlayerScript
 {
     public ScriptSafeZoneApi SafeZone { get; } = new();
     public ScriptDrawApi Draw { get; } = new();
+    public List<string> Errors { get; } = [];
     protected virtual void OnStart() { }
     protected virtual void OnUpdate(float deltaTime) { }
     protected virtual void OnStop() { }
     public virtual IEnumerable<string> GetMechanisms() => [];
     public bool IsMechanismEnabled(string mechanism) => mechanism != "文字提示";
     protected void Log(string text) => throw new NotSupportedException(text);
-    protected void LogError(string text) => throw new NotSupportedException(text);
+    protected void LogError(string text) => Errors.Add(text);
+    protected void SuppressGenericDodge(params uint[] actionIds) { }
     protected void OnStartCast(Action<LogSystemCastStartEvent> callback) => throw new NotSupportedException();
     protected void OnCancelCast(Action<LogSystemCancelCastEvent> callback) => throw new NotSupportedException();
     protected void OnInterruptCast(Action<LogSystemInterruptCastEvent> callback) => throw new NotSupportedException();
@@ -59,10 +61,10 @@ public sealed class ScriptSafeZoneApi : IDisposable
 
 public sealed class ScriptDrawApi
 {
-    public void Add(string id, IGeometryShape geometry, DrawStyle? style = null, float durationMs = 0f) => throw new NotSupportedException();
-    public void AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f) => throw new NotSupportedException();
-    public void AddTether(string id, object start, object end, DrawStyle? style = null, float durationMs = 0f) => throw new NotSupportedException();
-    public bool Remove(string id) => throw new NotSupportedException();
+    public void Add(string id, IGeometryShape geometry, DrawStyle? style = null, float durationMs = 0f) { }
+    public void AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f) { }
+    public void AddTether(string id, object start, object end, DrawStyle? style = null, float durationMs = 0f) { }
+    public bool Remove(string id) => true;
 }
 
 public class ScriptServiceProxy : DispatchProxy

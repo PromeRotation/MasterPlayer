@@ -1,6 +1,6 @@
 // 斗兽棋·高一（斗兽奇弈 高段 第一盘，B22~B31 共 10 组敌人）机制脚本
 // 迁移自 BossModReborn-7.56 BossMod/Modules/Dawntrail/Foray/Crucible/，唯一事实来源：docs/reference/CrucibleHigh1.spec.md
-// 45 组敌人共用同一张大地图、无 TerritoryID 可用：本脚本为通用脚本，OnUpdate 按 NameID 扫描激活对应组，纯事件驱动。
+// 45 组敌人共用同一张大地图（TerritoryID 1342）：脚本限定该区域，内部仍按 NameID 扫描激活对应组，纯事件驱动。
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,9 +19,9 @@ namespace MasterPlayer.Scripts;
 
 [MechanicScript(
     name: "斗兽棋·高一",
-    territorys: [],
+    territorys: [1342u],
     guid: "masterplayer.crucible.high1",
-    version: "1.0.1",
+    version: "1.0.2",
     author: "XSZ",
     note: "斗兽奇弈高段第一盘 B22-B31 全机制 + AI 躲避（迁移自 BossModReborn）")]
 public sealed class CrucibleHigh1Script : MasterPlayerScript
@@ -299,6 +299,29 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         OnEObjAnimation(DispatchEObjAnim);
         OnEObjSetState(DispatchEObjState);
         OnMapEffect(DispatchMapEffect);
+
+        // 接管 B22~B31 全部读条技能：脚本运行期间通用躲避跳过这些技能，避免重复注册危险区
+        SuppressGenericDodge(
+            AidB22Drop, AidB22ChapterLevitate, AidB22ChapterKappa, AidB22ChapterTransform, AidB22HammerHit,
+            AidB22ManaBurst, AidB22Gust, AidB22Focus, AidB22ChapterHint,
+            AidB23BreathLeft, AidB23BreathRight, AidB23BreathHitA, AidB23BreathHitB, AidB23AcidMist,
+            AidB23Missile, AidB23VineThrust, AidB23Quake, AidB23Paralysis, AidB23Poison,
+            AidB24FlowerTrap, AidB24Devour, AidB24RottenStench, AidB24AcidRain,
+            AidB25IceTormentA, AidB25IceTormentB, AidB25Dive, AidB25Rot, AidB25IceCover,
+            AidB26ArmCast, AidB26MiasmaPlace, AidB26MineBlast, AidB26RushHint, AidB26HalfCleave,
+            AidB26InOutPredict, AidB26SteelActual, AidB26RingActual, AidB26Chain3, AidB26Chain4,
+            AidB26DesolateNova, AidB26Asphalt, AidB26Chain1, AidB26Chain2, AidB26ChargePack,
+            AidB27AutoArtillery, AidB27SpinSmash, AidB27ManaBurst, AidB27PoisonBurst, AidB27Confusion,
+            AidB27BurnProcess, AidB27FireBreath,
+            AidB28RockWall, AidB28Shockwave, AidB28CollapseHit, AidB28CoreRing, AidB28PlainSplit,
+            AidB28RockFallCircle, AidB28RockFallDonut, AidB28JumpStartA, AidB28JumpStartB, AidB28JumpPack,
+            AidB28JumpRingActual, AidB28SelfDestruct, AidB28RockSpike, AidB28Knockback,
+            AidB29Tornado1, AidB29Tornado2, AidB29Tornado3, AidB29Tornado4, AidB29Tornado5,
+            AidB29GustA, AidB29GustB, AidB29GustC, AidB29Acorn, AidB29Heal, AidB29Sap, AidB29Web,
+            AidB30Enrage, AidB30Blaze, AidB30SelfDestructHit, AidB30IceSpikes, AidB30IceShatterHit,
+            AidB30PoisonSmoke, AidB30FireRoar, AidB30MeltdownTelegraph,
+            AidB31PoisonBreath, AidB31PoisonWave, AidB31PoisonBait, AidB31PoisonSnap, AidB31Smog,
+            AidB31Dive, AidB31LandingOuter, AidB31Phlegm, AidB31DeadlyPoison, AidB31LandingCenter);
 
         ScanTick(); // 热重载后立即恢复激活状态
         Log("【斗兽棋高一】脚本已启动：按 NameID 扫描激活 B22~B31 机制组");
@@ -2058,6 +2081,49 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         public override string Mechanism => MechB29;
         public override uint[] NameIds => [NameTreant, NameSlug, NameTreantBud, NameScorpion, NameBiloko];
 
+        // 树精本体目标圈（BMR CrucibleTreantBody）：存活期间常显碰撞圈危险区跟随实体。
+        // 半径直接用 hitbox，BMR 的 +0.5 余量由门面按 DodgeDangerMargin 叠加（默认正好 0.5）
+        private readonly Dictionary<uint, (SafeZoneAreaHandle Handle, float Radius)> _bodies = new();
+        private readonly List<uint> _scratch = [];
+        private float _bodyAccum;
+
+        public override void Update(float deltaTime)
+        {
+            _bodyAccum += deltaTime;
+            if (_bodyAccum < 0.5f)
+                return;
+            _bodyAccum = 0f;
+            for (var i = 0; i < Svc.Objects.Length; i++)
+            {
+                if (Svc.Objects[i] is not IBattleChara bc || bc.IsDead || bc.NameId != NameTreant)
+                    continue;
+                if (_bodies.TryGetValue(bc.EntityId, out var existing))
+                {
+                    if (MathF.Abs(existing.Radius - bc.HitboxRadius) < 0.01f)
+                        continue;
+                    if (existing.Handle.IsValid)
+                        H.SafeZone.Remove(existing.Handle);
+                }
+                using var scope = H.SafeZone.BeginDrawingGroup("树精本体");
+                _bodies[bc.EntityId] = (H.SafeZone.AddPersistentDanger(new CircleTemplate(bc.HitboxRadius),
+                    new FollowEntityPosition(bc.EntityId, Vector2.Zero, 0f, MissingEntityPolicy.RemoveArea)), bc.HitboxRadius);
+            }
+            _scratch.Clear();
+            foreach (var id in _bodies.Keys)
+                if (Svc.Objects.SearchByEntityId(id) is not { IsDead: false })
+                    _scratch.Add(id);
+            foreach (var id in _scratch)
+                if (_bodies.Remove(id, out var entry))
+                    H.SafeZone.Remove(entry.Handle);
+        }
+
+        public override void Cleanup()
+        {
+            foreach (var (_, entry) in _bodies)
+                H.SafeZone.Remove(entry.Handle);
+            _bodies.Clear();
+        }
+
         public override void OnCastStart(LogSystemCastStartEvent e)
         {
             // 巨木龙卷五连：五条同开读、中心相同（场心北 13y），各自读条剩余天然携带 2s 间隔
@@ -2080,12 +2146,13 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     H.Tracker.Register(e, new DonutTemplate(30f, 36f), At(e.EffectPosition), 0f, 1.5f);
                     break;
                 case AidB29GustA: // 簌簌轻风：R60 半角 45°
-                    // BMR LocationTargeted=true：锁定读条落点和朝向，不随施法者转身。
-                    H.Tracker.Register(e, new FanTemplate(60f, Fan90), At(e.EffectPosition, e.SourceRotation));
-                    break;
                 case AidB29GustB: // 半角 75°
                 case AidB29GustC:
-                    H.Tracker.Register(e, new FanTemplate(60f, Fan150), At(e.EffectPosition, e.SourceRotation));
+                    // BMR LocationTargeted=true，spell.Rotation 来自 CastRotation。
+                    if (CastRotation.TryGet(e, out var rotation))
+                        H.Tracker.Register(e, new FanTemplate(60f, e.ActionId == AidB29GustA ? Fan90 : Fan150), At(e.EffectPosition, rotation));
+                    else
+                        H.LogError($"【B29 树精】无法读取当前施法朝向，跳过簌簌轻风预测（技能 {e.ActionId}，实体 {e.SourceId:X}）");
                     break;
                 case AidB29Acorn: // 橡果炸弹：R3 施法者位
                     H.Tracker.Register(e, new CircleTemplate(3f), FollowCaster(e.SourceId));
@@ -2411,12 +2478,17 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         // 猛毒吐息 0xBEA7：读条开始即给安全点（场心 − 20×朝向），全程不动直到六连结束
         private void StartBreath(LogSystemCastStartEvent e)
         {
-            using var scope = H.SafeZone.BeginDrawingGroup("猛毒吐息安全点");
             var firstPulse = DateTime.UtcNow.AddSeconds(e.CastTime + NpcCastPadding + 2.4f);
             if (_breathArea.IsValid && Math.Abs((firstPulse - _breathFirstPulseUtc).TotalSeconds) < 0.75)
                 return; // 重复读条
             RemoveBreath();
-            var forward = PromeRotation.Helpers.GeometryHelper.ForwardVector3FromRotation(e.SourceRotation);
+            if (!CastRotation.TryGet(e, out var rotation))
+            {
+                H.LogError($"【B31 怨毒龙】无法读取当前施法朝向，跳过猛毒吐息预测（技能 {e.ActionId}，实体 {e.SourceId:X}）");
+                return;
+            }
+            using var scope = H.SafeZone.BeginDrawingGroup("猛毒吐息安全点");
+            var forward = PromeRotation.Helpers.GeometryHelper.ForwardVector3FromRotation(rotation);
             var spot = ArenaCenter - forward * 20f;
             var duration = e.CastTime + NpcCastPadding + 2.4f + 8f;
             _breathArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(7f), At(spot), duration);
@@ -2528,7 +2600,10 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (!r.IsLocal || r.GuideStep == r.Step)
                 return;
             // 当前点引导：R1.5 安全区 + 剩余点圈/连线 + 玩家→当前点
+            // 切点必须先撤旧安全区，否则旧圈残留到超时（最长约 16.5s），解算会停在旧点
             ClearBaitGuide();
+            if (r.Guide.IsValid)
+                H.SafeZone.Remove(r.Guide);
             r.GuideStep = r.Step;
             var remain = (float)(r.ExpiresUtc - now).TotalSeconds;
             using var scope = H.SafeZone.BeginDrawingGroup("连线放毒引导");

@@ -19,6 +19,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     private readonly ScriptSafeZoneApi _safeZone;
     private readonly ScriptMoveApi _move;
     private readonly ScriptDrawApi _draw;
+    private readonly HashSet<uint> _suppressedDodgeActions = [];
     private bool _disposed;
 
     internal MasterPlayerScriptContext(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings)
@@ -40,6 +41,15 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
 
     public bool IsMechanismEnabled(string mechanism)
         => _manager.IsMechanismEnabled(_metadata.Id, mechanism);
+
+    public void SuppressGenericDodge(params uint[] actionIds)
+    {
+        foreach (var id in actionIds)
+            _suppressedDodgeActions.Add(id);
+    }
+
+    internal bool SuppressesGenericDodge(uint actionId)
+        => _suppressedDodgeActions.Contains(actionId);
 
     public void Log(string message)
     {

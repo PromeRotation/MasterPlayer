@@ -8,16 +8,7 @@ public sealed class ScriptManager : IDisposable
 {
     private readonly List<ScriptDescriptor> _descriptors = new();
     private readonly Dictionary<string, RunningScript> _running = new(StringComparer.OrdinalIgnoreCase);
-    private readonly FileSystemWatcher? _watcher;
-    private readonly System.Threading.Timer? _reloadTimer;
-    private volatile bool _pendingRefresh;
     private bool _disposed;
-
-    public ScriptManager()
-    {
-        _reloadTimer = new System.Threading.Timer(_ => _pendingRefresh = true, null, Timeout.Infinite, Timeout.Infinite);
-        _watcher = CreateWatcher();
-    }
 
     public IReadOnlyList<ScriptDescriptor> Scripts => _descriptors;
 
@@ -246,15 +237,9 @@ public sealed class ScriptManager : IDisposable
             StopScript(id);
     }
 
-    /// <summary>每帧驱动（主线程）：热重载 → 总开关 → 区域自动启停 → 逐脚本 Update。</summary>
+    /// <summary>每帧驱动（主线程）：总开关 → 区域自动启停 → 逐脚本 Update。</summary>
     public void Update(float deltaTime)
     {
-        if (_pendingRefresh)
-        {
-            _pendingRefresh = false;
-            ReloadAfterExternalChange();
-        }
-
         if (!MasterPlayerSettings.Instance.EnableScripts)
         {
             if (_running.Count > 0)
@@ -367,50 +352,10 @@ public sealed class ScriptManager : IDisposable
         MasterPlayerSettings.Instance.ScriptSettings[id] = store.Serialize();
     }
 
-    // ── 热重载（脚本目录文件变更）─────────────────────
+    // ── 手动刷新（面板「刷新脚本」按钮）─────────────────
 
-    private FileSystemWatcher? CreateWatcher()
-    {
-        try
-        {
-            Directory.CreateDirectory(ScriptsDirectory);
-            var watcher = new FileSystemWatcher(ScriptsDirectory)
-            {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true,
-            };
-            watcher.Changed += OnScriptFileChanged;
-            watcher.Created += OnScriptFileChanged;
-            watcher.Renamed += OnScriptFileChanged;
-            watcher.Deleted += OnScriptFileChanged;
-            return watcher;
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex, "[MasterPlayer] 脚本目录监视初始化失败");
-            return null;
-        }
-    }
-
-    private void OnScriptFileChanged(object sender, FileSystemEventArgs e)
-    {
-        try
-        {
-            var extension = Path.GetExtension(e.FullPath);
-            if (!string.Equals(extension, ".cs", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(extension, ".dll", StringComparison.OrdinalIgnoreCase))
-                return;
-
-            // 后台线程只做防抖计时，严禁触碰游戏 API；实际刷新在 Update()（主线程）执行
-            _reloadTimer?.Change(500, Timeout.Infinite);
-        }
-        catch
-        {
-        }
-    }
-
-    private void ReloadAfterExternalChange()
+    /// <summary>手动重载：停止全部运行中脚本 → 重扫目录 → 按启用状态重启。脚本目录不做文件监听，只有点按钮才刷新。</summary>
+    public void ReloadScripts()
     {
         try
         {
@@ -426,13 +371,22 @@ public sealed class ScriptManager : IDisposable
                     StartScript(id);
             }
 
-            SetStatus($"脚本目录已变更，已重新加载（{_descriptors.Count} 个脚本）。");
+            SetStatus($"已重新加载脚本（{_descriptors.Count} 个）。");
         }
         catch (Exception ex)
         {
-            SetError($"脚本热重载失败：{ex.Message}");
-            Svc.Log.Error(ex, "[MasterPlayer] Script hot reload failed");
+            SetError($"脚本重载失败：{ex.Message}");
+            Svc.Log.Error(ex, "[MasterPlayer] Script reload failed");
         }
+    }
+
+    /// <summary>任一运行中脚本声明接管该读条技能时返回 true（通用躲避跳过，避免重复注册危险区）。</summary>
+    public bool IsGenericDodgeSuppressed(uint actionId)
+    {
+        foreach (var (_, running) in _running)
+            if (running.Context is MasterPlayerScriptContext context && context.SuppressesGenericDodge(actionId))
+                return true;
+        return false;
     }
 
     private static Type[] GetAssemblyTypes(Assembly assembly)
@@ -472,24 +426,6 @@ public sealed class ScriptManager : IDisposable
         if (_disposed)
             return;
         _disposed = true;
-
-        try
-        {
-            _watcher?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex, "[MasterPlayer] 脚本目录监视释放失败");
-        }
-
-        try
-        {
-            _reloadTimer?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Error(ex, "[MasterPlayer] 脚本重载计时器释放失败");
-        }
 
         try
         {

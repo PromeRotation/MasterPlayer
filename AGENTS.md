@@ -19,6 +19,7 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 | PromeRotation 本体源码 | `C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork`（本体项目在 `PromeRotation\` 子目录） | PromeRotation API 签名的唯一权威来源 |
 | Dalamud（卫月）主仓库 | `C:\Users\xiaos\Documents\GitHub\Dalamud` | 查询卫月本体的服务接口、事件、插件接口及 API 用法，以接口定义、实现和源码注释为准 |
 | FFXIVClientStructs（FFCS） | `C:\Users\xiaos\Documents\GitHub\FFXIVClientStructs` | 查询游戏原生结构、字段布局、指针及成员函数等互操作 API 的定义与用法 |
+| BossModReborn（BMR） | `C:\Users\xiaos\Documents\GitHub\BossModReborn-7.56` | 机制迁移与运行时推断参考：通用 AOE 形状推断（`BossMod/BossModule/AIHintsBuilder.cs` 的 CastType→形状映射、Omen 路径 fanXXX 开角/月环内径解析、VFX 25 视线过滤）、施法者敌我判定（`WorldStateGameSync` 的 `ActionManager.ClassifyTarget != Enemy` 即盟友）、斗兽棋模块（`BossMod/Modules/Dawntrail/Foray/Crucible/`，CrucibleHigh1 脚本原型） |
 
 查询 API 时按归属查阅对应仓库：PR 封装查 PromeRotation，卫月服务与接口查 Dalamud，游戏原生结构与函数查 FFCS。核对具体签名、类型和调用约束，不凭记忆臆造成员；同时确认源码版本与当前编译引用及运行环境匹配。
 
@@ -42,7 +43,7 @@ MasterPlayer/
 ├── Dodge/
 │   ├── DodgeController.cs         # 智能躲避：读条事件（PromeEventBus 主线程派发）→ 危险区注册 → SafeZone 解算走位
 │   ├── DangerMarginInflator.cs    # 危险区几何外扩（GeometryTemplate 按 DodgeDangerMargin 膨胀）
-│   └── AoeShapeDatabase.cs        # ActionId → AOE 形状查表（静态数据库）
+│   └── AoeShapeDatabase.cs        # ActionId → AOE 形状查表（静态表 + Lumina CastType 推断，映射对齐 BMR）
 ├── Mechanics/
 │   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
 │   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
@@ -87,7 +88,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 ```
 
 - `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw`。
-- `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回，热重载防抖仍照常处理）。
+- `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回）。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 面板"` 调 `_mainWindow.Toggle()`。
 - `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
 - `SafeZoneActivation`：雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用宿主 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的开关，保留本体原先已启用的功能；运行中手动关闭宿主开关不会被每帧覆写，面板显示原因。
@@ -169,7 +170,7 @@ public sealed class FollowController : IDisposable
 }
 ```
 
-- 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；0 或槽位无效时按 `FollowTargetWhenNoSlot` 回退当前目标（仅 `ObjectKind.Pc`）。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
+- 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或槽位无效时按 `FollowTargetWhenNoSlot` 回退当前目标（仅 `ObjectKind.Pc`）——**`FollowTargetWhenNoSlot = false` 时不跟随任何目标（槽位 0 同样生效）**。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
 - 移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；`SafeZoneMovementStatus.HasControl`（安全区自动移动接管中）时让位——不发跟随指令，也不 Stop 对方路线。
 
 **Dodge.DodgeController**（`Dodge\DodgeController.cs`）
@@ -184,6 +185,8 @@ public sealed class DodgeController : IDisposable
 ```
 
 - 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；雷达悬浮窗、真实世界绘制、智能躲避任一开启即识别读条，避免只开启绘制时没有危险区数据。注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
+- **施法者敌我过滤**（对齐 BMR `AIHintsBuilder.OnCastStarted`）：只响应 `ObjectKind.BattleNpc` 且游戏原生 `ActionManager.ClassifyTarget(Character*) == TargetCategory.Enemy` 的读条——玩家/宠物/坐骑/事件 NPC/友方战斗 NPC（剧情、Trust 等同盟单位）一律跳过；对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。命中时把施法者 `HitboxRadius` 传给形状推断。
+- **脚本压制去重**：`ScriptManager.IsGenericDodgeSuppressed(actionId)` 为 true（运行中脚本已用 `SuppressGenericDodge` 声明接管该技能）时跳过，避免通用躲避与脚本重复注册同一危险区。
 
 **Dodge.DangerMarginInflator**（`Dodge\DangerMarginInflator.cs`）
 
@@ -202,13 +205,20 @@ public static class DangerMarginInflator
 public enum AoeShapeKind { Circle, Donut, Fan, Rectangle, RayRectangle }
 
 public sealed record AoeShapeDescriptor(
-    AoeShapeKind Kind, float Param1, float Param2, bool FollowCaster, float ExtraDelaySeconds);
+    AoeShapeKind Kind, float Param1, float Param2, bool FollowCaster, float ExtraDelaySeconds)
+{
+    public bool UseCastRotation { get; init; }
+    public bool IsCharge { get; init; }   // CastType 8 冲锋：长=施法者→落点距离，锚定施法者朝向落点
+}
 
 public static class AoeShapeDatabase
 {
     public static bool TryGetShape(uint actionId, out AoeShapeDescriptor? descriptor);
+    public static bool TryGetShape(uint actionId, float casterHitboxRadius, out AoeShapeDescriptor? descriptor);
 }
 ```
+
+- 静态表查不到时走 **Lumina Action 表推断**，映射逐条对齐 BMR `AIHintsBuilder.GuessShape`：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
 
 **Mechanics.MechanicDispatcher**（`Mechanics\MechanicDispatcher.cs`）
 
@@ -290,6 +300,7 @@ public abstract class MasterPlayerScript
     internal void StopInternal();                   // finally 里 Dispose 上下文
     public virtual IEnumerable<string> GetMechanisms();
     public bool IsMechanismEnabled(string mechanism);
+    protected void SuppressGenericDodge(params uint[] actionIds); // 声明接管这些读条技能，运行期间通用躲避跳过
     protected void Log(string message);
     protected void LogError(string message);
     // + 全套 protected 事件订阅方法（OnStartCast(Action<LogSystemCastStartEvent>) 等 35 个强类型 + Subscribe 兜底；
@@ -309,18 +320,20 @@ public interface IScriptHostContext
     ScriptDrawApi Draw { get; }
     ScriptSettingStore Settings { get; }
     bool IsMechanismEnabled(string mechanism);
+    void SuppressGenericDodge(params uint[] actionIds);
     void Log(string message);
     void LogError(string message);
     IDisposable Subscribe(string eventName, Delegate handler);
     // + 全套强类型事件方法（照抄 PromePainter IScriptHostContext，35 个；含泛型 OnLogEvent<TEvent>；无 OnBalloonTalk / OnBattleTalk2，本体总线未提供）
 }
 
-public sealed class ScriptSafeZoneApi { /* internal 构造；AddDelayedHit/AddTimedDanger/AddPersistentDanger/AddPersistentSafeArea/AddTimedSafeArea/AddObstacle/Remove(SafeZoneAreaHandle)（签名镜像本体 SafeZoneRegistry，见 §5.2）；Add*Danger 注册前按 DodgeDangerMargin 经 DangerMarginInflator 外扩（SafeArea/Obstacle 不外扩）；internal void Cleanup() */ }
+public sealed class ScriptSafeZoneApi { /* internal 构造；AddDelayedHit/AddTimedDanger/AddPersistentDanger/AddPersistentSafeArea/AddTimedSafeArea/AddObstacle/Remove(SafeZoneAreaHandle)（签名镜像本体 SafeZoneRegistry，见 §5.2；**SafeArea 落点偏好默认 Nearest 贴边，与本体默认 Center 不同**）；Add*Danger 注册前按 DodgeDangerMargin 经 DangerMarginInflator 外扩（SafeArea/Obstacle 不外扩）；internal void Cleanup() */ }
 public sealed class ScriptMoveApi { /* internal 构造；IsRunning/GetStatus()/MoveTo(GreenMovePoint)/MoveTo(IReadOnlyList<GreenMovePoint>)/Append(GreenMovePoint)/Stop()/ClearQueue()/SkipCurrent()；internal void Cleanup() */ }
 public sealed class ScriptDrawApi { /* internal 构造；Add/AddBound/AddTether/Remove(string id)（签名镜像本体 DrawManager 的 id 重载，见 §5.2），id 自动加 "MasterPlayer_Script_{guid}_" 前缀；internal void Cleanup() */ }
 
 // ScriptSafeZoneApi.BeginDrawingGroup(string name) → IDisposable：为本作用域注册的区域指定 AOE 显示分组，嵌套名称组合，退出恢复。
 // ScriptDrawApi.AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f)：只供显示的世界几何，使用当前分组，不注册到解算器。
+// CastRotation.TryGet(LogSystemCastStartEvent e, out float rotation)：仅主线程，匹配当前读条后读取 FFCS Character.CastRotation；失效返回 false，不回退到普通朝向。
 
 public sealed class ScriptManager : IDisposable
 {
@@ -331,6 +344,7 @@ public sealed class ScriptManager : IDisposable
     public string ErrorMessage { get; }
     public string ScriptsDirectory { get; }
     public void RefreshCatalog();
+    public void ReloadScripts();            // 面板「刷新脚本」：停止全部 → 重扫目录 → 按启用状态重启（无文件监听，纯手动）
     public bool StartScript(string id);
     public void StopScript(string id);
     public void StopAll();
@@ -339,6 +353,7 @@ public sealed class ScriptManager : IDisposable
     public void SetScriptEnabled(string id, bool enabled);
     public bool IsMechanismEnabled(string scriptId, string mechanism);
     public void SetMechanismEnabled(string scriptId, string mechanism, bool enabled);
+    public bool IsGenericDodgeSuppressed(uint actionId);    // 任一运行中脚本接管了该读条技能（供 DodgeController 去重）
     public void SetStatus(string message);
     public void SetError(string message);
 }
@@ -367,7 +382,7 @@ dotnet build MasterPlayer.csproj
 
 - csproj 的 `OutputPath` 直接指向 **`%AppData%\XIVLauncherCN\pluginConfigs\PromeRotation\Plugins\MasterPlayer\`**（PR 子插件目录），构建即部署，无需手动拷贝。
 - 开发循环：改代码 → `dotnet build` → 游戏内打开 **PR 插件管理器** → 对 MasterPlayer 执行热重载（禁用再启用，或「刷新全部」）→ 验证。
-- **脚本层开发无需构建**：改 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\` 下的 .cs 保存 → ScriptManager 文件监听 500ms 防抖自动重新编译热重载（或面板「脚本」区点「刷新脚本」手动触发）；区域不匹配的脚本自动停止。
+- **脚本层开发无需构建**：改 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\` 下的 .cs 保存 → 面板「脚本」区点「刷新脚本」重扫重编译（无文件自动监听）；区域不匹配的脚本自动停止。
 - PR 用 shadow copy + 可收集 `AssemblyLoadContext` 加载子插件，DLL 不锁文件，游戏运行中可直接覆盖构建。
 - 首次加载后若插件管理器列表里没有 MasterPlayer，点「刷新全部」让它重扫 `Plugins\` 目录。
 - **PR 本体升级后必须重新构建本插件**（见第 2 节警告）。
@@ -480,7 +495,7 @@ public readonly record struct GreenMovePoint(
 - **目录**：`ConfigDirectory\MasterPlayer\Scripts\`（即 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\`；可用面板「打开脚本目录」直达）。递归扫描 `.cs`（Roslyn 编译）与 `.dll`（直接加载）；**严禁放 `Plugins\MasterPlayer\` 插件目录内**（会被 PR 当子插件程序集扫描）。
 - **元数据**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；`guid` 是身份主键（启停/设置/机制开关/去重都以它为准），同 guid 重复只保留一个。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
-- **热重载**：`FileSystemWatcher` 监听脚本目录，500ms 防抖后 `RefreshCatalog()`；运行中脚本先 `StopScript`（`OnStop` + 上下文 Dispose）再以新编译的程序集重启；也可面板「刷新脚本」手动触发。
+- **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫重编译 → 按启用状态重启。
 - **owner 清理**：每个脚本上下文持独立 ownerId（`PromeOwnerRegistry.CreateScriptSessionOwnerId()`），事件订阅全部经 `PromeEventBus` 挂在该 owner 下；停止时 `PromeOwnerRegistry.MarkClosing(ownerId)` + `PromeEventBus.UnsubscribeAll(ownerId)` + 三门面各自 `Cleanup()`（SafeZone 移除本脚本全部区域、Move 若接管过则 `Stop()`、Draw `RemoveByRegex("^MasterPlayer_Script_{guid}_")`）。
 - **异常隔离**：单脚本编译失败进 `ErrorMessage`（面板红字可滚动）；运行中 `OnUpdate`/事件回调异常只停止该脚本，不影响其他脚本与插件本体。
 - **编译引用定位**：部分程序集被流式加载（`Assembly.Location` 为空，如本插件自身，可能还包括宿主体）。`ScriptCompiler` 的引用解析回退链为：程序集 `Location` → `ConfigDirectory\Plugins\<程序集名>\` 包目录 → 宿主 PR 安装目录（`Svc.PluginInterface.AssemblyLocation`）；首次构建引用集时会 Info 日志记录引用数量、探测目录与未能解析的程序集名——脚本编译报 CS0234 类错误时先看这条日志。

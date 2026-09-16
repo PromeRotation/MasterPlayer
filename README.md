@@ -41,7 +41,7 @@ dotnet build
 
 （默认 Debug 配置；`-c Release` 亦可，输出路径相同。CI 环境下设 `CI=true` 时输出回退到本地 `bin\<Configuration>\`。）
 
-安全区开关联动、坐标投影、配色、AOE 分流、石像鬼双刀事件序列和树精清风几何的回归验证使用同一份 PR DLL，无需启动游戏：
+安全区开关联动、坐标投影、配色、AOE 分流、石像鬼双刀事件序列，以及树精清风和毒龙吐息的施法朝向回归验证使用同一份 PR DLL，无需启动游戏：
 
 ```
 dotnet run --project tests/MasterPlayer.RegressionTests.csproj

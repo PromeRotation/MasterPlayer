@@ -21,6 +21,10 @@ public interface IScriptHostContext
     // ── 机制开关 ──────────────────────────────────────
     bool IsMechanismEnabled(string mechanism);
 
+    // ── 通用躲避压制 ──────────────────────────────────
+    /// <summary>声明本脚本接管的读条技能 ID：脚本运行期间，通用躲避（DodgeController）跳过这些技能的自动危险区，避免与脚本重复注册。</summary>
+    void SuppressGenericDodge(params uint[] actionIds);
+
     // ── 日志 ──────────────────────────────────────────
     void Log(string message);
     void LogError(string message);

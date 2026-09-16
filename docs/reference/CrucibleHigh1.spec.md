@@ -4,7 +4,7 @@
 
 ## 0. 战斗形态与总体架构
 
-- "高一" = 第 22~31 组敌人（B22~B31，共 10 组）的**大地图巡回战**，45 组敌人共用同一张地图，**无 TerritoryID 可用**——BMR 靠 OID/NameID 注册。本脚本用 `territorys: []`（通用）+ **内部激活检测**：每 ~0.5s 扫描对象表，发现 NameID ∈ 高一集合（见 §1）的战斗 NPC 才激活对应组。
+- "高一" = 第 22~31 组敌人（B22~B31，共 10 组）的**大地图巡回战**，45 组敌人共用同一张地图（TerritoryID **1342**）——BMR 靠 OID/NameID 注册。本脚本用 `territorys: [1342]`（限定斗兽棋地图）+ **内部激活检测**：每 ~0.5s 扫描对象表，发现 NameID ∈ 高一集合（见 §1）的战斗 NPC 才激活对应组。
 - **无时间轴/阶段**，纯事件驱动。每组敌人一个 handler 类；组内成员全灭 → 该组收尾清理。
 - BMR 组件 → 本脚本映射：
   - 读条 AoE（ReplayValidatedCastAOEs）→ `OnStartCast` → `SafeZone.AddDelayedHit(template, binding, 读条剩余+0.3s 补正)`，按 (casterId, actionId) 簿记句柄；`OnCancelCast`/`OnInterruptCast` 撤销；`OnActionEffect` 命中结算（时间窗 ±1s 匹配）。
@@ -12,6 +12,7 @@
   - CastHints/TetherLine → `Log` 文字提示（节流）+ `Draw.AddTether` 连线。
   - 击杀优先级（BMR AI 仇恨干预）→ 降级为文字提示。
 - 全局余量约定（来自 CrucibleScorpionAI.Avoid）：注册危险区时**半径 +0.35y、生效提前 0.25s**（月环内径 -0.35/外径 +0.35）。
+- 与通用躲避去重：脚本 `OnStart` 里 `SuppressGenericDodge(...)` 声明接管 §1 全部 AID，脚本运行期间通用躲避（DodgeController）跳过这些技能，避免同一 AOE 注册两遍。
 - NPC 读条补正：BMR `NPCRemainingTime` 含 +0.3s；本脚本统一 `const float NpcCastPadding = 0.3f`，activation = `e.CastTime + NpcCastPadding`（可做 [UserSetting]）。
 - 形状换算：BMR 锥=半角 → PR `FanTemplate(R, 2×half)`；BMR `Rect(前向长, 半宽)` → PR `RayRectangleTemplate.Symmetric(2×半宽, 前向长)`；落点圆 → `CircleTemplate` + `StaticTransform(e.EffectPosition, 0)`；施法者位/朝向 → `FollowEntityPositionAndRotation((uint)e.SourceId, Vector2.Zero, MissingEntityPolicy.KeepLastResolved)`。
 - 事件字段注意（本体 LogSystemEvents）：`LogSystemCastStartEvent.ActionId` 是 **ushort**；SourceId/TargetId 是 **ulong**（实体 API 需 `(uint)` 截断）；`CastTime` 是 float 秒；`EffectPosition`/`SourcePosition` 为 Vector3。写代码前读本体 `LogSystem/LogSystemEvents.cs` 与 `Hosting/PromeEventBus.cs` 核对 OnEObjAnimation/OnEObjSetState/OnMapEffect/OnActionEffect 的字段。
@@ -126,8 +127,9 @@
 - 文字：0xBE7E 自爆"优先击杀读条巨像"。
 
 ### B29 树精（树精场 R20）
+- **本体目标圈**：存活树精（NameID 14618）常显碰撞圈危险区——`AddPersistentDanger(CircleTemplate(hitbox), FollowEntityPosition(..., RemoveArea))`（BMR `CrucibleTreantBody`；其 +0.5 余量由门面 `DodgeDangerMargin` 叠加，默认正好 0.5）；每 0.5s 扫描补登/按 hitbox 变化重登，死亡/消失即 Remove，组收尾 Cleanup 全清。
 - **巨木龙卷五连**：0xBE83~0xBE87 五条同开读 → 中心=各自 EffectPosition（相同，场心北 13y）：注册 圆 R12 / 环12-18 / 18-24 / 24-30 / 30-36，activation 依次为 读条剩余+0.3 + 0/2/4/6/8s，hit 1.5s。提示"由内向外依次结算，先站 12 内或 36 外"。
-- 簌簌轻风 0xBE8A：FanTemplate(60, 90°)；0xBE8B/0xBE8C：FanTemplate(60, 150°)。**三者均以读条 EffectPosition 为原点、SourceRotation 为朝向，使用 StaticTransform 锁定，不跟随施法者位置或转身**。BMR `CrucibleTreantAOEs.ConfigFor` 为它们指定 LocationTargeted=true，`ReplayValidatedCastAOEs` 保存 `spell.LocXZ / spell.Rotation`；半径和半角来自 `CrucibleSpells`，无额外偏转。通用 `AoeShapeDatabase` 也配置相同精确形状和静态绑定，避免另一路按 Action 表推断出不同范围。
+- 簌簌轻风 0xBE8A：FanTemplate(60, 90°)；0xBE8B/0xBE8C：FanTemplate(60, 150°)。**三者均以读条 EffectPosition 为原点、施法实体的 Character.CastRotation 为朝向，使用 StaticTransform 锁定，不跟随施法者位置或转身**。BMR `CrucibleTreantAOEs.ConfigFor` 为它们指定 LocationTargeted=true，`ReplayValidatedCastAOEs` 保存 `spell.LocXZ / spell.Rotation`，其中 `spell.Rotation` 来自 `WorldStateGameSync` 读取的 `CastRotation`；半径和半角来自 `CrucibleSpells`，无额外偏转。脚本与通用识别均通过 `CastRotation.TryGet` 检查实体地址、当前读条及 ActionId 后读取；不可用时记录日志并跳过预测，不回退到普通 `SourceRotation`。通用 `AoeShapeDatabase` 配置相同精确形状和静态绑定。
 - 橡果炸弹 0xBE8D：R3；释放汁液 0xBE8F：R5；蛛网屏 0xBE91：RayRect Symmetric(4, 40)。
 - 文字：0xBE8E 治疗之水"优先打断/击杀治疗花苗"。
 
@@ -140,8 +142,8 @@
 
 ### B31 怨毒龙（龙场 R19.75 实体墙，中心 (920,-420)）
 - 浓烟呛呕 0xBEAC / 蠕动的痰 0xBEB3：圆 R6 落点。低温俯冲 0xBEAE：RayRect Symmetric(20, 48)。
-- **猛毒吐息六连**：0xBEA7 读条开始 → 安全点 = 场心 − 20×读条朝向（即吐息源在身后 20y）；注册 `AddTimedSafeArea(CircleTemplate(7), StaticTransform(安全点,0), 读条剩余+0.3+2.4, 8s)` + Draw 绿圈；提示"提前站进安全点，全程不动"。0xBEA8 命中事件用于校正（安全点改为**波源实际位置** = 0xBEA8 施法辅助体当前位置，与 BMR `_origin = caster.Position` 一致；原"caster 位置 − 20×朝向"表述删除；仅首跳前校正）。
-- **连线放毒 4 点引导**（最复杂，完整迁移）：触发= tether 0x11（龙→玩家）或 0xBEA9 读条以玩家为目标。路线：以"开始时 Boss 相对场心方向"为北 N，侧向 S=N 转 90°；outer=场心+16.9×N，inner=outer−7×N；四点顺序 P1=inner+7S → P2=outer+7S → P3=outer−7S → P4=inner−7S（0.65y 目标圈 Draw + 连线）。推进：OnUpdate 检测新毒池 EObj 0x1EB704 出现在当前目标点 1y 内（忽略 >3.1s 的旧池快照）→ 推进下一点；被点名期间对当前点注册 `AddTimedSafeArea(CircleTemplate(1.5), ...)` 引导；一轮 ≤16.5s 超时复位。第 4 池确认即把该池障碍激活。仅当**被连线者是本地玩家**才给 SafeArea/绘制，否则只画线。
+- **猛毒吐息六连**：0xBEA7 读条开始 → 通过 `CastRotation.TryGet` 锁定施法实体的 **Character.CastRotation**，安全点 = 场心 − 20×施法方向（PR `ForwardVector3FromRotation`）；施法朝向不可用时记录日志并跳过预测，不回退到普通 `SourceRotation`。立即注册 `AddTimedSafeArea(CircleTemplate(7), StaticTransform(安全点,0), 读条剩余+0.3+2.4+8)`，由统一视图绘制目标圈；提示"提前站进安全点，全程不动"。0xBEA8 命中事件用于校正（安全点改为**波源实际位置** = 0xBEA8 施法辅助体当前位置，与 BMR `_origin = caster.Position` 一致；原"caster 位置 − 20×朝向"表述删除；仅首跳附近一次校正）。
+- **连线放毒 4 点引导**（最复杂，完整迁移）：触发= tether 0x11（龙→玩家）或 0xBEA9 读条以玩家为目标。路线：以"开始时 Boss 相对场心方向"为北 N，侧向 S=N 转 90°；outer=场心+16.9×N，inner=outer−7×N；四点顺序 P1=inner+7S → P2=outer+7S → P3=outer−7S → P4=inner−7S（0.65y 目标圈 Draw + 连线）。推进：OnUpdate 检测新毒池 EObj 0x1EB704 出现在当前目标点 1y 内（忽略 >3.1s 的旧池快照）→ 推进下一点；被点名期间对当前点注册 `AddTimedSafeArea(CircleTemplate(1.5), ...)` 引导，**推进切点时先 `Remove` 上一点的 SafeArea 句柄再注册新点**（旧圈不得残留到超时，否则解算停在旧点）；一轮 ≤16.5s 超时复位。第 4 池确认即把该池障碍激活。仅当**被连线者是本地玩家**才给 SafeArea/绘制，否则只画线。
 - **毒池**：EObj 0x1EB704 出现 2s 后 AddObstacle R6（第 4 池立即）；EventState 7 撤销。
 - **毒气团**：存活 0x4CDA/NameID 14630 → AddObstacle R2 跟随 + OnUpdate 逐帧估速（>4y/s 或单帧 >5y 视为传送不预测），画 1.2s 位移胶囊预览（Draw）。
 - **空降二连**：0xBEB0 外环读条 → 期间注册落点中心 `AddTimedSafeArea(CircleTemplate(5), ...)`（先靠近）+ 提示"先靠近，外环判定后立即出中心"；0xBEBC 中心 R6 圆注册（delay=读条剩余+0.3）。
@@ -151,7 +153,7 @@
 
 1. 击退全部降级为"提示 + 可选场心安全区引导"（PR 无击退落点校验 API）。
 2. 击杀优先级干预 → 文字提示。
-3. 树精本体碰撞圈（hitbox+0.5）不做（近战站位由玩家自理）。
+3. ~~树精本体碰撞圈（hitbox+0.5）不做~~ → 已补齐：见 §4 B29「本体目标圈」（BMR CrucibleTreantBody）。
 4. 疾跑推送不做。
 5. BMR 的"风险分级/轮廓显示"不移植——SafeZone 解算器时间感知，全量注册即可；雷达模块自动按 TelegraphProgress 渐变显示。
 

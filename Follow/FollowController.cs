@@ -120,13 +120,13 @@ public sealed class FollowController : IDisposable
             {
                 return member;
             }
-
-            if (!settings.FollowTargetWhenNoSlot)
-            {
-                return null;
-            }
         }
         else if (slot != 0)
+        {
+            return null;
+        }
+
+        if (!settings.FollowTargetWhenNoSlot)
         {
             return null;
         }

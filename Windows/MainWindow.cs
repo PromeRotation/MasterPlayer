@@ -299,7 +299,7 @@ public sealed class MainWindow : IDisposable
             ImGui.TextDisabled("脚本框架总开关已关闭，运行中的脚本已全部停止。");
 
         if (ImGui.Button("刷新脚本"))
-            manager.RefreshCatalog();
+            manager.ReloadScripts();
 
         ImGui.SameLine();
         if (ImGui.Button("打开脚本目录"))
