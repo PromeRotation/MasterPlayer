@@ -2303,8 +2303,9 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         private SafeZoneAreaHandle _prepareArea;
         private Vector3 _prepareGuidePos;
         private bool _prepareGuideShown;
-        // 毒气团（R2 障碍跟随 + 1.2s 位移胶囊预览）
+        // 毒气团（R2 持续危险区跟随——硬障碍只约束寻路、不会在逼近时主动逃离；+ 1.2s 位移胶囊危险区提前规避）
         private readonly Dictionary<uint, SafeZoneAreaHandle> _clouds = new();
+        private readonly Dictionary<uint, SafeZoneAreaHandle> _cloudCapsules = new();
         private readonly Dictionary<uint, CloudMotion> _cloudMotion = new();
         private readonly List<uint> _aliveScratch = [];
         private readonly List<uint> _scratch = [];
@@ -2536,7 +2537,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             {
                 if (_clouds.Remove(id, out var handle))
                     H.SafeZone.Remove(handle);
-                H.Draw.Remove($"b31_cloud_{id}");
+                if (_cloudCapsules.Remove(id, out var capsule))
+                    H.SafeZone.Remove(capsule);
             }
             _cloudMotion.Clear();
             RemoveIfValid(ref _landingArea);
@@ -2794,7 +2796,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 if (!_clouds.ContainsKey(id))
                 {
                     using var scope = H.SafeZone.BeginDrawingGroup("毒气团");
-                    _clouds[id] = H.SafeZone.AddObstacle(new CircleTemplate(2f),
+                    _clouds[id] = H.SafeZone.AddPersistentDanger(new CircleTemplate(2f),
                         new FollowEntityPosition(id, Vector2.Zero, 0f, MissingEntityPolicy.RemoveArea));
                 }
                 if (_cloudMotion.TryGetValue(id, out var m))
@@ -2823,28 +2825,29 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             {
                 if (_clouds.Remove(id, out var handle))
                     H.SafeZone.Remove(handle);
+                if (_cloudCapsules.Remove(id, out var capsule))
+                    H.SafeZone.Remove(capsule);
                 _cloudMotion.Remove(id);
-                H.Draw.Remove($"b31_cloud_{id}");
             }
-            // 1.2s 位移胶囊预览（0.15s 刷新；估速数据 >0.75s 视为过期）
+            // 1.2s 位移胶囊危险区（0.15s 刷新；估速数据 >0.75s 视为过期）：云团即将经过玩家时提前规避
             _cloudDrawAccum += dt;
             if (_cloudDrawAccum < 0.15f)
                 return;
             _cloudDrawAccum = 0f;
             foreach (var id in _aliveScratch)
             {
+                if (_cloudCapsules.Remove(id, out var old))
+                    H.SafeZone.Remove(old);
                 if (!_cloudMotion.TryGetValue(id, out var m))
                     continue;
                 var speed = m.Velocity.Length();
                 if (speed < 0.1f || (now - m.AtUtc).TotalSeconds > 0.75)
-                {
-                    H.Draw.Remove($"b31_cloud_{id}");
                     continue;
-                }
                 var rotation = PromeRotation.Helpers.GeometryHelper.AngleTo(Vector2.Zero, m.Velocity);
-                using var scope = H.SafeZone.BeginDrawingGroup("毒气团移动预览");
-                H.Draw.AddAoe($"b31_cloud_{id}",
-                    new RayRectangleGeometry(m.Pos, rotation, 4f, MathF.Max(0.3f, speed * 1.2f)), durationMs: 250f);
+                using var scope = H.SafeZone.BeginDrawingGroup("毒气团移动预警");
+                _cloudCapsules[id] = H.SafeZone.AddTimedDanger(
+                    RayRectangleTemplate.Symmetric(4f, MathF.Max(0.3f, speed * 1.2f)),
+                    new StaticTransform(m.Pos, rotation), 1.2f);
             }
         }
     }

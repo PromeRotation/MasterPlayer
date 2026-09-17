@@ -78,7 +78,7 @@ public sealed class ScriptSafeZoneApi
 
     // ── 障碍 ───────────────────────────────────────────
 
-    /// <summary>注册一个硬障碍（无时间窗口，Solver 路径全程不得穿越）。</summary>
+    /// <summary>注册一个硬障碍（无时间窗口，禁止从外部穿入；覆盖玩家时允许立即退出，退出后不得重入）。</summary>
     public SafeZoneAreaHandle AddObstacle(GeometryTemplate template, TransformBinding binding)
         => Track(Registry.AddObstacle(template, binding));
 

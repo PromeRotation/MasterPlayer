@@ -147,7 +147,7 @@
 - **连线放毒 4 点引导**（最复杂，完整迁移）：触发= tether 0x11（龙→玩家）或 0xBEA9 读条以玩家为目标。路线：以"开始时 Boss 相对场心方向"为北 N，侧向 S=N 转 90°；outer=场心+16.9×N，inner=outer−7×N；四点顺序 P1=inner+7S → P2=outer+7S → P3=outer−7S → P4=inner−7S（0.2y 目标圈 Draw + 连线）。推进：OnUpdate 检测新毒池 EObj 0x1EB704 出现在当前目标点 1y 内（忽略 >3.1s 的旧池快照）→ 推进下一点；被点名期间对当前点注册 `AddTimedSafeArea(CircleTemplate(0.2), ..., preference: PositionPreference.Center)` 引导，**推进切点时先 `Remove` 上一点的 SafeArea 句柄再注册新点**（旧圈不得残留到超时，否则解算停在旧点）；一轮 ≤16.5s 超时复位。第 4 池确认当次即注册该池的持续危险区并开始逃离。仅当**被连线者是本地玩家**才给 SafeArea/绘制，否则只画线。**预备阶段**（BMR `_prepareUntil`）：空降中心 0xBEBC 命中后开 8s 预备窗——以龙的当前位置重建路线（近场心时保留上轮北方），若上一轮被连线者是本地玩家，对 1 号点注册 R0.2、Center 偏好的安全区引导 + 画点/引导线并提示"提前就位"；新一轮 BeginRound 或超时即撤。
 - **放毒精度**：四个引导点及预备点均要求进入中心 0.2y 内；预备路线变化即刷新目标。PR 的 Reborn 解算器在 R0.2 小目标激活时采用 0.1y 网格保留可达目标格，抵达最佳 Center 候选后结束搜索，移动容差按「目标半径 − 格心偏差」进一步内缩，避免网格误差与停止距离叠加后停在圈外；毒池匹配仍保留 1y，容纳快照与物件生成位置差异。必须重新编译并加载带此修正的 PR 本体，单独刷新脚本不足以生效。
 - **毒池**：EObj 0x1EB704 出现 2s 后 AddPersistentDanger R6（第 4 池确认当次立即生效）；EventState 7 撤销。已站在生效毒池中时，Reborn 自动移动立即逃离，即使同时叠有未来 AOE 也不等待玩家读条结束。
-- **毒气团**：存活 0x4CDA/NameID 14630 → AddObstacle R2 跟随 + OnUpdate 逐帧估速（>4y/s 或单帧 >5y 视为传送不预测），画 1.2s 位移胶囊预览（Draw）。
+- **毒气团**：存活 0x4CDA/NameID 14630 → **持续危险区** R2 跟随实体（接触触发 50543；必须用危险区而非硬障碍——障碍只约束寻路、不会在云团逼近时主动逃离）+ OnUpdate 逐帧估速（>4y/s 或单帧 >5y 视为传送不预测），沿速度方向注册 1.2s 位移胶囊**定时危险区**（`AddTimedDanger(RayRectangleTemplate.Symmetric(4, 速度×1.2))`，0.15s 刷新）——云团即将经过玩家时提前规避。
 - **空降二连**：0xBEB0 外环读条 → 期间注册落点中心 `AddTimedSafeArea(CircleTemplate(5), ...)`（先靠近）+ 提示"先靠近，外环判定后立即出中心"；0xBEBC 中心 R6 圆注册（delay=读条剩余+0.3）。中心圈对齐 BMR CrucibleDragonLanding 的 non-risky 语义：外环 pending 期间 0xBEBC 读条只画 `Draw.AddAoe` 预览（不进解算，防止提前把玩家推出中心安全点），外环命中/到点（activation+0.5s）/打断后按读条剩余注册真实危险区。
 - 文字：0xBEA7、0xBEB0、0xBEB5"剧毒全场注意减伤"。
 

@@ -76,6 +76,8 @@ public sealed class ScriptSafeZoneApi : IDisposable
         => Registry.AddDelayedHit(template, binding, delaySeconds, hitDurationSeconds);
     public SafeZoneAreaHandle AddPersistentDanger(GeometryTemplate template, TransformBinding binding)
         => Registry.AddPersistentDanger(template, binding);
+    public SafeZoneAreaHandle AddTimedDanger(GeometryTemplate template, TransformBinding binding, float durationSeconds)
+        => Registry.AddTimedDanger(template, binding, durationSeconds);
     public SafeZoneAreaHandle AddTimedSafeArea(GeometryTemplate template, TransformBinding binding, float durationSeconds,
         int priority = 0, PositionPreference preference = PositionPreference.Nearest)
         => Registry.AddTimedSafeArea(template, binding, durationSeconds, priority, preference);

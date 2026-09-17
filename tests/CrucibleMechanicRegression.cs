@@ -293,6 +293,25 @@ internal static class CrucibleMechanicRegression
                 "Preparation must refresh a moved target even when its displacement is below the former 0.5y threshold.");
         });
 
+        run("B31 poison cloud is an escapable danger and its travel corridor registers ahead", () =>
+        {
+            using var fight = new CloudFight();
+            fight.Update(0.4f);
+            Check(fight.ObstacleCount == 0, "A contact-damage cloud must not be a hard obstacle that only constrains pathing.");
+            var circle = (CircleGeometry)fight.Areas.Single().Geometry;
+            Check(circle.Radius == 2f && circle.Position == CloudFight.CloudStart,
+                "The cloud must carry a follow-entity persistent danger circle.");
+            fight.SetCloudVelocity(new Vector2(2f, 0f));
+            fight.Update(0.2f);
+            var capsule = fight.Areas.Select(a => a.Geometry).OfType<RayRectangleGeometry>().Single();
+            Check(capsule.Contains(CloudFight.CloudStart + new Vector3(1.5f, 0f, 0f))
+                && !capsule.Contains(CloudFight.CloudStart - new Vector3(1.5f, 0f, 0f)),
+                "The corridor must extend along the estimated velocity from the cloud's current position.");
+            Check(capsule.Contains(CloudFight.CloudStart + new Vector3(2.3f, 0f, 0f))
+                && !capsule.Contains(CloudFight.CloudStart + new Vector3(2.5f, 0f, 0f)),
+                "The corridor must cover exactly 1.2s of travel (2 yalms/s × 1.2s = 2.4y).");
+        });
+
         foreach (var (rotation, expected) in new[]
         {
             (0f, new Vector3(920f, 15f, -440f)),
@@ -710,6 +729,63 @@ internal static class CrucibleMechanicRegression
             _objects.SetValue(null, _originalObjects);
             _script.SafeZone.Dispose();
             NativeMemory.Free(_poolNative);
+        }
+    }
+
+    private sealed class CloudFight : IDisposable
+    {
+        public static readonly Vector3 CloudStart = new(920f, 15f, -410f);
+        private readonly CrucibleHigh1Script _script = new();
+        private readonly Type _type = typeof(CrucibleHigh1Script).GetNestedType("B31DragonHandler", BindingFlags.NonPublic)!;
+        private readonly object _handler;
+        private readonly PropertyInfo _objects = typeof(Svc).GetProperty(nameof(Svc.Objects))!;
+        private readonly object? _originalObjects;
+        public IReadOnlyList<DangerAreaSnapshot> Areas => _script.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow).DangerAreas;
+        public int ObstacleCount => _script.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow).HardObstacles.Count;
+
+        public CloudFight()
+        {
+            _handler = Activator.CreateInstance(_type, _script)!;
+            _type.GetMethod("Activate")!.Invoke(_handler, [new Vector3(920f, 15f, -420f)]);
+            _originalObjects = _objects.GetValue(null);
+            _objects.SetValue(null, ScriptServiceProxy.Create<IObjectTable>((method, args) => method switch
+            {
+                "get_Length" => 1,
+                "get_Item" => (int)args[0]! == 0 ? Cloud : null,
+                "SearchByEntityId" => (uint)args[0]! == 10u ? Cloud : null,
+                _ => throw new NotSupportedException(method),
+            }));
+        }
+
+        private static IBattleChara Cloud => ScriptServiceProxy.Create<IBattleChara>((method, _) => method switch
+        {
+            "get_EntityId" => 10u,
+            "get_NameId" => 14630u,
+            "get_ObjectKind" => ObjectKind.BattleNpc,
+            "get_Position" => CloudStart,
+            "get_IsDead" => false,
+            _ => throw new NotSupportedException(method),
+        });
+
+        public void Update(float dt) => _type.GetMethod("Update")!.Invoke(_handler, [dt]);
+
+        // 估速依赖现实墙钟，测试中两次 Update 间隔太短会被传送保护清零；直接注入运动状态
+        public void SetCloudVelocity(Vector2 velocity)
+        {
+            var motionType = _type.GetNestedType("CloudMotion", BindingFlags.NonPublic)!;
+            var motion = Activator.CreateInstance(motionType)!;
+            motionType.GetField("Pos")!.SetValue(motion, CloudStart);
+            motionType.GetField("AtUtc")!.SetValue(motion, DateTime.UtcNow.AddSeconds(-0.2));
+            motionType.GetField("Velocity")!.SetValue(motion, velocity);
+            var motions = (System.Collections.IDictionary)_type
+                .GetField("_cloudMotion", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_handler)!;
+            motions[10u] = motion;
+        }
+
+        public void Dispose()
+        {
+            _objects.SetValue(null, _originalObjects);
+            _script.SafeZone.Dispose();
         }
     }
 

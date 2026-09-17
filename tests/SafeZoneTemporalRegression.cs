@@ -149,6 +149,73 @@ internal static class SafeZoneTemporalRegression
 
     public static void Run(Action<string, Action> run)
     {
+        foreach (var hard in new[] { true, false })
+        {
+            foreach (var offset in new[] { 0f, 4.49f })
+                run($"a {(hard ? "hard obstacle" : "persistent danger")} appearing over the player permits escape from {offset}y", () =>
+                {
+                    var area = new CircleTemplate(4.5f).Resolve(Vector3.Zero, 0f, null);
+                    var snapshot = new SafeZoneSnapshot(1, Epoch, new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null),
+                        hard ? [new ObstacleSnapshot(default, area)] : [],
+                        hard ? [] : [new DangerAreaSnapshot(default, area, [new DangerWindow(Epoch, null)])], []);
+                    CheckAreaEscape(snapshot, Vector3.UnitX * offset);
+                });
+
+            run($"escape from a {(hard ? "hard obstacle" : "persistent danger")} stops outside even with zero safety margin", () =>
+            {
+                var area = new CircleTemplate(4.5f).Resolve(Vector3.Zero, 0f, null);
+                var snapshot = new SafeZoneSnapshot(1, Epoch, new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null),
+                    hard ? [new ObstacleSnapshot(default, area)] : [],
+                    hard ? [] : [new DangerAreaSnapshot(default, area, [new DangerWindow(Epoch, null)])], []);
+                CheckAreaEscape(snapshot, Vector3.Zero, options: Options with { HardSafetyMargin = 0f, GenerateDebugData = false });
+            });
+
+            run($"overlapping {(hard ? "hard obstacles" : "persistent dangers")} allow only exit, including during replanning", () =>
+            {
+                var areas = new[] { -1.5f, 1.5f }.Select(x => new CircleTemplate(4f).Resolve(Vector3.UnitX * x, 0f, null)).ToArray();
+                var otherObstacle = new ObstacleSnapshot(default, new CircleTemplate(2.5f).Resolve(-Vector3.UnitZ * 5.5f, 0f, null));
+                var otherDanger = new DangerAreaSnapshot(default, new CircleTemplate(2.5f).Resolve(Vector3.UnitZ * 5.5f, 0f, null),
+                    [new DangerWindow(Epoch, null)]);
+                var snapshot = new SafeZoneSnapshot(1, Epoch, new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null),
+                    hard ? [.. areas.Select(a => new ObstacleSnapshot(default, a)), otherObstacle] : [otherObstacle],
+                    hard ? [otherDanger] : [.. areas.Select(a => new DangerAreaSnapshot(default, a, [new DangerWindow(Epoch, null)])), otherDanger], []);
+                CheckAreaEscape(snapshot, Vector3.Zero, replan: true);
+            });
+
+            run($"an inescapable {(hard ? "hard obstacle" : "persistent danger")} cannot authorize leaving the arena", () =>
+            {
+                var area = new CircleTemplate(6f).Resolve(Vector3.Zero, 0f, null);
+                var snapshot = new SafeZoneSnapshot(1, Epoch, new CircleTemplate(5f).Resolve(Vector3.Zero, 0f, null),
+                    hard ? [new ObstacleSnapshot(default, area)] : [],
+                    hard ? [] : [new DangerAreaSnapshot(default, area, [new DangerWindow(Epoch, null)])], []);
+                var solution = Solve(snapshot, Vector3.Zero, Epoch);
+                Check(solution.Status == SolutionStatus.NoReachableSafeCell && solution.ExecutablePath.Count == 0,
+                    "A fully blocked arena must report no escape instead of a safe no-movement result or an out-of-bounds route.");
+            });
+        }
+
+        run("a hard obstacle interrupts cast waiting even with a future AOE and an overlapping goal", () =>
+        {
+            var arena = new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null);
+            var future = new DangerAreaSnapshot(default, new CircleTemplate(10f).Resolve(Vector3.Zero, 0f, null),
+                [new DangerWindow(Epoch.AddSeconds(10), Epoch.AddSeconds(10.6), Epoch)]);
+            var player = Player(Vector3.Zero) with { IsCasting = true, CastTimeRemaining = 2f };
+            var move = new FakeMove();
+            var movement = CreateMovement(move);
+            var before = new SafeZoneSnapshot(1, Epoch, arena, [], [future], []);
+            Dispatch(movement, new SafeZoneSolver().Solve(before, player, Capability, Options, Epoch), player, before, Epoch);
+            Check(!move.IsRunning, "A future-only AOE should permit finishing the cast.");
+            var snapshot = new SafeZoneSnapshot(2, Epoch, arena,
+                [new ObstacleSnapshot(default, new CircleTemplate(4.5f).Resolve(Vector3.Zero, 0f, null))], [future],
+                [new GoalAreaSnapshot(default, new CircleTemplate(1f).Resolve(Vector3.Zero, 0f, null), [GoalWindow.Persistent(Epoch)])]);
+            var solution = new SafeZoneSolver().Solve(snapshot, player, Capability, Options, Epoch);
+            Check(solution.IsSuccess && solution.ExecutablePath.Count >= 2, "An overlapping goal must not settle the player inside the obstacle.");
+            Dispatch(movement, solution, player, snapshot, Epoch);
+            Check(move.IsRunning && ((ISafeZoneRebornMovementStatus)movement).HasControl,
+                "A newly covering hard obstacle must interrupt waiting and dispatch escape immediately.");
+            CheckAreaEscape(snapshot, player.Position);
+        });
+
         run("movement routes around persistent poison including the default 0.5y margin", () =>
         {
             var target = new Vector3(10f, 0f, 0f);
@@ -462,6 +529,55 @@ internal static class SafeZoneTemporalRegression
             Check(sawHold && reachedClearedArea, "Dispatch must both wait and enter the cleared area before the second hit.");
             Check(move.StopCount > 0, "The waiting phase must actually stop the movement system.");
         });
+    }
+
+    private static void CheckAreaEscape(SafeZoneSnapshot snapshot, Vector3 position, bool replan = false, SolveOptions? options = null)
+    {
+        var solveOptions = options ?? Options;
+        var areas = snapshot.HardObstacles.Select(o => o.Geometry)
+            .Concat(snapshot.DangerAreas.Where(d => d.DangerWindows.Any(w => w.IsActiveAt(Epoch))).Select(d => d.Geometry)).ToArray();
+        var left = areas.Select(a => !a.Contains(position)).ToArray();
+        void CheckPosition(Vector3 point)
+        {
+            Check(snapshot.ArenaBoundary!.Contains(point), "Escaping must remain inside the arena.");
+            for (var i = 0; i < areas.Length; i++)
+            {
+                var inside = areas[i].Contains(point);
+                Check(!left[i] || !inside, "Escape must neither enter another area nor re-enter an area already left.");
+                left[i] |= !inside;
+            }
+        }
+
+        var solution = new SafeZoneSolver().Solve(snapshot, Player(position), Capability, solveOptions, Epoch);
+        Check(solution.IsSuccess && solution.ExecutablePath.Count >= 2, "A covering area must produce an escape route without requiring a goal.");
+        for (var i = 1; i < solution.ExecutablePath.Count; i++)
+        {
+            var from = solution.ExecutablePath[i - 1].Position;
+            var to = solution.ExecutablePath[i].Position;
+            var steps = Math.Max(1, (int)MathF.Ceiling(Vector3.Distance(from, to) / 0.02f));
+            for (var step = 1; step <= steps; step++)
+                CheckPosition(Vector3.Lerp(from, to, (float)step / steps));
+        }
+        Check(left.All(value => value), "The planned destination must be outside every current danger and obstacle.");
+
+        left = areas.Select(a => !a.Contains(position)).ToArray();
+        var move = new FakeMove();
+        var movement = CreateMovement(move);
+        SetField(movement, "_options", solveOptions);
+        Dispatch(movement, solution, position, snapshot, Epoch);
+        Check(move.IsRunning, "The escape route must actually start movement.");
+        for (var tick = 0; tick < 1000 && move.IsRunning; tick++)
+        {
+            if (replan && tick > 0 && tick % 20 == 0)
+            {
+                var now = Epoch.AddSeconds(tick * 0.01);
+                Dispatch(movement, new SafeZoneSolver().Solve(snapshot, Player(position), Capability, solveOptions, now), position, snapshot, now);
+            }
+            position = move.Advance(position, 0.01f);
+            CheckPosition(position);
+        }
+        Check(left.All(value => value) && !move.IsRunning,
+            "The movement executor must stop outside all areas, including its arrival tolerance and repeated solves.");
     }
 
     private static SafeZoneSnapshot Staggered() => new(1, Epoch,
