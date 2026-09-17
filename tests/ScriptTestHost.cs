@@ -20,6 +20,10 @@ internal sealed class MechanicScriptAttribute : Attribute
 
 public abstract class MasterPlayerScript
 {
+    private Action<LogSystemCastStartEvent>? _cast;
+    private Action<LogSystemCancelCastEvent>? _cancel;
+    private Action<LogSystemInterruptCastEvent>? _interrupt;
+    private Action? _battleEnded;
     public ScriptSafeZoneApi SafeZone { get; } = new();
     public ScriptDrawApi Draw { get; } = new();
     public List<string> Errors { get; } = [];
@@ -31,9 +35,23 @@ public abstract class MasterPlayerScript
     protected void Log(string text) => throw new NotSupportedException(text);
     protected void LogError(string text) => Errors.Add(text);
     protected void SuppressGenericDodge(params uint[] actionIds) { }
-    protected void OnStartCast(Action<LogSystemCastStartEvent> callback) => throw new NotSupportedException();
-    protected void OnCancelCast(Action<LogSystemCancelCastEvent> callback) => throw new NotSupportedException();
-    protected void OnInterruptCast(Action<LogSystemInterruptCastEvent> callback) => throw new NotSupportedException();
+    protected void OnStartCast(Action<LogSystemCastStartEvent> callback) => _cast += callback;
+    protected void OnCancelCast(Action<LogSystemCancelCastEvent> callback) => _cancel += callback;
+    protected void OnInterruptCast(Action<LogSystemInterruptCastEvent> callback) => _interrupt += callback;
+    protected void OnBattleEnded(Action callback) => _battleEnded += callback;
+    internal void StartForTest() => OnStart();
+    internal void StopForTest()
+    {
+        OnStop();
+        _cast = null;
+        _cancel = null;
+        _interrupt = null;
+        _battleEnded = null;
+    }
+    internal void SendForTest(LogSystemCastStartEvent e) => _cast?.Invoke(e);
+    internal void SendForTest(LogSystemCancelCastEvent e) => _cancel?.Invoke(e);
+    internal void SendForTest(LogSystemInterruptCastEvent e) => _interrupt?.Invoke(e);
+    internal void EndBattleForTest() => _battleEnded?.Invoke();
     protected void OnActionEffect(Action<LogSystemActionEffectEvent> callback) => throw new NotSupportedException();
     protected void OnTether(Action<LogSystemTetherEvent> callback) => throw new NotSupportedException();
     protected void OnTetherCancel(Action<LogSystemTetherCancelEvent> callback) => throw new NotSupportedException();
@@ -44,7 +62,14 @@ public abstract class MasterPlayerScript
 
 public sealed class ScriptSafeZoneApi : IDisposable
 {
-    public SafeZoneManager Manager { get; } = new(new SafeZoneSetting { EnableSafeZone = true });
+    public SafeZoneManager Manager { get; private set; } = new(new SafeZoneSetting { EnableSafeZone = true });
+    private bool _ownsManager = true;
+    internal void ShareManagerForTest(SafeZoneManager manager)
+    {
+        Manager.Dispose();
+        Manager = manager;
+        _ownsManager = false;
+    }
     private SafeZoneRegistry Registry => new(Manager);
     public IDisposable BeginDrawingGroup(string name) => new Scope();
     public SafeZoneAreaHandle AddDelayedHit(GeometryTemplate template, TransformBinding binding, float delaySeconds, float hitDurationSeconds = 0.6f)
@@ -56,7 +81,7 @@ public sealed class ScriptSafeZoneApi : IDisposable
         => Registry.AddTimedSafeArea(template, binding, durationSeconds, priority, preference);
     public SafeZoneAreaHandle AddObstacle(GeometryTemplate template, TransformBinding binding) => Registry.AddObstacle(template, binding);
     public bool Remove(SafeZoneAreaHandle handle) => Registry.Remove(handle);
-    public void Dispose() => Manager.Dispose();
+    public void Dispose() { if (_ownsManager) Manager.Dispose(); }
     private sealed class Scope : IDisposable { public void Dispose() { } }
 }
 

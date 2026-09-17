@@ -276,7 +276,7 @@ public sealed class MainWindow : IDisposable
 ```csharp
 public sealed record ScriptMetadata(string Id, string Name, uint[] Territorys, string Version, string Author, string Note, string Region, string SourcePath);
 
-public enum ScriptSource { LocalSource, LocalDll }
+public enum ScriptSource { LocalSource, LocalDll, Visual }
 
 public sealed class ScriptDescriptor
 {
@@ -364,6 +364,7 @@ public sealed class ScriptManager : IDisposable
     public bool IsMechanismEnabled(string scriptId, string mechanism);
     public void SetMechanismEnabled(string scriptId, string mechanism, bool enabled);
     public bool IsGenericDodgeSuppressed(uint actionId);    // 任一运行中脚本接管了该读条技能（供 DodgeController 去重）
+    public bool IsGenericDodgeSuppressed(LogSystemCastStartEvent cast); // 可视化规则还检查施法者、启用状态、绑定可解析性和剩余判定时间
     public void SetStatus(string message);
     public void SetError(string message);
 }
@@ -514,6 +515,14 @@ public readonly record struct GreenMovePoint(
 - **异常隔离**：单脚本编译失败进 `ErrorMessage`（面板红字可滚动）；运行中 `OnUpdate`/事件回调异常只停止该脚本，不影响其他脚本与插件本体。
 - **编译引用定位**：部分程序集被流式加载（`Assembly.Location` 为空，如本插件自身，可能还包括宿主体）。`ScriptCompiler` 的引用解析回退链为：程序集 `Location` → `ConfigDirectory\Plugins\<程序集名>\` 包目录 → 宿主 PR 安装目录（`Svc.PluginInterface.AssemblyLocation`）；首次构建引用集时会 Info 日志记录引用数量、探测目录与未能解析的程序集名——脚本编译报 CS0234 类错误时先看这条日志。
 - **三门面纪律**：`ScriptSafeZoneApi` / `ScriptMoveApi` / `ScriptDrawApi` 只是 `PromeRotation.Plugin.Instance` 对应系统的转发 + 每脚本句柄簿记，全部主线程调用；绘制 id 由门面自动加 `MasterPlayer_Script_{guid}_` 前缀；Move 门面遵守铁律 3（`EnableAutoMovement` 让位、`MoveTo` last-write-wins、自己接管才 `Stop()`）。
+
+### 5.6.1 可视化机制脚本
+
+- 编辑入口为「脚本」→「可视化编辑器」，源码位于 `Scripting/Visual/` 与 `Windows/VisualScriptEditor.cs` / `VisualAoePreview.cs`；使用、UI 与扩展约定见 `docs/可视化脚本编辑器.md`。
+- 递归加载 `*.mechanic.json`（新建默认存入脚本目录的 `Visual/`）；带格式版本的定义经描述符工厂创建 `VisualMechanicScript`，沿用区域匹配与独立 owner 生命周期。同区域、同施法者允许多个 GUID；保存只重载当前文档，不刷新其他脚本。
+- 规则按 Action ID 与可选施法者 Data ID（Dalamud `BaseId`）筛选；绑定用事件的 Entity ID。可视化规则通过事件级 `IsGenericDodgeSuppressed` 条件接管，不能使用全局 Action ID 压制，否则会漏掉其他施法者的同技能。
+- 运行器只使用安全区门面注册危险区，不操作 GreenMove 或场地边界；按事件时间扣除派发延迟，清理取消、打断、过期和停止的区域。位置与普通朝向跟随使用局部偏移，其他模式使用世界偏移；预览复用同一 PR 模板。
+- 角度偏移 `AngleOffsetDegrees` 默认 0，在 `RotationOffsetTemplate.Resolve` 中叠加，不修改绑定朝向，避免同时转动局部位置偏移；`DangerMarginInflator` 递归外扩内层模板，保留角度与安全余量。正角度左转、负角度右转。
 
 ### 5.7 雷达悬浮窗（`Radar\RadarOverlayWindow.cs`）
 

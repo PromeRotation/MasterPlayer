@@ -1,6 +1,8 @@
 using System.Reflection;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
+using MasterPlayer.Scripting.Visual;
+using PromeRotation.LogSystem;
 
 namespace MasterPlayer.Scripting;
 
@@ -56,6 +58,63 @@ public sealed class ScriptManager : IDisposable
         {
             TryLoadExternalAssembly(dllPath);
         }
+
+        foreach (var path in Directory.EnumerateFiles(directory, "*" + VisualScriptStore.FileExtension, SearchOption.AllDirectories))
+        {
+            try
+            {
+                AddDescriptor(CreateVisualDescriptor(path, VisualScriptStore.Parse(File.ReadAllText(path))));
+            }
+            catch (Exception ex)
+            {
+                SetError($"加载可视化脚本失败：{Path.GetFileName(path)} - {ex.Message}");
+                Svc.Log.Error(ex, $"[MasterPlayer] Failed to load visual script: {path}");
+            }
+        }
+    }
+
+    private static ScriptDescriptor CreateVisualDescriptor(string path, VisualScriptDefinition definition)
+    {
+        var snapshot = VisualScriptStore.Clone(definition);
+        var metadata = new ScriptMetadata(snapshot.Id, snapshot.Name, [(uint)snapshot.TerritoryId], "1.0", "",
+            snapshot.Note ?? "", snapshot.TerritoryId.ToString(), Path.GetFullPath(path));
+        return new ScriptDescriptor(metadata, ScriptSource.Visual, metadata.SourcePath, () => new VisualMechanicScript(snapshot));
+    }
+
+    internal string SaveVisualScript(string path, VisualScriptDefinition definition, string? expectedContent)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var existing = _descriptors.FirstOrDefault(d => string.Equals(d.Metadata.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(d.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase));
+        if (existing != null && (existing.Source != ScriptSource.Visual || expectedContent == null
+            || !string.Equals(existing.Metadata.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(existing.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("脚本 ID 或文件路径与已有脚本冲突。请复制为新脚本后保存。");
+
+        var descriptor = CreateVisualDescriptor(fullPath, definition);
+        var json = VisualScriptStore.Save(fullPath, definition, expectedContent);
+        StopScript(definition.Id);
+        if (existing != null) _descriptors.Remove(existing);
+        AddDescriptor(descriptor);
+        if (MasterPlayerSettings.Instance.EnableScripts && IsScriptEnabled(definition.Id)
+            && IsTerritoryMatched(descriptor.Metadata, Svc.ClientState.TerritoryType) && !StartScript(definition.Id))
+            return json;
+        SetStatus($"已保存可视化脚本：{definition.Name}。");
+        return json;
+    }
+
+    internal void DeleteVisualScript(ScriptDescriptor descriptor, string expectedContent)
+    {
+        if (descriptor.Source != ScriptSource.Visual) throw new InvalidOperationException("只能在编辑器中删除可视化脚本。");
+        VisualScriptStore.Delete(descriptor.SourcePath, expectedContent);
+        StopScript(descriptor.Metadata.Id);
+        _descriptors.Remove(descriptor);
+        var settings = MasterPlayerSettings.Instance;
+        settings.ScriptEnabled.Remove(descriptor.Metadata.Id);
+        settings.ScriptSettings.Remove(descriptor.Metadata.Id);
+        settings.MechanismEnabled.Remove(descriptor.Metadata.Id);
+        settings.Save();
+        SetStatus($"已删除可视化脚本：{descriptor.Metadata.Name}。");
     }
 
     private void TryLoadSourceScript(string csPath)
@@ -388,6 +447,10 @@ public sealed class ScriptManager : IDisposable
                 return true;
         return false;
     }
+
+    public bool IsGenericDodgeSuppressed(LogSystemCastStartEvent cast)
+        => IsGenericDodgeSuppressed(cast.ActionId)
+           || _running.Values.Any(r => r.Script is VisualMechanicScript script && script.SuppressesGenericDodge(cast));
 
     private static Type[] GetAssemblyTypes(Assembly assembly)
     {

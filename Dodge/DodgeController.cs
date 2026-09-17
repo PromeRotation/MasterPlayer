@@ -50,7 +50,7 @@ public sealed class DodgeController : IDisposable
     private void ProcessCast(LogSystemCastStartEvent e)
     {
         // 运行中脚本声明接管的技能：通用躲避让位，避免与脚本重复注册同一危险区
-        if (MasterPlayerPlugin.Instance?.Scripts?.IsGenericDodgeSuppressed(e.ActionId) == true)
+        if (MasterPlayerPlugin.Instance?.Scripts?.IsGenericDodgeSuppressed(e) == true)
         {
             return;
         }

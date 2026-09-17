@@ -4,6 +4,7 @@ public enum ScriptSource
 {
     LocalSource,
     LocalDll,
+    Visual,
 }
 
 public sealed class ScriptDescriptor

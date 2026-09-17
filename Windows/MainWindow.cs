@@ -22,6 +22,7 @@ public sealed class MainWindow : IDisposable
     private bool _visible;
     private bool _disposed;
     private string _aoeFilter = "";
+    private readonly VisualScriptEditor _visualEditor = new();
 
     public void Toggle()
     {
@@ -31,8 +32,10 @@ public sealed class MainWindow : IDisposable
 
     public void Draw()
     {
-        if (_disposed || !_visible)
+        if (_disposed)
             return;
+        _visualEditor.Draw();
+        if (!_visible) return;
 
         ImGui.SetNextWindowSize(new Vector2(680, 620), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(560, 440), new Vector2(1600, 1200));
@@ -309,7 +312,7 @@ public sealed class MainWindow : IDisposable
             settings.Save();
     }
 
-    private static void DrawScriptsTab()
+    private void DrawScriptsTab()
     {
         var manager = MasterPlayerPlugin.Instance?.Scripts;
         if (manager == null)
@@ -324,6 +327,10 @@ public sealed class MainWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("打开脚本目录"))
             OpenScriptsDirectory(manager.ScriptsDirectory);
+
+        ImGui.SameLine();
+        if (ImGui.Button("可视化编辑器"))
+            _visualEditor.Open();
 
         ImGui.SameLine(0f, 18f);
         HintInline($"当前区域 ID：{Svc.ClientState.TerritoryType}    脚本数：{manager.Scripts.Count}");
@@ -347,7 +354,7 @@ public sealed class MainWindow : IDisposable
 
         if (manager.Scripts.Count == 0)
         {
-            Hint("脚本目录为空。把 .cs 脚本放入脚本目录后点「刷新脚本」。");
+            Hint("点击「可视化编辑器」新建机制，或把 .cs 脚本放入脚本目录后点「刷新脚本」。");
             return;
         }
 
@@ -421,7 +428,7 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-    private static void DrawScriptRow(ScriptManager manager, ScriptDescriptor descriptor)
+    private void DrawScriptRow(ScriptManager manager, ScriptDescriptor descriptor)
     {
         var metadata = descriptor.Metadata;
         var id = metadata.Id;
@@ -452,6 +459,13 @@ public sealed class MainWindow : IDisposable
         else
         {
             ImGui.Text(info);
+        }
+
+        if (descriptor.Source == ScriptSource.Visual)
+        {
+            ImGui.TextDisabled("可视化脚本");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("编辑")) _visualEditor.Open(descriptor.SourcePath);
         }
 
         if (ImGui.TreeNode("详情"))

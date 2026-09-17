@@ -1,3 +1,4 @@
+using MasterPlayer.Scripting.Visual;
 using PromeRotation.Spatial.SafeZone;
 
 namespace MasterPlayer.Dodge;
@@ -17,6 +18,7 @@ public static class DangerMarginInflator
 
         return template switch
         {
+            RotationOffsetTemplate rotated => rotated with { Inner = Inflate(rotated.Inner, margin) },
             CircleTemplate circle => new CircleTemplate(circle.Radius + margin),
             DonutTemplate donut => new DonutTemplate(MathF.Max(0f, donut.InnerRadius - margin), donut.OuterRadius + margin),
             FanTemplate fan => new FanTemplate(fan.Radius + margin, fan.AngleRadians),

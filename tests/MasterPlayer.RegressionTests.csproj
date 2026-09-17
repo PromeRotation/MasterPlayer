@@ -16,7 +16,9 @@
     <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
+    <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />
+    <Compile Include="..\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
     <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
     <Compile Include="..\Scripts\CrucibleHigh1.cs" Link="CrucibleHigh1.cs" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
