@@ -7,7 +7,7 @@
 MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud 插件：
 
 - **不实现 `IDalamudPlugin`**，不被 Dalamud 直接加载；实现的是 PR 的 `IPromePlugin` 契约，由 PR 插件管理器（`PromePluginManager`）在游戏内反射加载、启用、热重载。
-- 功能组件：**雷达悬浮窗（RadarOverlayWindow，BMR 式 2D 俯视小地图）+ 真实世界绘制（RadarRenderer，3D 世界范围提示）+ 智能躲避（Dodge）+ 战斗中跟随（Follow）+ 智能机制处理（Mechanics）+ 机制脚本框架（Scripting）**。术语约定：「雷达」专指雷达悬浮窗；游戏内 3D 世界范围提示叫「真实世界绘制」。
+- 功能组件：**雷达悬浮窗（RadarOverlayWindow，BMR 式 2D 俯视小地图）+ 真实世界绘制（RadarRenderer，3D 世界范围提示）+ 智能躲避（Dodge）+ 战斗中跟随（Follow）+ 智能机制处理（Mechanics）+ 机制脚本框架（Scripting）+ 录制回放（Replay，BMR 式事件录制与时间轴回放，用于测试脚本）**。术语约定：「雷达」专指雷达悬浮窗；游戏内 3D 世界范围提示叫「真实世界绘制」。
 - 定位类似 BossModReborn，但一切能力基于 **PromeRotation 本体 API** 实现：安全区解算（SafeZone）、GreenMove 移动、DrawManager 世界绘制、事件总线。本插件只做机制判断与编排，不重复造解算/移动/绘制轮子。
 - Dalamud 服务不经构造函数注入（卫星插件没有 `[PluginService]`），统一走 ECommons 静态门面 `Svc`（`ECommons.DalamudServices.Svc`：`Svc.Framework.Update`、`Svc.PluginInterface.UiBuilder.Draw`、`Svc.Log`、`Svc.Objects` 等）。
 
@@ -36,7 +36,8 @@ MasterPlayer/
 │   ├── MasterPlayerSettings.cs    # 全局设置单例（MasterPlayer.json，System.Text.Json）
 │   └── SafeZoneActivation.cs      # 功能开关到 PR 安全区/自动移动开关的生命周期联动
 ├── Radar/
-│   ├── RadarOverlayWindow.cs      # 雷达悬浮窗：BMR 式 2D 俯视小地图（UiBuilder.Draw 主线程 ImGui 绘制）
+│   ├── RadarOverlayWindow.cs      # 雷达悬浮窗：窗口壳 + 显示门槛 + 交互（内容渲染委托 RadarView）
+│   ├── RadarView.cs               # 可嵌入雷达视图：给定屏幕圆心/半径绘制全套雷达内容（悬浮窗与回放窗口共用）
 │   └── RadarRenderer.cs           # 真实世界绘制：DrawManager 3D 世界范围提示（AOE 预告/安全点等）
 ├── Follow/
 │   └── FollowController.cs        # 战斗中跟随：跟随队友/当前目标（GreenMove 执行，躲避接管时让位）
@@ -48,7 +49,15 @@ MasterPlayer/
 │   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
 │   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
 ├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
-│                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1）
+│                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
+│                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
+├── Replay/
+│   ├── ReplayRecording.cs         # 录制文件模型 + JSON Lines 读写（.mpreplay.jsonl；纯逻辑不依赖游戏服务，tests 可链接）
+│   ├── ReplayScriptEventRouter.cs # 回放事件路由：脚本订阅落本地注册表，Raise 按类型派发 + 简单事件映射补发
+│   ├── ReplayRecorder.cs          # 录制器：PromeEventBus.OnLogEvent 全量订阅写文件；手动或战斗自动开停
+│   ├── ReplayController.cs        # 回放控制器：回放会话编排 + 主线程时钟派发（播放/暂停/变速/Seek/停止）
+│   ├── ReplayTimeline.cs          # 时间轴模型：读条区间（取消/打断截断）+ 泳道分类打点 + 实体名映射（纯逻辑）
+│   └── ReplayComparison.cs        # 多日志对比：按读条 ActionId 聚合次数/首用时间/日志间差异（纯逻辑）
 ├── Examples/
 │   ├── ExampleGenericScript.cs    # 通用机制示例脚本（编译进插件 DLL 做冒烟检查）
 │   └── ExampleZoneScript.cs       # 区域限定示例脚本
@@ -56,10 +65,12 @@ MasterPlayer/
 │   └── CrucibleHigh1.cs           # 斗兽棋·高一机制脚本（迁移自 BossModReborn；编译进 DLL 冒烟，亦可复制到脚本目录热加载）
 ├── docs/
 │   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
+│   ├── BMR机制迁移指南.md         # BMR→MasterPlayer 机制迁移的语义对照/流程/踩坑（配合 .agents/skills/bmr-mechanic-migration 技能）
 │   └── reference/
 │       └── CrucibleHigh1.spec.md  # 斗兽棋·高一迁移规格（该脚本内容的唯一事实来源）
 └── Windows/
-    └── MainWindow.cs              # ImGui 主面板（总开关、脚本库、模块状态、调试信息）
+    ├── MainWindow.cs              # ImGui 主面板（总开关、脚本库、模块状态、录制回放入口、调试信息）
+    └── ReplayWindow.cs            # 录制回放独立窗口（上内嵌雷达 + 下事件时间轴 / 多日志对比）
 ```
 
 ### 3.1 跨模块共享契约（逐字一致，引用他模块时严格按此签名，不得臆造成员）
@@ -87,10 +98,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 }
 ```
 
-- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，开关设置面板）。
-- `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回）。
+- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_replayRecorder = new Replay.ReplayRecorder()`、`_replayController = new Replay.ReplayController(_scripts, _replayRecorder)`、`_replayWindow = new Windows.ReplayWindow()`、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `+= _radarOverlay.Draw` → `+= _replayWindow.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，无参开关设置面板，`/prmp rec` 或 `/prmp record` 开始/停止录制，`/prmp replay` 开关录制回放窗口）。
+- `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒，`IFramework.UpdateDelta.TotalSeconds`），由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _replayController.Update(deltaTime);`（回放时钟派发，必须在脚本 Update 之前）`_scripts.Update(deltaTime); _follow.Update();`。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回）。另有 internal 只读属性 `Recorder` / `Replay` / `ReplayWindow` 供 MainWindow/ReplayWindow 访问录制回放组件。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
-- `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
+- `Dispose()`：退订上述事件（Framework.Update、UiBuilder.Draw 三处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 十一个组件，顺序 `_replayWindow` → `_mainWindow` → `_follow` → `_radarOverlay` → `_replayController`（其 Dispose 先停回放会话）→ `_replayRecorder`（其 Dispose 先停录制）→ `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
 - `SafeZoneActivation`：注入宿主 `SafeZoneRebornSetting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求其 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的 Reborn 开关；运行中手动关闭不会被每帧覆写，可在诊断页恢复。功能开关联动不修改旧版开关。
 
 **Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
@@ -135,6 +146,9 @@ public sealed class MasterPlayerSettings
     public Dictionary<string, bool> ScriptEnabled = new();                                  // 脚本 guid → 是否启用
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();    // 脚本 guid → [UserSetting] 值
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();                    // 脚本 guid → 关闭/开启的机制集合
+
+    // 录制回放（Replay）
+    public bool AutoRecordOnBattleStart = false;    // 战斗开始自动录制、战斗结束自动停止（仅自动开启的录制被自动停止）
     public void Save();
 }
 ```
@@ -162,6 +176,33 @@ public sealed class RadarOverlayWindow : IDisposable
     public void Dispose();
 }
 ```
+
+- 窗口壳只管显示门槛（EnableRadarOverlay/RadarOnlyWithScript）、拖拽/滚轮/右键菜单交互与防抖保存；内容渲染委托 `RadarView`（悬浮窗与回放窗口共用同一组件）。
+
+**Radar.RadarView**（`Radar\RadarView.cs`）——可嵌入雷达视图
+
+```csharp
+public sealed class RadarView
+{
+    public RadarView();
+    public bool Draw(ImDrawListPtr drawList, Vector2 screenCenter, float radiusPx, bool hovered = false);
+    // 返回 false = 未绘制（无场地边界且玩家不存在）。内部完成快照/中心/旋转/缩放计算与全套图层。
+}
+```
+
+**Windows.ReplayWindow**（`Windows\ReplayWindow.cs`）——录制回放独立窗口
+
+```csharp
+public sealed class ReplayWindow : IDisposable
+{
+    public void Draw();      // 挂 Svc.PluginInterface.UiBuilder.Draw（主线程）
+    public void Toggle();
+    public void Dispose();
+}
+```
+
+- 「MasterPlayer 录制回放」窗口（`/prmp replay` 或主面板「录制回放」页按钮开关）：顶部录制/回放工具栏 + 录制文件列表（「回放」加载播放 + 对比勾选）；「时间轴回放」页签 = 上内嵌 RadarView + 下事件时间轴（泳道分类、滚轮缩放、左键 Seek、悬停详情、播放头跟随回放时钟、泳道显隐）；「日志对比」页签 = 对齐按钮（战斗开始/首次读条/清零）+ 每日志偏移调节 + 技能汇总表（出现 x/N、每日志次数与首用、首用最大差）+ 叠加读条泳道。技能名经 Lumina Action 表解析并缓存（仅 UI 层）。
+
 
 **Follow.FollowController**（`Follow\FollowController.cs`）
 
@@ -195,6 +236,8 @@ public sealed class DodgeController : IDisposable
 - **错峰判定转场**：由 PR 本体 `PromeRotation.Spatial.SafeZoneReborn.Solver.SafeZoneSolver` 的安全时间区间搜索处理，允许先在后判定区提前站位、等待，再进入已结束判定的区域；只向 GreenMove 下发首次等待前的路段，周期重解接续。旧版 `Spatial/SafeZone/` 实现保持不变。依赖重新编译并加载的本体 DLL，不能只热重载 MasterPlayer；回归入口为 `dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。
 
 高一 B31 四连放毒与预备点使用 R0.2、Center 目标圈；依赖 PR Reborn 小目标网格细化及按目标内部余量收紧移动容差。更新必须同时重编并加载 PR 本体与 MasterPlayer，仅刷新脚本无法获得 0.2y 到点精度。
+
+持续危险区与硬障碍覆盖玩家时，Reborn 必须立即逃离、不等读条；硬障碍仅对起点包含玩家的区域允许退出，边界和其他硬障碍仍阻挡。每个持续区域独立禁止退出后重入，逃离路径保留搜索原始线段，并按网格分辨率收紧到达容差，避免停在区域内；无出口返回 `NoReachableSafeCell`。此逻辑在 PR 本体，回归同样走 `tests/MasterPlayer.RegressionTests.csproj`，更新后须同时重编并加载本体与 MasterPlayer。
 
 **Dodge.DangerMarginInflator**（`Dodge\DangerMarginInflator.cs`）
 
@@ -269,7 +312,7 @@ public sealed class MainWindow : IDisposable
 }
 ```
 
-- 面板为分页签布局：总览（五个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、诊断（调试模式、本体状态、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突）。
+- 面板为分页签布局：总览（五个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、录制回放（精简入口：录制/回放状态行 + 打开独立窗口按钮 + 自动录制开关）、诊断（调试模式、本体状态、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突），`/prmp rec` 开停录制，`/prmp replay` 开关录制回放窗口。
 
 **Scripting 脚本框架**（`Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
 
@@ -293,6 +336,7 @@ public sealed class RunningScript
     public MasterPlayerScript Script { get; }
     public IScriptHostContext Context { get; }
     public ScriptSettingStore Settings { get; }
+    public bool IsReplaySession { get; }        // 回放会话启动的脚本为 true（事件来自回放而非实时总线）
 }
 
 public abstract class MasterPlayerScript
@@ -356,9 +400,13 @@ public sealed class ScriptManager : IDisposable
     public void RefreshCatalog();
     public void ReloadScripts();            // 面板「刷新脚本」：停止全部 → 重扫目录 → 按启用状态重启（无文件监听，纯手动）
     public bool StartScript(string id);
+    internal bool StartScript(string id, IScriptEventRouter? router);   // router 非空 = 回放模式启动
     public void StopScript(string id);
     public void StopAll();
     public void Update(float deltaTime);
+    internal bool ReplayModeActive { get; }     // 回放会话门控：Update 跳过区域自动启停（回放脚本仍照常 UpdateInternal）
+    internal void EnterReplayMode();
+    internal void ExitReplayMode();
     public bool IsScriptEnabled(string id);
     public void SetScriptEnabled(string id, bool enabled);
     public bool IsMechanismEnabled(string scriptId, string mechanism);
@@ -371,7 +419,8 @@ public sealed class ScriptManager : IDisposable
 ```
 
 - 脚本目录：`Path.Combine(Svc.PluginInterface.ConfigDirectory.FullName, "MasterPlayer", "Scripts")`（即 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\`，**严禁放 `Plugins\MasterPlayer\` 内**）。
-- 脚本上下文 `MasterPlayerScriptContext` 为 `internal sealed : IScriptHostContext, IDisposable`，internal 构造 `(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings)`。
+- 脚本上下文 `MasterPlayerScriptContext` 为 `internal sealed : IScriptHostContext, IDisposable`，internal 构造 `(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings, IScriptEventRouter? router = null)`；router 缺省为 `LiveScriptEventRouter.Instance`（实时转发 PromeEventBus），回放会话由 ReplayController 注入 `ReplayScriptEventRouter`。
+- **事件路由抽象**：`internal interface IScriptEventRouter : IDisposable { IDisposable Subscribe(object owner, string eventName, Delegate handler, Type? logEventType = null); }`（`Scripting\IScriptEventRouter.cs`）。上下文的 35 个订阅方法统一经 `_router.Subscribe(this, "<事件名>", handler, typeof(<事件record类型>))` 落地；事件名与 `PromeEventBus.Subscribe` 字符串名一致。`LiveScriptEventRouter`（`Scripting\LiveScriptEventRouter.cs`，单例，Dispose 为 no-op）：logEventType 命中内置类型表则调对应 `PromeEventBus.OnXxx` 强类型方法，否则反射走泛型 `OnLogEvent<TEvent>`，简单事件直接转发字符串名 API。脚本上下文 Dispose 时在 TryCleanup 链中顺带 Dispose 路由器（回放路由借此清空本地注册表）。
 - `ScriptSettingStore` 公共面照抄 PromePainter：`RegisteredSettings` / `GetPropertyType` / `GetPropertyValue` / `SetPropertyValue` / `Get<T>` / `Set` / `GetBool` / `GetInt` / `GetFloat` / `GetString` / `Contains`（MainWindow 据此画设置控件，不依赖反射）。
 
 ## 4. 开发模式 / 构建部署
@@ -535,6 +584,19 @@ public readonly record struct GreenMovePoint(
 - **数据源**：`SafeZoneRebornManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `SafeZoneRebornMovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
 - **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 缩放）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整面圆盘即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
+
+### 5.8 录制回放（`Replay\`，对齐 BMR `BossMod/Replay/` 的 Operation 思路）
+
+机制事件的录制与时间轴回放，用于复现战斗、测试脚本运行状态。**PR 本体的 PromeEventBus/LogSystem 只订阅不发布（无公开 Raise），合成事件因此只在 MasterPlayer 脚本层派发**：录制走 `PromeEventBus.OnLogEvent` 全量订阅，回放经每脚本 `ReplayScriptEventRouter` 直喂，不进总线，DodgeController/Follow/其他插件不响应回放事件。
+
+- **录制文件**（`.mpreplay.jsonl`，JSON Lines）：首行 header `{"v":1,"territory":…,"startedUtc":…,"pluginVersion":…}`；之后每行 `{"t":秒,"kind":"CastStart","type":"CLR 全名","data":{…}}`。序列化配置（`ReplayJson.Options`）：剔除 `LogSystemEvent.Raw`（运行态对象图不可序列化，回放后恒为 null）与 get-only `Kind`；自带 `Vector3JsonConverter`（`Vector3?` 同用）。未知类型/损坏行跳过并计入 `ReplayRecording.SkippedEvents`。
+- **ReplayRecorder**：手动（面板按钮或 `/prmp rec`）或 `AutoRecordOnBattleStart` 自动（战斗开始录、结束停）。目录 `ConfigDirectory\MasterPlayer\Replays\`，文件名 `rec_yyyyMMdd_HHmmss_t{territory}.mpreplay.jsonl`。`IsRecording` / `CurrentFilePath` / `EventCount` / `Elapsed` / `StatusMessage` 供面板轮询；录制与回放互斥。
+- **ReplayController**：`Load(path)` → `Play()/Pause()/SetSpeed(0.25~4)/Seek(秒)/StopSession()`；`Update(deltaTime)` 在插件主循环中先于 `_scripts.Update` 调用。会话启动 = `ScriptManager.StopAll()` → `EnterReplayMode()` → 对「已启用 && 区域匹配**录制区域**」的描述符 `StartScript(id, new ReplayScriptEventRouter())`；时钟按 `deltaTime × Speed` 推进，到期事件对每个 router `Raise`。`Seek` 为 BMR 式「重置 + 快进」：重启回放脚本后从开头补发至目标时刻（脚本须确定性重放，契合铁律 7）。回放脚本被外部停光（刷新脚本/关总开关）时自动 `StopSession`；`StopSession` 后下一帧区域自动启停恢复实时脚本。
+- **ReplayScriptEventRouter**：强类型 LogSystem 订阅按 `registeredType.IsAssignableFrom(ev.GetType())` 派发（`LogEvent` 兜底/泛型天然覆盖）；`LogSystemBattleStarted/Ended/CountdownStarted/WeatherChanged/Territory/ChatLog` 映射补发同名简单事件（含负载：WeatherId/(ushort)TerritoryId/Sender+Message+LogKind）。EventManager/LogMessageManager 独有的简单事件（PlayerDied/PlayerRevived/PlayerMoveStateChanged/SystemLog/BattleLog/ShowMessage）无 LogSystem 对应记录，回放不触发。逐订阅者异常隔离（对齐 LogSystemHub），异常计入 `ErrorCount`/`LastError`。
+- **边界**：不录 actor 位置快照、不重建 WorldState——脚本经 `Svc.Objects` 直读游戏状态在回放中仍是实时值；事件自带的位置/朝向字段（SourcePosition/EffectPosition/SourceRotation 等）可正常回放。回放中脚本照常注册 SafeZone 区域（雷达/真实世界绘制可见），`OnUpdate` 照常按真实帧时间 tick。
+- **ReplayTimeline / ReplayComparison**（纯逻辑，tests 可链接）：`ReplayTimeline.Build(ReplayRecording)` 产出读条区间（同 SourceId 的取消/打断事件截断横条并标记）、泳道分类打点（Cast/Effect/Tether/Status/Mark/Arena/Battle/Misc）与实体名映射（ObjectCreate/ActionEffect）；`ReplayComparison.Compare(IReadOnlyList<ComparisonLog>)` 按读条 ActionId 聚合每日志次数、对齐后首用时间与首用最大差，`FirstCastTime`/`FirstBattleTime` 供对齐锚点。名称解析（Lumina）只在 UI 层做。
+- **ReplayWindow**（独立窗口，契约见 §3.1）：时间轴回放页签上内嵌 `RadarView`（回放中实时呈现脚本注册的机制范围）下时间轴（点击 Seek 调 `ReplayController.Seek`）；日志对比页签支持按战斗开始/首次读条对齐与手动偏移，归纳共同/差异技能。
+- 回归：`tests/ReplayRecordingRegression.cs`（序列化往返 + 路由派发 + 异常隔离/退订）与 `tests/ReplayTimelineRegression.cs`（时间轴构建 + 对比对齐），经 tests csproj 源码链接 `ReplayRecording.cs` / `ReplayScriptEventRouter.cs` / `ReplayTimeline.cs` / `ReplayComparison.cs` / `IScriptEventRouter.cs`（均不依赖 Svc/PromeEventBus）。
 
 ## 6. 铁律（违反任何一条都等于 bug）
 

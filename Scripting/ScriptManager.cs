@@ -219,7 +219,17 @@ public sealed class ScriptManager : IDisposable
 
     // ── 运行管理（每脚本独立生命周期）────────────────
 
-    public bool StartScript(string id)
+    /// <summary>回放会话进行中为 true：Update 跳过区域自动启停，脚本由 ReplayController 驱动。</summary>
+    internal bool ReplayModeActive { get; private set; }
+
+    internal void EnterReplayMode() => ReplayModeActive = true;
+
+    internal void ExitReplayMode() => ReplayModeActive = false;
+
+    public bool StartScript(string id) => StartScript(id, null);
+
+    /// <summary>router 非空时脚本以回放模式启动（事件来自 ReplayController 而非 PromeEventBus）。</summary>
+    internal bool StartScript(string id, IScriptEventRouter? router)
     {
         if (_running.ContainsKey(id))
             return true;
@@ -237,10 +247,10 @@ public sealed class ScriptManager : IDisposable
         {
             script = descriptor.CreateInstance();
             var settings = LoadScriptSettings(id, script);
-            var context = new MasterPlayerScriptContext(this, descriptor.Metadata, settings);
+            var context = new MasterPlayerScriptContext(this, descriptor.Metadata, settings, router);
             script.Host = context;
 
-            var running = new RunningScript(descriptor, script, context, settings);
+            var running = new RunningScript(descriptor, script, context, settings, router != null);
             _running[id] = running;
 
             script.StartInternal();
@@ -307,17 +317,20 @@ public sealed class ScriptManager : IDisposable
         }
 
         uint territory = Svc.ClientState.TerritoryType;
-        foreach (var descriptor in _descriptors)
+        if (!ReplayModeActive)
         {
-            var id = descriptor.Metadata.Id;
-            var enabled = IsScriptEnabled(id);
-            var isRunning = _running.ContainsKey(id);
-            var matched = IsTerritoryMatched(descriptor.Metadata, territory);
+            foreach (var descriptor in _descriptors)
+            {
+                var id = descriptor.Metadata.Id;
+                var enabled = IsScriptEnabled(id);
+                var isRunning = _running.ContainsKey(id);
+                var matched = IsTerritoryMatched(descriptor.Metadata, territory);
 
-            if (enabled && matched && !isRunning)
-                StartScript(id);
-            else if (isRunning && (!enabled || !matched))
-                StopScript(id);
+                if (enabled && matched && !isRunning)
+                    StartScript(id);
+                else if (isRunning && (!enabled || !matched))
+                    StopScript(id);
+            }
         }
 
         foreach (var (id, running) in _running.ToArray())
@@ -508,15 +521,20 @@ public sealed class RunningScript
     public IScriptHostContext Context { get; }
     public ScriptSettingStore Settings { get; }
 
+    /// <summary>回放会话启动的脚本为 true（事件来自回放而非实时总线）。</summary>
+    public bool IsReplaySession { get; }
+
     internal RunningScript(
         ScriptDescriptor descriptor,
         MasterPlayerScript script,
         IScriptHostContext context,
-        ScriptSettingStore settings)
+        ScriptSettingStore settings,
+        bool isReplaySession = false)
     {
         Descriptor = descriptor;
         Script = script;
         Context = context;
         Settings = settings;
+        IsReplaySession = isReplaySession;
     }
 }

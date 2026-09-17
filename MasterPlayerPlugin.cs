@@ -20,9 +20,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Dodge.DodgeController? _dodge;
     private Mechanics.MechanicDispatcher? _mechanics;
     private Scripting.ScriptManager? _scripts;
+    private Replay.ReplayRecorder? _replayRecorder;
+    private Replay.ReplayController? _replayController;
     private Radar.RadarOverlayWindow? _radarOverlay;
     private Follow.FollowController? _follow;
     private Windows.MainWindow? _mainWindow;
+    private Windows.ReplayWindow? _replayWindow;
     private SafeZoneActivation? _safeZoneActivation;
     internal Radar.AoeVisibilityRegistry? AoeVisibility { get; private set; }
     private bool _disposed;
@@ -32,6 +35,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     internal Mechanics.MechanicDispatcher? Mechanics => _mechanics;
 
     internal Scripting.ScriptManager? Scripts => _scripts;
+
+    internal Replay.ReplayRecorder? Recorder => _replayRecorder;
+
+    internal Replay.ReplayController? Replay => _replayController;
+
+    internal Windows.ReplayWindow? ReplayWindow => _replayWindow;
 
     public void Initialize()
     {
@@ -47,6 +56,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _mechanics = new Mechanics.MechanicDispatcher(this);
         _scripts = new Scripting.ScriptManager();
         _scripts.RefreshCatalog();
+        _replayRecorder = new Replay.ReplayRecorder();
+        _replayController = new Replay.ReplayController(_scripts, _replayRecorder);
+        _replayWindow = new Windows.ReplayWindow();
         _radarOverlay = new Radar.RadarOverlayWindow();
         _follow = new Follow.FollowController();
         _mainWindow = new Windows.MainWindow();
@@ -54,9 +66,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw;
+        Svc.PluginInterface.UiBuilder.Draw += _replayWindow.Draw;
         Svc.Commands.AddHandler(PanelCommand, new CommandInfo(OnPanelCommand)
         {
-            HelpMessage = "打开/关闭 MasterPlayer 设置面板",
+            HelpMessage = "打开/关闭 MasterPlayer 设置面板；/prmp rec 开始或停止机制事件录制；/prmp replay 开关录制回放窗口",
         });
 
         Svc.Log.Info("[MasterPlayer] Initialized");
@@ -71,17 +84,39 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     }
 
     private void OnPanelCommand(string command, string args)
-        => _mainWindow?.Toggle();
+    {
+        var arg = args.Trim();
+        if (arg.Equals("rec", StringComparison.OrdinalIgnoreCase) || arg.Equals("record", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_replayRecorder == null)
+                return;
+            if (_replayRecorder.IsRecording)
+                _replayRecorder.StopRecording();
+            else
+                _replayRecorder.StartRecording();
+            return;
+        }
+
+        if (arg.Equals("replay", StringComparison.OrdinalIgnoreCase))
+        {
+            _replayWindow?.Toggle();
+            return;
+        }
+
+        _mainWindow?.Toggle();
+    }
 
     private void OnFrameworkUpdate(IFramework framework)
     {
         var settings = MasterPlayerSettings.Instance;
+        var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge);
         AoeVisibility?.Update(PromeRotation.Plugin.Instance.SafeZoneRebornManager);
         _radar?.Update();
         _dodge?.Update();
         _mechanics?.Update();
-        _scripts?.Update((float)framework.UpdateDelta.TotalSeconds);
+        _replayController?.Update(deltaTime);
+        _scripts?.Update(deltaTime);
         _follow?.Update();
     }
 
@@ -96,6 +131,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             Svc.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
         if (_radarOverlay != null)
             Svc.PluginInterface.UiBuilder.Draw -= _radarOverlay.Draw;
+        if (_replayWindow != null)
+            Svc.PluginInterface.UiBuilder.Draw -= _replayWindow.Draw;
 
         try
         {
@@ -112,9 +149,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             }
         }
 
+        SafeDispose(ref _replayWindow);
         SafeDispose(ref _mainWindow);
         SafeDispose(ref _follow);
         SafeDispose(ref _radarOverlay);
+        SafeDispose(ref _replayController);
+        SafeDispose(ref _replayRecorder);
         SafeDispose(ref _scripts);
         SafeDispose(ref _mechanics);
         SafeDispose(ref _dodge);

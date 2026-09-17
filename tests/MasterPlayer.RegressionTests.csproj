@@ -20,6 +20,11 @@
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />
     <Compile Include="..\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
     <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
+    <Compile Include="..\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
+    <Compile Include="..\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
+    <Compile Include="..\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
+    <Compile Include="..\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
+    <Compile Include="..\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
     <Compile Include="..\Scripts\CrucibleHigh1.cs" Link="CrucibleHigh1.cs" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll" />

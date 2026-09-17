@@ -9,6 +9,7 @@ namespace MasterPlayer.Scripting;
 /// 脚本运行时上下文实现：事件订阅（按 owner 归属）、SafeZone / Move / Draw 三门面、设置、日志。
 /// 一个脚本实例持有一个上下文；停止脚本时统一清理事件订阅与三门面资源。
 /// 构造时把自身绑定到脚本会话 ownerId，使 PromeEventBus 订阅与 UnsubscribeAll 落在同一 owner 下。
+/// 事件订阅经 IScriptEventRouter 落地：默认实时路由（PromeEventBus），回放会话注入回放路由。
 /// </summary>
 internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposable
 {
@@ -19,14 +20,16 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     private readonly ScriptSafeZoneApi _safeZone;
     private readonly ScriptMoveApi _move;
     private readonly ScriptDrawApi _draw;
+    private readonly IScriptEventRouter _router;
     private readonly HashSet<uint> _suppressedDodgeActions = [];
     private bool _disposed;
 
-    internal MasterPlayerScriptContext(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings)
+    internal MasterPlayerScriptContext(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings, IScriptEventRouter? router = null)
     {
         _manager = manager;
         _metadata = metadata;
         _settings = settings;
+        _router = router ?? LiveScriptEventRouter.Instance;
         _ownerId = PromeOwnerRegistry.CreateScriptSessionOwnerId();
         PromeOwnerRegistry.Bind(this, _ownerId);
         _safeZone = new ScriptSafeZoneApi(metadata.Id, metadata.Name);
@@ -38,6 +41,8 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     public ScriptMoveApi Move => _move;
     public ScriptDrawApi Draw => _draw;
     public ScriptSettingStore Settings => _settings;
+
+    internal bool IsReplay => !ReferenceEquals(_router, LiveScriptEventRouter.Instance);
 
     public bool IsMechanismEnabled(string mechanism)
         => _manager.IsMechanismEnabled(_metadata.Id, mechanism);
@@ -63,116 +68,116 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         Svc.Log.Error($"[MasterPlayer:{_metadata.Name}] {message}");
     }
 
-    // ── 事件订阅（PromeEventBus 按 owner 归属，停止统一清理）──
+    // ── 事件订阅（经 IScriptEventRouter；实时= PromeEventBus 按 owner 归属，停止统一清理）──
 
     public IDisposable Subscribe(string eventName, Delegate handler)
-        => PromeEventBus.Subscribe(this, eventName, handler);
+        => _router.Subscribe(this, eventName, handler);
 
     public IDisposable OnBattleStarted(Action handler)
-        => PromeEventBus.OnBattleStarted(this, handler);
+        => _router.Subscribe(this, "BattleStarted", handler);
 
     public IDisposable OnBattleEnded(Action handler)
-        => PromeEventBus.OnBattleEnded(this, handler);
+        => _router.Subscribe(this, "BattleEnded", handler);
 
     public IDisposable OnPlayerDied(Action handler)
-        => PromeEventBus.OnPlayerDied(this, handler);
+        => _router.Subscribe(this, "PlayerDied", handler);
 
     public IDisposable OnPlayerRevived(Action handler)
-        => PromeEventBus.OnPlayerRevived(this, handler);
+        => _router.Subscribe(this, "PlayerRevived", handler);
 
     public IDisposable OnPlayerMoveStateChanged(Action<bool> handler)
-        => PromeEventBus.OnPlayerMoveStateChanged(this, handler);
+        => _router.Subscribe(this, "PlayerMoveStateChanged", handler);
 
     public IDisposable OnWeatherChanged(Action<uint> handler)
-        => PromeEventBus.OnWeatherChanged(this, handler);
+        => _router.Subscribe(this, "WeatherChanged", handler);
 
     public IDisposable OnTerritoryChanged(Action<ushort> handler)
-        => PromeEventBus.OnTerritoryChanged(this, handler);
+        => _router.Subscribe(this, "TerritoryChanged", handler);
 
     public IDisposable OnCountdownStarted(Action handler)
-        => PromeEventBus.OnCountdownStarted(this, handler);
+        => _router.Subscribe(this, "CountdownStarted", handler);
 
     public IDisposable OnSystemLog(Action<uint> handler)
-        => PromeEventBus.OnSystemLog(this, handler);
+        => _router.Subscribe(this, "SystemLog", handler);
 
     public IDisposable OnBattleLog(Action<uint> handler)
-        => PromeEventBus.OnBattleLog(this, handler);
+        => _router.Subscribe(this, "BattleLog", handler);
 
     public IDisposable OnShowMessage(Action<uint> handler)
-        => PromeEventBus.OnShowMessage(this, handler);
+        => _router.Subscribe(this, "ShowMessage", handler);
 
     public IDisposable OnChatLog(Action<string, string, string> handler)
-        => PromeEventBus.OnChatLog(this, handler);
+        => _router.Subscribe(this, "ChatLog", handler);
 
     public IDisposable OnLogEvent(Action<LogSystemEvent> handler)
-        => PromeEventBus.OnLogEvent(this, handler);
+        => _router.Subscribe(this, "LogEvent", handler, typeof(LogSystemEvent));
 
     public IDisposable OnLogEvent<TEvent>(Action<TEvent> handler)
         where TEvent : LogSystemEvent
-        => PromeEventBus.OnLogEvent(this, handler);
+        => _router.Subscribe(this, "LogEvent", handler, typeof(TEvent));
 
     public IDisposable OnStartCast(Action<LogSystemCastStartEvent> handler)
-        => PromeEventBus.OnStartCast(this, handler);
+        => _router.Subscribe(this, "StartCast", handler, typeof(LogSystemCastStartEvent));
 
     public IDisposable OnCancelCast(Action<LogSystemCancelCastEvent> handler)
-        => PromeEventBus.OnCancelCast(this, handler);
+        => _router.Subscribe(this, "CancelCast", handler, typeof(LogSystemCancelCastEvent));
 
     public IDisposable OnInterruptCast(Action<LogSystemInterruptCastEvent> handler)
-        => PromeEventBus.OnInterruptCast(this, handler);
+        => _router.Subscribe(this, "InterruptCast", handler, typeof(LogSystemInterruptCastEvent));
 
     public IDisposable OnActionEffect(Action<LogSystemActionEffectEvent> handler)
-        => PromeEventBus.OnActionEffect(this, handler);
+        => _router.Subscribe(this, "ActionEffect", handler, typeof(LogSystemActionEffectEvent));
 
     public IDisposable OnCreateObject(Action<LogSystemObjectCreateEvent> handler)
-        => PromeEventBus.OnCreateObject(this, handler);
+        => _router.Subscribe(this, "CreateObject", handler, typeof(LogSystemObjectCreateEvent));
 
     public IDisposable OnNpcYell(Action<LogSystemNpcYellEvent> handler)
-        => PromeEventBus.OnNpcYell(this, handler);
+        => _router.Subscribe(this, "NpcYell", handler, typeof(LogSystemNpcYellEvent));
 
     public IDisposable OnMapEffect(Action<LogSystemMapEffectEvent> handler)
-        => PromeEventBus.OnMapEffect(this, handler);
+        => _router.Subscribe(this, "MapEffect", handler, typeof(LogSystemMapEffectEvent));
 
     public IDisposable OnStatusAdd(Action<LogSystemStatusAddEvent> handler)
-        => PromeEventBus.OnStatusAdd(this, handler);
+        => _router.Subscribe(this, "StatusAdd", handler, typeof(LogSystemStatusAddEvent));
 
     public IDisposable OnStatusRemove(Action<LogSystemStatusRemoveEvent> handler)
-        => PromeEventBus.OnStatusRemove(this, handler);
+        => _router.Subscribe(this, "StatusRemove", handler, typeof(LogSystemStatusRemoveEvent));
 
     public IDisposable OnTargetIcon(Action<LogSystemTargetIconEvent> handler)
-        => PromeEventBus.OnTargetIcon(this, handler);
+        => _router.Subscribe(this, "TargetIcon", handler, typeof(LogSystemTargetIconEvent));
 
     public IDisposable OnTether(Action<LogSystemTetherEvent> handler)
-        => PromeEventBus.OnTether(this, handler);
+        => _router.Subscribe(this, "Tether", handler, typeof(LogSystemTetherEvent));
 
     public IDisposable OnTetherCancel(Action<LogSystemTetherCancelEvent> handler)
-        => PromeEventBus.OnTetherCancel(this, handler);
+        => _router.Subscribe(this, "TetherCancel", handler, typeof(LogSystemTetherCancelEvent));
 
     public IDisposable OnEObjAnimation(Action<LogSystemEObjAnimationEvent> handler)
-        => PromeEventBus.OnEObjAnimation(this, handler);
+        => _router.Subscribe(this, "EObjAnimation", handler, typeof(LogSystemEObjAnimationEvent));
 
     public IDisposable OnEObjSetState(Action<LogSystemEObjSetStateEvent> handler)
-        => PromeEventBus.OnEObjSetState(this, handler);
+        => _router.Subscribe(this, "EObjSetState", handler, typeof(LogSystemEObjSetStateEvent));
 
     public IDisposable OnPlayActionTimeline(Action<LogSystemPlayActionTimelineEvent> handler)
-        => PromeEventBus.OnPlayActionTimeline(this, handler);
+        => _router.Subscribe(this, "PlayActionTimeline", handler, typeof(LogSystemPlayActionTimelineEvent));
 
     public IDisposable OnTargetVfx(Action<LogSystemTargetVfxEvent> handler)
-        => PromeEventBus.OnTargetVfx(this, handler);
+        => _router.Subscribe(this, "TargetVfx", handler, typeof(LogSystemTargetVfxEvent));
 
     public IDisposable OnSetObjPos(Action<LogSystemSetObjPosEvent> handler)
-        => PromeEventBus.OnSetObjPos(this, handler);
+        => _router.Subscribe(this, "SetObjPos", handler, typeof(LogSystemSetObjPosEvent));
 
     public IDisposable OnMarker(Action<LogSystemMarkerEvent> handler)
-        => PromeEventBus.OnMarker(this, handler);
+        => _router.Subscribe(this, "Marker", handler, typeof(LogSystemMarkerEvent));
 
     public IDisposable OnDirectorUpdate(Action<LogSystemDirectorUpdateEvent> handler)
-        => PromeEventBus.OnDirectorUpdate(this, handler);
+        => _router.Subscribe(this, "DirectorUpdate", handler, typeof(LogSystemDirectorUpdateEvent));
 
     public IDisposable OnMorelogCompat(Action<LogSystemMorelogCompatEvent> handler)
-        => PromeEventBus.OnMorelogCompat(this, handler);
+        => _router.Subscribe(this, "MorelogCompat", handler, typeof(LogSystemMorelogCompatEvent));
 
     public IDisposable OnPluginCatalogRefreshed(Action<IReadOnlyList<PluginManifest>> handler)
-        => PromeEventBus.OnPluginCatalogRefreshed(this, handler);
+        => _router.Subscribe(this, "CatalogRefreshed", handler);
 
     public void Dispose()
     {
@@ -186,6 +191,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
             PromeEventBus.UnsubscribeAll(_ownerId);
             PromeOwnerRegistry.Unbind(this);
         });
+        TryCleanup("释放事件路由", () => _router.Dispose());
         TryCleanup("清理安全区", () => _safeZone.Cleanup());
         TryCleanup("停止移动", () => _move.Cleanup());
         TryCleanup("清理绘制", () => _draw.Cleanup());

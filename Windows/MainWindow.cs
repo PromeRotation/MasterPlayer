@@ -77,6 +77,12 @@ public sealed class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
+            if (ImGui.BeginTabItem("录制回放"))
+            {
+                DrawReplayTab();
+                ImGui.EndTabItem();
+            }
+
             if (ImGui.BeginTabItem("诊断"))
             {
                 DrawDiagnosticsTab();
@@ -381,6 +387,36 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("机制处理器");
         DrawMechanicHandlers();
+    }
+
+    private static void DrawReplayTab()
+    {
+        var recorder = MasterPlayerPlugin.Instance?.Recorder;
+        var replay = MasterPlayerPlugin.Instance?.Replay;
+        if (recorder == null || replay == null)
+        {
+            ImGui.TextDisabled("（录制回放未初始化）");
+            return;
+        }
+
+        if (recorder.IsRecording)
+            ImGui.TextColored(OnColor, $"● 录制中 {(int)recorder.Elapsed.TotalMinutes:D2}:{recorder.Elapsed.Seconds:D2}（{recorder.EventCount} 事件）");
+        else
+            HintInline(recorder.StatusMessage);
+
+        if (replay.SessionActive)
+            ImGui.TextColored(OnColor, $"● 回放中：{replay.ReplayScriptCount} 个脚本，{replay.Clock:F1} s");
+
+        if (ImGui.Button("打开录制回放窗口"))
+            MasterPlayerPlugin.Instance?.ReplayWindow?.Toggle();
+        Hint("独立窗口提供：录制控制、事件时间轴（缩放/悬停/点击跳转）、多日志对比、上雷达下时间轴的回放视图。也可聊天指令 /prmp replay 开关。");
+
+        var autoRecord = MasterPlayerSettings.Instance.AutoRecordOnBattleStart;
+        if (ImGui.Checkbox("战斗开始时自动录制（战斗结束自动停止）", ref autoRecord))
+        {
+            MasterPlayerSettings.Instance.AutoRecordOnBattleStart = autoRecord;
+            MasterPlayerSettings.Instance.Save();
+        }
     }
 
     private static void DrawHostStatus(MasterPlayerSettings settings)

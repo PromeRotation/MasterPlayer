@@ -51,6 +51,9 @@ public sealed class MasterPlayerSettings
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();
 
+    // 录制回放
+    public bool AutoRecordOnBattleStart = false;    // 战斗开始自动录制、战斗结束自动停止
+
     private static MasterPlayerSettings Load()
     {
         try
