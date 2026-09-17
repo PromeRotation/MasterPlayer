@@ -39,7 +39,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
         var settings = MasterPlayerSettings.Instance;
         AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility);
-        _safeZoneActivation = new SafeZoneActivation(PromeRotation.Plugin.Instance.SafeZoneSetting);
+        _safeZoneActivation = new SafeZoneActivation(PromeRotation.Plugin.Instance.SafeZoneRebornSetting);
         _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge);
 
         _radar = new Radar.RadarRenderer();
@@ -77,7 +77,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     {
         var settings = MasterPlayerSettings.Instance;
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge);
-        AoeVisibility?.Update(PromeRotation.Plugin.Instance.SafeZoneManager);
+        AoeVisibility?.Update(PromeRotation.Plugin.Instance.SafeZoneRebornManager);
         _radar?.Update();
         _dodge?.Update();
         _mechanics?.Update();

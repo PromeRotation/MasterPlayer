@@ -91,7 +91,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 - `OnFrameworkUpdate(IFramework framework)`：先由 `SafeZoneActivation.Update` 应用功能开关变化，再执行 `_radar.Update(); _dodge.Update(); _mechanics.Update(); _scripts.Update(deltaTime); _follow.Update();`（deltaTime 秒，取自 `IFramework.UpdateDelta.TotalSeconds`）。**EnableScripts 总开关门控在 `ScriptManager.Update` 内部**（插件无条件调用；关闭时 ScriptManager 先 `StopAll` 再提前返回）。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
 - `Dispose()`：退订上述三个事件（Framework.Update、UiBuilder.Draw 两处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 八个组件，顺序 `_mainWindow` → `_follow` → `_radarOverlay` → `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → `Instance = null`。
-- `SafeZoneActivation`：雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用宿主 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的开关，保留本体原先已启用的功能；运行中手动关闭宿主开关不会被每帧覆写，面板显示原因。
+- `SafeZoneActivation`：注入宿主 `SafeZoneRebornSetting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`（关闭时快照会隐藏危险区）；仅智能躲避请求其 `EnableAutoMovement`。功能关闭/卸载时只撤销本插件从 false 开启的 Reborn 开关；运行中手动关闭不会被每帧覆写，可在诊断页恢复。功能开关联动不修改旧版开关。
 
 **Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
 
@@ -123,7 +123,7 @@ public sealed class MasterPlayerSettings
     // 战斗中跟随（FollowController）
     public bool EnableFollow = false;
     public int FollowSlot = 0;                  // 0=不指定小队槽位；1~7=PartyHelper.GetParty() 下标
-    public bool FollowTargetWhenNoSlot = true;  // 无有效槽位时回退跟随当前目标（仅 PC）
+    public bool FollowTargetWhenNoSlot = true;  // 无有效槽位时回退跟随当前目标（玩家或战斗 NPC）
     public float FollowDistance = 1.5f;
     public bool FollowDuringCombat = true;
     public bool FollowOutOfCombat = false;
@@ -174,8 +174,9 @@ public sealed class FollowController : IDisposable
 }
 ```
 
-- 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或槽位无效时按 `FollowTargetWhenNoSlot` 回退当前目标（仅 `ObjectKind.Pc`）——**`FollowTargetWhenNoSlot = false` 时不跟随任何目标（槽位 0 同样生效）**。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
-- 移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；`SafeZoneMovementStatus.HasControl`（安全区自动移动接管中）时让位——不发跟随指令，也不 Stop 对方路线。
+- 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或指定成员不可用时按 `FollowTargetWhenNoSlot` 回退当前目标（存活且可选中的 `ObjectKind.Pc` / `ObjectKind.BattleNpc`）；槽位超出 0~7 则不跟随。**`FollowTargetWhenNoSlot = false` 时禁止当前目标回退（槽位 0 同样生效），有效小队槽位仍可跟随**。本地玩家不存在或已死亡时停止跟随。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
+- 跟随距离：战斗 NPC 使用 XZ 平面上双方目标圈边缘间距（到达半径为设置距离加双方 `HitboxRadius`），玩家使用中心间距；判距与 GreenMove 容差一致，不额外加 0.2 码停止余量，设置距离最低按 0.2 码执行。路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、跟随距离或目标圈大小变化时更新，不每帧重置读条等待。
+- 移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；旧版 `SafeZoneMovementStatus.HasControl` 或 `SafeZoneRebornMovementStatus.HasControl` 为 true 时让位——不发跟随指令，也不 Stop 对方路线；关闭或卸载跟随时同样检查控制权。
 
 **Dodge.DodgeController**（`Dodge\DodgeController.cs`）
 
@@ -191,6 +192,9 @@ public sealed class DodgeController : IDisposable
 - 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；雷达悬浮窗、真实世界绘制、智能躲避任一开启即识别读条，避免只开启绘制时没有危险区数据。注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
 - **施法者敌我过滤**（对齐 BMR `AIHintsBuilder.OnCastStarted`）：只响应 `ObjectKind.BattleNpc` 且游戏原生 `ActionManager.ClassifyTarget(Character*) == TargetCategory.Enemy` 的读条——玩家/宠物/坐骑/事件 NPC/友方战斗 NPC（剧情、Trust 等同盟单位）一律跳过；对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。命中时把施法者 `HitboxRadius` 传给形状推断。
 - **脚本压制去重**：`ScriptManager.IsGenericDodgeSuppressed(actionId)` 为 true（运行中脚本已用 `SuppressGenericDodge` 声明接管该技能）时跳过，避免通用躲避与脚本重复注册同一危险区。
+- **错峰判定转场**：由 PR 本体 `PromeRotation.Spatial.SafeZoneReborn.Solver.SafeZoneSolver` 的安全时间区间搜索处理，允许先在后判定区提前站位、等待，再进入已结束判定的区域；只向 GreenMove 下发首次等待前的路段，周期重解接续。旧版 `Spatial/SafeZone/` 实现保持不变。依赖重新编译并加载的本体 DLL，不能只热重载 MasterPlayer；回归入口为 `dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。
+
+高一 B31 四连放毒与预备点使用 R0.2、Center 目标圈；依赖 PR Reborn 小目标网格细化及按目标内部余量收紧移动容差。更新必须同时重编并加载 PR 本体与 MasterPlayer，仅刷新脚本无法获得 0.2y 到点精度。
 
 **Dodge.DangerMarginInflator**（`Dodge\DangerMarginInflator.cs`）
 
@@ -421,12 +425,16 @@ public sealed class PromePluginAttribute : Attribute
 
 ### 5.2 宿主访问：`PromeRotation.Plugin.Instance`（`Plugin.cs`）
 
+MasterPlayer 的区域注册、脚本边界、快照、绘制与开关联动统一使用以下 Reborn 入口。旧版 `SafeZoneRegistry` / `SafeZoneManager` / `SafeZoneSetting` / `SafeZoneMovementStatus` 继续供旧脚本使用；两套各自持有区域、边界、配置与移动状态。注册与几何类型复用，但句柄必须交回原注册表，不能跨两套系统混用。Reborn 解算类型位于 `PromeRotation.Spatial.SafeZoneReborn.Solver`，移动状态接口位于 `PromeRotation.Spatial.SafeZoneReborn`。
+
+两套共用 GreenMove；宿主按旧版 → Reborn → GreenMove 的顺序更新。旧版解算和自动移动都开启，或旧版仍持有控制权时，Reborn 让位且不停止旧版路线；MasterPlayer 面板显示原因，只有用户点击「关闭旧版自动移动」按钮时才关闭旧版自动移动，不自动修改旧版开关。
+
 | 属性 | 类型 | 说明与关键成员 |
 |---|---|---|
-| `SafeZoneRegistry` | `SafeZoneRegistry` | 安全区注册便利层（相对秒数自动转绝对 UTC；**所有方法仅主线程**）。危险区：`AddPersistentDanger` / `AddTimedDanger` / `AddDelayedHit`（单次命中，默认 `DefaultHitDurationSeconds = 0.6f`）/ `AddDelayedDanger` / `AddDangerSequence`；目标区：`AddPersistentSafeArea` / `AddTimedSafeArea` / `AddDelayedSafeArea` / `AddSafeAreaSequence`（含 `priority`、`PositionPreference`）；障碍/边界：`AddObstacle` / `SetArenaBoundary` / `ClearArenaBoundary`；清理：`Remove(SafeZoneAreaHandle)` / `ClearDangerAreas` / `ClearGoalAreas` / `ClearObstacles` / `ClearAll` |
-| `SafeZoneManager` | `SafeZoneManager` | 区域注册中心与快照发布者（底层，Registry 的委托对象）。`AddDangerArea` / `AddGoalArea` / `AddObstacle` / `UpdateArea` / `RemoveArea` / `ContainsArea` / `ClearAllAreas`；**`BuildSnapshot(DateTime utcNow)`** 构建解算快照（主线程） |
-| `SafeZoneSetting` | `SafeZoneSetting` | 运行时配置（仅内存无持久化）：`EnableSafeZone`（解算总开关）、**`EnableAutoMovement`（允许安全区系统接管自动移动——本插件发移动指令前必须看它，见铁律 3）**、`OnlySolveInRegisteredRegion`、`DebugArenaCenter` / `DebugArenaRadius` |
-| `SafeZoneMovementStatus` | `ISafeZoneMovementStatus` | 自动移动只读状态（画配置/诊断 UI 用）：`LatestSolution`（`SafeZoneSolution?`）、`HasControl`、`PhaseText`、`DispatchCount`、`LastDispatchUtc`、`IsAsyncSolveRunning`、`AsyncSolveStartedCount/AcceptedCount/CancelledCount/DiscardedCount` |
+| `SafeZoneRebornRegistry` | `SafeZoneRegistry` | Reborn 安全区注册便利层（相对秒数自动转绝对 UTC；**所有方法仅主线程**）。危险区：`AddPersistentDanger` / `AddTimedDanger` / `AddDelayedHit`（单次命中，默认 `DefaultHitDurationSeconds = 0.6f`）/ `AddDelayedDanger` / `AddDangerSequence`；目标区：`AddPersistentSafeArea` / `AddTimedSafeArea` / `AddDelayedSafeArea` / `AddSafeAreaSequence`（含 `priority`、`PositionPreference`）；障碍/边界：`AddObstacle` / `SetArenaBoundary` / `ClearArenaBoundary`；清理：`Remove(SafeZoneAreaHandle)` / `ClearDangerAreas` / `ClearGoalAreas` / `ClearObstacles` / `ClearAll` |
+| `SafeZoneRebornManager` | `SafeZoneManager` | Reborn 区域注册中心与快照发布者（底层，Registry 的委托对象）。`AddDangerArea` / `AddGoalArea` / `AddObstacle` / `UpdateArea` / `RemoveArea` / `ContainsArea` / `ClearAllAreas`；**`BuildSnapshot(DateTime utcNow)`** 构建解算快照（主线程） |
+| `SafeZoneRebornSetting` | `SafeZoneSetting` | Reborn 运行时配置（仅内存无持久化）：`EnableSafeZone`（解算总开关）、**`EnableAutoMovement`（允许 Reborn 接管自动移动，旧版优先）**、`OnlySolveInRegisteredRegion`、`DebugArenaCenter` / `DebugArenaRadius` |
+| `SafeZoneRebornMovementStatus` | `ISafeZoneRebornMovementStatus` | Reborn 自动移动只读状态（画配置/诊断 UI 用）：`LatestSolution`（Reborn `SafeZoneSolution?`）、`HasControl`、`PhaseText`、`DispatchCount`、`LastDispatchUtc`、`IsAsyncSolveRunning`、`AsyncSolveStartedCount/AcceptedCount/CancelledCount/DiscardedCount` |
 | `GreenMoveSystem` | `IGreenMoveSystem` | 移动执行。`IsRunning`、`GetStatus()`、**`MoveTo(GreenMovePoint)` / `MoveTo(IReadOnlyList<GreenMovePoint>)`（替换当前路线，last-write-wins）**、`Append(...)`（追加到路线尾）、`Stop()`、`ClearQueue()`（清空后续点保留当前点）、`SkipCurrent()` |
 | `DrawManager` | `DrawManager` | 世界绘制注册入口（主线程）。`Add(...)` / `AddBound(...)`（跟随实体）/ `AddTether(...)` 多重重载 → 返回 `DrawHandle`；`Remove(DrawHandle)` / `Remove(string id)`；**`RemoveByRegex(string pattern)` → int**；`Clear()` |
 
@@ -515,7 +523,7 @@ public readonly record struct GreenMovePoint(
 - **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时，以边界中心为原点、按边界轮廓顶点的**外接圆半径**（最远顶点距离 + 3 码 padding）定视野半径——完整显示整个场地，非正方形场地的角落不被圆盘裁掉；模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定 25 码视野。
 - **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
 - **圆盘裁剪（`Radar\RadarCanvas.cs`）**：所有图形内容裁剪到屏幕圆盘内——填充多边形经 Sutherland–Hodgman 凸域裁剪（64 边形逼近圆盘）后再三角化（PR `PolygonTriangulator`，月环按四边形条带逐段裁剪），线段经凸域参数裁剪（Cyrus–Beck）。圆盘外圈辉光、深色半透明底（`RadarBackgroundOpacity` 控制，0 = 无底盘）、距离参考环（按视野自动选 2/5/10/20/40 码步长）、方位刻度与罗盘字母（FFXIV 世界方位：X 西→东、Z 北→南，北 = −Z）。
-- **数据源**：`SafeZoneManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `SafeZoneMovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
+- **数据源**：`SafeZoneRebornManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `SafeZoneRebornMovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
 - **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 缩放）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整面圆盘即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
 
@@ -530,7 +538,7 @@ public readonly record struct GreenMovePoint(
 3. **移动指令纪律**：`GreenMoveSystem.MoveTo` 是 **last-write-wins**（替换当前路线），**无优先级**概念——后发的路线直接顶掉先发的，谁的都可能被顶。因此：
    - 不要每帧重发相同路线（每发一次都重置路线状态与读条看门狗）；只在路线**变化**时 `MoveTo`，到达/失效时 `Stop()`；
    - **只有自己接管过移动才调用 `Stop()`**，绝不停掉本体或其他插件发起的移动；
-   - 本体 `SafeZoneSetting.EnableAutoMovement == true`（安全区自动移动已接管）时本插件**让位**，不要与之抢移动权；可用 `SafeZoneMovementStatus.HasControl` / `PhaseText` 观测。
+   - 脚本手动移动在旧版 `SafeZoneSetting.EnableAutoMovement` 或 Reborn `SafeZoneRebornSetting.EnableAutoMovement` 开启，或任一安全区系统 `HasControl` 时让位；跟随在任一安全区系统持有控制权时让位。`Stop` / `ClearQueue` / `SkipCurrent` 也不能修改安全区接管后的路线。
 4. **绘制 id 统一 `MasterPlayer_` 前缀**：所有 `DrawManager.Add*` 的 id 必须以 `MasterPlayer_` 开头。Dispose 用 `RemoveByRegex("^MasterPlayer_")` 一键清干净，也避免与其他插件/脚本的绘制 id 冲突。
 5. **设置持久化走自己的 `MasterPlayer.json`**：不用 Dalamud 的 `GetPluginConfig`（那是 PR 宿主自己的配置通道，卫星插件调用会拿到宿主的配置）。本插件设置一律经 `MasterPlayerSettings`（`System.Text.Json`）读写 `ConfigDirectory\MasterPlayer.json`。
 6. **脚本回调与 OnUpdate 均在主线程执行**（PromeEventBus 事件由主线程派发），脚本内可直接调 SafeZone / Move / Draw 三门面，无需自行入队；脚本不得再订阅 `CombatEventManager` 裸事件（那是 hook/网络线程，绕过了 owner 管理）。

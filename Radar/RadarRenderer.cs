@@ -93,7 +93,7 @@ public sealed class RadarRenderer : IDisposable
     private void RenderFrame(PromeRotation.Plugin plugin)
     {
         var now = DateTime.UtcNow;
-        var snapshot = plugin.SafeZoneManager.BuildSnapshot(now);
+        var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(now);
         var appearance = MasterPlayerSettings.Instance.WorldAoe;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var draw = plugin.DrawManager;
@@ -159,7 +159,7 @@ public sealed class RadarRenderer : IDisposable
 
     private void DrawPath(PromeRotation.Plugin plugin, HashSet<string> frameIds)
     {
-        var path = plugin.SafeZoneMovementStatus.LatestSolution?.ExecutablePath;
+        var path = plugin.SafeZoneRebornMovementStatus.LatestSolution?.ExecutablePath;
         if (path is null || path.Count == 0)
         {
             return;

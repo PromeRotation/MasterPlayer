@@ -11,10 +11,13 @@
   <ItemGroup>
     <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
+    <Compile Include="..\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
+    <Compile Include="..\Follow\FollowController.cs" Link="FollowController.cs" />
     <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />
+    <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
     <Compile Include="..\Scripts\CrucibleHigh1.cs" Link="CrucibleHigh1.cs" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll" />

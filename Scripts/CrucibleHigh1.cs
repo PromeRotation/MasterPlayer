@@ -212,6 +212,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
     private const float BaitRouteRadius = 18.3f;
     private const float BaitRouteHalfWidth = 7f;
     private const float BaitRouteDepth = 7f;
+    private const float BaitPointRadius = 0.2f;
     private static readonly float BaitRouteOuterOffset = MathF.Sqrt(BaitRouteRadius * BaitRouteRadius - BaitRouteHalfWidth * BaitRouteHalfWidth);
 
     // ════════════════ 场地定义（规格 §2）════════════════
@@ -359,7 +360,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         try { _tracker.Clear(); }
         catch (Exception ex) { LogError($"【斗兽棋高一】读条追踪清理失败：{ex.Message}"); }
         // SetArenaBoundary 是手工直调本体 API（门面不含），必须自行清理
-        try { PromeRotation.Plugin.Instance.SafeZoneRegistry.ClearArenaBoundary(); }
+        try { PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.ClearArenaBoundary(); }
         catch (Exception ex) { LogError($"【斗兽棋高一】场地边界清理失败：{ex.Message}"); }
         _activeGroups.Clear();
         _boundaryOwner = BattleGroup.None;
@@ -503,9 +504,9 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         try
         {
             if (shape is null)
-                PromeRotation.Plugin.Instance.SafeZoneRegistry.ClearArenaBoundary();
+                PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.ClearArenaBoundary();
             else
-                PromeRotation.Plugin.Instance.SafeZoneRegistry.SetArenaBoundary(shape);
+                PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.SetArenaBoundary(shape);
         }
         catch (Exception ex)
         {
@@ -794,7 +795,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         }
     }
 
-    // ════════════════ 基础设施：常驻池监视（规格 §3.2，EObj → 障碍）════════════════
+    // ════════════════ 基础设施：常驻池监视（规格 §3.2，EObj → 持续危险区）════════════════
 
     private sealed class VoidzoneWatcher(CrucibleHigh1Script host, uint dataId, float radius, string drawingGroup, float armDelaySeconds = 0f)
     {
@@ -802,7 +803,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         {
             public DateTime AppearedUtc;
             public SafeZoneAreaHandle Handle;
-            public bool Forced;
             public Vector3 Pos;
         }
 
@@ -815,8 +815,10 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
 
         public void ActivateImmediately(uint entityId)
         {
-            if (_pools.TryGetValue(entityId, out var p))
-                p.Forced = true;
+            if (!_pools.TryGetValue(entityId, out var p) || p.Handle.IsValid)
+                return;
+            using var scope = host.SafeZone.BeginDrawingGroup(drawingGroup);
+            p.Handle = host.SafeZone.AddPersistentDanger(new CircleTemplate(radius), new StaticTransform(p.Pos, 0f));
         }
 
         public void Update(float deltaTime)
@@ -825,7 +827,6 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             if (_accum < 0.3f)
                 return;
             _accum = 0f;
-            using var scope = host.SafeZone.BeginDrawingGroup(drawingGroup);
             var now = DateTime.UtcNow;
             _alive.Clear();
             for (var i = 0; i < Svc.Objects.Length; i++)
@@ -842,8 +843,8 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     p = new PoolState { AppearedUtc = now, Pos = obj.Position };
                     _pools[id] = p;
                 }
-                if (!p.Handle.IsValid && (p.Forced || (now - p.AppearedUtc).TotalSeconds >= armDelaySeconds))
-                    p.Handle = host.SafeZone.AddObstacle(new CircleTemplate(radius), new StaticTransform(p.Pos, 0f));
+                if (!p.Handle.IsValid && (now - p.AppearedUtc).TotalSeconds >= armDelaySeconds)
+                    ActivateImmediately(id);
             }
             _scratch.Clear();
             foreach (var (id, _) in _pools)
@@ -1299,9 +1300,9 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 var handle = H.RegisterDanger(new FanTemplate(50f, Fan90), At(origin, e.SourceRotation + i * step), delay, 0.5f);
                 seq.Cones.Add((handle, now.AddSeconds(delay)));
             }
-            // 首道期间的"贴近"安全区（与锥同源：场心 R11 内横移成本低）
+            // 首道期间的"贴近"安全区：环带 4-11（圆心是五道锥的公共顶点，任何方向都被覆盖，排除圆心）
             seq.CloseArea = H.SafeZone.AddTimedSafeArea(
-                new CircleTemplate(11f), At(origin),
+                new DonutTemplate(4f, 11f), At(origin),
                 e.CastTime + NpcCastPadding + 0.5f + 0.6f);
             _breath = seq;
             H.Hint("b23_breath", "【B23 魔界花】恶臭气五连锥：贴近场心绿圈，随旋转方向横移");
@@ -2602,18 +2603,19 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                 return;
             }
             BuildRoute(_prepareSourceId, _prepareRoute);
-            if (_prepareGuideShown && DistanceXZ(_prepareGuidePos, _prepareRoute[0]) <= 0.5f)
+            if (_prepareGuideShown && _prepareGuidePos == _prepareRoute[0])
                 return;
             ClearPrepareGuide();
             _prepareGuideShown = true;
             _prepareGuidePos = _prepareRoute[0];
             var remain = (float)(_prepareUntilUtc - now).TotalSeconds;
             using var scope = H.SafeZone.BeginDrawingGroup("连线放毒预备");
-            _prepareArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(1.5f), At(_prepareRoute[0]), remain);
-            H.Draw.Add("b31_bait_prepare_p0", new CircleGeometry(_prepareRoute[0], 0.65f), DrawStyle.Safe);
+            _prepareArea = H.SafeZone.AddTimedSafeArea(new CircleTemplate(BaitPointRadius), At(_prepareRoute[0]), remain,
+                preference: PositionPreference.Center);
+            H.Draw.Add("b31_bait_prepare_p0", new CircleGeometry(_prepareRoute[0], BaitPointRadius), DrawStyle.Safe);
             if (Svc.Objects.LocalPlayer is { } player)
                 H.Draw.AddTether("b31_bait_prepare_guide", player.EntityId, _prepareRoute[0], DrawStyle.Safe);
-            H.Hint("b31_bait_prepare", "【B31 怨毒龙】连线放毒预备：提前到 1 号放毒点附近就位");
+            H.Hint("b31_bait_prepare", "【B31 怨毒龙】连线放毒预备：提前进入 1 号放毒点的 0.2y 圈内");
         }
 
         private void ClearPrepareGuide()
@@ -2725,7 +2727,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
                     continue;
                 r.Snapshots.RemoveAll(s => s.TargetId == r.TargetId && DistanceXZ(pos, s.Pos) <= 1f);
                 if (r.Step == 3)
-                    _pools.ActivateImmediately(id); // 第 4 池确认即激活障碍
+                    _pools.ActivateImmediately(id); // 第 4 池确认即激活持续危险区
                 r.Step++;
                 if (r.Step >= 4)
                 {
@@ -2735,7 +2737,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             }
             if (!r.IsLocal || r.GuideStep == r.Step)
                 return;
-            // 当前点引导：R1.5 安全区 + 剩余点圈/连线 + 玩家→当前点
+            // 当前点引导：R0.2 安全区 + 剩余点圈/连线 + 玩家→当前点
             // 切点必须先撤旧安全区，否则旧圈残留到超时（最长约 16.5s），解算会停在旧点
             ClearBaitGuide();
             if (r.Guide.IsValid)
@@ -2743,10 +2745,11 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
             r.GuideStep = r.Step;
             var remain = (float)(r.ExpiresUtc - now).TotalSeconds;
             using var scope = H.SafeZone.BeginDrawingGroup("连线放毒引导");
-            r.Guide = H.SafeZone.AddTimedSafeArea(new CircleTemplate(1.5f), At(r.Route[r.Step]), remain);
+            r.Guide = H.SafeZone.AddTimedSafeArea(new CircleTemplate(BaitPointRadius), At(r.Route[r.Step]), remain,
+                preference: PositionPreference.Center);
             for (var i = r.Step; i < 4; i++)
             {
-                H.Draw.Add($"b31_bait_p{i}", new CircleGeometry(r.Route[i], 0.65f), i == r.Step ? DrawStyle.Safe : DrawStyle.Default);
+                H.Draw.Add($"b31_bait_p{i}", new CircleGeometry(r.Route[i], BaitPointRadius), i == r.Step ? DrawStyle.Safe : DrawStyle.Default);
                 if (i + 1 < 4)
                     H.Draw.AddTether($"b31_bait_l{i}", r.Route[i], r.Route[i + 1], DrawStyle.Default);
             }

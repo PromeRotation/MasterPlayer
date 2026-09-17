@@ -320,6 +320,9 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 });
 
 CrucibleMechanicRegression.Run(Run);
+SafeZoneTemporalRegression.RunPrecision(Run);
+SafeZoneTemporalRegression.Run(Run);
+FollowRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");
 

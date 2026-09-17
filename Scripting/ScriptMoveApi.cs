@@ -8,7 +8,7 @@ namespace MasterPlayer.Scripting;
 /// 内置移动纪律：
 /// - MoveTo / Append / CatmullRomMoveTo 视为本脚本接管移动（_hasControl = true）；
 /// - Stop 只在本脚本接管过时才真正下发，绝不停掉本体或其他插件发起的移动；
-/// - 本体 SafeZoneSetting.EnableAutoMovement == true（安全区自动移动接管中）时让位，
+/// - 旧版或 Reborn 安全区开启自动移动或持有控制权时让位，
 ///   指令不下发，并以 5 秒节流写一条日志提示。
 /// </summary>
 public sealed class ScriptMoveApi
@@ -25,6 +25,8 @@ public sealed class ScriptMoveApi
     }
 
     private static IGreenMoveSystem System => PromeRotation.Plugin.Instance.GreenMoveSystem;
+    private static bool SafeZoneHasControl => PromeRotation.Plugin.Instance.SafeZoneMovementStatus.HasControl ||
+        PromeRotation.Plugin.Instance.SafeZoneRebornMovementStatus.HasControl;
 
     /// <summary>是否正在执行移动。</summary>
     public bool IsRunning => System.IsRunning;
@@ -83,14 +85,23 @@ public sealed class ScriptMoveApi
         if (!_hasControl)
             return;
         _hasControl = false;
-        System.Stop();
+        if (!SafeZoneHasControl)
+            System.Stop();
     }
 
     /// <summary>清空后续点，保留当前点。</summary>
-    public void ClearQueue() => System.ClearQueue();
+    public void ClearQueue()
+    {
+        if (_hasControl && TryTakeControl())
+            System.ClearQueue();
+    }
 
     /// <summary>跳过当前点。</summary>
-    public void SkipCurrent() => System.SkipCurrent();
+    public void SkipCurrent()
+    {
+        if (_hasControl && TryTakeControl())
+            System.SkipCurrent();
+    }
 
     internal void Cleanup()
     {
@@ -108,14 +119,19 @@ public sealed class ScriptMoveApi
 
     private bool TryTakeControl()
     {
-        if (!PromeRotation.Plugin.Instance.SafeZoneSetting.EnableAutoMovement)
+        var plugin = PromeRotation.Plugin.Instance;
+        var safeZoneHasControl = SafeZoneHasControl;
+        if (!plugin.SafeZoneSetting.EnableAutoMovement && !plugin.SafeZoneRebornSetting.EnableAutoMovement &&
+            !safeZoneHasControl)
             return true;
 
+        if (safeZoneHasControl)
+            _hasControl = false;
         var now = DateTime.UtcNow;
         if (now - _lastAutoMovementBlockLogUtc >= AutoMovementBlockLogInterval)
         {
             _lastAutoMovementBlockLogUtc = now;
-            _log?.Invoke("安全区自动移动已接管（EnableAutoMovement），脚本移动指令已让位");
+            _log?.Invoke("安全区自动移动已启用或接管，脚本移动指令已让位");
         }
 
         return false;

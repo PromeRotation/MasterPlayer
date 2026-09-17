@@ -8,7 +8,7 @@
 - **无时间轴/阶段**，纯事件驱动。每组敌人一个 handler 类；组内成员全灭 → 该组收尾清理。
 - BMR 组件 → 本脚本映射：
   - 读条 AoE（ReplayValidatedCastAOEs）→ `OnStartCast` → `SafeZone.AddDelayedHit(template, binding, 读条剩余+0.3s 补正)`，按 (casterId, actionId) 簿记句柄；`OnCancelCast`/`OnInterruptCast` 撤销；`OnActionEffect` 命中结算（时间窗 ±1s 匹配）。
-  - 禁足区 → SafeZone 危险区；安全点/站位圈 → `AddTimedSafeArea`；常驻池/地雷 → `AddObstacle`。
+  - 禁足区 → SafeZone 危险区；安全点/站位圈 → `AddTimedSafeArea`；常驻池 → `AddPersistentDanger`；地雷/实体墙 → `AddObstacle`。
   - CastHints/TetherLine → `Log` 文字提示（节流）+ `Draw.AddTether` 连线。
   - 击杀优先级（BMR AI 仇恨干预）→ 降级为文字提示。
 - 全局余量约定（来自 CrucibleScorpionAI.Avoid）：注册危险区时**半径 +0.35y、生效提前 0.25s**（月环内径 -0.35/外径 +0.35）。
@@ -65,13 +65,13 @@
 | 龙场 | (920, -420) | 实体墙 R19.75（无电网，导航内缩 0.7） | B31 |
 | 树精场 | (120, -420) | 安全 R20（内缩 0.3） | B29（NameID 14618~14622 特判） |
 
-- 场地锁定：组激活时按 NameID 特判（B29/B31）否则按主怪位置就近（60y 内）。锁定后调 `PromeRotation.Plugin.Instance.SafeZoneRegistry.SetArenaBoundary(...)` 设置解算边界（圆=CircleGeometry/矩形=RectangleGeometry，读本体 Geometry 类核对构造），组收尾时 `ClearArenaBoundary`（在脚本 OnStop 也要清）。注意 ScriptSafeZoneApi 门面不含此方法，直接调本体 API 并自行 try/catch。
+- 场地锁定：组激活时按 NameID 特判（B29/B31）否则按主怪位置就近（60y 内）。锁定后调 `PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.SetArenaBoundary(...)` 设置解算边界（圆=CircleGeometry/矩形=RectangleGeometry，读本体 Geometry 类核对构造），组收尾时 `ClearArenaBoundary`（在脚本 OnStop 也要清）。注意 ScriptSafeZoneApi 门面不含此方法，直接调本体 API 并自行 try/catch。
 - 电网：监听对应 index 的 MapEffect，开 → 注册持久危险区（圆场 DonutTemplate(20,23)；方/矩形场=4 条矩形带，可简化为边界外 donut/矩形环），关 → Remove。B27/B31 无电网。
 
 ## 3. 通用基础设施规格（脚本内私有辅助类）
 
 1. **CastAoeTracker**：`OnStartCast` 命中表 → 构造 GeometryTemplate + TransformBinding（落点优先 `e.EffectPosition`，否则跟随施法者）→ `SafeZone.AddDelayedHit(t, b, e.CastTime + NpcCastPadding + extraDelay, hitDuration)`；字典按 `(uint casterId, uint actionId)` 存句柄（同键 ±0.75s 内重复读条只刷新）；`OnCancelCast`/`OnInterruptCast` 撤句柄；`OnActionEffect` 命中即等自然过期（hitDuration 默认 0.6s 会自清），序列类机制另簿记。
-2. **VoidzoneWatcher（常驻池）**：OnUpdate 每 ~0.3s 扫 `Svc.Objects` 找 EObj（按 DataId），存活且 EventState≠7 → 确保 `AddObstacle(CircleTemplate(R), StaticTransform(pos,0))` 已注册（按 EObj EntityId 簿记句柄）；消失 → Remove。
+2. **VoidzoneWatcher（常驻池）**：OnUpdate 每 ~0.3s 扫 `Svc.Objects` 找 EObj（按 DataId），存活且 EventState≠7、达到激活延迟 → 确保 `AddPersistentDanger(CircleTemplate(R), StaticTransform(pos,0))` 已注册（按 EObj EntityId 簿记句柄）；消失/休眠 → Remove。池类使用持续危险区，让已在池内的玩家能逃出、池外玩家绕行；半径通过门面叠加 `DodgeDangerMargin`（默认 +0.5y），不叠加读条专用的 +0.35y。立即激活调用当次就注册，不等下一次轮询。
 3. **序列簿记**：多段机制（钢铁→月环、五连锥、二连半场、六连毒浪、五连龙卷）用小型状态机类：事件推进 + OnUpdate 时间校验 + 每段注册对应危险区（BMR 只把当前段+下一段标危险/轮廓——本脚本直接给每段注册各自时窗的危险区即可，SafeZone 解算器本身是时间感知的，无需"轮廓"概念；绘制交给雷达模块自动完成）。
 4. **提示节流**：文字提示 `Log(...)` 按 key 节流（同 key 10s 内不重复）。
 5. **激活状态机**：枚举字段 `_activeGroups`；OnUpdate 扫描 NameID；新激活 → 锁定场地 + 注册电网监听 + Log；全灭 → 清该组全部句柄（各 handler 自带 Dispose/Cleanup 方法）。
@@ -89,8 +89,8 @@
 
 ### B23 魔界花（圆场 R20）
 - 酸雾 0xBE27：圆 R6 落点。藤鞭穿刺 0xBE2A：RayRect Symmetric(8, 13) 跟随施法者朝向。
-- **恶臭气五连锥**：0xBE1F=步进 -45° / 0xBE20=+45°（4.2s 视觉读条）。读条开始即注册 5 道 `FanTemplate(50, 90°)`：**顶点 = 场地中心**（转向读条挂在 Boss 本体上，实际伤害由场心辅助体发出；BMR 靠 0xBE21/0xBE23 实际读条逐道校正回场心，本移植直接锚定），第 i 道（i=0..4）朝向 = **转向读条（第一个读条）的朝向** + i×步进，activation = 视觉读条剩余+0.3 + 0.5 + i×2.1s，hitDuration 0.5s；0xBE21/0xBE23 实际伤害读条出现时按最近道校正（±1s 窗口，采信实际读包位置/朝向）；0xBE22 忽略。另注册首道期间的"贴近"安全区：与锥同源，`AddTimedSafeArea(CircleTemplate(11), StaticTransform(场心), ...)`。
-- 毒池：EObj 0x1E9F40 → AddObstacle R6。
+- **恶臭气五连锥**：0xBE1F=步进 -45° / 0xBE20=+45°（4.2s 视觉读条）。读条开始即注册 5 道 `FanTemplate(50, 90°)`：**顶点 = 场地中心**（转向读条挂在 Boss 本体上，实际伤害由场心辅助体发出；BMR 靠 0xBE21/0xBE23 实际读条逐道校正回场心，本移植直接锚定），第 i 道（i=0..4）朝向 = **转向读条（第一个读条）的朝向** + i×步进，activation = 视觉读条剩余+0.3 + 0.5 + i×2.1s，hitDuration 0.5s；0xBE21/0xBE23 实际伤害读条出现时按最近道校正（±1s 窗口，采信实际读包位置/朝向）；0xBE22 忽略。另注册首道期间的"贴近"安全区：与锥同源，`AddTimedSafeArea(DonutTemplate(4, 11), StaticTransform(场心), ...)`——圆心是五道锥的公共顶点（任何方向都被覆盖），用环带排除圆心，只引导"贴近但不站圆心"。
+- 毒池：EObj 0x1E9F40 → AddPersistentDanger R6。
 - 地震 0xC646：击退 10y，降级：提示"击退 10y：背对安全区，注意毒池"+画源点。
 - 点名提示 0xBE28（腐汁读条且 TargetId==本地玩家）：Log"锁定点名，注意减伤"。
 
@@ -104,7 +104,7 @@
 - 冰寒折磨 0xBE39/0xBE3B：RayRect Symmetric(15, 100) 跟随施法者朝向（多波共存全注册）。
 - 无终的枯朽 0xBE44：圆 R9 落点。寒冰覆盖 0xBE48：圆 R5 落点。
 - 低温俯冲 0xBE40：RayRect Symmetric(23, 46)（补齐，注释待实测）。
-- 冰池：EObj 0x1E972A → AddObstacle R9。
+- 冰池：EObj 0x1E972A → AddPersistentDanger R9。
 
 ### B26 石像鬼（方场 40×40）
 - 瘴气布防 0xBE4B：圆 R6 落点。荒芜新星 0xBE57：RayRect Symmetric(7, 60)。沥青圈 0xBE59：圆 R6 落点。
@@ -137,15 +137,16 @@
 ### B30 榴弹怪（圆场 R20）
 - 烈火怒骂 0xBE9F：FanTemplate(40, 180°) 施法者朝向。
 - **移动爆弹**：OnUpdate 扫存活火弹（14625/0x4CD4）→ 注册/维持持久危险区 R6 跟随实体（AddPersistentDanger + FollowEntityPosition）；冰弹（14626）R10 同理；命中 0xBE98/0xBE9A → Remove。
-- 毒池：EObj 0x1E8D9B → AddObstacle R6。
+- 毒池：EObj 0x1E8D9B → AddPersistentDanger R6。
 - **熔毁**：效果包 0xBEA0 → 注册 RayRect Symmetric(12, 40)（StaticTransform(caster 位置, 朝向)，delay 0.9s，hit 1s）；0xBEA1 命中自清。
 - 文字：0xBE96"榴弹怪连续大爆炸：优先处理"；0xBE99 冰棘屏障。
 
 ### B31 怨毒龙（龙场 R19.75 实体墙，中心 (920,-420)）
 - 浓烟呛呕 0xBEAC / 蠕动的痰 0xBEB3：圆 R6 落点。低温俯冲 0xBEAE：RayRect Symmetric(20, 48)。
 - **猛毒吐息六连**：0xBEA7 读条开始 → 通过 `CastRotation.TryGet` 锁定施法实体的 **Character.CastRotation**，安全点 = 场心 − 20×施法方向（PR `ForwardVector3FromRotation`）；施法朝向不可用时记录日志并跳过预测，不回退到普通 `SourceRotation`。立即注册 `AddTimedSafeArea(CircleTemplate(7), StaticTransform(安全点,0), 读条剩余+0.3+2.4+6.5)`（持续窗口对齐 BMR `_expires = 首跳+6.5s`），由统一视图绘制目标圈；提示"提前站进安全点，全程不动"。0xBEA8 命中事件用于校正（安全点改为**波源实际位置** = 0xBEA8 施法辅助体当前位置，与 BMR `_origin = caster.Position` 一致；原"caster 位置 − 20×朝向"表述删除；仅首跳附近一次校正）。
-- **连线放毒 4 点引导**（最复杂，完整迁移）：触发= tether 0x11（龙→玩家）或 0xBEA9 读条以玩家为目标。路线：以"开始时 Boss 相对场心方向"为北 N，侧向 S=N 转 90°；outer=场心+16.9×N，inner=outer−7×N；四点顺序 P1=inner+7S → P2=outer+7S → P3=outer−7S → P4=inner−7S（0.65y 目标圈 Draw + 连线）。推进：OnUpdate 检测新毒池 EObj 0x1EB704 出现在当前目标点 1y 内（忽略 >3.1s 的旧池快照）→ 推进下一点；被点名期间对当前点注册 `AddTimedSafeArea(CircleTemplate(1.5), ...)` 引导，**推进切点时先 `Remove` 上一点的 SafeArea 句柄再注册新点**（旧圈不得残留到超时，否则解算停在旧点）；一轮 ≤16.5s 超时复位。第 4 池确认即把该池障碍激活。仅当**被连线者是本地玩家**才给 SafeArea/绘制，否则只画线。**预备阶段**（BMR `_prepareUntil`）：空降中心 0xBEBC 命中后开 8s 预备窗——以龙的当前位置重建路线（近场心时保留上轮北方），若上一轮被连线者是本地玩家，对 1 号点注册 R1.5 安全区引导 + 画点/引导线并提示"提前就位"；新一轮 BeginRound 或超时即撤。
-- **毒池**：EObj 0x1EB704 出现 2s 后 AddObstacle R6（第 4 池立即）；EventState 7 撤销。
+- **连线放毒 4 点引导**（最复杂，完整迁移）：触发= tether 0x11（龙→玩家）或 0xBEA9 读条以玩家为目标。路线：以"开始时 Boss 相对场心方向"为北 N，侧向 S=N 转 90°；outer=场心+16.9×N，inner=outer−7×N；四点顺序 P1=inner+7S → P2=outer+7S → P3=outer−7S → P4=inner−7S（0.2y 目标圈 Draw + 连线）。推进：OnUpdate 检测新毒池 EObj 0x1EB704 出现在当前目标点 1y 内（忽略 >3.1s 的旧池快照）→ 推进下一点；被点名期间对当前点注册 `AddTimedSafeArea(CircleTemplate(0.2), ..., preference: PositionPreference.Center)` 引导，**推进切点时先 `Remove` 上一点的 SafeArea 句柄再注册新点**（旧圈不得残留到超时，否则解算停在旧点）；一轮 ≤16.5s 超时复位。第 4 池确认当次即注册该池的持续危险区并开始逃离。仅当**被连线者是本地玩家**才给 SafeArea/绘制，否则只画线。**预备阶段**（BMR `_prepareUntil`）：空降中心 0xBEBC 命中后开 8s 预备窗——以龙的当前位置重建路线（近场心时保留上轮北方），若上一轮被连线者是本地玩家，对 1 号点注册 R0.2、Center 偏好的安全区引导 + 画点/引导线并提示"提前就位"；新一轮 BeginRound 或超时即撤。
+- **放毒精度**：四个引导点及预备点均要求进入中心 0.2y 内；预备路线变化即刷新目标。PR 的 Reborn 解算器在 R0.2 小目标激活时采用 0.1y 网格保留可达目标格，抵达最佳 Center 候选后结束搜索，移动容差按「目标半径 − 格心偏差」进一步内缩，避免网格误差与停止距离叠加后停在圈外；毒池匹配仍保留 1y，容纳快照与物件生成位置差异。必须重新编译并加载带此修正的 PR 本体，单独刷新脚本不足以生效。
+- **毒池**：EObj 0x1EB704 出现 2s 后 AddPersistentDanger R6（第 4 池确认当次立即生效）；EventState 7 撤销。已站在生效毒池中时，Reborn 自动移动立即逃离，即使同时叠有未来 AOE 也不等待玩家读条结束。
 - **毒气团**：存活 0x4CDA/NameID 14630 → AddObstacle R2 跟随 + OnUpdate 逐帧估速（>4y/s 或单帧 >5y 视为传送不预测），画 1.2s 位移胶囊预览（Draw）。
 - **空降二连**：0xBEB0 外环读条 → 期间注册落点中心 `AddTimedSafeArea(CircleTemplate(5), ...)`（先靠近）+ 提示"先靠近，外环判定后立即出中心"；0xBEBC 中心 R6 圆注册（delay=读条剩余+0.3）。中心圈对齐 BMR CrucibleDragonLanding 的 non-risky 语义：外环 pending 期间 0xBEBC 读条只画 `Draw.AddAoe` 预览（不进解算，防止提前把玩家推出中心安全点），外环命中/到点（activation+0.5s）/打断后按读条剩余注册真实危险区。
 - 文字：0xBEA7、0xBEB0、0xBEB5"剧毒全场注意减伤"。
@@ -165,7 +166,8 @@
 - [ ] 打断撤销：0xBE32 腐烂恶臭、0xBE6C 岩墙等注册后经 OnCancelCast/OnInterruptCast 能 Remove。
 - [ ] EObj 三个预测状态与 MapEffect 石墙 index 17~28 正确。
 - [ ] 章节魔法三个 pad 的 DataId/状态 ID/3s 显示窗/0xBE13 的 +0.8s。
-- [ ] 脚本 OnStop 清理全部句柄（含 ClearArenaBoundary、电网、池障碍）。
+- [ ] 脚本 OnStop 清理全部句柄（含 ClearArenaBoundary、电网、池危险区）。
+- [ ] 毒池脚下生成后能逃出、池外路线能绕开；毒龙保留 2s 延迟，第四池确认当次立即生效；已生效毒池与未来 AOE 重叠时不等读条。
 - [ ] B29 橡果炸弹/释放汁液/蛛网屏为静态落点绑定（蛛网屏用 CastRotation），不跟随施法者。
 - [ ] B31 空降中心圈在外环判定前不进解算（仅预览）；命中后 8s 预备引导指向下一轮 1 号点。
 - [ ] 连线绘制仅本地玩家目标按距离变色，他人中性色。

@@ -82,7 +82,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var handle = PromeRotation.Plugin.Instance.SafeZoneRegistry.AddDelayedHit(template, binding, delaySeconds);
+            var handle = PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.AddDelayedHit(template, binding, delaySeconds);
             if (handle.IsValid)
             {
                 _registeredHandles.Add(handle);
@@ -146,7 +146,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var manager = PromeRotation.Plugin.Instance.SafeZoneManager;
+            var manager = PromeRotation.Plugin.Instance.SafeZoneRebornManager;
             for (var i = _registeredHandles.Count - 1; i >= 0; i--)
             {
                 if (!manager.ContainsArea(_registeredHandles[i]))
@@ -181,7 +181,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var registry = PromeRotation.Plugin.Instance.SafeZoneRegistry;
+            var registry = PromeRotation.Plugin.Instance.SafeZoneRebornRegistry;
             foreach (var handle in _registeredHandles)
             {
                 try

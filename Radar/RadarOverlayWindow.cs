@@ -115,7 +115,7 @@ public sealed class RadarOverlayWindow : IDisposable
         var player = Svc.Objects.LocalPlayer;
         var now = DateTime.UtcNow;
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
-        var snapshot = plugin.SafeZoneManager.BuildSnapshot(now);
+        var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(now);
 
         float visibleRadius;
         if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary)
@@ -442,7 +442,7 @@ public sealed class RadarOverlayWindow : IDisposable
 
     private void DrawSolutionPath(RadarCanvas canvas, PromeRotation.Plugin plugin, float animT)
     {
-        var path = plugin.SafeZoneMovementStatus.LatestSolution?.ExecutablePath;
+        var path = plugin.SafeZoneRebornMovementStatus.LatestSolution?.ExecutablePath;
         if (path is null || path.Count == 0)
         {
             return;

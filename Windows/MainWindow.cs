@@ -94,7 +94,7 @@ public sealed class MainWindow : IDisposable
         SectionHeader("功能模块");
         changed |= ModuleRow("真实世界绘制", "在游戏 3D 世界中绘制机制范围与安全点提示。", settings.EnableRadar, v => settings.EnableRadar = v);
         changed |= ModuleRow("雷达悬浮窗", "屏幕上的圆形 2D 俯视雷达；详见「雷达悬浮窗」页。", settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
-        changed |= ModuleRow("智能躲避", "识别敌对读条并自动走位躲避，会请求 PR 自动移动接管。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
+        changed |= ModuleRow("智能躲避", "按 AOE 判定时间自动规划走位，使用安全区 Reborn。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
         changed |= ModuleRow("战斗中跟随", "自动跟随队友或当前目标；详见「自动化」页。", settings.EnableFollow, v => settings.EnableFollow = v);
         changed |= ModuleRow("机制脚本框架", "按区域自动运行机制脚本；关闭后运行中的脚本全部停止。", settings.EnableScripts, v => settings.EnableScripts = v);
 
@@ -110,23 +110,30 @@ public sealed class MainWindow : IDisposable
         try
         {
             var plugin = PromeRotation.Plugin.Instance;
-            var hostSetting = plugin.SafeZoneSetting;
-            var status = plugin.SafeZoneMovementStatus;
+            var hostSetting = plugin.SafeZoneRebornSetting;
+            var status = plugin.SafeZoneRebornMovementStatus;
             var scripts = MasterPlayerPlugin.Instance?.Scripts;
-            var snapshot = plugin.SafeZoneManager.BuildSnapshot(DateTime.UtcNow);
+            var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow);
 
             ImGui.Text($"当前区域 ID：{Svc.ClientState.TerritoryType}");
             ImGui.SameLine(0f, 18f);
             HintInline($"运行中脚本 {scripts?.Running.Count ?? 0} / {scripts?.Scripts.Count ?? 0}");
             ImGui.SameLine(0f, 18f);
             HintInline($"活动危险区 {snapshot.DangerAreas.Count}");
-            Hint($"移动接管：{(status.HasControl ? $"安全区系统控制中（{status.PhaseText}）" : "空闲")}");
+            Hint($"安全区 Reborn：{status.PhaseText}");
 
             var needsSafeZone = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge;
             if (needsSafeZone && !hostSetting.EnableSafeZone)
-                ImGui.TextColored(WarningColor, "PR 安全区系统已关闭，机制范围无法显示；请在 PR 本体中重新开启。");
+                ImGui.TextColored(WarningColor, "安全区 Reborn 已关闭，机制范围无法显示；请在诊断页开启 Reborn 解算。");
             if (settings.EnableAutoDodge && !hostSetting.EnableAutoMovement)
-                ImGui.TextColored(WarningColor, "PR 自动移动已关闭，智能躲避不会走位；请在 PR 本体中重新开启。");
+                ImGui.TextColored(WarningColor, "Reborn 自动移动已关闭，智能躲避不会走位；请在诊断页开启 Reborn 自动移动。");
+            if (settings.EnableAutoDodge &&
+                ((plugin.SafeZoneSetting.EnableSafeZone && plugin.SafeZoneSetting.EnableAutoMovement) || plugin.SafeZoneMovementStatus.HasControl))
+            {
+                ImGui.TextColored(WarningColor, "旧版安全区自动移动优先，Reborn 已让位。");
+                if (ImGui.Button("关闭旧版自动移动"))
+                    plugin.SafeZoneSetting.EnableAutoMovement = false;
+            }
 
             var anyModuleOn = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge ||
                               settings.EnableFollow || settings.EnableScripts;
@@ -274,7 +281,8 @@ public sealed class MainWindow : IDisposable
         }
         Hint("0 = 不指定小队槽位；1~7 = 小队 UI 序。");
 
-        changed |= Check("无槽位时跟随当前目标（仅玩家）", settings.FollowTargetWhenNoSlot, v => settings.FollowTargetWhenNoSlot = v);
+        changed |= Check("无有效槽位时跟随当前目标", settings.FollowTargetWhenNoSlot, v => settings.FollowTargetWhenNoSlot = v);
+        Hint("支持玩家和怪物；不跟随已死亡或不可选中的目标。");
 
         var distance = settings.FollowDistance;
         if (ImGui.SliderFloat("跟随距离", ref distance, 0.5f, 10f, "%.1f y"))
@@ -282,6 +290,7 @@ public sealed class MainWindow : IDisposable
             settings.FollowDistance = distance;
             changed = true;
         }
+        Hint("怪物按双方目标圈边缘间距计算，玩家按中心距离计算。");
 
         changed |= Check("战斗中生效", settings.FollowDuringCombat, v => settings.FollowDuringCombat = v);
         changed |= Check("非战斗中也生效", settings.FollowOutOfCombat, v => settings.FollowOutOfCombat = v);
@@ -372,11 +381,16 @@ public sealed class MainWindow : IDisposable
         try
         {
             var plugin = PromeRotation.Plugin.Instance;
-            var setting = plugin.SafeZoneSetting;
-            var status = plugin.SafeZoneMovementStatus;
-            var snapshot = plugin.SafeZoneManager.BuildSnapshot(DateTime.UtcNow);
+            var setting = plugin.SafeZoneRebornSetting;
+            var status = plugin.SafeZoneRebornMovementStatus;
+            var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow);
 
-            ImGui.Text($"安全区解算：{(setting.EnableSafeZone ? "开" : "关")}    自动移动接管：{(setting.EnableAutoMovement ? "开" : "关")}");
+            var enableSolve = setting.EnableSafeZone;
+            if (ImGui.Checkbox("启用 Reborn 解算", ref enableSolve))
+                setting.EnableSafeZone = enableSolve;
+            var enableMovement = setting.EnableAutoMovement;
+            if (ImGui.Checkbox("启用 Reborn 自动移动", ref enableMovement))
+                setting.EnableAutoMovement = enableMovement;
             ImGui.Text($"移动控制权：{(status.HasControl ? "持有" : "无")}    阶段：{status.PhaseText}");
             ImGui.Text($"最新解算方案：{(status.LatestSolution != null ? "有" : "无")}");
             ImGui.Text($"当前危险区：{snapshot.DangerAreas.Count}    运行中脚本：{MasterPlayerPlugin.Instance?.Scripts?.Running.Count ?? 0}");

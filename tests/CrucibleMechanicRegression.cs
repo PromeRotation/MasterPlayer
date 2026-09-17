@@ -180,9 +180,9 @@ internal static class CrucibleMechanicRegression
             Check(cones[1].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f - MathF.PI / 4f, 30f))
                 && cones[4].Contains(GeometryHelper.PointFromRotationDistanceXZ(center, 0.5f - MathF.PI, 30f)),
                 "Left-turning breath must step -45 degrees per cone from the first cast's facing.");
-            var close = (CircleGeometry)fight.Goals.Single().Geometry;
-            Check(Vector3.Distance(close.Position, center) < 0.001f && close.Radius == 11f,
-                "The hugging safe zone must share the cones' arena-center origin.");
+            var close = (DonutGeometry)fight.Goals.Single().Geometry;
+            Check(Vector3.Distance(close.Position, center) < 0.001f && close.InnerRadius == 4f && close.OuterRadius == 11f,
+                "The hugging safe zone must be a center-sharing ring band that excludes the cones' shared vertex.");
         });
 
         run("B29 ground-targeted casts anchor the cast location instead of following the caster", () =>
@@ -273,7 +273,7 @@ internal static class CrucibleMechanicRegression
 
         run("B31 landing center hit prepares the next bait route for the previous target", () =>
         {
-            using var fight = new BaitFight();
+            using var fight = new PoolFight();
             var outer = MathF.Sqrt(18.3f * 18.3f - 7f * 7f);
             var route0 = new Vector3(920f - 7f, 15f, -420f - (outer - 7f));
             fight.SendTether();
@@ -283,8 +283,14 @@ internal static class CrucibleMechanicRegression
             fight.SendEffect(new LogSystemActionEffectEvent { ActionId = 48828, SourceId = 1 });
             fight.Update(0.4f);
             var guide = (CircleGeometry)fight.Goals.Single().Geometry;
-            Check(Vector3.Distance(guide.Position, route0) < 0.01f && guide.Radius == 1.5f,
+            Check(Vector3.Distance(guide.Position, route0) < 0.01f && guide.Radius == 0.2f,
                 "The landing hit must guide the previous bait target toward the next round's first point.");
+            var oldHandle = fight.Goals.Single().Handle;
+            fight.DragonPosition += new Vector3(0.12f, 0f, 0f);
+            fight.Update(0.4f);
+            var moved = (CircleGeometry)fight.Goals.Single().Geometry;
+            Check(Vector3.Distance(moved.Position, guide.Position) is > 0.2f and < 0.5f && !fight.Contains(oldHandle),
+                "Preparation must refresh a moved target even when its displacement is below the former 0.5y threshold.");
         });
 
         foreach (var (rotation, expected) in new[]
@@ -348,7 +354,7 @@ internal static class CrucibleMechanicRegression
 
         run("B31 bait guide removes the previous safe spot when the round advances", () =>
         {
-            using var fight = new BaitFight();
+            using var fight = new PoolFight();
             var outer = MathF.Sqrt(18.3f * 18.3f - 7f * 7f);
             var route0 = new Vector3(920f - 7f, 15f, -420f - (outer - 7f));
             var route1 = new Vector3(920f - 7f, 15f, -420f - outer);
@@ -363,6 +369,93 @@ internal static class CrucibleMechanicRegression
                 "After the pool lands, the guide must move to route point 2.");
             Check(!fight.Contains(first.Handle), "The previous step's safe spot must be deregistered, not left to time out.");
         });
+
+        run("B31 all four bait points require 0.2y positioning and clear after the fourth pool", () =>
+        {
+            using var fight = new PoolFight();
+            var outer = MathF.Sqrt(18.3f * 18.3f - 7f * 7f);
+            Vector3[] route = [new(913f, 15f, -420f - outer + 7f), new(913f, 15f, -420f - outer),
+                new(927f, 15f, -420f - outer), new(927f, 15f, -420f - outer + 7f)];
+            fight.SendTether();
+            fight.Update(0.4f);
+            for (var step = 0; step < route.Length; step++)
+            {
+                var goal = fight.Goals.Single();
+                Check(goal.Geometry is CircleGeometry { Radius: 0.2f } && Vector3.Distance(goal.Geometry.Position, route[step]) < 0.001f,
+                    $"Bait point {step + 1} must register a 0.2y target at its exact route position.");
+                Check(goal.GoalWindows.Single().Preference == PositionPreference.Center,
+                    "Precise baiting must prefer the center rather than the near edge.");
+                fight.SpawnPool(route[step], (uint)(3 + step));
+                fight.Update(0.4f);
+                Check(!fight.Contains(goal.Handle), "Each confirmed pool must remove the previous goal immediately.");
+                if (step < 3)
+                {
+                    fight.SetPoolAge(2.1f);
+                    fight.Update(0.3f);
+                }
+            }
+            Check(fight.Goals.Count == 0, "The fourth confirmed pool must end the guide.");
+            var snapshot = fight.Snapshot;
+            Check(snapshot.DangerAreas.Count == 4 && snapshot.DangerAreas.All(a => a.DangerWindows.Single().IsActiveAt(DateTime.UtcNow)),
+                "The fourth pool must activate in the same update that removes the guide, alongside the three older active pools.");
+            SafeZoneTemporalRegression.CheckPoolEscape(snapshot, route[3]);
+        });
+
+        foreach (var (handler, dataId, delay) in new[]
+        {
+            ("B23MorbolHandler", 0x1E9F40u, false),
+            ("B31DragonHandler", 0x1EB704u, true),
+        })
+            run($"{handler} pools allow escape from underneath and clean up their danger", () =>
+            {
+                using var fight = new PoolFight(handler, dataId);
+                var center = new Vector3(920f, 15f, -420f);
+                fight.SpawnPool(center);
+                fight.Update(0.3f);
+                if (delay)
+                {
+                    Check(fight.Snapshot.DangerAreas.Count == 0 && fight.Snapshot.HardObstacles.Count == 0,
+                        "A newly spawned dragon pool must preserve its two-second grace period.");
+                    fight.SetPoolAge(1f);
+                    fight.Update(0.3f);
+                    Check(fight.Snapshot.DangerAreas.Count == 0 && fight.Snapshot.HardObstacles.Count == 0,
+                        "The pool must not arm before the grace period ends.");
+                    fight.SetPoolAge(2.1f);
+                    fight.Update(0.3f);
+                }
+                var snapshot = fight.Snapshot;
+                Check(snapshot.HardObstacles.Count == 0 && snapshot.DangerAreas.Count == 1,
+                    "A pool must be persistent danger so a player inside can escape, not a hard wall.");
+                var area = snapshot.DangerAreas.Single();
+                Check(area.Geometry is CircleGeometry { Radius: 6f } && area.Geometry.Position == center &&
+                    area.DangerWindows.Single().IsActiveAt(DateTime.UtcNow.AddHours(1)),
+                    "The pool must remain dangerous at its actual location until the object disappears.");
+                SafeZoneTemporalRegression.CheckPoolEscape(snapshot, center);
+                fight.Update(0.3f);
+                Check(fight.Snapshot.DangerAreas.Single().Handle == area.Handle, "Polling must not duplicate the pool.");
+
+                fight.PoolEventState = 7;
+                fight.Update(0.3f);
+                Check(!fight.Contains(area.Handle) && fight.Snapshot.DangerAreas.Count == 0,
+                    "A dormant pool must immediately stop affecting movement.");
+                fight.PoolEventState = 0;
+                fight.Update(0.3f);
+                fight.SetPoolAge(2.1f);
+                fight.Update(0.3f);
+                var reactivated = fight.Snapshot.DangerAreas.Single().Handle;
+                fight.DespawnPool();
+                fight.Update(0.3f);
+                Check(!fight.Contains(reactivated) && fight.Snapshot.DangerAreas.Count == 0,
+                    "Removing the EObj must remove its danger handle.");
+
+                fight.SpawnPool(center, 4u);
+                fight.Update(0.3f);
+                fight.SetPoolAge(2.1f);
+                fight.Update(0.3f);
+                var final = fight.Snapshot.DangerAreas.Single().Handle;
+                fight.Cleanup();
+                Check(!fight.Contains(final), "Mechanic cleanup must remove every remaining pool.");
+            });
     }
 
     private static LogSystemActionEffectEvent Charge(uint sequence) => new()
@@ -511,11 +604,12 @@ internal static class CrucibleMechanicRegression
         }
     }
 
-    private sealed unsafe class BaitFight : IDisposable
+    private sealed unsafe class PoolFight : IDisposable
     {
         private static readonly Vector3 ArenaCenter = new(920f, 15f, -420f);
         private readonly CrucibleHigh1Script _script = new();
-        private readonly Type _type = typeof(CrucibleHigh1Script).GetNestedType("B31DragonHandler", BindingFlags.NonPublic)!;
+        private readonly Type _type;
+        private readonly uint _poolDataId;
         private readonly object _handler;
         private readonly FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject* _poolNative =
             (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)NativeMemory.AllocZeroed(
@@ -523,30 +617,39 @@ internal static class CrucibleMechanicRegression
         private readonly PropertyInfo _objects = typeof(Svc).GetProperty(nameof(Svc.Objects))!;
         private readonly object? _originalObjects;
         private IGameObject? _poolObject;
-        public IReadOnlyList<GoalAreaSnapshot> Goals => _script.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas;
+        private readonly Dictionary<uint, IGameObject> _poolObjects = [];
+        public Vector3 DragonPosition { get; set; } = ArenaCenter + new Vector3(0f, 0f, -5f);
+        public SafeZoneSnapshot Snapshot => _script.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow);
+        public IReadOnlyList<GoalAreaSnapshot> Goals => Snapshot.GoalAreas;
+        public byte PoolEventState { set => _poolNative->EventState = value; }
 
-        public BaitFight()
+        public PoolFight(string handlerName = "B31DragonHandler", uint poolDataId = 0x1EB704u)
         {
+            _type = typeof(CrucibleHigh1Script).GetNestedType(handlerName, BindingFlags.NonPublic)!;
+            _poolDataId = poolDataId;
             _handler = Activator.CreateInstance(_type, _script)!;
             _type.GetMethod("Activate")!.Invoke(_handler, [ArenaCenter]);
+            new SafeZoneRegistry(_script.SafeZone.Manager).SetArenaBoundary(
+                new CircleTemplate(handlerName == "B31DragonHandler" ? 19.05f : 20f).Resolve(ArenaCenter, 0f, null));
             _originalObjects = _objects.GetValue(null);
             _objects.SetValue(null, ScriptServiceProxy.Create<IObjectTable>((method, args) => method switch
             {
-                "get_Length" => _poolObject == null ? 2 : 3,
-                "get_Item" => (int)args[0]! switch { 0 => Dragon, 1 => Player, _ => _poolObject },
-                "SearchByEntityId" => (uint)args[0]! switch { 1u => Dragon, 2u => Player, 3u => _poolObject, _ => null },
+                "get_Length" => _poolObjects.Count + 2,
+                "get_Item" => (int)args[0]! switch { 0 => Dragon, 1 => Player, var i => _poolObjects.Values.ElementAt(i - 2) },
+                "SearchByEntityId" => (uint)args[0]! switch { 1u => Dragon, 2u => Player, var id => _poolObjects.GetValueOrDefault(id) },
                 "get_LocalPlayer" => Player,
                 _ => throw new NotSupportedException(method),
             }));
         }
 
-        private static IBattleChara Dragon => ScriptServiceProxy.Create<IBattleChara>((method, _) => method switch
+        private IBattleChara Dragon => ScriptServiceProxy.Create<IBattleChara>((method, _) => method switch
         {
             "get_EntityId" => 1u,
             "get_NameId" => 14628u,
             "get_ObjectKind" => ObjectKind.BattleNpc,
-            "get_Position" => ArenaCenter + new Vector3(0f, 0f, -5f),
+            "get_Position" => DragonPosition,
             "get_IsDead" => false,
+            "get_IsCasting" => false,
             _ => throw new NotSupportedException(method),
         });
 
@@ -567,19 +670,38 @@ internal static class CrucibleMechanicRegression
 
         public void SendCancel(uint sourceId, uint actionId) => _type.GetMethod("OnCastCancel")!.Invoke(_handler, [sourceId, actionId]);
 
-        public void SpawnPool(Vector3 pos)
-            => _poolObject = ScriptServiceProxy.Create<IGameObject>((method, _) => method switch
+        public void SpawnPool(Vector3 pos, uint entityId = 3u)
+        {
+            _poolObject = ScriptServiceProxy.Create<IGameObject>((method, _) => method switch
             {
-                "get_EntityId" => 3u,
+                "get_EntityId" => entityId,
                 "get_ObjectKind" => ObjectKind.EventObj,
-                "get_BaseId" => 0x1EB704u,
+                "get_BaseId" => _poolDataId,
                 "get_Position" => pos,
                 "get_Address" => (nint)_poolNative,
                 "get_IsDead" => false,
                 _ => throw new NotSupportedException(method),
             });
+            _poolObjects[entityId] = _poolObject;
+        }
+
+        public void DespawnPool()
+        {
+            _poolObjects.Remove(_poolObject!.EntityId);
+            _poolObject = null;
+        }
+
+        public void SetPoolAge(float seconds)
+        {
+            var watcher = _type.GetField("_pools", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(_handler)!;
+            var pools = (System.Collections.IDictionary)watcher.GetType().GetField("_pools", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(watcher)!;
+            var pool = pools[_poolObject!.EntityId]!;
+            pool.GetType().GetField("AppearedUtc")!.SetValue(pool, DateTime.UtcNow.AddSeconds(-seconds));
+        }
 
         public void Update(float dt) => _type.GetMethod("Update")!.Invoke(_handler, [dt]);
+
+        public void Cleanup() => _type.GetMethod("Cleanup")!.Invoke(_handler, []);
 
         public bool Contains(SafeZoneAreaHandle handle) => _script.SafeZone.Manager.ContainsArea(handle);
 
