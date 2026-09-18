@@ -63,14 +63,16 @@ public sealed class ReplayRecorder : IDisposable
         {
             Directory.CreateDirectory(RecordingsDirectory);
             var territory = (ushort)Svc.ClientState.TerritoryType;
+            var territoryName = ResolveTerritoryName(territory);
+            var nameSuffix = string.IsNullOrWhiteSpace(territoryName) ? "" : $"_{SanitizeFileName(territoryName)}";
             var path = Path.Combine(RecordingsDirectory,
-                $"rec_{DateTime.Now:yyyyMMdd_HHmmss}_t{territory}{ReplayRecordingReader.FileExtension}");
+                $"rec_{DateTime.Now:yyyyMMdd_HHmmss}_t{territory}{nameSuffix}{ReplayRecordingReader.FileExtension}");
 
             var version = typeof(MasterPlayerPlugin).Assembly.GetName().Version?.ToString() ?? "unknown";
             var writer = new ReplayRecordingWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read));
             _startLocal = DateTime.Now;
             EventCount = 0;
-            writer.WriteHeader(new ReplayHeader(1, territory, DateTime.UtcNow, version));
+            writer.WriteHeader(new ReplayHeader(1, territory, DateTime.UtcNow, version) { TerritoryName = territoryName });
 
             _writer = writer;
             CurrentFilePath = path;
@@ -167,6 +169,31 @@ public sealed class ReplayRecorder : IDisposable
     {
         if (_autoStarted && IsRecording)
             StopRecording();
+    }
+
+    /// <summary>区域名：优先副本名（ContentFinderCondition），回退地名（PlaceName）；取不到返回空串。</summary>
+    private static string ResolveTerritoryName(ushort territoryType)
+    {
+        try
+        {
+            var row = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.TerritoryType>()?.GetRowOrDefault(territoryType);
+            if (row == null)
+                return "";
+            var cfc = row.Value.ContentFinderCondition.ValueNullable?.Name.ToString();
+            if (!string.IsNullOrEmpty(cfc))
+                return cfc;
+            return row.Value.PlaceName.ValueNullable?.Name.ToString() ?? "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Trim().Select(c => invalid.Contains(c) ? '_' : c).ToArray());
     }
 
     private void CleanupRecording()

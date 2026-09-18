@@ -7,12 +7,16 @@ using PromeRotation.LogSystem;
 
 namespace MasterPlayer.Replay;
 
-/// <summary>录制文件头（首行 JSON）。</summary>
+/// <summary>录制文件头（首行 JSON）。territoryName 为后加字段：旧文件缺省为空串，新文件对旧读取器向后兼容（未知字段忽略）。</summary>
 public sealed record ReplayHeader(
     [property: JsonPropertyName("v")] int Version,
     [property: JsonPropertyName("territory")] ushort Territory,
     [property: JsonPropertyName("startedUtc")] DateTime StartedUtc,
-    [property: JsonPropertyName("pluginVersion")] string PluginVersion);
+    [property: JsonPropertyName("pluginVersion")] string PluginVersion)
+{
+    [JsonPropertyName("territoryName")]
+    public string TerritoryName { get; init; } = "";
+}
 
 /// <summary>一条录制事件：T = 相对录制开始的秒数。</summary>
 public sealed record ReplayEventEntry(double T, LogSystemEvent Event);

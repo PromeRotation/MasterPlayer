@@ -48,7 +48,7 @@ internal static class ReplayRecordingRegression
     private static void RoundTrip()
     {
         var started = new DateTime(2026, 9, 17, 12, 0, 0, DateTimeKind.Utc);
-        var header = new ReplayHeader(1, 1268, started, "0.1.0.0");
+        var header = new ReplayHeader(1, 1268, started, "0.1.0.0") { TerritoryName = "斗技场" };
         var cast = new LogSystemCastStartEvent
         {
             ActionId = 33126,
@@ -105,6 +105,7 @@ internal static class ReplayRecordingRegression
 
         Check(loaded.Header.Version == 1 && loaded.Header.Territory == 1268 && loaded.Header.PluginVersion == "0.1.0.0",
             "Header fields must round trip.");
+        Check(loaded.Header.TerritoryName == "斗技场", "Header territory name must round trip.");
         Check(loaded.Header.StartedUtc == new DateTime(2026, 9, 17, 12, 0, 0, DateTimeKind.Utc), "Header timestamp must round trip.");
         Check(loaded.SkippedEvents == 0, "All recorded events must parse.");
         Check(loaded.Events.Count == events.Length, "Event count must round trip.");
