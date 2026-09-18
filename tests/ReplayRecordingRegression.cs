@@ -10,6 +10,39 @@ internal static class ReplayRecordingRegression
         run("replay recording survives a JSON-lines round trip", RoundTrip);
         run("replay router dispatches typed, catch-all and mapped simple events", RouterDispatch);
         run("replay router isolates handler exceptions and honors unsubscribe", RouterIsolation);
+        run("player-owned sources are filtered from recordings", PlayerSourceFilter);
+    }
+
+    private static void PlayerSourceFilter()
+    {
+        bool IsPlayerOwned(ulong id) => id is 100 or 200;   // 100=玩家，200=玩家召唤物
+
+        Check(!ReplayRecordFilter.ShouldRecord(new LogSystemCastStartEvent { SourceId = 100 }, IsPlayerOwned),
+            "Player casts must be filtered.");
+        Check(!ReplayRecordFilter.ShouldRecord(new LogSystemActionEffectEvent { SourceId = 200 }, IsPlayerOwned),
+            "Summon action effects must be filtered.");
+        Check(!ReplayRecordFilter.ShouldRecord(new LogSystemStatusAddEvent { SourceId = 100 }, IsPlayerOwned) &&
+              !ReplayRecordFilter.ShouldRecord(new LogSystemStatusRemoveEvent { SourceId = 200 }, IsPlayerOwned),
+            "Player-owned status changes must be filtered.");
+        Check(!ReplayRecordFilter.ShouldRecord(new LogSystemCancelCastEvent { SourceId = 100 }, IsPlayerOwned) &&
+              !ReplayRecordFilter.ShouldRecord(new LogSystemInterruptCastEvent { SourceId = 200 }, IsPlayerOwned),
+            "Cancel/interrupt of player-owned casts must be filtered.");
+
+        Check(ReplayRecordFilter.ShouldRecord(new LogSystemCastStartEvent { SourceId = 300 }, IsPlayerOwned),
+            "Enemy casts must be kept.");
+        Check(ReplayRecordFilter.ShouldRecord(new LogSystemCastStartEvent { SourceId = 0 }, IsPlayerOwned),
+            "Unresolvable sources must be kept.");
+        Check(ReplayRecordFilter.ShouldRecord(new LogSystemTetherEvent { SourceId = 100 }, IsPlayerOwned) &&
+              ReplayRecordFilter.ShouldRecord(new LogSystemTargetIconEvent { SourceId = 100 }, IsPlayerOwned),
+            "Tethers and icons are not filtered.");
+        Check(ReplayRecordFilter.ShouldRecord(new LogSystemMapEffectEvent(), IsPlayerOwned) &&
+              ReplayRecordFilter.ShouldRecord(new LogSystemBattleStartedEvent(), IsPlayerOwned),
+            "Arena and battle events are not filtered.");
+        Check(!ReplayRecordFilter.ShouldRecord(new LogSystemChatLogEvent { Sender = "甲", Message = "你好" }, IsPlayerOwned),
+            "Chat logs must never be recorded.");
+        Check(ReplayRecordFilter.ShouldRecord(new LogSystemNpcYellEvent { SourceId = 300 }, IsPlayerOwned) &&
+              ReplayRecordFilter.ShouldRecord(new LogSystemInstanceContentTextEvent(), IsPlayerOwned),
+            "NPC speech is not chat and must be kept.");
     }
 
     private static void RoundTrip()

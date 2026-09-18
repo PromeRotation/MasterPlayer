@@ -22,6 +22,7 @@
     <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
     <Compile Include="..\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
+    <Compile Include="..\Replay\ReplayRecordFilter.cs" Link="Replay\ReplayRecordFilter.cs" />
     <Compile Include="..\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
     <Compile Include="..\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />

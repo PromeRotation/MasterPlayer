@@ -55,6 +55,7 @@ MasterPlayer/
 │   ├── ReplayRecording.cs         # 录制文件模型 + JSON Lines 读写（.mpreplay.jsonl；纯逻辑不依赖游戏服务，tests 可链接）
 │   ├── ReplayScriptEventRouter.cs # 回放事件路由：脚本订阅落本地注册表，Raise 按类型派发 + 简单事件映射补发
 │   ├── ReplayRecorder.cs          # 录制器：PromeEventBus.OnLogEvent 全量订阅写文件；手动或战斗自动开停
+│   ├── ReplayRecordFilter.cs      # 录制过滤：跳过玩家（PC）/玩家召唤物来源的动作·状态·读条（纯逻辑）
 │   ├── ReplayController.cs        # 回放控制器：回放会话编排 + 主线程时钟派发（播放/暂停/变速/Seek/停止）
 │   ├── ReplayTimeline.cs          # 时间轴模型：读条区间（取消/打断截断）+ 泳道分类打点 + 实体名映射（纯逻辑）
 │   └── ReplayComparison.cs        # 多日志对比：按读条 ActionId 聚合次数/首用时间/日志间差异（纯逻辑）
@@ -590,13 +591,13 @@ public readonly record struct GreenMovePoint(
 机制事件的录制与时间轴回放，用于复现战斗、测试脚本运行状态。**PR 本体的 PromeEventBus/LogSystem 只订阅不发布（无公开 Raise），合成事件因此只在 MasterPlayer 脚本层派发**：录制走 `PromeEventBus.OnLogEvent` 全量订阅，回放经每脚本 `ReplayScriptEventRouter` 直喂，不进总线，DodgeController/Follow/其他插件不响应回放事件。
 
 - **录制文件**（`.mpreplay.jsonl`，JSON Lines）：首行 header `{"v":1,"territory":…,"startedUtc":…,"pluginVersion":…}`；之后每行 `{"t":秒,"kind":"CastStart","type":"CLR 全名","data":{…}}`。序列化配置（`ReplayJson.Options`）：剔除 `LogSystemEvent.Raw`（运行态对象图不可序列化，回放后恒为 null）与 get-only `Kind`；自带 `Vector3JsonConverter`（`Vector3?` 同用）。未知类型/损坏行跳过并计入 `ReplayRecording.SkippedEvents`。
-- **ReplayRecorder**：手动（面板按钮或 `/prmp rec`）或 `AutoRecordOnBattleStart` 自动（战斗开始录、结束停）。目录 `ConfigDirectory\MasterPlayer\Replays\`，文件名 `rec_yyyyMMdd_HHmmss_t{territory}.mpreplay.jsonl`。`IsRecording` / `CurrentFilePath` / `EventCount` / `Elapsed` / `StatusMessage` 供面板轮询；录制与回放互斥。
-- **ReplayController**：`Load(path)` → `Play()/Pause()/SetSpeed(0.25~4)/Seek(秒)/StopSession()`；`Update(deltaTime)` 在插件主循环中先于 `_scripts.Update` 调用。会话启动 = `ScriptManager.StopAll()` → `EnterReplayMode()` → 对「已启用 && 区域匹配**录制区域**」的描述符 `StartScript(id, new ReplayScriptEventRouter())`；时钟按 `deltaTime × Speed` 推进，到期事件对每个 router `Raise`。`Seek` 为 BMR 式「重置 + 快进」：重启回放脚本后从开头补发至目标时刻（脚本须确定性重放，契合铁律 7）。回放脚本被外部停光（刷新脚本/关总开关）时自动 `StopSession`；`StopSession` 后下一帧区域自动启停恢复实时脚本。
+- **ReplayRecorder**：手动（面板按钮或 `/prmp rec`）或 `AutoRecordOnBattleStart` 自动（战斗开始录、结束停）。目录 `ConfigDirectory\MasterPlayer\Replays\`，文件名 `rec_yyyyMMdd_HHmmss_t{territory}.mpreplay.jsonl`。`IsRecording` / `CurrentFilePath` / `EventCount` / `FilteredCount` / `Elapsed` / `StatusMessage` 供面板轮询；录制与回放互斥。**来源过滤**：`ReplayRecordFilter.ShouldRecord(ev, isPlayerOwnedSource)` 跳过来源为玩家（ObjectKind.Pc）或玩家召唤物（OwnerId 属于 PC，录制器侧 0.5s 对象表缓存）的动作/状态/读条（CastStart/CancelCast/InterruptCast/ActionEffect/StatusAdd/StatusRemove），且聊天日志（ChatLog）一律不录（NpcYell/InstanceContentText 战斗台词不属于聊天，保留）；SourceId 为 0 或无法判定一律放行，连线/点名/场地/战斗等事件不过滤。
+- **ReplayController**：`Load(path)` → `Play()/Pause()/SetSpeed(0.25~4)/Seek(秒)/StopSession()`；`Update(deltaTime)` 在插件主循环中先于 `_scripts.Update` 调用。会话启动 = `ScriptManager.StopAll()` → `EnterReplayMode()` → 对「已启用 && 区域匹配**录制区域**」的描述符 `StartScript(id, new ReplayScriptEventRouter())`；时钟按 `deltaTime × Speed` 推进，到期事件对每个 router `Raise`。`Seek` 为 BMR 式「重置 + 快进」：重启回放脚本后从开头补发至目标时刻（脚本须确定性重放，契合铁律 7）。回放脚本被外部停光（刷新脚本/关总开关）时自动 `StopSession`；`StopSession` 只停仍是回放会话的脚本，之后下一帧区域自动启停恢复实时脚本。
 - **ReplayScriptEventRouter**：强类型 LogSystem 订阅按 `registeredType.IsAssignableFrom(ev.GetType())` 派发（`LogEvent` 兜底/泛型天然覆盖）；`LogSystemBattleStarted/Ended/CountdownStarted/WeatherChanged/Territory/ChatLog` 映射补发同名简单事件（含负载：WeatherId/(ushort)TerritoryId/Sender+Message+LogKind）。EventManager/LogMessageManager 独有的简单事件（PlayerDied/PlayerRevived/PlayerMoveStateChanged/SystemLog/BattleLog/ShowMessage）无 LogSystem 对应记录，回放不触发。逐订阅者异常隔离（对齐 LogSystemHub），异常计入 `ErrorCount`/`LastError`。
 - **边界**：不录 actor 位置快照、不重建 WorldState——脚本经 `Svc.Objects` 直读游戏状态在回放中仍是实时值；事件自带的位置/朝向字段（SourcePosition/EffectPosition/SourceRotation 等）可正常回放。回放中脚本照常注册 SafeZone 区域（雷达/真实世界绘制可见），`OnUpdate` 照常按真实帧时间 tick。
 - **ReplayTimeline / ReplayComparison**（纯逻辑，tests 可链接）：`ReplayTimeline.Build(ReplayRecording)` 产出读条区间（同 SourceId 的取消/打断事件截断横条并标记）、泳道分类打点（Cast/Effect/Tether/Status/Mark/Arena/Battle/Misc）与实体名映射（ObjectCreate/ActionEffect）；`ReplayComparison.Compare(IReadOnlyList<ComparisonLog>)` 按读条 ActionId 聚合每日志次数、对齐后首用时间与首用最大差，`FirstCastTime`/`FirstBattleTime` 供对齐锚点。名称解析（Lumina）只在 UI 层做。
 - **ReplayWindow**（独立窗口，契约见 §3.1）：时间轴回放页签上内嵌 `RadarView`（回放中实时呈现脚本注册的机制范围）下时间轴（点击 Seek 调 `ReplayController.Seek`）；日志对比页签支持按战斗开始/首次读条对齐与手动偏移，归纳共同/差异技能。
-- 回归：`tests/ReplayRecordingRegression.cs`（序列化往返 + 路由派发 + 异常隔离/退订）与 `tests/ReplayTimelineRegression.cs`（时间轴构建 + 对比对齐），经 tests csproj 源码链接 `ReplayRecording.cs` / `ReplayScriptEventRouter.cs` / `ReplayTimeline.cs` / `ReplayComparison.cs` / `IScriptEventRouter.cs`（均不依赖 Svc/PromeEventBus）。
+- 回归：`tests/ReplayRecordingRegression.cs`（序列化往返 + 路由派发 + 异常隔离/退订 + 玩家来源过滤）与 `tests/ReplayTimelineRegression.cs`（时间轴构建 + 对比对齐），经 tests csproj 源码链接 `ReplayRecording.cs` / `ReplayRecordFilter.cs` / `ReplayScriptEventRouter.cs` / `ReplayTimeline.cs` / `ReplayComparison.cs` / `IScriptEventRouter.cs`（均不依赖 Svc/PromeEventBus）。
 
 ## 6. 铁律（违反任何一条都等于 bug）
 
