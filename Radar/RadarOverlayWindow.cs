@@ -6,16 +6,13 @@ using MasterPlayer.Settings;
 namespace MasterPlayer.Radar;
 
 /// <summary>
-/// 雷达悬浮窗：圆形 HUD 式 2D 俯视小地图（原生 ImGui 窗口，UiBuilder.Draw 主线程驱动）。
+/// 雷达悬浮窗：随场地轮廓显示的 2D 俯视小地图（原生 ImGui 窗口，UiBuilder.Draw 主线程驱动）。
 /// 游戏内 3D 范围提示由 RadarRenderer（真实世界绘制）负责，本窗口才是「雷达」。
 /// 内容渲染由 RadarView 完成（回放窗口内嵌同一组件）；本类只管显示门槛、窗口壳与交互。
 /// 交互：解锁状态下拖拽移动、滚轮缩放、右键快捷菜单；锁定后鼠标穿透。
 /// </summary>
 public sealed class RadarOverlayWindow : IDisposable
 {
-    private const float ScreenHalfSize = 150f;
-    private const float ScreenMargin = 20f;
-
     private readonly RadarView _view = new();
     private bool _disposed;
     private bool _hovered;
@@ -66,16 +63,18 @@ public sealed class RadarOverlayWindow : IDisposable
     {
         var settings = MasterPlayerSettings.Instance;
 
+        using var theme = PromeRotation.UI.Components.PromeUiTheme.PushWindowStyle();
         var flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar |
                     ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoBackground |
-                    ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.AlwaysAutoResize;
+                    ImGuiWindowFlags.NoFocusOnAppearing;
         if (settings.RadarOverlayLock)
         {
             flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoInputs;
         }
 
-        var fullSize = 2f * (ScreenMargin + ScreenHalfSize);
-        ImGui.SetNextWindowSize(new Vector2(fullSize), ImGuiCond.FirstUseEver);
+        var viewport = RadarViewportLayout.Create(settings.RadarScale, ImGui.GetFontSize(), ImGui.GetIO().DisplaySize);
+        var fullSize = viewport.FullSize;
+        ImGui.SetNextWindowSize(new Vector2(fullSize), ImGuiCond.Always);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         if (!ImGui.Begin("MasterPlayer 雷达", flags))
@@ -85,17 +84,20 @@ public sealed class RadarOverlayWindow : IDisposable
             return;
         }
 
-        var drawList = ImGui.GetWindowDrawList();
-        var cursor = ImGui.GetCursorScreenPos();
-        var screenCenter = cursor + new Vector2(ScreenMargin + ScreenHalfSize);
-
-        ImGui.InvisibleButton("##radar_hit", new Vector2(fullSize));
-        HandleInteraction(settings, !settings.RadarOverlayLock);
-
-        _view.Draw(drawList, screenCenter, ScreenHalfSize, _hovered);
-
-        ImGui.End();
-        ImGui.PopStyleVar(2);
+        try
+        {
+            var drawList = ImGui.GetWindowDrawList();
+            var cursor = ImGui.GetCursorScreenPos();
+            var screenCenter = cursor + new Vector2(fullSize / 2);
+            ImGui.InvisibleButton("##radar_hit", new Vector2(fullSize));
+            HandleInteraction(settings, !settings.RadarOverlayLock);
+            _view.Draw(drawList, screenCenter, viewport.Radius, _hovered);
+        }
+        finally
+        {
+            ImGui.End();
+            ImGui.PopStyleVar(2);
+        }
 
         if (_pendingSaveUtc is DateTime pending && DateTime.UtcNow >= pending)
         {
@@ -144,10 +146,10 @@ public sealed class RadarOverlayWindow : IDisposable
                 changed = true;
             }
 
-            var opacity = settings.RadarBackgroundOpacity;
-            if (ImGui.SliderFloat("背景不透明度", ref opacity, 0f, 1f))
+            var opacity = settings.RadarBackgroundOpacity * 100;
+            if (ImGui.SliderFloat("背景不透明度", ref opacity, 0f, 100f, "%.0f%%"))
             {
-                settings.RadarBackgroundOpacity = opacity;
+                settings.RadarBackgroundOpacity = opacity / 100;
                 changed = true;
             }
 

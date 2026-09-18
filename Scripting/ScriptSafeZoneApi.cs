@@ -35,6 +35,9 @@ public sealed class ScriptSafeZoneApi
 
     private static SafeZoneRegistry Registry => PromeRotation.Plugin.Instance.SafeZoneRebornRegistry;
 
+    internal void SetNavigationOnly(SafeZoneAreaHandle handle, bool value)
+        => MasterPlayerPlugin.Instance?.AoeVisibility?.SetNavigationOnly(handle, value);
+
     internal (string Key, string Name) DrawingSource => (
         _scriptKey + "/" + Uri.EscapeDataString(_drawingGroup ?? ""),
         _drawingGroup is null ? _scriptName : $"{_scriptName} / {_drawingGroup}");
@@ -56,6 +59,10 @@ public sealed class ScriptSafeZoneApi
     /// <summary>从现在开始、永不结束的持续危险区。</summary>
     public SafeZoneAreaHandle AddPersistentDanger(GeometryTemplate template, TransformBinding binding)
         => Track(Registry.AddPersistentDanger(WithDangerMargin(template), binding));
+
+    /// <summary>注册已确定的绝对 UTC 危险窗口，适用于需要每次快照保留原判定时刻的机制。</summary>
+    public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
+        => Track(PromeRotation.Plugin.Instance.SafeZoneRebornManager.AddDangerArea(WithDangerMargin(template), binding, windows));
 
     // ── 目标区（安全点）─────────────────────────────────
 

@@ -32,6 +32,18 @@ public sealed class ScriptDrawApi
         MasterPlayerPlugin.Instance?.AoeVisibility?.AddPreview(Id(id), geometry, safe, durationMs, key, name);
     }
 
+    internal void AddAoePreview(string id, IGeometryShape geometry, bool safe, bool outlineOnly, float progress)
+    {
+        var (key, name) = _safeZone.DrawingSource;
+        MasterPlayerPlugin.Instance?.AoeVisibility?.AddPreview(Id(id), geometry, safe, 0, key, name, outlineOnly, progress);
+    }
+
+    internal void AddLinePreview(string id, Vector3 start, Vector3 end, bool safe)
+    {
+        var (key, name) = _safeZone.DrawingSource;
+        MasterPlayerPlugin.Instance?.AoeVisibility?.AddLine(Id(id), start, end, safe, key, name);
+    }
+
     /// <summary>静态几何绘制（世界坐标）。</summary>
     public DrawHandle Add(
         string id,

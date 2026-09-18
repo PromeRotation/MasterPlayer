@@ -127,6 +127,7 @@ public sealed class RadarRenderer : IDisposable
 
         foreach (var danger in snapshot.DangerAreas)
         {
+            if (visibility?.IsNavigationOnly(danger.Handle) == true) continue;
             if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Danger_{danger.Handle.Id}";
@@ -140,7 +141,16 @@ public sealed class RadarRenderer : IDisposable
                 if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.World))
                     continue;
                 var id = IdPrefix + "Preview_" + preview.Id;
-                draw.Add(id, preview.Geometry, preview.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+                draw.Add(id, preview.Geometry, preview.Style(appearance), durationMs: SelfExpireMs);
+                frameIds.Add(id);
+            }
+
+        if (visibility != null)
+            foreach (var line in visibility.GetLines())
+            {
+                if (!line.Visibility.World || !(line.Safe ? appearance.ShowSafe : appearance.ShowDanger)) continue;
+                var id = IdPrefix + "Preview_" + line.Id;
+                draw.AddTether(id, line.Start, line.End, line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs);
                 frameIds.Add(id);
             }
 

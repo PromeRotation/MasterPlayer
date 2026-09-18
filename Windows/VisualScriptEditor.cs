@@ -5,14 +5,15 @@ using ECommons.DalamudServices;
 using MasterPlayer.Scripting;
 using MasterPlayer.Scripting.Visual;
 using MasterPlayer.Settings;
+using PromeRotation.UI.Components;
 
 namespace MasterPlayer.Windows;
 
 internal sealed class VisualScriptEditor
 {
-    private static readonly Vector4 Accent = new(0.45f, 0.78f, 1f, 1f);
-    private static readonly Vector4 Warning = new(1f, 0.70f, 0.35f, 1f);
-    private static readonly Vector4 Error = new(1f, 0.48f, 0.48f, 1f);
+    private static Vector4 Accent => PromeUiTheme.Accent;
+    private static Vector4 Warning => PromeUiTheme.Warning;
+    private static Vector4 Error => PromeUiTheme.Danger;
     private static readonly string[] Shapes = ["圆形", "月环", "扇形", "中心矩形", "射线矩形"];
     private static readonly string[] Origins = ["施法者", "技能落点", "读条目标", "固定坐标"];
     private static readonly string[] Tracking = ["读条开始时锁定", "持续跟随位置", "持续跟随位置与普通朝向"];
@@ -45,6 +46,7 @@ internal sealed class VisualScriptEditor
         if (!_visible) return;
         var manager = MasterPlayerPlugin.Instance?.Scripts;
         if (manager == null) return;
+        using var theme = PromeUiTheme.PushWindowStyle();
         ImGui.SetNextWindowSize(new Vector2(1180f, 820f), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(760f, 560f), new Vector2(2000f, 1600f));
         var open = true;
@@ -85,22 +87,24 @@ internal sealed class VisualScriptEditor
 
     private void DrawToolbar(ScriptManager manager)
     {
+        ImGui.BeginDisabled(_draft == null);
+        if (PromeUi.PrimaryButton("save", "保存并应用", new Vector2(128, 32))) Save(manager);
+        ImGui.EndDisabled();
+        ImGui.SameLine();
         if (ImGui.Button("新建脚本")) Navigate(NewDocument);
         ImGui.SameLine();
-        ImGui.BeginDisabled(_draft == null);
-        if (ImGui.Button("保存并应用")) Save(manager);
+        if (ImGui.Button("更多")) ImGui.OpenPopup("##document_actions");
+        if (ImGui.BeginPopup("##document_actions"))
+        {
+            if (ImGui.MenuItem("复制脚本", "", false, _draft != null)) DuplicateDocument();
+            if (ImGui.MenuItem("重新读取", "", false, _savedText != null)) Navigate(() => Load(_path!));
+            ImGui.Separator();
+            if (ImGui.MenuItem("删除脚本", "", false, _savedText != null))
+                Confirm($"删除「{_draft?.Name}」的脚本文件及未保存修改？", () => DeleteDocument(manager));
+            ImGui.EndPopup();
+        }
         ImGui.SameLine();
-        if (ImGui.Button("复制脚本")) DuplicateDocument();
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        ImGui.BeginDisabled(_savedText == null);
-        if (ImGui.Button("重新读取")) Navigate(() => Load(_path!));
-        ImGui.SameLine();
-        if (ImGui.Button("删除脚本"))
-            Confirm($"删除「{_draft?.Name}」的脚本文件及未保存修改？", () => DeleteDocument(manager));
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        ImGui.TextColored(_dirty ? Warning : Accent, _draft == null ? "未选择脚本" : _dirty ? "未保存" : "已保存");
+        ImGui.TextColored(_dirty ? Warning : PromeUiTheme.TextMuted, _draft == null ? "未选择脚本" : _dirty ? "有未保存修改" : "已保存");
         ImGui.Separator();
     }
 
@@ -154,7 +158,7 @@ internal sealed class VisualScriptEditor
         }
         else ImGui.TextDisabled("首次保存后可启用");
         TextInput("备注 / Boss 名称", _draft.Note, v => _draft.Note = v);
-        ImGui.TextDisabled("修改在保存后生效；只重新加载当前脚本。尺寸单位：码，时间单位：秒。");
+        PluginUi.Hint("修改在保存后生效。尺寸单位：码；时间单位：秒。");
         ImGui.Separator();
 
         if (ImGui.BeginChild("##visual_rules", new Vector2(176f, -1f), true))
@@ -214,7 +218,7 @@ internal sealed class VisualScriptEditor
         Section("触发条件 · 读条开始");
         IntInput("读条 ID（十进制）", rule.ActionId, v => rule.ActionId = v);
         UIntInput("施法者 Data ID", rule.CasterDataId, v => rule.CasterDataId = v);
-        ImGui.TextWrapped("Data ID 是怪物种类编号，0 表示任意施法者。跟随绑定会自动使用本次读条的实体。");
+        PluginUi.Hint("Data ID 为怪物种类编号，0 表示任意施法者。");
         var target = Svc.Targets.Target;
         ImGui.BeginDisabled(target is not IBattleChara { IsCasting: true });
         if (ImGui.Button("读取目标当前读条") && target is IBattleChara battle)
@@ -283,7 +287,7 @@ internal sealed class VisualScriptEditor
         if (rule.Shape is not (VisualAoeShape.Circle or VisualAoeShape.Donut))
         {
             FloatInput("角度偏移（度）", rule.AngleOffsetDegrees, v => rule.AngleOffsetDegrees = v);
-            ImGui.TextWrapped("在基准朝向上叠加：+90° 左转，-90° 右转，180° 反向。只旋转 AOE，位置偏移保持原坐标规则。");
+            PluginUi.Hint("+90° 左转，-90° 右转，180° 反向。位置偏移不变。");
         }
         FloatInput("偏移 X", rule.Offset.X, v => rule.Offset = rule.Offset with { X = v });
         FloatInput("偏移 Z", rule.Offset.Y, v => rule.Offset = rule.Offset with { Y = v });
@@ -300,13 +304,10 @@ internal sealed class VisualScriptEditor
     private void DrawPreview(VisualMechanicRule rule)
     {
         ImGui.TextColored(Accent, "AOE 预览");
-        ImGui.SetNextItemWidth(140f);
-        ImGui.SliderFloat("模拟朝向", ref _previewDirection, 0f, 360f, "%.0f°");
-        ImGui.SameLine();
-        ImGui.SetNextItemWidth(100f);
-        ImGui.SliderFloat("缩放", ref _previewZoom, 0.5f, 3f, "%.1fx");
+        PluginUi.Slider("模拟朝向", ref _previewDirection, 0f, 360f, "%.0f°");
+        PluginUi.Slider("预览大小", ref _previewZoom, 0.5f, 3f, "%.1f 倍");
         _dirty |= VisualAoePreview.Draw(rule, _previewDirection, _previewZoom);
-        ImGui.TextWrapped("北在上，蓝点为位置锚点，蓝线为基准朝向。预览已包含角度偏移；实际危险范围另加「智能躲避」中的安全余量。");
+        PluginUi.Hint("北在上，主题色圆点为锚点，连线为基准朝向。预览不包含躲避安全余量。");
     }
 
     private void NewDocument()

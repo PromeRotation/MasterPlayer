@@ -18,6 +18,7 @@ public static class DangerMarginInflator
 
         return template switch
         {
+            Mechanics.Crucible.ResolvedGeometryTemplate snapshot => snapshot.Inflate(margin),
             RotationOffsetTemplate rotated => rotated with { Inner = Inflate(rotated.Inner, margin) },
             CircleTemplate circle => new CircleTemplate(circle.Radius + margin),
             DonutTemplate donut => new DonutTemplate(MathF.Max(0f, donut.InnerRadius - margin), donut.OuterRadius + margin),

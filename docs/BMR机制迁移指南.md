@@ -1,6 +1,6 @@
-# BMR 机制迁移指南（BossModReborn → MasterPlayer 机制脚本）
+﻿# BMR 机制迁移指南（BossModReborn → MasterPlayer 机制脚本）
 
-本文沉淀斗兽棋·高一（`Scripts/CrucibleHigh1.cs`，规格 `docs/reference/CrucibleHigh1.spec.md`）迁移过程中逐行核对过的语义对照、映射模式与踩坑记录。迁移任何 BMR 模块前请读完本文，并配合 `bmr-mechanic-migration` 技能的流程执行。
+本文沉淀斗兽棋·高一（`tests/Legacy/CrucibleHigh1.cs`，规格 `docs/reference/CrucibleHigh1.spec.md`）迁移过程中逐行核对过的语义对照、映射模式与踩坑记录。迁移任何 BMR 模块前请读完本文，并配合 `bmr-mechanic-migration` 技能的流程执行。
 
 - BMR 源码：`C:\Users\xiaos\Documents\GitHub\BossModReborn-7.56`（斗兽棋模块在 `BossMod/Modules/Dawntrail/Foray/Crucible/`）
 - PR 本体源码：`C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\PromeRotation\`（API 签名的唯一权威来源）
@@ -85,7 +85,8 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 ## 5. 时序换算
 
 - `Module.CastFinishAt(spell, d)` → `e.CastTime + NpcCastPadding + d`（`NpcCastPadding = 0.3f`，NPC 完成补正）。
-- 危险区生效再提前 0.25s（`DangerTimeMargin`，对齐 `CrucibleScorpionAI.Avoid` 的 `AddSeconds(-0.25)`）。
+- 危险区生效再提前 0.25s（`DangerTimeMargin`，对齐 `CrucibleScorpionAI.Avoid` 的 `AddSeconds(-0.25)`）；结束时间仍按真实命中计算，不能同时提前。
+- 共享 Crucible 运行时用 `AddForbiddenZone` 表示有限伤害窗，用 `AddForbiddenConstraint` 表示就位截止与持续约束。就位时间不是判定结束，约束须持续到组件解除或明确的真实结束时间；不能统一套 `Activation + 0.6s`。
 - BMR 的「activation +Ns 后移除」→ `AddDelayedHit` 的 `hitDurationSeconds` 参数或簿记超时（`DateTime.UtcNow` 记录，`Update` 里比对）。
 - 序列机制（五连锥 2.1s 间隔、龙卷五连 2s 间隔等）按 BMR 注释里的实录间隔逐段注册各自时间窗。
 
@@ -94,6 +95,8 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 ## 6. BMR AI 行为 → 本插件语义转换
 
 BMR 的 `AddAIHints` 是导航约束语言，本插件用 SafeZone 目标区/危险区表达。已验证的转换模式：
+
+通用优先级参照 BMR `NavigationDecision`：避险优先于输出/身位。玩家读条或当前危险有效起点不足 1 秒时不注册普通输出偏好；原目标内安全面积不足 25% 时整项放弃，并保留 PR 的硬安全余量与危险结束余量。MasterPlayer 跟随的空目标必须同时停用 GoalWindow，仅裁掉全部几何仍会触发宿主朝目标中心的启发式移动；精确击退/引导/数字格 GoalPoints 继续独立处理。常规动态几何更新不递增版本，仅目标启停令在途旧解算失效。
 
 | BMR 写法 | 本插件写法 | 实例 |
 |---|---|---|
@@ -124,7 +127,7 @@ BMR 的 `AddAIHints` 是导航约束语言，本插件用 SafeZone 目标区/危
 | 机制形态 | 正确绑定 | 反例 |
 |---|---|---|
 | BMR `LocationTargeted = true`（落点型读条） | `At(e.EffectPosition, rotation)` 静态 | 跟随施法者（B29 橡果炸弹/释放汁液/蛛网屏曾写错） |
-| 落点型的朝向 | `CastRotation.TryGet` 读 `Character.CastRotation` | 用实体朝向 `SourceRotation`（读条开始后 Boss 转身会带偏） |
+| 落点型的朝向 | `CastRotation.TryGet` 优先读包快照 `Raw.PacketFacing`，兼容匹配的 `Character.CastRotation` | 用实体朝向 `SourceRotation`（读条开始后 Boss 转身会带偏） |
 | 转向读条挂 Boss 本体、实际伤害由场心辅助体发出 | 锚定**场地中心**，朝向取转向读条 | 锚 Boss 读条时位置（B23 五连锥曾因此偏离场心） |
 | 自身圆/近战范围（读条期间 Boss 不动） | `FollowEntityPositionAndRotation` 或静态均可，按机制选 | — |
 | 常驻跟随（树精本体圈/移动爆弹/毒气团） | `FollowEntityPosition` + `MissingEntityPolicy.RemoveArea` | — |

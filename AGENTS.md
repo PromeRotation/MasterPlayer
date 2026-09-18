@@ -40,7 +40,7 @@ MasterPlayer/
 │   ├── RadarView.cs               # 可嵌入雷达视图：给定屏幕圆心/半径绘制全套雷达内容（悬浮窗与回放窗口共用）
 │   └── RadarRenderer.cs           # 真实世界绘制：DrawManager 3D 世界范围提示（AOE 预告/安全点等）
 ├── Follow/
-│   └── FollowController.cs        # 战斗中跟随：跟随队友/当前目标（GreenMove 执行，躲避接管时让位）
+│   └── FollowController.cs        # 战斗中跟随：跟随队友/当前目标（自动躲避开启时作为 Reborn 动态目标，与危险区统一解算）
 ├── Dodge/
 │   ├── DodgeController.cs         # 智能躲避：读条事件（PromeEventBus 主线程派发）→ 危险区注册 → SafeZone 解算走位
 │   ├── DangerMarginInflator.cs    # 危险区几何外扩（GeometryTemplate 按 DodgeDangerMargin 膨胀）
@@ -120,7 +120,7 @@ public sealed class MasterPlayerSettings
     public bool EnableRadarOverlay = false;     // 悬浮窗默认关
     public int RadarCenterMode = 0;             // 0=场地基准（场地边界中心） 1=玩家摄像机基准
     public bool RadarRotateWithCamera = true;   // 画面随摄像机方位角旋转
-    public float RadarScale = 1.0f;             // 缩放倍率
+    public float RadarScale = 1.0f;             // 悬浮窗大小倍率，完整适配场地
     public bool RadarOverlayLock = false;       // 锁定位置（鼠标穿透）
     public float RadarBackgroundOpacity = 0.55f;    // 圆盘背景不透明度，0 = 不要圆盘背景
     public bool RadarShowCompass = true;            // 罗盘方位字母
@@ -217,8 +217,9 @@ public sealed class FollowController : IDisposable
 ```
 
 - 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或指定成员不可用时按 `FollowTargetWhenNoSlot` 回退当前目标（存活且可选中的 `ObjectKind.Pc` / `ObjectKind.BattleNpc`）；槽位超出 0~7 则不跟随。**`FollowTargetWhenNoSlot = false` 时禁止当前目标回退（槽位 0 同样生效），有效小队槽位仍可跟随**。本地玩家不存在或已死亡时停止跟随。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
-- 跟随距离：战斗 NPC 使用 XZ 平面上双方目标圈边缘间距（到达半径为设置距离加双方 `HitboxRadius`），玩家使用中心间距；判距与 GreenMove 容差一致，不额外加 0.2 码停止余量，设置距离最低按 0.2 码执行。路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、跟随距离或目标圈大小变化时更新，不每帧重置读条等待。
-- 移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；旧版 `SafeZoneMovementStatus.HasControl` 或 `SafeZoneRebornMovementStatus.HasControl` 为 true 时让位——不发跟随指令，也不 Stop 对方路线；关闭或卸载跟随时同样检查控制权。
+- 跟随距离：战斗 NPC 使用 XZ 平面上双方目标圈边缘间距（到达半径为设置距离加双方 `HitboxRadius`），玩家使用中心间距；判距与 GreenMove 容差一致，不额外加 0.2 码停止余量，设置距离最低按 0.2 码执行。自动躲避开启时，将此距离作为 Reborn 动态圆形目标，复用其危险检查与路线规划；跟随目标排除全部仍待判定的危险形状，使用不可变快照和无版本递增更新，避免提前回位并保持后台解算连续；当前生效的机制目标优先，未来目标未激活前不抢占跟随。关闭自动躲避时，直接跟随的路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、跟随距离或目标圈大小变化时更新，不每帧重置读条等待。
+- 自动躲避模式只撤销自己的目标句柄，不直接操作 GreenMove；本体 Reborn 被手动关闭时不会降级成直线跟随绕过危险检查。直接跟随的移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；旧版 `SafeZoneMovementStatus.HasControl` 或 `SafeZoneRebornMovementStatus.HasControl` 为 true 时让位——不发跟随指令，也不 Stop 对方路线；关闭或卸载跟随时同样检查控制权。
+- 通用避险优先级：玩家读条、脚下危险扣除宿主开始余量后不足 1 秒、或处于硬障碍内时，撤销普通跟随目标，保持危险解算运行。普通目标保留宿主 0.5 米硬余量，危险结束后的 0.3 秒余量也纳入排除；按原目标覆盖范围统计安全占比，小于 25% 时停用其 GoalWindow，不能只给空几何（PR 的目标启发式仍会朝空区域中心移动）。仅目标启停递增一次版本，使旧追击解算失效；目标/危险几何正常动态更新仍不递增。精确机制 GoalPoints 不受此普通偏好过滤。
 
 **Dodge.DodgeController**（`Dodge\DodgeController.cs`）
 
@@ -388,7 +389,7 @@ public sealed class ScriptDrawApi { /* internal 构造；Add/AddBound/AddTether/
 
 // ScriptSafeZoneApi.BeginDrawingGroup(string name) → IDisposable：为本作用域注册的区域指定 AOE 显示分组，嵌套名称组合，退出恢复。
 // ScriptDrawApi.AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f)：只供显示的世界几何，使用当前分组，不注册到解算器。
-// CastRotation.TryGet(LogSystemCastStartEvent e, out float rotation)：仅主线程，匹配当前读条后读取 FFCS Character.CastRotation；失效返回 false，不回退到普通朝向。
+// CastRotation.TryGet(LogSystemCastStartEvent e, out float rotation)：仅主线程，优先读取实际 PR StartCastCaptureRaw.PacketFacing；缺失或非法时才匹配当前读条读取 FFCS Character.CastRotation；失效返回 false，不回退到普通朝向。
 
 public sealed class ScriptManager : IDisposable
 {
@@ -568,7 +569,7 @@ public readonly record struct GreenMovePoint(
 
 ### 5.6.1 可视化机制脚本
 
-- 编辑入口为「脚本」→「可视化编辑器」，源码位于 `Scripting/Visual/` 与 `Windows/VisualScriptEditor.cs` / `VisualAoePreview.cs`；使用、UI 与扩展约定见 `docs/可视化脚本编辑器.md`。
+- 编辑入口为「机制脚本」→「可视化编辑器」，源码位于 `Scripting/Visual/` 与 `Windows/VisualScriptEditor.cs` / `VisualAoePreview.cs`；使用、UI 与扩展约定见 `docs/可视化脚本编辑器.md`。
 - 递归加载 `*.mechanic.json`（新建默认存入脚本目录的 `Visual/`）；带格式版本的定义经描述符工厂创建 `VisualMechanicScript`，沿用区域匹配与独立 owner 生命周期。同区域、同施法者允许多个 GUID；保存只重载当前文档，不刷新其他脚本。
 - 规则按 Action ID 与可选施法者 Data ID（Dalamud `BaseId`）筛选；绑定用事件的 Entity ID。可视化规则通过事件级 `IsGenericDodgeSuppressed` 条件接管，不能使用全局 Action ID 压制，否则会漏掉其他施法者的同技能。
 - 运行器只使用安全区门面注册危险区，不操作 GreenMove 或场地边界；按事件时间扣除派发延迟，清理取消、打断、过期和停止的区域。位置与普通朝向跟随使用局部偏移，其他模式使用世界偏移；预览复用同一 PR 模板。
@@ -576,15 +577,15 @@ public readonly record struct GreenMovePoint(
 
 ### 5.7 雷达悬浮窗（`Radar\RadarOverlayWindow.cs`）
 
-圆形 HUD 式 2D 俯视小地图，原生 ImGui 窗口（无标题栏、无边框、`NoBackground`），由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
+随实际场地轮廓显示的 2D 俯视小地图，原生 ImGui 窗口（无标题栏、无边框、`NoBackground`），由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
 
 - **显示门槛**：`RadarOnlyWithScript`（默认开）开启时，仅当存在运行中的**区域专属脚本**（`Territorys` 非空且匹配当前区域；通用脚本不算，未启用/未运行不算）才显示——即「只在有脚本的区域出现」。
-- **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时，以边界中心为原点、按边界轮廓顶点的**外接圆半径**（最远顶点距离 + 3 码 padding）定视野半径——完整显示整个场地，非正方形场地的角落不被圆盘裁掉；模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定 25 码视野。
+- **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时优先读取当前斗兽入口与该导航边界对应的 `DisplayBounds` 和固定场心，否则用宿主边界。`RadarArenaLayout` 按镜头旋转后的轮廓最大轴向范围等比缩放到视口，保留4像素边框空间；不会用外接圆缩小长方形、填平异形凹口或给所有地图统一外扩。模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定25码圆形视野。
 - **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
-- **圆盘裁剪（`Radar\RadarCanvas.cs`）**：所有图形内容裁剪到屏幕圆盘内——填充多边形经 Sutherland–Hodgman 凸域裁剪（64 边形逼近圆盘）后再三角化（PR `PolygonTriangulator`，月环按四边形条带逐段裁剪），线段经凸域参数裁剪（Cyrus–Beck）。圆盘外圈辉光、深色半透明底（`RadarBackgroundOpacity` 控制，0 = 无底盘）、距离参考环（按视野自动选 2/5/10/20/40 码步长）、方位刻度与罗盘字母（FFXIV 世界方位：X 西→东、Z 北→南，北 = −Z）。
+- **场地裁剪（`Radar/RadarCanvas.cs`、`Radar/RadarClipRegion.cs`）**：背景和内容按真实轮廓与视口相交；凹多边形由PR三角化后逐片裁剪，线段合并连续区间但不跨越凹口。面积计算先平移到局部原点并忽略退化三角形，避免窗口位置造成精度误差。边框随场地，方向文字置于轮廓外侧，距离参考环仍表示实际距离；悬浮窗和回放按当前字号保留方向文字与阴影的边距。
 - **数据源**：`SafeZoneRebornManager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `SafeZoneRebornMovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
-- **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 缩放）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整面圆盘即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
+- **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 悬浮窗大小；场地始终适配内容视口）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整个视口即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
 
 ### 5.8 录制回放（`Replay\`，对齐 BMR `BossMod/Replay/` 的 Operation 思路）
 
@@ -610,8 +611,43 @@ public readonly record struct GreenMovePoint(
 3. **移动指令纪律**：`GreenMoveSystem.MoveTo` 是 **last-write-wins**（替换当前路线），**无优先级**概念——后发的路线直接顶掉先发的，谁的都可能被顶。因此：
    - 不要每帧重发相同路线（每发一次都重置路线状态与读条看门狗）；只在路线**变化**时 `MoveTo`，到达/失效时 `Stop()`；
    - **只有自己接管过移动才调用 `Stop()`**，绝不停掉本体或其他插件发起的移动；
-   - 脚本手动移动在旧版 `SafeZoneSetting.EnableAutoMovement` 或 Reborn `SafeZoneRebornSetting.EnableAutoMovement` 开启，或任一安全区系统 `HasControl` 时让位；跟随在任一安全区系统持有控制权时让位。`Stop` / `ClearQueue` / `SkipCurrent` 也不能修改安全区接管后的路线。
+   - 脚本手动移动在旧版 `SafeZoneSetting.EnableAutoMovement` 或 Reborn `SafeZoneRebornSetting.EnableAutoMovement` 开启，或任一安全区系统 `HasControl` 时让位；自动躲避开启时，跟随只注册 Reborn 动态目标区，机制目标优先，禁止在 HasControl 释放后直接回位；自动躲避关闭时的直接跟随仍在任一安全区系统持有控制权时让位。`Stop` / `ClearQueue` / `SkipCurrent` 也不能修改安全区接管后的路线。
 4. **绘制 id 统一 `MasterPlayer_` 前缀**：所有 `DrawManager.Add*` 的 id 必须以 `MasterPlayer_` 开头。Dispose 用 `RemoveByRegex("^MasterPlayer_")` 一键清干净，也避免与其他插件/脚本的绘制 id 冲突。
 5. **设置持久化走自己的 `MasterPlayer.json`**：不用 Dalamud 的 `GetPluginConfig`（那是 PR 宿主自己的配置通道，卫星插件调用会拿到宿主的配置）。本插件设置一律经 `MasterPlayerSettings`（`System.Text.Json`）读写 `ConfigDirectory\MasterPlayer.json`。
 6. **脚本回调与 OnUpdate 均在主线程执行**（PromeEventBus 事件由主线程派发），脚本内可直接调 SafeZone / Move / Draw 三门面，无需自行入队；脚本不得再订阅 `CombatEventManager` 裸事件（那是 hook/网络线程，绕过了 owner 管理）。
 7. **脚本不得持静态状态跨热重载**：每次热重载是全新编译的程序集 + 全新实例，`static` 字段会在旧程序集中残留副本并与新实例并存（重复订阅、状态错乱）。状态一律放实例字段，`OnStop` 做收尾。
+
+
+### 2026-09-18 界面与高一复核补充
+
+- 主面板按总览、显示与绘制、自动走位、机制脚本、录制回放、诊断组织；设置页、回放、编辑器及雷达菜单使用实际 PR 的 `PromeUiTheme.PushWindowStyle`，动态颜色令牌跟随明暗与主题色。`Windows/PluginUi.cs` 统一提示、满宽滑条与窄区域开关说明换行。
+- 绘制页内分雷达、世界绘制、按机制显示；危险/安全填充和边框分别提供颜色与 0–100% 不透明度滑条，持久化仍为原 RGBA，不迁移或重置用户配置。隐藏绘制不删除危险区。
+- 脚本页搜索名称/区域 ID，筛选全部/当前区域/运行中；左列表右详情，原有脚本启停、设置、机制开关与可视化编辑入口保留。编辑器保存为主操作，复制/重新读取/删除收入“更多”，原有未保存和删除确认保留。
+- 回放录制与播放分行、文件支持搜索和折叠，场地预览默认收起；事件类型收进折叠项，隐藏泳道不占空白行。文件列表在开启、手动刷新和录制结束时更新，空目录不每帧扫描。
+- `RadarViewportLayout` 将 RadarScale 用于悬浮窗整体大小，限制到屏幕可用大小；`RadarArenaLayout` 只按实际半径与旋转轮廓适配，不再二次放大。覆盖用户 1.152 倍、0.3–3 倍、多字号与异形回归。
+- 高一 B22–B31 对照 BMR 70 个组件，无遗漏。魔界花/巨像击退正常读条结束不撤落点约束，命中、取消、死亡或 +2s 超时清理。免疫状态匹配 BMR，要求状态结束严格晚于判定。
+- 石像鬼钢铁/月环是分阶段解算的局部例外：同时保留两段显示预告，第一击前只导航钢铁与外围待机；判定/原有超时后撤旧区并导航内圈。实战默认危险余量 0.5m + PR 空间/时间余量不能重复封死两秒转场。具体时序和测试见 `docs/reference/CrucibleAll.spec.md`。
+
+### 2026-09-18 高二躲避延迟修复补充
+
+- 最新 23:02:30 ARR 是 B32 佛劳洛斯；51.218s 三条49194命中，不能将该文件当作 B33 夺心魔。分析及源码/部署备份在 `F:/project/卫月插件/analysis/masterplayer-high2-20260918-230230/`。
+- 本地 PR Reborn 修复解析光栅化、无目标安全点提前完成、严格搜索剪枝、异步路线期限与重算保持、折线撤离预算、路径平滑和异形边界复核。常规求解失败时仅对1.5s内脚下待判定伤害重试一次0.25s提前余量；真实危险时间与空间余量不变，禁止全局推迟伤害。
+- `tests/LateDodgeRegression.cs` 18项专项与完整311项回归通过；测试须引用本轮修复的实际宿主候选，不能拿旧PR DLL验证新执行器。PR本体与MasterPlayer必须成对更新并重载；只刷新机制脚本不生效。
+- `DiagnoseMovement` 现覆盖全部斗兽组，每秒限频，记录脚下危险未接管时的期限、快照/结果年龄、异步计数与当前技能。离线回归不替代游戏内实战验收。
+
+### 2026-09-19 夺心魔实战反馈
+
+- 对照BMR，B33包含场地、普通AOE、小怪策略、菌床、水点名、雷点名、麻痹/毒全屏提示共8组件，无整项遗漏。最新可用ARR为 `2026.09.18 23.58.25.dat`，分析在 `F:/project/卫月插件/analysis/masterplayer-mindflayer-20260919/`。
+- **覆盖上一节的1.5s限制**：普通解算已经失败时立即允许既有0.25s提前余量重试，不能等倒计时降到1.5s才开始。重算必须保留正在逃离待判定危险的紧急余量，避免半路恢复0.5s后停步；真实时窗与空间余量未修改。
+- `CrucibleEngine.Cast`去重须比较锁定朝向和目标ID，同位置同技能不能丢弃事件包对本地扫描朝向的修正；已由同源旋转十字回归确认。日志同时记录持有/执行状态及各读条的朝向、落点，覆盖HasControl=true但GreenMove已停的情况。
+- `MindflayerLiveRegression`4项新增回归（四激光采用当前0.5m用户余量、50ms起步延迟及连续重算），完整315项通过，五盘入口编译通过。十字形状与BMR距离函数一致；原回放缺运行时采样朝向，不能声称已唯一确定本次十字受击原因。
+
+
+### 2026-09-19 高二与劳妲复核补充
+
+- 高二B32–45共73组件与BMR一致。劳妲锁线按波次释放引导，迟到连线不能重开；已落地飞刀与投放helper生命周期分开。普通AOE/剑线/烙印/视线正常读条结束要等待真实效果，取消和死亡另处理。
+- 5555/5341状态可能乱序或无时长，禁止对DateTime.MaxValue直接AddSeconds；效果朝向用事件携带值，不能把后续扫描朝向当锁定依据。
+- `AddAoe`公开签名保留。内置机制通过`AddAoePreview`/`AddLinePreview`向双视图提供描边、紧迫度及连线；精准预览拥有显示时，通过SetNavigationOnly仅隐藏同几何的解算绘制副本，不删除危险区。保留用户配色/透明度/来源开关和owner清理。
+- `High2MigrationRegression`覆盖全部已配置高二读条的朝向修正与生命周期，并用旧劳妲ARR时序验证三剑撤离、40m到20m击退转场。在线简介不作为精确尺寸真源；自动面向/停手/交互等既有降级没有被本次绘制补全替代。详见CrucibleAll.spec及本地analysis/masterplayer-high2-lauda-20260919。
+
+- 本轮新增50项、完整365项通过，Release编译与5盘smoke通过；01:16已备份替换MP，MVID `a77e577e-8462-44d3-901e-c6d4568d40c2`。部署时游戏未运行，下次启动加载；PR本体未动。

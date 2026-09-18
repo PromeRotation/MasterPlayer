@@ -76,23 +76,35 @@ public sealed class ScriptSafeZoneApi : IDisposable
         => Registry.AddDelayedHit(template, binding, delaySeconds, hitDurationSeconds);
     public SafeZoneAreaHandle AddPersistentDanger(GeometryTemplate template, TransformBinding binding)
         => Registry.AddPersistentDanger(template, binding);
+    public float DangerMarginForTest { get; set; }
+    public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
+        => Manager.AddDangerArea(MasterPlayer.Dodge.DangerMarginInflator.Inflate(template, DangerMarginForTest), binding, windows);
+    public SafeZoneAreaHandle AddPersistentSafeArea(GeometryTemplate template, TransformBinding binding, int priority = 0, PositionPreference preference = PositionPreference.Nearest)
+        => Registry.AddPersistentSafeArea(template, binding, priority, preference);
     public SafeZoneAreaHandle AddTimedDanger(GeometryTemplate template, TransformBinding binding, float durationSeconds)
         => Registry.AddTimedDanger(template, binding, durationSeconds);
     public SafeZoneAreaHandle AddTimedSafeArea(GeometryTemplate template, TransformBinding binding, float durationSeconds,
         int priority = 0, PositionPreference preference = PositionPreference.Nearest)
         => Registry.AddTimedSafeArea(template, binding, durationSeconds, priority, preference);
     public SafeZoneAreaHandle AddObstacle(GeometryTemplate template, TransformBinding binding) => Registry.AddObstacle(template, binding);
-    public bool Remove(SafeZoneAreaHandle handle) => Registry.Remove(handle);
+    internal readonly HashSet<SafeZoneAreaHandle> NavigationOnly = [];
+    internal void SetNavigationOnly(SafeZoneAreaHandle handle, bool value) { if (value) NavigationOnly.Add(handle); else NavigationOnly.Remove(handle); }
+    public bool Remove(SafeZoneAreaHandle handle) { NavigationOnly.Remove(handle); return Registry.Remove(handle); }
     public void Dispose() { if (_ownsManager) Manager.Dispose(); }
     private sealed class Scope : IDisposable { public void Dispose() { } }
 }
 
 public sealed class ScriptDrawApi
 {
+    internal readonly Dictionary<string, MasterPlayer.Radar.AoePreview> Previews = [];
+    internal readonly Dictionary<string, MasterPlayer.Radar.AoeLinePreview> Lines = [];
     public void Add(string id, IGeometryShape geometry, DrawStyle? style = null, float durationMs = 0f) { }
     public void AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f) { }
+    internal void AddAoePreview(string id, IGeometryShape geometry, bool safe, bool outlineOnly, float progress)
+        => Previews[id] = new(id, geometry, safe, new(), DateTime.MaxValue, outlineOnly, progress);
+    internal void AddLinePreview(string id, System.Numerics.Vector3 start, System.Numerics.Vector3 end, bool safe) => Lines[id] = new(id, start, end, safe, new());
     public void AddTether(string id, object start, object end, DrawStyle? style = null, float durationMs = 0f) { }
-    public bool Remove(string id) => true;
+    public bool Remove(string id) => Previews.Remove(id) | Lines.Remove(id);
 }
 
 public class ScriptServiceProxy : DispatchProxy

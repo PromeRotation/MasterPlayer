@@ -3,25 +3,29 @@ using Dalamud.Bindings.ImGui;
 using ECommons.DalamudServices;
 using MasterPlayer.Scripting;
 using MasterPlayer.Settings;
+using PromeRotation.UI.Components;
 
 namespace MasterPlayer.Windows;
 
 /// <summary>
-/// 设置面板：分页签组织（总览/雷达悬浮窗/绘制外观/自动化/脚本/诊断）。
+/// 设置面板：侧栏分区（总览/显示与绘制/自动走位/机制脚本/录制回放/诊断）。
 /// 由 UiBuilder.Draw（主线程）驱动；PR 插件管理器按钮或聊天指令 /prmp 开关。
 /// </summary>
 public sealed class MainWindow : IDisposable
 {
-    private static readonly Vector4 AccentColor = new(0.45f, 0.78f, 1f, 1f);
-    private static readonly Vector4 OnColor = new(0.40f, 0.90f, 0.50f, 1f);
-    private static readonly Vector4 OffColor = new(0.55f, 0.58f, 0.65f, 1f);
-    private static readonly Vector4 WarningColor = new(1f, 0.65f, 0.30f, 1f);
-    private static readonly Vector4 HintColor = new(0.62f, 0.66f, 0.74f, 1f);
-    private static readonly Vector4 ErrorColor = new(1f, 0.45f, 0.45f, 1f);
+    private static Vector4 AccentColor => PromeUiTheme.Accent;
+    private static Vector4 OnColor => PromeUiTheme.Success;
+    private static Vector4 WarningColor => PromeUiTheme.Warning;
+    private static Vector4 HintColor => PromeUiTheme.TextMuted;
+    private static Vector4 ErrorColor => PromeUiTheme.Danger;
 
     private bool _visible;
     private bool _disposed;
     private string _aoeFilter = "";
+    private int _page, _displayPage, _scriptScope;
+    private string _scriptFilter = "";
+    private string? _selectedScript;
+    private static readonly string[] Pages = ["总览", "显示与绘制", "自动走位", "机制脚本", "录制回放", "诊断"];
     private readonly VisualScriptEditor _visualEditor = new();
 
     public void Toggle()
@@ -37,62 +41,45 @@ public sealed class MainWindow : IDisposable
         _visualEditor.Draw();
         if (!_visible) return;
 
-        ImGui.SetNextWindowSize(new Vector2(680, 620), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(new Vector2(560, 440), new Vector2(1600, 1200));
+        using var theme = PromeUiTheme.PushWindowStyle();
+        ImGui.SetNextWindowSize(new Vector2(900, 700), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new Vector2(780, 520), new Vector2(1800, 1400));
         if (!ImGui.Begin("MasterPlayer 设置", ref _visible))
         {
             ImGui.End();
             return;
         }
 
-        if (ImGui.BeginTabBar("##main_tabs"))
+        try
         {
-            if (ImGui.BeginTabItem("总览"))
+            if (ImGui.BeginChild("##navigation", new Vector2(138, -1), false))
             {
-                DrawOverviewTab();
-                ImGui.EndTabItem();
+                ImGui.TextColored(AccentColor, "MasterPlayer");
+                ImGui.Spacing();
+                for (var i = 0; i < Pages.Length; ++i)
+                    if (ImGui.Selectable(Pages[i], _page == i, ImGuiSelectableFlags.None, new Vector2(0, 36))) _page = i;
+                ImGui.Spacing();
+                Hint("外观跟随 PR 主题");
+                Hint("设置即时生效");
             }
-
-            if (ImGui.BeginTabItem("雷达悬浮窗"))
+            ImGui.EndChild();
+            ImGui.SameLine();
+            if (ImGui.BeginChild("##page_" + _page, new Vector2(-1, -1), false))
             {
-                DrawRadarTab();
-                ImGui.EndTabItem();
+                PromeUi.PageHeader(Pages[_page]);
+                switch (_page)
+                {
+                    case 0: DrawOverviewTab(); break;
+                    case 1: DrawAppearanceTab(); break;
+                    case 2: DrawAutomationTab(); break;
+                    case 3: DrawScriptsTab(); break;
+                    case 4: DrawReplayTab(); break;
+                    case 5: DrawDiagnosticsTab(); break;
+                }
             }
-
-            if (ImGui.BeginTabItem("绘制外观"))
-            {
-                DrawAppearanceTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("自动化"))
-            {
-                DrawAutomationTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("脚本"))
-            {
-                DrawScriptsTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("录制回放"))
-            {
-                DrawReplayTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("诊断"))
-            {
-                DrawDiagnosticsTab();
-                ImGui.EndTabItem();
-            }
-
-            ImGui.EndTabBar();
+            ImGui.EndChild();
         }
-
-        ImGui.End();
+        finally { ImGui.End(); }
     }
 
     private static void DrawOverviewTab()
@@ -102,10 +89,10 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("功能模块");
         changed |= ModuleRow("真实世界绘制", "在游戏 3D 世界中绘制机制范围与安全点提示。", settings.EnableRadar, v => settings.EnableRadar = v);
-        changed |= ModuleRow("雷达悬浮窗", "屏幕上的圆形 2D 俯视雷达；详见「雷达悬浮窗」页。", settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
-        changed |= ModuleRow("智能躲避", "按 AOE 判定时间自动规划走位，使用安全区 Reborn。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
-        changed |= ModuleRow("战斗中跟随", "自动跟随队友或当前目标；详见「自动化」页。", settings.EnableFollow, v => settings.EnableFollow = v);
-        changed |= ModuleRow("机制脚本框架", "按区域自动运行机制脚本；关闭后运行中的脚本全部停止。", settings.EnableScripts, v => settings.EnableScripts = v);
+        changed |= ModuleRow("雷达悬浮窗", "俯视场地、机制和走位路线。", settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
+        changed |= ModuleRow("智能躲避", "根据机制判定时间自动前往安全位置。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
+        changed |= ModuleRow("接近目标", "跟随队友或当前目标，避险优先。", settings.EnableFollow, v => settings.EnableFollow = v);
+        changed |= ModuleRow("机制脚本", "进入对应区域自动运行已启用的脚本。", settings.EnableScripts, v => settings.EnableScripts = v);
 
         if (changed)
             settings.Save();
@@ -125,9 +112,7 @@ public sealed class MainWindow : IDisposable
             var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow);
 
             ImGui.Text($"当前区域 ID：{Svc.ClientState.TerritoryType}");
-            ImGui.SameLine(0f, 18f);
             HintInline($"运行中脚本 {scripts?.Running.Count ?? 0} / {scripts?.Scripts.Count ?? 0}");
-            ImGui.SameLine(0f, 18f);
             HintInline($"活动危险区 {snapshot.DangerAreas.Count}");
             Hint($"安全区 Reborn：{status.PhaseText}");
 
@@ -175,18 +160,13 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("外观");
         var scale = settings.RadarScale;
-        if (ImGui.SliderFloat("缩放", ref scale, 0.3f, 3f))
+        if (PluginUi.Slider("雷达大小", ref scale, 0.3f, 3f, "%.2f 倍"))
         {
             settings.RadarScale = scale;
             changed = true;
         }
 
-        var opacity = settings.RadarBackgroundOpacity;
-        if (ImGui.SliderFloat("背景不透明度", ref opacity, 0f, 1f))
-        {
-            settings.RadarBackgroundOpacity = opacity;
-            changed = true;
-        }
+        changed |= PluginUi.Opacity("背景不透明度", ref settings.RadarBackgroundOpacity);
 
         changed |= Check("显示罗盘", settings.RadarShowCompass, v => settings.RadarShowCompass = v);
         changed |= Check("显示距离环", settings.RadarShowRangeRings, v => settings.RadarShowRangeRings = v);
@@ -194,7 +174,7 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("交互");
         changed |= Check("锁定位置（鼠标穿透）", settings.RadarOverlayLock, v => settings.RadarOverlayLock = v);
-        Hint("解锁状态下：拖拽圆盘移动位置，滚轮缩放，右键打开快捷菜单。");
+        Hint("解锁后可拖动雷达，滚轮调整大小，右键打开快捷菜单。");
 
         if (changed)
             settings.Save();
@@ -203,11 +183,21 @@ public sealed class MainWindow : IDisposable
     private void DrawAppearanceTab()
     {
         var settings = MasterPlayerSettings.Instance;
-        Hint("「真实世界」是游戏内的 3D 范围提示，「雷达」是悬浮窗里的 2D 图示，两者独立设置。颜色的 A 值控制不透明度。");
-        ImGui.Spacing();
-
-        var changed = DrawAoeAppearance("真实世界", settings.WorldAoe);
-        changed |= DrawAoeAppearance("雷达悬浮窗", settings.RadarAoe);
+        _displayPage = PromeUi.TabBar("##display_sections", ["雷达", "世界绘制", "按机制显示"], _displayPage);
+        if (_displayPage == 0)
+        {
+            DrawRadarTab();
+            if (DrawAoeAppearance("范围颜色", settings.RadarAoe)) settings.Save();
+            return;
+        }
+        if (_displayPage == 1)
+        {
+            var worldChanged = ModuleRow("启用世界绘制", "在游戏场景中显示机制范围。", settings.EnableRadar, v => settings.EnableRadar = v);
+            worldChanged |= DrawAoeAppearance("范围颜色", settings.WorldAoe);
+            if (worldChanged) settings.Save();
+            return;
+        }
+        var changed = false;
 
         SectionHeader("按技能／机制显示");
         Hint("隐藏只是不绘制，危险区仍参与躲避解算；识别过的技能会自动加入列表。");
@@ -246,31 +236,29 @@ public sealed class MainWindow : IDisposable
 
     private static bool DrawAoeAppearance(string label, AoeViewSettings settings)
     {
-        if (!ImGui.TreeNode(label))
-            return false;
-
-        var flags = ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf | ImGuiColorEditFlags.Float;
-        var changed = ImGui.ColorEdit4("危险区填充", ref settings.DangerFill, flags);
-        changed |= ImGui.ColorEdit4("危险区边框", ref settings.DangerOutline, flags);
-        changed |= ImGui.ColorEdit4("安全区填充", ref settings.SafeFill, flags);
-        changed |= ImGui.ColorEdit4("安全区边框", ref settings.SafeOutline, flags);
+        SectionHeader(label);
+        Hint("点击色块改颜色，拖动滑条改不透明度。0% 为透明，100% 为不透明。");
+        var changed = PluginUi.ColorOpacity("危险填充", ref settings.DangerFill);
+        changed |= PluginUi.ColorOpacity("危险边框", ref settings.DangerOutline);
+        changed |= PluginUi.ColorOpacity("安全填充", ref settings.SafeFill);
+        changed |= PluginUi.ColorOpacity("安全边框", ref settings.SafeOutline);
         changed |= ImGui.Checkbox("危险预告逐渐加深", ref settings.FadeDanger);
-        Hint("逐渐加深时，填充颜色的 A 值为最大不透明度。");
+        if (settings.FadeDanger) Hint("危险越接近判定，填充越明显；滑条控制最大不透明度。");
         changed |= ImGui.Checkbox("显示危险区", ref settings.ShowDanger);
         changed |= ImGui.Checkbox("显示安全区", ref settings.ShowSafe);
-        ImGui.Text("显示的形状");
-        changed |= ImGui.Checkbox("圆形", ref settings.ShowCircles);
-        ImGui.SameLine();
-        changed |= ImGui.Checkbox("月环", ref settings.ShowDonuts);
-        ImGui.SameLine();
-        changed |= ImGui.Checkbox("扇形", ref settings.ShowFans);
-        ImGui.SameLine();
-        changed |= ImGui.Checkbox("矩形／直线", ref settings.ShowRectangles);
-        ImGui.SameLine();
-        changed |= ImGui.Checkbox("多边形", ref settings.ShowPolygons);
-        ImGui.SameLine();
-        changed |= ImGui.Checkbox("其他形状", ref settings.ShowOtherShapes);
-        ImGui.TreePop();
+        if (ImGui.TreeNode("按形状筛选"))
+        {
+            changed |= ImGui.Checkbox("圆形", ref settings.ShowCircles);
+            ImGui.SameLine();
+            changed |= ImGui.Checkbox("月环", ref settings.ShowDonuts);
+            changed |= ImGui.Checkbox("扇形", ref settings.ShowFans);
+            ImGui.SameLine();
+            changed |= ImGui.Checkbox("矩形／直线", ref settings.ShowRectangles);
+            changed |= ImGui.Checkbox("多边形", ref settings.ShowPolygons);
+            ImGui.SameLine();
+            changed |= ImGui.Checkbox("其他形状", ref settings.ShowOtherShapes);
+            ImGui.TreePop();
+        }
         return changed;
     }
 
@@ -279,7 +267,8 @@ public sealed class MainWindow : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var changed = false;
 
-        SectionHeader("战斗中跟随");
+        SectionHeader("接近目标");
+        Hint("开启智能躲避后，机制站位和脱险优先于接近目标。");
         changed |= Check("启用跟随", settings.EnableFollow, v => settings.EnableFollow = v);
 
         var slot = settings.FollowSlot;
@@ -294,7 +283,7 @@ public sealed class MainWindow : IDisposable
         Hint("支持玩家和怪物；不跟随已死亡或不可选中的目标。");
 
         var distance = settings.FollowDistance;
-        if (ImGui.SliderFloat("跟随距离", ref distance, 0.5f, 10f, "%.1f y"))
+        if (PluginUi.Slider("跟随距离", ref distance, 0.5f, 10f, "%.1f 码"))
         {
             settings.FollowDistance = distance;
             changed = true;
@@ -305,8 +294,9 @@ public sealed class MainWindow : IDisposable
         changed |= Check("非战斗中也生效", settings.FollowOutOfCombat, v => settings.FollowOutOfCombat = v);
 
         SectionHeader("智能躲避");
+        changed |= Check("启用智能躲避", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
         var margin = settings.DodgeDangerMargin;
-        if (ImGui.SliderFloat("危险区安全余量", ref margin, 0f, 2f, "%.2f y"))
+        if (PluginUi.Slider("危险区安全余量", ref margin, 0f, 2f, "%.2f 码"))
         {
             settings.DodgeDangerMargin = margin;
             changed = true;
@@ -321,35 +311,18 @@ public sealed class MainWindow : IDisposable
     private void DrawScriptsTab()
     {
         var manager = MasterPlayerPlugin.Instance?.Scripts;
-        if (manager == null)
-        {
-            ImGui.TextDisabled("（ScriptManager 未初始化）");
-            return;
-        }
-
-        if (ImGui.Button("刷新脚本"))
-            manager.ReloadScripts();
-
+        if (manager == null) { Hint("脚本管理器尚未就绪。"); return; }
+        var settings = MasterPlayerSettings.Instance;
+        if (ModuleRow("启用机制脚本", "进入对应区域自动运行，离开后停止。", settings.EnableScripts, v => settings.EnableScripts = v)) settings.Save();
+        if (ImGui.Button("刷新脚本")) manager.ReloadScripts();
         ImGui.SameLine();
-        if (ImGui.Button("打开脚本目录"))
-            OpenScriptsDirectory(manager.ScriptsDirectory);
-
+        if (ImGui.Button("打开目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
         ImGui.SameLine();
-        if (ImGui.Button("可视化编辑器"))
-            _visualEditor.Open();
-
-        ImGui.SameLine(0f, 18f);
-        HintInline($"当前区域 ID：{Svc.ClientState.TerritoryType}    脚本数：{manager.Scripts.Count}");
-
-        if (!MasterPlayerSettings.Instance.EnableScripts)
-            ImGui.TextColored(WarningColor, "脚本框架总开关已关闭，运行中的脚本已全部停止。");
-
-        if (!string.IsNullOrEmpty(manager.StatusMessage))
-            ImGui.TextColored(new Vector4(0.6f, 0.8f, 1f, 1f), manager.StatusMessage);
-
+        if (ImGui.Button("可视化编辑器")) _visualEditor.Open();
+        if (!string.IsNullOrEmpty(manager.StatusMessage)) Hint(manager.StatusMessage);
         if (!string.IsNullOrEmpty(manager.ErrorMessage))
         {
-            if (ImGui.BeginChild("##script_errors", new Vector2(-1f, 72f), true))
+            if (ImGui.BeginChild("##script_errors", new Vector2(-1, 80), true))
             {
                 ImGui.PushStyleColor(ImGuiCol.Text, ErrorColor);
                 ImGui.TextWrapped(manager.ErrorMessage);
@@ -357,18 +330,43 @@ public sealed class MainWindow : IDisposable
             }
             ImGui.EndChild();
         }
-
-        if (manager.Scripts.Count == 0)
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##script_filter", "搜索脚本名称 / 区域 ID", ref _scriptFilter, 256);
+        _scriptScope = PromeUi.TabBar("##script_scope", ["全部", "当前区域", "运行中"], _scriptScope);
+        var territory = Svc.ClientState.TerritoryType;
+        var filter = _scriptFilter.Trim();
+        var entries = manager.Scripts.Where(d =>
+            (_scriptScope != 1 || d.Metadata.Territorys.Length == 0 || d.Metadata.Territorys.Contains(territory)) &&
+            (_scriptScope != 2 || manager.Running.ContainsKey(d.Metadata.Id)) &&
+            (d.Metadata.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+             d.Metadata.Region.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+             d.Metadata.Territorys.Any(t => t.ToString().Contains(filter, StringComparison.OrdinalIgnoreCase))))
+            .OrderByDescending(d => manager.Running.ContainsKey(d.Metadata.Id)).ThenBy(d => d.Metadata.Name).ToArray();
+        if (entries.Length == 0)
         {
-            Hint("点击「可视化编辑器」新建机制，或把 .cs 脚本放入脚本目录后点「刷新脚本」。");
+            Hint(manager.Scripts.Count == 0 ? "暂无脚本。可在编辑器中新建，或将脚本放入目录后刷新。" : "没有匹配的脚本，可修改搜索或筛选条件。");
             return;
         }
-
-        if (ImGui.BeginChild("##script_list", new Vector2(-1f, -1f), true))
+        if (!entries.Any(d => d.Metadata.Id == _selectedScript)) _selectedScript = entries[0].Metadata.Id;
+        var listWidth = Math.Clamp(ImGui.GetContentRegionAvail().X * 0.38f, 190, 290);
+        if (ImGui.BeginChild("##script_list", new Vector2(listWidth, -1), true))
         {
-            foreach (var descriptor in manager.Scripts)
-                DrawScriptRow(manager, descriptor);
+            foreach (var descriptor in entries)
+            {
+                var id = descriptor.Metadata.Id;
+                ImGui.PushID(id);
+                if (ImGui.Selectable(descriptor.Metadata.Name + "###select", _selectedScript == id)) _selectedScript = id;
+                var running = manager.Running.ContainsKey(id);
+                var status = running ? "运行中" : !settings.EnableScripts ? "总开关已关闭" : manager.IsScriptEnabled(id) ? "已启用 · 等待区域" : "已停用";
+                ImGui.TextColored(running ? OnColor : HintColor, status);
+                ImGui.Separator();
+                ImGui.PopID();
+            }
         }
+        ImGui.EndChild();
+        ImGui.SameLine();
+        if (ImGui.BeginChild("##script_detail", new Vector2(-1, -1), false))
+            DrawScriptDetails(manager, entries.First(d => d.Metadata.Id == _selectedScript));
         ImGui.EndChild();
     }
 
@@ -409,7 +407,7 @@ public sealed class MainWindow : IDisposable
 
         if (ImGui.Button("打开录制回放窗口"))
             MasterPlayerPlugin.Instance?.ReplayWindow?.Toggle();
-        Hint("独立窗口提供：录制控制、事件时间轴（缩放/悬停/点击跳转）、多日志对比、上雷达下时间轴的回放视图。也可聊天指令 /prmp replay 开关。");
+        Hint("查看场地预览、拖动时间轴或对比多份日志。指令 /prmp replay 也可打开。");
 
         var autoRecord = MasterPlayerSettings.Instance.AutoRecordOnBattleStart;
         if (ImGui.Checkbox("战斗开始时自动录制（战斗结束自动停止）", ref autoRecord))
@@ -441,8 +439,8 @@ public sealed class MainWindow : IDisposable
             if (settings.DebugMode)
             {
                 ImGui.Text($"派发次数：{status.DispatchCount}    最近派发：{status.LastDispatchUtc:HH:mm:ss.fff} UTC");
-                ImGui.Text($"异步解算：运行中={status.IsAsyncSolveRunning} 发起={status.AsyncSolveStartedCount} 采纳={status.AsyncSolveAcceptedCount} 取消={status.AsyncSolveCancelledCount} 丢弃={status.AsyncSolveDiscardedCount}");
-                ImGui.Text($"区域快照 v{snapshot.Version}：危险区 {snapshot.DangerAreas.Count} / 目标区 {snapshot.GoalAreas.Count} / 障碍 {snapshot.HardObstacles.Count} / 边界 {(snapshot.ArenaBoundary != null ? "有" : "无")}");
+                ImGui.TextWrapped($"异步解算：运行中={status.IsAsyncSolveRunning} 发起={status.AsyncSolveStartedCount} 采纳={status.AsyncSolveAcceptedCount} 取消={status.AsyncSolveCancelledCount} 丢弃={status.AsyncSolveDiscardedCount}");
+                ImGui.TextWrapped($"区域快照 v{snapshot.Version}：危险区 {snapshot.DangerAreas.Count} / 目标区 {snapshot.GoalAreas.Count} / 障碍 {snapshot.HardObstacles.Count} / 边界 {(snapshot.ArenaBoundary != null ? "有" : "无")}");
             }
         }
         catch (Exception ex)
@@ -464,71 +462,30 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-    private void DrawScriptRow(ScriptManager manager, ScriptDescriptor descriptor)
+    private void DrawScriptDetails(ScriptManager manager, ScriptDescriptor descriptor)
     {
         var metadata = descriptor.Metadata;
         var id = metadata.Id;
-        var running = manager.Running.TryGetValue(id, out var run);
-
         ImGui.PushID(id);
-
+        ImGui.TextWrapped(metadata.Name);
+        Hint($"v{metadata.Version} · {metadata.Author}");
         var enabled = manager.IsScriptEnabled(id);
-        if (ImGui.Checkbox("##enabled", ref enabled))
-            manager.SetScriptEnabled(id, enabled);
-
-        ImGui.SameLine();
-
-        var info = string.IsNullOrWhiteSpace(metadata.Name) ? metadata.SourcePath : metadata.Name;
-        if (!string.IsNullOrWhiteSpace(metadata.Version))
-            info += $"  v{metadata.Version}";
-        if (!string.IsNullOrWhiteSpace(metadata.Author))
-            info += $"  by {metadata.Author}";
-        if (!string.IsNullOrWhiteSpace(metadata.Region))
-            info += $"  [{metadata.Region}]";
-
-        if (running)
+        if (PluginUi.Toggle("enabled", "启用此脚本", "在适用区域自动运行。", ref enabled)) manager.SetScriptEnabled(id, enabled);
+        if (descriptor.Source == ScriptSource.Visual && ImGui.Button("编辑脚本")) _visualEditor.Open(descriptor.SourcePath);
+        if (!string.IsNullOrWhiteSpace(metadata.Note)) ImGui.TextWrapped(metadata.Note);
+        Hint(metadata.Territorys.Length == 0 ? "适用区域：通用" : $"适用区域：{string.Join(", ", metadata.Territorys)}");
+        if (manager.Running.TryGetValue(id, out var run))
         {
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.5f, 1f), info);
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.4f, 1f, 0.5f, 1f), "●运行中");
+            DrawScriptSettings(run);
+            DrawMechanismToggles(manager, id, run);
         }
-        else
+        else Hint("脚本运行后可调整设置与机制开关。");
+        if (ImGui.TreeNode("文件信息"))
         {
-            ImGui.Text(info);
-        }
-
-        if (descriptor.Source == ScriptSource.Visual)
-        {
-            ImGui.TextDisabled("可视化脚本");
-            ImGui.SameLine();
-            if (ImGui.SmallButton("编辑")) _visualEditor.Open(descriptor.SourcePath);
-        }
-
-        if (ImGui.TreeNode("详情"))
-        {
-            if (!string.IsNullOrWhiteSpace(metadata.Note))
-                ImGui.TextWrapped(metadata.Note);
-
-            ImGui.TextDisabled(metadata.Territorys.Length == 0
-                ? "适用区域：通用（不限区域）"
-                : $"适用区域：{string.Join(", ", metadata.Territorys)}");
-            ImGui.TextDisabled($"来源：{metadata.SourcePath}");
-
-            if (running && run != null)
-            {
-                DrawScriptSettings(run);
-                DrawMechanismToggles(manager, id, run);
-            }
-            else
-            {
-                ImGui.TextDisabled("（设置项与机制开关在脚本运行中时可编辑）");
-            }
-
+            ImGui.TextWrapped(metadata.SourcePath);
             ImGui.TreePop();
         }
-
         ImGui.PopID();
-        ImGui.Separator();
     }
 
     private static void DrawScriptSettings(RunningScript run)
@@ -537,7 +494,7 @@ public sealed class MainWindow : IDisposable
         if (store.RegisteredSettings.Count == 0)
             return;
 
-        ImGui.Text("脚本设置");
+        SectionHeader("脚本设置");
         foreach (var (propName, displayName) in store.RegisteredSettings)
             DrawScriptSetting(store, propName, displayName);
     }
@@ -604,7 +561,7 @@ public sealed class MainWindow : IDisposable
         if (mechanisms.Length == 0)
             return;
 
-        ImGui.Text("机制开关");
+        SectionHeader("机制开关");
         foreach (var mechanism in mechanisms)
         {
             var enabled = manager.IsMechanismEnabled(scriptId, mechanism);
@@ -674,13 +631,9 @@ public sealed class MainWindow : IDisposable
     private static bool ModuleRow(string label, string description, bool value, Action<bool> apply)
     {
         var newValue = value;
-        var changed = ImGui.Checkbox(label, ref newValue);
+        var changed = PluginUi.Toggle(label, label, description, ref newValue);
         if (changed)
             apply(newValue);
-        ImGui.SameLine();
-        ImGui.TextColored(newValue ? OnColor : OffColor, newValue ? "● 已启用" : "○ 已关闭");
-        Hint(description);
-        ImGui.Spacing();
         return changed;
     }
 

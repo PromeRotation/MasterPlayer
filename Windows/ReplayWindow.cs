@@ -4,6 +4,7 @@ using ECommons.DalamudServices;
 using MasterPlayer.Radar;
 using MasterPlayer.Replay;
 using MasterPlayer.Settings;
+using PromeRotation.UI.Components;
 
 namespace MasterPlayer.Windows;
 
@@ -17,14 +18,14 @@ public sealed class ReplayWindow : IDisposable
 {
     private const float RadarSectionHeight = 300f;
 
-    private static readonly Vector4 AccentColor = new(0.45f, 0.78f, 1f, 1f);
-    private static readonly Vector4 OnColor = new(0.40f, 0.90f, 0.50f, 1f);
-    private static readonly Vector4 WarningColor = new(1f, 0.65f, 0.30f, 1f);
-    private static readonly Vector4 ErrorColor = new(1f, 0.45f, 0.45f, 1f);
-    private static readonly Vector4 HintColor = new(0.62f, 0.66f, 0.74f, 1f);
-    private static readonly Vector4 PlayheadColor = new(0.95f, 0.35f, 0.35f, 1f);
-    private static readonly Vector4 GridColor = new(1f, 1f, 1f, 0.10f);
-    private static readonly Vector4 GridTextColor = new(1f, 1f, 1f, 0.35f);
+    private static Vector4 AccentColor => PromeUiTheme.Accent;
+    private static Vector4 OnColor => PromeUiTheme.Success;
+    private static Vector4 WarningColor => PromeUiTheme.Warning;
+    private static Vector4 ErrorColor => PromeUiTheme.Danger;
+    private static Vector4 HintColor => PromeUiTheme.TextMuted;
+    private static Vector4 PlayheadColor => PromeUiTheme.Danger;
+    private static Vector4 GridColor => PromeUiTheme.Border;
+    private static Vector4 GridTextColor => PromeUiTheme.TextMuted;
 
     private static readonly float[] SpeedValues = [0.25f, 0.5f, 1f, 2f, 4f];
     private static readonly string[] SpeedLabels = ["0.25x", "0.5x", "1x", "2x", "4x"];
@@ -56,6 +57,9 @@ public sealed class ReplayWindow : IDisposable
     private readonly List<(Vector2 Min, Vector2 Max, string Tip)> _hoverTips = new(128);
     private readonly bool[] _laneVisible = [true, true, true, true, true, true, true, false];
 
+    private string _fileFilter = "";
+    private bool _filesInitialized, _wasRecording;
+    private int _page;
     private bool _visible;
     private bool _disposed;
     private string? _timelinePath;
@@ -73,8 +77,9 @@ public sealed class ReplayWindow : IDisposable
 
     public void Toggle()
     {
-        if (!_disposed)
-            _visible = !_visible;
+        if (_disposed) return;
+        _visible = !_visible;
+        if (_visible) RefreshFiles();
     }
 
     public void Draw()
@@ -105,7 +110,8 @@ public sealed class ReplayWindow : IDisposable
 
     private void DrawInternal()
     {
-        ImGui.SetNextWindowSize(new Vector2(960, 720), ImGuiCond.FirstUseEver);
+        using var theme = PromeUiTheme.PushWindowStyle();
+        ImGui.SetNextWindowSize(new Vector2(960, 800), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(720, 480), new Vector2(2000, 1400));
         if (!ImGui.Begin("MasterPlayer 录制回放", ref _visible))
         {
@@ -113,27 +119,14 @@ public sealed class ReplayWindow : IDisposable
             return;
         }
 
-        DrawToolbar();
-        DrawFileList();
-
-        if (ImGui.BeginTabBar("##replay_tabs"))
+        try
         {
-            if (ImGui.BeginTabItem("时间轴回放"))
-            {
-                DrawTimelineTab();
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("日志对比"))
-            {
-                DrawCompareTab();
-                ImGui.EndTabItem();
-            }
-
-            ImGui.EndTabBar();
+            DrawToolbar();
+            DrawFileList();
+            _page = PromeUi.TabBar("##replay_pages", ["时间轴回放", "日志对比"], _page);
+            if (_page == 0) DrawTimelineTab(); else DrawCompareTab();
         }
-
-        ImGui.End();
+        finally { ImGui.End(); }
     }
 
     // ── 工具栏 ────────────────────────────────────────
@@ -142,31 +135,19 @@ public sealed class ReplayWindow : IDisposable
     {
         var recorder = MasterPlayerPlugin.Instance?.Recorder;
         var replay = MasterPlayerPlugin.Instance?.Replay;
-        if (recorder == null || replay == null)
+        if (recorder == null || replay == null) { PluginUi.Hint("录制回放尚未就绪。"); return; }
+        if (_wasRecording && !recorder.IsRecording) RefreshFiles();
+        _wasRecording = recorder.IsRecording;
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("录制");
+        ImGui.SameLine();
+        ImGui.BeginDisabled(replay.SessionActive);
+        if (ImGui.Button(recorder.IsRecording ? "停止录制" : "开始录制"))
         {
-            ImGui.TextDisabled("（录制回放未初始化）");
-            return;
+            if (recorder.IsRecording) { recorder.StopRecording(); RefreshFiles(); }
+            else recorder.StartRecording();
         }
-
-        if (recorder.IsRecording)
-        {
-            ImGui.TextColored(OnColor, $"● 录制中 {(int)recorder.Elapsed.TotalMinutes:D2}:{recorder.Elapsed.Seconds:D2}（{recorder.EventCount} 事件）");
-            ImGui.SameLine();
-            if (ImGui.Button("停止录制"))
-                recorder.StopRecording();
-        }
-        else
-        {
-            if (replay.SessionActive)
-            {
-                ImGui.TextColored(WarningColor, "回放会话进行中，无法录制");
-            }
-            else if (ImGui.Button("开始录制"))
-            {
-                recorder.StartRecording();
-            }
-        }
-
+        ImGui.EndDisabled();
         ImGui.SameLine();
         var autoRecord = MasterPlayerSettings.Instance.AutoRecordOnBattleStart;
         if (ImGui.Checkbox("战斗自动录制", ref autoRecord))
@@ -174,80 +155,72 @@ public sealed class ReplayWindow : IDisposable
             MasterPlayerSettings.Instance.AutoRecordOnBattleStart = autoRecord;
             MasterPlayerSettings.Instance.Save();
         }
-
         ImGui.SameLine();
-        if (ImGui.Button("打开录制目录"))
-            OpenDirectory(ReplayRecorder.RecordingsDirectory);
+        if (ImGui.Button("打开录制目录")) OpenDirectory(ReplayRecorder.RecordingsDirectory);
+        if (recorder.IsRecording) ImGui.TextColored(OnColor, $"录制中 · {(int)recorder.Elapsed.TotalMinutes:D2}:{recorder.Elapsed.Seconds:D2} · {recorder.EventCount} 个事件");
+        else if (replay.SessionActive) PluginUi.Hint("结束回放后可开始录制。");
+        else PluginUi.Hint(recorder.StatusMessage);
 
-        ImGui.SameLine(0f, 24f);
-
-        var recording = replay.Recording;
-        ImGui.BeginDisabled(recording == null || recorder.IsRecording);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("回放");
+        ImGui.SameLine();
+        ImGui.BeginDisabled(replay.Recording == null || recorder.IsRecording);
         if (ImGui.Button(replay.Playing ? "暂停" : "播放"))
         {
             if (replay.Playing) replay.Pause(); else replay.Play();
         }
         ImGui.SameLine();
-        if (ImGui.Button("停止"))
-            replay.StopSession();
+        if (ImGui.Button("结束回放")) replay.StopSession();
         ImGui.SameLine();
         var speedIndex = Array.IndexOf(SpeedValues, replay.Speed);
         if (speedIndex < 0) speedIndex = 2;
-        ImGui.SetNextItemWidth(80f);
-        if (ImGui.Combo("##speed", ref speedIndex, SpeedLabels, SpeedLabels.Length))
-            replay.SetSpeed(SpeedValues[speedIndex]);
+        ImGui.SetNextItemWidth(90);
+        if (ImGui.Combo("速度", ref speedIndex, SpeedLabels, SpeedLabels.Length)) replay.SetSpeed(SpeedValues[speedIndex]);
         ImGui.EndDisabled();
-
-        ImGui.SameLine();
-        ImGui.TextColored(HintColor, replay.StatusMessage);
-        if (replay.RouterErrorCount > 0)
-        {
-            ImGui.SameLine();
-            ImGui.TextColored(ErrorColor, $"脚本回调异常 {replay.RouterErrorCount} 次");
-        }
+        PluginUi.Hint(replay.StatusMessage);
+        if (replay.RouterErrorCount > 0) ImGui.TextColored(ErrorColor, $"脚本回调异常 {replay.RouterErrorCount} 次");
     }
-
-    // ── 文件列表 ──────────────────────────────────────
 
     private void DrawFileList()
     {
-        if (ImGui.Button("刷新列表"))
-            RefreshFiles();
-        if (_replayFiles.Count == 0)
-            RefreshFiles();
-
+        if (!_filesInitialized) RefreshFiles();
+        if (!ImGui.CollapsingHeader($"录制文件 · {_replayFiles.Count} 份###files", ImGuiTreeNodeFlags.DefaultOpen)) return;
+        if (ImGui.Button("刷新列表")) RefreshFiles();
         ImGui.SameLine();
-        ImGui.TextColored(HintColor, "勾选多份进「日志对比」；「回放」加载并播放该录制。");
-
-        if (ImGui.BeginChild("##replay_files", new Vector2(-1f, 96f), true))
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##file_filter", "搜索文件名 / 区域 ID", ref _fileFilter, 256);
+        if (ImGui.BeginChild("##replay_files", new Vector2(-1, 100), true))
         {
+            var matches = 0;
             foreach (var file in _replayFiles)
             {
+                if (!Path.GetFileName(file).Contains(_fileFilter.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
+                ++matches;
                 ImGui.PushID(file);
-
                 var comparing = _compareEntries.ContainsKey(file);
-                if (ImGui.Checkbox("##compare", ref comparing))
-                    SetCompareSelected(file, comparing);
-
+                if (ImGui.Checkbox("##compare", ref comparing)) SetCompareSelected(file, comparing);
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("加入日志对比");
                 ImGui.SameLine();
+                ImGui.BeginDisabled(MasterPlayerPlugin.Instance?.Recorder?.IsRecording == true);
                 if (ImGui.SmallButton("回放"))
                 {
                     var replay = MasterPlayerPlugin.Instance?.Replay;
-                    if (replay != null && replay.Load(file))
-                        replay.Play();
+                    if (replay != null && replay.Load(file)) replay.Play();
                 }
-
+                ImGui.EndDisabled();
                 ImGui.SameLine();
                 ImGui.TextUnformatted(Path.GetFileName(file));
-
                 ImGui.PopID();
             }
+            if (matches == 0) PluginUi.Hint(_replayFiles.Count == 0 ? "暂无录制。点击开始录制，结束后文件会出现在这里。" : "没有匹配的文件。");
         }
         ImGui.EndChild();
+        PluginUi.Hint($"勾选文件可对比 · 已选 {_compareEntries.Count} 份");
     }
 
     private void RefreshFiles()
     {
+        _filesInitialized = true;
         try
         {
             var directory = ReplayRecorder.RecordingsDirectory;
@@ -294,7 +267,7 @@ public sealed class ReplayWindow : IDisposable
 
     private void DrawTimelineTab()
     {
-        DrawRadarSection();
+        if (ImGui.CollapsingHeader("场地预览")) DrawRadarSection();
 
         var replay = MasterPlayerPlugin.Instance?.Replay;
         var recording = replay?.Recording;
@@ -310,31 +283,30 @@ public sealed class ReplayWindow : IDisposable
             return;
         }
 
-        for (var i = 0; i < LaneDefs.Length; i++)
+        if (ImGui.TreeNode("事件类型"))
         {
-            if (i > 0)
-                ImGui.SameLine();
-            var visible = _laneVisible[i];
-            if (ImGui.Checkbox(LaneDefs[i].Label, ref visible))
-                _laneVisible[i] = visible;
+            for (var i = 0; i < LaneDefs.Length; i++)
+            {
+                if (i % 4 != 0) ImGui.SameLine();
+                ImGui.Checkbox(LaneDefs[i].Label, ref _laneVisible[i]);
+            }
+            ImGui.TreePop();
         }
-
-        ImGui.SameLine(0f, 24f);
-        ImGui.SetNextItemWidth(160f);
-        if (ImGui.SliderFloat("缩放", ref _pxPerSec, 1f, 240f, "%.0f px/s"))
-            _pxPerSec = Math.Clamp(_pxPerSec, 1f, 240f);
+        ImGui.SetNextItemWidth(200);
+        ImGui.SliderFloat("时间轴缩放", ref _pxPerSec, 1f, 240f, "%.0f px/s");
+        PluginUi.Hint("点击或拖动时间轴跳转，滚轮缩放。");
 
         DrawTimelineCanvas(replay, _timeline);
     }
 
     private void DrawRadarSection()
     {
-        if (ImGui.BeginChild("##replay_radar", new Vector2(-1f, RadarSectionHeight), true))
+        if (ImGui.BeginChild("##replay_radar", new Vector2(-1f, Math.Clamp(ImGui.GetContentRegionAvail().Y * 0.45f, 140f, RadarSectionHeight)), true))
         {
             var origin = ImGui.GetCursorScreenPos();
             var size = ImGui.GetContentRegionAvail();
             var center = origin + size * 0.5f;
-            var radius = MathF.Max(20f, MathF.Min(size.X, size.Y) * 0.5f - 8f);
+            var radius = MathF.Max(20f, MathF.Min(size.X, size.Y) * 0.5f - RadarViewportLayout.CompassMargin(ImGui.GetFontSize()));
             ImGui.Dummy(size);
             if (!_radarView.Draw(ImGui.GetWindowDrawList(), center, radius))
             {
@@ -351,10 +323,14 @@ public sealed class ReplayWindow : IDisposable
         var duration = Math.Max(timeline.Duration, 0.1);
         if (ImGui.BeginChild("##replay_timeline", new Vector2(-1f, -1f), true, ImGuiWindowFlags.HorizontalScrollbar))
         {
-            var origin = ImGui.GetCursorScreenPos();
+            // Cursor screen coordinates already include scrolling. Keep the label
+            // gutter fixed and apply horizontal scrolling exactly once below.
+            var origin = ImGui.GetCursorScreenPos() + new Vector2(ImGui.GetScrollX(), 0);
             var viewSize = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetContentRegionAvail().Y);
             var contentWidth = gutter + (float)(duration * _pxPerSec) + 40f;
-            ImGui.InvisibleButton("##timeline_hit", new Vector2(MathF.Max(contentWidth, viewSize.X), MathF.Max(viewSize.Y, 1f)));
+            var visibleLanes = Enumerable.Range(0, LaneDefs.Length).Where(i => _laneVisible[i]).ToArray();
+            viewSize.Y = Math.Max(viewSize.Y, 14 + 24 * Math.Max(1, visibleLanes.Length));
+            ImGui.InvisibleButton("##timeline_hit", new Vector2(MathF.Max(contentWidth, viewSize.X), viewSize.Y));
 
             var scrollX = ImGui.GetScrollX();
             var hovered = ImGui.IsItemHovered();
@@ -370,7 +346,7 @@ public sealed class ReplayWindow : IDisposable
                 scrollX = ImGui.GetScrollX();
             }
 
-            if (hovered && ImGui.IsMouseDragging(ImGuiMouseButton.Left) && mouse.X >= trackMinX)
+            if (hovered && (ImGui.IsMouseClicked(ImGuiMouseButton.Left) || ImGui.IsMouseDragging(ImGuiMouseButton.Left)) && mouse.X >= trackMinX)
             {
                 var t = Math.Clamp((mouse.X - trackMinX + scrollX) / _pxPerSec, 0f, (float)duration);
                 replay.Seek(t);
@@ -379,7 +355,7 @@ public sealed class ReplayWindow : IDisposable
             var drawList = ImGui.GetWindowDrawList();
             _hoverTips.Clear();
 
-            var laneHeight = (viewSize.Y - 14f) / LaneDefs.Length;
+            var laneHeight = Math.Max(24, (viewSize.Y - 14f) / Math.Max(1, visibleLanes.Length));
             var laneTop = origin.Y + 14f;
 
             drawList.PushClipRect(new Vector2(trackMinX, origin.Y), new Vector2(trackMaxX, origin.Y + viewSize.Y), true);
@@ -401,7 +377,7 @@ public sealed class ReplayWindow : IDisposable
                 if (!_laneVisible[laneIndex])
                     continue;
                 var (lane, _, laneColor) = LaneDefs[laneIndex];
-                var laneMinY = laneTop + laneIndex * laneHeight;
+                var laneMinY = laneTop + Array.IndexOf(visibleLanes, laneIndex) * laneHeight;
                 var laneMidY = laneMinY + laneHeight * 0.5f;
                 var laneColorU32 = ImGui.GetColorU32(laneColor);
 
@@ -426,7 +402,7 @@ public sealed class ReplayWindow : IDisposable
 
                         var label = $"{ResolveActionName(span.ActionId)}  {NameOf(timeline, span.SourceId)}";
                         drawList.PushClipRect(min, max, true);
-                        drawList.AddText(min + new Vector2(3f, -1f), ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.9f)), label);
+                        drawList.AddText(min + new Vector2(3f, -1f), ImGui.GetColorU32(PromeUiTheme.Text), label);
                         drawList.PopClipRect();
 
                         var tip = $"{ResolveActionName(span.ActionId)}（#{span.ActionId}）\n施法者：{NameOf(timeline, span.SourceId)}\n{FormatTime(span.Start)} → {FormatTime(span.End)}"
@@ -485,14 +461,14 @@ public sealed class ReplayWindow : IDisposable
                     }
 
             // 泳道标签槽（盖住滚动到其下的内容）
-            var gutterColor = ImGui.GetColorU32(new Vector4(0.09f, 0.10f, 0.14f, 1f));
+            var gutterColor = ImGui.GetColorU32(PromeUiTheme.Surface);
             drawList.AddRectFilled(origin, new Vector2(trackMinX, origin.Y + viewSize.Y), gutterColor);
             var labelColor = ImGui.GetColorU32(GridTextColor);
             for (var laneIndex = 0; laneIndex < LaneDefs.Length; laneIndex++)
             {
                 if (!_laneVisible[laneIndex])
                     continue;
-                var y = laneTop + laneIndex * laneHeight + laneHeight * 0.5f - 7f;
+                var y = laneTop + Array.IndexOf(visibleLanes, laneIndex) * laneHeight + laneHeight * 0.5f - 7f;
                 drawList.AddText(new Vector2(origin.X + 3f, y), labelColor, LaneDefs[laneIndex].Label);
             }
         }
@@ -503,7 +479,7 @@ public sealed class ReplayWindow : IDisposable
 
     private void DrawCompareTab()
     {
-        if (_compareEntries.Count == 0)
+        if (_compareEntries.Count < 2)
         {
             ImGui.TextDisabled("在上方文件列表勾选两份以上同副本录制进行对比。");
             return;
@@ -545,7 +521,7 @@ public sealed class ReplayWindow : IDisposable
 
         // 汇总表
         var rows = ReplayComparison.Compare(logs.Select(l => l.Log).ToArray());
-        if (ImGui.BeginChild("##compare_table", new Vector2(-1f, 220f), true))
+        if (ImGui.BeginChild("##compare_table", new Vector2(-1f, Math.Clamp(ImGui.GetContentRegionAvail().Y * 0.55f, 100f, 220f)), true))
         {
             var columns = 3 + logs.Length;
             if (ImGui.BeginTable("##compare_rows", columns, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY))
@@ -604,7 +580,9 @@ public sealed class ReplayWindow : IDisposable
 
         if (ImGui.BeginChild("##compare_lanes", new Vector2(-1f, -1f), true, ImGuiWindowFlags.HorizontalScrollbar))
         {
-            var origin = ImGui.GetCursorScreenPos();
+            // Cursor screen coordinates already include scrolling. Keep the label
+            // gutter fixed and apply horizontal scrolling exactly once below.
+            var origin = ImGui.GetCursorScreenPos() + new Vector2(ImGui.GetScrollX(), 0);
             var viewSize = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetContentRegionAvail().Y);
             var contentWidth = gutter + (float)(span * _cmpPxPerSec) + 40f;
             ImGui.InvisibleButton("##compare_hit", new Vector2(MathF.Max(contentWidth, viewSize.X), MathF.Max(viewSize.Y, 1f)));
@@ -667,7 +645,7 @@ public sealed class ReplayWindow : IDisposable
 
                     var label = ResolveActionName(cast.ActionId);
                     drawList.PushClipRect(min, max, true);
-                    drawList.AddText(min + new Vector2(3f, -1f), ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.9f)), label);
+                    drawList.AddText(min + new Vector2(3f, -1f), ImGui.GetColorU32(PromeUiTheme.Text), label);
                     drawList.PopClipRect();
 
                     _hoverTips.Add((min, max, $"{log.Label}：{label}（#{cast.ActionId}）\n{FormatTime(cast.Start + log.Offset)}（原始 {FormatTime(cast.Start)}）"));
@@ -685,7 +663,7 @@ public sealed class ReplayWindow : IDisposable
                         break;
                     }
 
-            var gutterColor = ImGui.GetColorU32(new Vector4(0.09f, 0.10f, 0.14f, 1f));
+            var gutterColor = ImGui.GetColorU32(PromeUiTheme.Surface);
             drawList.AddRectFilled(origin, new Vector2(trackMinX, origin.Y + viewSize.Y), gutterColor);
             foreach (var (log, _, index) in logs)
             {

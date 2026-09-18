@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using MasterPlayer.Radar;
 using MasterPlayer.Scripting.Visual;
 using PromeRotation.Helpers;
+using PromeRotation.UI.Components;
 
 namespace MasterPlayer.Windows;
 
@@ -16,7 +17,7 @@ internal static class VisualAoePreview
         var center = origin + size * 0.5f;
         var radius = MathF.Max(1f, MathF.Min(size.X, size.Y) * 0.5f - 18f);
         var draw = ImGui.GetWindowDrawList();
-        draw.AddRectFilled(origin, origin + size, ImGui.GetColorU32(new Vector4(0.055f, 0.07f, 0.10f, 1f)), 5f);
+        draw.AddRectFilled(origin, origin + size, ImGui.GetColorU32(PromeUiTheme.Surface), 5f);
         var canvas = new RadarCanvas(draw, center, radius);
         var extent = rule.Shape switch
         {
@@ -27,13 +28,13 @@ internal static class VisualAoePreview
         if (rule.ValidateGeometry().Count > 0 || !float.IsFinite(extent) || extent <= 0f
             || !float.IsFinite(rule.Offset.X) || !float.IsFinite(rule.Offset.Y))
         {
-            draw.AddText(origin + new Vector2(12f), ImGui.GetColorU32(new Vector4(1f, 0.6f, 0.4f, 1f)), "修正尺寸后显示预览");
+            draw.AddText(origin + new Vector2(12f), ImGui.GetColorU32(PromeUiTheme.Warning), "修正尺寸后显示预览");
             return false;
         }
         var range = MathF.Max(10f, extent * 1.25f);
         var scale = radius / range * zoom;
         var projection = new RadarProjection(Vector3.Zero, center, scale, RadarProjection.NorthUpRotation);
-        var grid = ImGui.GetColorU32(new Vector4(0.20f, 0.27f, 0.34f, 1f));
+        var grid = ImGui.GetColorU32(PromeUiTheme.Border);
         var step = range > 40f ? 10f : range > 20f ? 5f : 2f;
         for (var i = -10; i <= 10; i++)
         {
@@ -63,7 +64,7 @@ internal static class VisualAoePreview
         }
         else foreach (var contour in contours) canvas.FillPolygon(contour, fill);
         foreach (var contour in contours) canvas.StrokeContour(contour, stroke, 1.5f);
-        var blue = ImGui.GetColorU32(new Vector4(0.40f, 0.80f, 1f, 1f));
+        var blue = ImGui.GetColorU32(PromeUiTheme.Accent);
         draw.AddCircleFilled(center, 4f, blue);
         var arrow = projection.Project(GeometryHelper.PointFromRotationDistanceXZ(Vector3.Zero, rotation, 3f));
         canvas.StrokeSegment(center, arrow, blue, 2f);
