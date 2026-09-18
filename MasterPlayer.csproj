@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
+    <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Reference Include="Dalamud">
       <HintPath>C:\Users\xiaos\AppData\Roaming\XIVLauncherCN\addon\Hooks\dev\Dalamud.dll</HintPath>
       <Private>false</Private>

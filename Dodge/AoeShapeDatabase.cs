@@ -21,7 +21,9 @@ public enum AoeShapeKind
 // ExtraDelaySeconds 在读条时长之外追加的判定延迟（部分技能判定晚于读条结束）。
 public sealed record AoeShapeDescriptor(AoeShapeKind Kind, float Param1, float Param2, bool FollowCaster, float ExtraDelaySeconds)
 {
+    public GeometryTemplate? ExactTemplate { get; init; }
     public bool UseCastRotation { get; init; }
+    public bool UseSourcePosition { get; init; }
 
     // CastType 8 冲锋：长度改用读条事件里 施法者→落点 的距离（Param2 仅作兜底），锚定施法者位置、朝向落点。
     public bool IsCharge { get; init; }
@@ -50,6 +52,8 @@ public static class AoeShapeDatabase
     // casterHitboxRadius 为施法者 hitbox 半径：按 BMR 规则计入 CastType 3/4/5 的尺寸。
     public static bool TryGetShape(uint actionId, float casterHitboxRadius, out AoeShapeDescriptor? descriptor)
     {
+        if (Mechanics.Crucible.CrucibleActionCatalog.IsClaimed(actionId))
+            return Mechanics.Crucible.CrucibleActionCatalog.TryGetShape(actionId, out descriptor);
         if (KnownShapes.TryGetValue(actionId, out descriptor))
         {
             return true;
@@ -59,7 +63,7 @@ public static class AoeShapeDatabase
         return descriptor is not null;
     }
 
-    internal static GeometryTemplate? CreateTemplate(AoeShapeDescriptor descriptor) => descriptor.Kind switch
+    internal static GeometryTemplate? CreateTemplate(AoeShapeDescriptor descriptor) => descriptor.ExactTemplate ?? (descriptor.Kind switch
     {
         AoeShapeKind.Circle when descriptor.Param1 > 0f => new CircleTemplate(descriptor.Param1),
         AoeShapeKind.Donut when descriptor.Param1 >= 0f && descriptor.Param2 > descriptor.Param1
@@ -71,7 +75,7 @@ public static class AoeShapeDatabase
         AoeShapeKind.RayRectangle when descriptor.Param1 > 0f && descriptor.Param2 > 0f
             => RayRectangleTemplate.Symmetric(descriptor.Param1, descriptor.Param2),
         _ => null,
-    };
+    });
 
     // 冲锋（CastType 8）长度 = 施法者→落点距离，需要读条事件；其余形状与单参重载一致。
     internal static GeometryTemplate? CreateTemplate(AoeShapeDescriptor descriptor, LogSystemCastStartEvent e)
@@ -112,7 +116,7 @@ public static class AoeShapeDatabase
         var sourceId = (uint)e.SourceId;
         binding = descriptor.FollowCaster && sourceId != 0u && !descriptor.UseCastRotation
             ? new FollowEntityPositionAndRotation(sourceId, Vector2.Zero, MissingEntityPolicy.KeepLastResolved)
-            : new StaticTransform(e.EffectPosition, rotation);
+            : new StaticTransform(descriptor.UseSourcePosition && e.SourcePosition is { } origin ? origin : e.EffectPosition, rotation);
         return true;
     }
 

@@ -9,11 +9,16 @@
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="ScriptCompilation\**\*.cs" />
     <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
     <Compile Include="..\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
     <Compile Include="..\Follow\FollowController.cs" Link="FollowController.cs" />
+    <Compile Include="..\Follow\DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
+    <Compile Include="..\Follow\OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
     <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
+    <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
+    <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
@@ -26,7 +31,8 @@
     <Compile Include="..\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
     <Compile Include="..\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
-    <Compile Include="..\Scripts\CrucibleHigh1.cs" Link="CrucibleHigh1.cs" />
+
+    <Compile Include="..\Mechanics\Crucible\**\*.cs" Exclude="..\Mechanics\Crucible\CrucibleScript.cs" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll" />
     <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" />

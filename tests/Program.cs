@@ -320,6 +320,14 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 });
 
 CrucibleMechanicRegression.Run(Run);
+CrucibleAllRegression.Run(Run);
+CrucibleTimingRegression.Run(Run);
+CrucibleArrRegression.Run(Run);
+LateDodgeRegression.Run(Run);
+MindflayerLiveRegression.Run(Run);
+High2MigrationRegression.Run(Run);
+CastRotationRegression.Run(Run);
+RadarClipRegression.Run(Run);
 SafeZoneTemporalRegression.RunPrecision(Run);
 SafeZoneTemporalRegression.Run(Run);
 FollowRegression.Run(Run);

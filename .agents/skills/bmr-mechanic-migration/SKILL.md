@@ -12,7 +12,7 @@ metadata:
 1. `AGENTS.md`（项目根）——§3.1 共享契约、§5 核心 API、§6 铁律；以磁盘最新内容为准。
 2. `docs/BMR机制迁移指南.md`——事件/形状/时序/绑定/AI 语义的逐条对照表与踩坑实录，迁移前必须读完。
 3. 目标 spec：`docs/reference/<机制名>.spec.md`——脚本内容的唯一事实来源。已存在则遵循；不存在则在第 3 步创建。
-4. 既有范例：`Scripts/CrucibleHigh1.cs` + `docs/reference/CrucibleHigh1.spec.md`（斗兽棋·高一，全模式实证）。
+4. 既有范例：`tests/Legacy/CrucibleHigh1.cs` + `docs/reference/CrucibleHigh1.spec.md`（斗兽棋·高一，全模式实证）。
 
 ## 参考仓库（逐行核对，不凭记忆臆造 API/参数）
 

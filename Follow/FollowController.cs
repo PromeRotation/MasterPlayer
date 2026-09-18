@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
 using PromeRotation.GreenMoveSystem;
+using PromeRotation.Spatial.SafeZone;
 
 namespace MasterPlayer.Follow;
 
@@ -15,6 +16,7 @@ public sealed class FollowController : IDisposable
     private static readonly TimeSpan DebugLogInterval = TimeSpan.FromSeconds(2);
 
     private readonly IGreenMoveSystem _greenMove;
+    private readonly Func<DateTime> _utcNow;
     private bool _hasControl;
     private Vector3 _lastIssuedTarget;
     private float _lastIssuedDistance;
@@ -22,14 +24,20 @@ public sealed class FollowController : IDisposable
     private bool _hasLastMasterPos;
     private DateTime _nextDebugLogUtc = DateTime.MinValue;
     private bool _disposed;
+    private SafeZoneManager? _goalManager;
+    private SafeZoneAreaHandle _followGoal;
+    private uint _goalTarget;
+    private float _goalDistance;
+    private bool _followGoalActive;
 
     public FollowController() : this(PromeRotation.Plugin.Instance.GreenMoveSystem)
     {
     }
 
-    internal FollowController(IGreenMoveSystem greenMove)
+    internal FollowController(IGreenMoveSystem greenMove, Func<DateTime>? utcNow = null)
     {
         _greenMove = greenMove;
+        _utcNow = utcNow ?? (() => DateTime.UtcNow);
     }
 
     public void Update()
@@ -81,18 +89,28 @@ public sealed class FollowController : IDisposable
         _lastMasterPos = masterPos;
         _hasLastMasterPos = true;
 
-        // 躲避优先：安全区自动移动接管中则让位，不发跟随指令，也不 Stop 它的路线
+        var followDistance = MathF.Max(0.2f, settings.FollowDistance);
+        if (master.ObjectKind == ObjectKind.BattleNpc)
+        {
+            followDistance += player.HitboxRadius + master.HitboxRadius;
+        }
+
+        // A settled dodge route releases HasControl while the danger is still present.
+        // With auto-dodge enabled, following is a goal for that same planner, never a raw return route.
+        if (settings.EnableAutoDodge)
+        {
+            ReleaseDirectControl();
+            UpdatePlannedFollow(master.EntityId, masterPos, followDistance, player);
+            return;
+        }
+        ClearFollowGoal();
+
+        // Direct following is retained when auto-dodge is explicitly disabled.
         if (PromeRotation.Plugin.Instance.SafeZoneMovementStatus.HasControl ||
             PromeRotation.Plugin.Instance.SafeZoneRebornMovementStatus.HasControl)
         {
             _hasControl = false;
             return;
-        }
-
-        var followDistance = MathF.Max(0.2f, settings.FollowDistance);
-        if (master.ObjectKind == ObjectKind.BattleNpc)
-        {
-            followDistance += player.HitboxRadius + master.HitboxRadius;
         }
         var dx = masterPos.X - player.Position.X;
         var dz = masterPos.Z - player.Position.Z;
@@ -120,6 +138,56 @@ public sealed class FollowController : IDisposable
             _hasControl = false;
             DebugLog("[MasterPlayer] 跟随到位，Stop");
         }
+    }
+
+    private void UpdatePlannedFollow(uint targetId, Vector3 targetPosition, float distance, IBattleChara player)
+    {
+        var plugin = PromeRotation.Plugin.Instance;
+        if (!plugin.SafeZoneRebornSetting.EnableSafeZone || !plugin.SafeZoneRebornSetting.EnableAutoMovement)
+        {
+            ClearFollowGoal();
+            return;
+        }
+        var manager = plugin.SafeZoneRebornManager;
+        if (_goalManager != null && !ReferenceEquals(_goalManager, manager)) ClearFollowGoal();
+        _goalManager = manager;
+        var now = _utcNow();
+        var snapshot = manager.BuildSnapshot(now);
+        // Mechanic destinations (bait, knockback, number tiles) take precedence over attack uptime.
+        if (player.IsCasting || OptionalGoalSafety.NeedsEscape(snapshot, player.Position, now)
+            || snapshot.GoalAreas.Any(g => g.Handle != _followGoal && g.GoalWindows.Any(w => w.IsActiveAt(now))))
+        {
+            ClearFollowGoal();
+            return;
+        }
+        var template = new DangerAwareFollowGoalTemplate(distance, snapshot.DangerAreas
+            .Where(a => a.DangerWindows.Any(w => OptionalGoalSafety.Pending(w.DangerFrom, w.DangerUntil, now)))
+            .Select(a => a.Geometry).Concat(snapshot.HardObstacles.Select(a => a.Geometry)), snapshot.ArenaBoundary);
+        var active = template.HasSafeArea(targetPosition);
+        GoalWindow[] windows = active ? [new GoalWindow(now, null, 0, PositionPreference.Nearest)] : [];
+        if (_followGoal.IsValid && manager.ContainsArea(_followGoal) && _goalTarget == targetId && _goalDistance == distance)
+        {
+            // Like FollowEntityPosition, changing resolved geometry must not cancel every in-flight solve.
+            // An empty shape still attracts the host's goal heuristic: deactivate its window as well.
+            manager.UpdateArea(_followGoal, template: template, goalWindows: windows, incrementVersion: active != _followGoalActive);
+            _followGoalActive = active;
+            return;
+        }
+        ClearFollowGoal();
+        _goalManager = manager;
+        _goalTarget = targetId;
+        _goalDistance = distance;
+        _followGoalActive = active;
+        _followGoal = manager.AddGoalArea(template,
+            new FollowEntityPosition(targetId, Vector2.Zero, 0, MissingEntityPolicy.RemoveArea),
+            windows);
+    }
+
+    private void ClearFollowGoal()
+    {
+        if (_followGoal.IsValid) _goalManager?.RemoveArea(_followGoal);
+        _followGoal = default;
+        _goalManager = null;
     }
 
     private static IBattleChara? ResolveMaster(MasterPlayerSettings settings)
@@ -156,6 +224,12 @@ public sealed class FollowController : IDisposable
 
     private void ReleaseControl()
     {
+        ClearFollowGoal();
+        ReleaseDirectControl();
+    }
+
+    private void ReleaseDirectControl()
+    {
         if (!_hasControl)
         {
             return;
@@ -181,7 +255,7 @@ public sealed class FollowController : IDisposable
             return;
         }
 
-        var now = DateTime.UtcNow;
+        var now = _utcNow();
         if (now < _nextDebugLogUtc)
         {
             return;

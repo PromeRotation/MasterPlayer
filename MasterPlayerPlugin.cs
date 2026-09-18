@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
@@ -72,7 +72,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             HelpMessage = "打开/关闭 MasterPlayer 设置面板；/prmp rec 开始或停止机制事件录制；/prmp replay 开关录制回放窗口",
         });
 
-        Svc.Log.Info("[MasterPlayer] Initialized");
+        Svc.Log.Info($"[MasterPlayer] Initialized build={typeof(MasterPlayerPlugin).Module.ModuleVersionId:D}");
     }
 
     public void DrawConfigUI()

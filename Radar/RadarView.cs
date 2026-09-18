@@ -6,6 +6,7 @@ using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using MasterPlayer.Settings;
+using MasterPlayer.Mechanics.Crucible;
 using PromeRotation.Helpers;
 using PromeRotation.Spatial.Geometry;
 using PromeRotation.Spatial.SafeZone;
@@ -13,18 +14,16 @@ using PromeRotation.Spatial.SafeZone;
 namespace MasterPlayer.Radar;
 
 /// <summary>
-/// 可嵌入雷达视图：在给定屏幕圆心/半径内绘制 BMR 式 2D 俯视内容
-/// （圆盘底、距离环、场地边界、危险/安全区、解算路径、队友/敌人/自身、罗盘）。
+/// 可嵌入雷达视图：按实际场地轮廓在给定屏幕视口内绘制 BMR 式 2D 俯视内容
+/// （场地底图、距离环、场地边界、危险/安全区、解算路径、队友/敌人/自身、罗盘）。
 /// 数据来源为 SafeZoneRebornManager 快照与 AoeVisibilityRegistry，外观遵循 RadarAoe 设置。
 /// 供 RadarOverlayWindow（悬浮窗）与 ReplayWindow（回放窗口内嵌）共用。
 /// </summary>
 public sealed class RadarView
 {
     private const float DefaultVisibleRadius = 25f;
-    private const float BoundaryPadding = 3f;
 
     private static readonly Vector4 DiscColor = new(0.045f, 0.065f, 0.115f, 1f);
-    private static readonly Vector4 DiscCenterTint = new(1f, 1f, 1f, 0.035f);
     private static readonly Vector4 RimColor = new(0.85f, 0.92f, 1f, 0.50f);
     private static readonly Vector4 RimGlowColor = new(0.35f, 0.75f, 1f, 0.10f);
     private static readonly Vector4 RingColor = new(1f, 1f, 1f, 0.08f);
@@ -72,11 +71,27 @@ public sealed class RadarView
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
         var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(now);
 
+        var rotation = settings.RadarRotateWithCamera ? GetCameraAzimuth() : RadarProjection.NorthUpRotation;
+        _screenCenter = screenCenter;
+        _hovered = hovered;
         float visibleRadius;
+        IReadOnlyList<Vector2>? arenaOutline = null;
         if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary)
         {
+            var display = boundary;
             _center = boundary.Position;
-            visibleRadius = ComputeArenaRadius(boundary) + BoundaryPadding;
+            if (MasterPlayerPlugin.Instance?.Scripts is { } scripts)
+                foreach (var running in scripts.Running.Values)
+                    if (running.Script is CrucibleScript crucible && crucible.GetRadarArena(boundary) is { } arena)
+                    {
+                        display = arena.Boundary;
+                        _center = arena.Center;
+                        break;
+                    }
+            var layout = RadarArenaLayout.Create(display, _center, _screenCenter, radiusPx, rotation);
+            _projection = layout.Projection;
+            arenaOutline = layout.Outline.Count >= 3 ? layout.Outline : null;
+            visibleRadius = layout.WorldRadius;
         }
         else
         {
@@ -87,18 +102,13 @@ public sealed class RadarView
 
             _center = player.Position;
             visibleRadius = DefaultVisibleRadius;
+            _projection = new(_center, _screenCenter,
+                radiusPx / DefaultVisibleRadius, rotation);
         }
 
-        var rotation = settings.RadarRotateWithCamera ? GetCameraAzimuth() : RadarProjection.NorthUpRotation;
-        var scale = radiusPx / MathF.Max(visibleRadius, 1f) * MathF.Max(settings.RadarScale, 0.05f);
-
-        _screenCenter = screenCenter;
-        _hovered = hovered;
-        _projection = new RadarProjection(_center, _screenCenter, scale, rotation);
-
-        var canvas = new RadarCanvas(drawList, _screenCenter, radiusPx);
+        var canvas = new RadarCanvas(drawList, _screenCenter, radiusPx, arenaOutline);
         DrawDisc(canvas, settings);
-        DrawRangeRings(canvas, settings, scale);
+        DrawRangeRings(canvas, settings, _projection.Scale);
         DrawRimTicks(canvas);
         DrawAreas(canvas, snapshot, settings, now, animT);
         DrawSolutionPath(canvas, plugin, animT);
@@ -110,7 +120,7 @@ public sealed class RadarView
 
     private void DrawDisc(RadarCanvas canvas, MasterPlayerSettings settings)
     {
-        canvas.StrokeCircle(canvas.Center, canvas.Radius + 4.5f, ImGui.GetColorU32(RimGlowColor), 8f, 96);
+        canvas.StrokeRim(ImGui.GetColorU32(RimGlowColor), 8f);
 
         var opacity = Math.Clamp(settings.RadarBackgroundOpacity, 0f, 1f);
         if (opacity <= 0.01f)
@@ -120,11 +130,7 @@ public sealed class RadarView
 
         var disc = DiscColor;
         disc.W = opacity;
-        canvas.FillCircle(canvas.Center, canvas.Radius, ImGui.GetColorU32(disc), 96);
-
-        var tint = DiscCenterTint;
-        tint.W *= opacity;
-        canvas.FillCircle(canvas.Center, canvas.Radius * 0.55f, ImGui.GetColorU32(tint), 64);
+        canvas.FillBackground(ImGui.GetColorU32(disc));
     }
 
     private void DrawRangeRings(RadarCanvas canvas, MasterPlayerSettings settings, float scale)
@@ -169,8 +175,8 @@ public sealed class RadarView
 
             var dir = ScreenDirection(direction);
             canvas.StrokeSegment(
-                canvas.Center + dir * (canvas.Radius - 7f),
-                canvas.Center + dir * (canvas.Radius - 2f),
+                canvas.RimPoint(dir) - dir * 7f,
+                canvas.RimPoint(dir) - dir * 2f,
                 color,
                 1.5f);
         }
@@ -199,6 +205,7 @@ public sealed class RadarView
 
         foreach (var danger in snapshot.DangerAreas)
         {
+            if (visibility?.IsNavigationOnly(danger.Handle) == true) continue;
             if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).Radar ?? true))
                 continue;
             var progress = GetTelegraphProgress(danger, now);
@@ -217,8 +224,16 @@ public sealed class RadarView
             {
                 if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.Radar))
                     continue;
-                var style = preview.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle();
+                var style = preview.Style(appearance);
                 FillGeometry(canvas, preview.Geometry, style.FillColor!.Value, style.StrokeColor!.Value, 1f);
+            }
+
+        if (visibility != null)
+            foreach (var line in visibility.GetLines())
+            {
+                if (!line.Visibility.Radar || !(line.Safe ? appearance.ShowSafe : appearance.ShowDanger)) continue;
+                var style = line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle();
+                canvas.StrokeSegment(_projection.Project(line.Start), _projection.Project(line.End), ImGui.GetColorU32(style.StrokeColor!.Value), style.StrokeThickness);
             }
 
         DrawBoundary(canvas, snapshot);
@@ -273,6 +288,13 @@ public sealed class RadarView
 
         stroke.W *= pulse;
         var thickness = pulse < 1f ? 1.8f : 1.1f;
+        if (geometry is FrozenConstraintGeometry grid)
+        {
+            // Grid rows are fill pieces, not separate arenas: omit their internal shared edges.
+            foreach (var (start, end) in grid.GetBoundarySegments())
+                canvas.StrokeSegment(_projection.Project(start), _projection.Project(end), ImGui.GetColorU32(stroke), thickness);
+            return;
+        }
         foreach (var contour in contours)
         {
             ProjectInto(contour, _projectedA);
@@ -448,7 +470,7 @@ public sealed class RadarView
             rim.W = MathF.Min(1f, rim.W + 0.3f);
         }
 
-        canvas.StrokeCircle(canvas.Center, canvas.Radius - 0.75f, ImGui.GetColorU32(rim), 1.5f, 96);
+        canvas.StrokeRim(ImGui.GetColorU32(rim), 1.5f);
     }
 
     private void DrawCompass(ImDrawListPtr drawList, RadarCanvas canvas, MasterPlayerSettings settings)
@@ -462,26 +484,12 @@ public sealed class RadarView
         foreach (var (label, direction, isNorth) in Cardinals)
         {
             var dir = ScreenDirection(direction);
-            var pos = canvas.Center + dir * (canvas.Radius - 13f);
+            var pos = canvas.RimPoint(dir) + dir * 11f;
             var size = ImGui.CalcTextSize(label);
             var topLeft = pos - size * 0.5f;
             drawList.AddText(topLeft + new Vector2(1f, 1f), shadow, label);
             drawList.AddText(topLeft, ImGui.GetColorU32(isNorth ? CompassNorthColor : CompassColor), label);
         }
-    }
-
-    private static float ComputeArenaRadius(IGeometryShape boundary)
-    {
-        var radius = 1f;
-        foreach (var contour in boundary.GetContours())
-        {
-            foreach (var point in contour)
-            {
-                radius = MathF.Max(radius, GeometryHelper.DistanceXZ(point, boundary.Position));
-            }
-        }
-
-        return radius;
     }
 
     private Vector2 ScreenDirection(Vector3 worldDirection)
