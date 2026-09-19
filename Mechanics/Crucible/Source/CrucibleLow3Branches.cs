@@ -1,6 +1,3 @@
-// Ported from BossmodRebornCN f6914f3e8. See docs/reference/CrucibleAll.spec.md.
-using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace MasterPlayer.Mechanics.Crucible;
@@ -103,27 +100,39 @@ sealed class CrucibleZuRear(BossModule module) : CriticalEngagement.ReplayValida
 // close to that eye, rather than draw a guessed damage ring.
 sealed class CrucibleCatoblepasEyes(BossModule module) : Components.GenericAOEs(module)
 {
-    private sealed class MovingEye(Actor actor)
+    private sealed class MovingEye(Actor actor, uint oid = 0)
     {
         public readonly Actor Actor = actor;
+        public readonly uint OID = oid == 0 ? actor.OID : oid;
         public readonly WPos Start = actor.Position;
         public WPos Last = actor.Position;
         public WPos End;
         public DateTime Activation;
         public bool Resolved;
         public bool Confirmed;
+        public ulong CastActorID;
+        public bool HasGaze;
+        public bool GazeResolved;
     }
     private readonly Dictionary<ulong, MovingEye> _eyes = [];
     private static readonly AOEShapeCircle Circle = new(25);
     private static readonly AOEShapeCircle Spot = new(1);
-    private bool _transplant;
-    private DateTime _gazeResolvedUntil;
-    private readonly HashSet<uint> _gazes = [];
 
     public override void OnActorCreated(Actor actor)
     {
         if (actor.OID is 19612 or 19613)
             _eyes.TryAdd(actor.InstanceID, new(actor));
+    }
+
+    public override void OnTethered(Actor source, in ActorTetherInfo tether)
+    {
+        // ARR 2026-09-11: tether 195 marks exactly one eye from each pair.
+        // The visual link can disappear before the gaze, so latch until impact.
+        if (tether.ID == 195 && source.OID is 19612 or 19613 && WorldState.Actors.Find(tether.Target)?.OID == 19611)
+        {
+            OnActorCreated(source);
+            _eyes[source.InstanceID].HasGaze = true;
+        }
     }
     public override void Update()
     {
@@ -160,7 +169,7 @@ sealed class CrucibleCatoblepasEyes(BossModule module) : Components.GenericAOEs(
         if (eyes.Length == 0)
             return [];
         var deadline = eyes[0].Activation.AddSeconds(1);
-        return eyes.Where(e => e.Activation <= deadline).Select(e => e.Actor.OID == 19612
+        return eyes.Where(e => e.Activation <= deadline).Select(e => e.OID == 19612
             ? new AOEInstance(Circle, e.End, activation: e.Activation)
             : new AOEInstance(Spot, Destination(e), activation: e.Activation, color: Colors.SafeFromAOE, risky: false)).ToArray();
     }
@@ -170,51 +179,97 @@ sealed class CrucibleCatoblepasEyes(BossModule module) : Components.GenericAOEs(
             if (aoe.Risky)
                 CrucibleScorpionAI.Avoid(hints, aoe);
             else
-                hints.AddForbiddenConstraint(new SDInvertedCircle(aoe.Origin, 1), aoe.Activation.AddSeconds(-0.4), aoe.Activation.AddSeconds(0.6));
+            {
+                hints.AddForbiddenConstraint(new SDInvertedCircle(aoe.Origin, 1), aoe.Activation.AddSeconds(-1), aoe.Activation.AddSeconds(0.6));
+                // Prepare at the known inner pocket as soon as this wave is
+                // selected; chasing boss uptime must not delay the long crossing.
+                hints.GoalZones.Add(p => MathF.Max(0, 20 - (p - aoe.Origin).Length()));
+                var travel = (actor.Position - aoe.Origin).Length() / 6f;
+                if (!actor.Position.InCircle(aoe.Origin, 1) && aoe.Activation <= WorldState.FutureTime(travel + 1.5))
+                    hints.MaxCastTime = 0;
+            }
     }
-    // Both eyes may carry the transplanted gaze; the ARR alternates which one
-    // fires. Facing away from both endpoint directions satisfies either variant.
+
+    public override void AddHints(int slot, Actor actor, TextHints hints)
+    {
+        base.AddHints(slot, actor, hints);
+        foreach (var aoe in ActiveAOEs(slot, actor))
+            if (!aoe.Risky)
+                hints.Add("环形爆炸：进入绿色安全点，避免爆炸附带石化", !actor.Position.InCircle(aoe.Origin, 1));
+    }
+
+    public override void DrawArenaForeground(int slot, Actor actor)
+    {
+        foreach (var aoe in ActiveAOEs(slot, actor))
+            if (!aoe.Risky)
+            {
+                Arena.ZoneCircleOutline(aoe.Origin, 1, Colors.Safe);
+                Arena.AddLine(actor.Position, aoe.Origin, Colors.Safe);
+            }
+    }
+
     public Components.GenericGaze.Eye[] GazeEyes()
     {
         var eyes = PendingEyes();
-        if (!_transplant || eyes.Length == 0)
+        if (eyes.Length == 0)
             return [];
-        return eyes.Where(e => e.Activation <= eyes[0].Activation.AddSeconds(1)
-            && e.Activation > _gazeResolvedUntil).Select(e => new Components.GenericGaze.Eye(e.End, e.Activation.AddSeconds(-0.6))).ToArray();
+        return eyes.Where(e => e.HasGaze && !e.GazeResolved && e.Activation <= eyes[0].Activation.AddSeconds(1))
+            .Select(e => new Components.GenericGaze.Eye(e.End, e.Activation.AddSeconds(-0.6), range: 100, actorID: e.Actor.InstanceID)).ToArray();
     }
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
     {
         if (spell.EventHappened)
             return;
-        if (spell.Action.ID == 48509)
-            _transplant = true;
         if (spell.Action.ID is 48506 or 48508)
         {
             var oid = spell.Action.ID == 48506 ? 19612u : 19613u;
-            var eye = _eyes.Values.Where(e => !e.Resolved && e.Actor.OID == oid)
+            var eye = _eyes.Values.Where(e => !e.Resolved && !e.Actor.IsDeadOrDestroyed && e.OID == oid)
                 .MinBy(e => (e.Actor.Position - spell.LocXZ).LengthSq());
-            if (eye != null && eye.Actor.Position.AlmostEqual(spell.LocXZ, 2))
+            if (eye == null || !eye.Actor.Position.AlmostEqual(spell.LocXZ, 2))
             {
-                eye.End = spell.LocXZ;
-                eye.Activation = Module.CastFinishAt(spell);
-                eye.Confirmed = true;
+                // Late activation may miss the moving actors entirely. The
+                // helper still provides an authoritative locked position/time.
+                eye = new(caster, oid);
+                _eyes[caster.InstanceID] = eye;
             }
+            eye.End = spell.LocXZ;
+            eye.Activation = Module.CastFinishAt(spell);
+            eye.Confirmed = true;
+            eye.CastActorID = caster.InstanceID;
         }
     }
+
+    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.EventHappened)
+            return; // Keep the normal cast through its effect packet.
+        if (spell.Action.ID == 48509 && spell.NPCRemainingTime > 0.5f)
+            foreach (var eye in _eyes.Values)
+                eye.HasGaze = false;
+        // These casts last only 0.2s; the usual 0.5s NPC threshold misses them.
+        else if (spell.Action.ID is 48506 or 48508 && spell.Interrupted)
+            foreach (var eye in _eyes.Values)
+                if (eye.CastActorID == caster.InstanceID)
+                    eye.Resolved = true;
+    }
+
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID is 48506 or 48508)
         {
             var oid = spell.Action.ID == 48506 ? 19612u : 19613u;
             foreach (var eye in _eyes.Values)
-                if (eye.Actor.OID == oid && eye.End.AlmostEqual(caster.Position, 2) && eye.Activation <= WorldState.FutureTime(1))
+                if (eye.OID == oid && (eye.CastActorID == caster.InstanceID
+                    || eye.End.AlmostEqual(caster.Position, 2) && eye.Activation <= WorldState.FutureTime(1)))
                     eye.Resolved = true;
         }
-        if (spell.Action.ID == 48510 && _gazes.Add(spell.GlobalSequence))
+        if (spell.Action.ID == 48510)
         {
-            // The gaze precedes the explosion by ~0.5s; do not keep forcing the
-            // player's facing after it has resolved.
-            _gazeResolvedUntil = WorldState.FutureTime(1);
+            // Release facing after this eye's gaze, while retaining its explosion
+            // and every later wave's independent gaze marker.
+            foreach (var eye in _eyes.Values)
+                if (eye.HasGaze && eye.End.AlmostEqual(caster.Position, 2) && eye.Activation <= WorldState.FutureTime(1))
+                    eye.GazeResolved = true;
         }
     }
     public override void OnActorDestroyed(Actor actor) => OnActorDeath(actor);
@@ -223,11 +278,22 @@ sealed class CrucibleCatoblepasEyes(BossModule module) : Components.GenericAOEs(
         if (actor.OID == 19611)
             _eyes.Clear();
         else
+        {
             _eyes.Remove(actor.InstanceID);
+            foreach (var eye in _eyes.Values)
+                if (eye.CastActorID == actor.InstanceID)
+                    eye.Resolved = true;
+        }
     }
 }
 
 sealed class CrucibleCatoblepasGaze(BossModule module) : Components.GenericGaze(module, 48510u)
 {
     public override ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor) => Module.FindComponent<CrucibleCatoblepasEyes>()?.GazeEyes() ?? [];
+
+    public override void AddHints(int slot, Actor actor, TextHints hints)
+    {
+        foreach (var eye in ActiveEyes(slot, actor))
+            hints.Add("恶魔义眼：背对被连线眼球的落点，同时进入环形爆炸安全点", HitByEye(ref actor, eye));
+    }
 }

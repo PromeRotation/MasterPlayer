@@ -8,6 +8,12 @@ using PromeRotation.Spatial.Geometry;
 using PromeRotation.Spatial.SafeZone;
 
 var passed = 0;
+if (args.Contains("--bmr-local-sync"))
+{
+    BmrLocalSyncRegression.Run(Run);
+    Console.WriteLine($"PASS: {passed} BMR local sync scenarios");
+    return;
+}
 
 for (var flags = 0; flags < 8; flags++)
 {
@@ -320,11 +326,17 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 });
 
 CrucibleMechanicRegression.Run(Run);
+BmrLocalSyncRegression.Run(Run);
 CrucibleAllRegression.Run(Run);
 CrucibleTimingRegression.Run(Run);
 CrucibleArrRegression.Run(Run);
 LateDodgeRegression.Run(Run);
 MindflayerLiveRegression.Run(Run);
+High2LiveMovementRegression.Run(Run);
+MovingHazardDispatchRegression.Run(Run);
+Low2LiveRegression.Run(Run);
+MindflayerWaterRegression.Run(Run);
+RadarPathDashesRegression.Run(Run);
 High2MigrationRegression.Run(Run);
 CastRotationRegression.Run(Run);
 RadarClipRegression.Run(Run);
@@ -339,6 +351,7 @@ Console.WriteLine($"PASS: {passed} regression scenarios");
 
 void Run(string name, Action test)
 {
+    if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
     test();
     passed++;
     Console.WriteLine($"PASS {name}");

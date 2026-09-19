@@ -170,11 +170,12 @@ internal static class CrucibleAllRegression
             f.Cast(49193, 4, f.Boss.Position); f.Cast(49193, 4.1f, f.Boss.Position);
             Check(recorder.Starts == 1, "duplicate cast restarted a component");
         });
-        run("Crucible moving bombs are persistent and clear on detonation without date underflow", () =>
+        run("Crucible moving bombs remain preview-only and clear on detonation", () =>
         {
             using var f = new Fight(14624);
             var bomb = f.Spawn(19668, f.Player.Position + new WDir(9, 0)); f.Tick();
-            Check(f.Snapshot.DangerAreas.Any(a => a.Geometry.Contains(bomb.Position.ToVec3()) && a.DangerWindows.Any(w => w.DangerUntil == null)), "moving bomb has no persistent danger");
+            Check(!f.Snapshot.DangerAreas.Any(a => a.Geometry.Contains(bomb.Position.ToVec3())), "moving bomb still forces kiting");
+            Check(f.Engine.Module!.FindComponent<CrucibleMovingBombs>()!.ActiveAOEs(0, f.Player).ToArray().Any(a => a.ActorID == bomb.InstanceID && !a.Risky), "bomb preview missing");
             f.Engine.Effect(bomb, new() { Action = new(48792), GlobalSequence = 55 }); f.Tick();
             Check(!f.Snapshot.DangerAreas.Any(a => a.Geometry.Contains(bomb.Position.ToVec3())), "detonated bomb persisted");
         });

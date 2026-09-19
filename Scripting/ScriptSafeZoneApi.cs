@@ -64,6 +64,10 @@ public sealed class ScriptSafeZoneApi
     public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
         => Track(PromeRotation.Plugin.Instance.SafeZoneRebornManager.AddDangerArea(WithDangerMargin(template), binding, windows));
 
+    // Only for explicitly validated precision transitions; the host safety margin still applies.
+    internal SafeZoneAreaHandle AddExactDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
+        => Track(PromeRotation.Plugin.Instance.SafeZoneRebornManager.AddDangerArea(template, binding, windows));
+
     // ── 目标区（安全点）─────────────────────────────────
 
     /// <summary>从现在开始、永不结束的持续目标区。落点偏好默认 Nearest（贴边：走到离玩家最近的区域内点），传 Center 可回到区域几何中心。</summary>

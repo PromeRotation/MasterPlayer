@@ -198,33 +198,68 @@ sealed class CrucibleMorbolKnockback(BossModule module) : HighCrucibleKnockback(
 }
 
 // The 48761 helper target is the receiving golem (a real actor), so its position
-// predicts the jumped-to ring ~6s before impact. A helper's own position is stale.
+// predicts the receiving golem's circle/ring ~6s before impact. The helper's
+// own position is stale. 48759 selects a ring; 48760 selects an R20 circle.
 sealed class CrucibleGolemJump(BossModule module) : CriticalEngagement.ReplayValidatedCastAOEs(module)
 {
     private static readonly AOEShapeDonut Ring = new(5, 50);
+    private static readonly AOEShapeCircle Circle = new(20);
     private AOEInstance? _prediction;
-    private DateTime _ringSequence;
-    protected override AOEConfig? ConfigFor(uint actionID) => actionID == 48763 ? new(Ring, true) : null;
+    private DateTime _sequenceExpires;
+    private AOEShape? _shape;
+    private ulong _caster;
+    protected override AOEConfig? ConfigFor(uint actionID) => actionID switch
+    {
+        48763 => new(Ring, true),
+        48765 => new(Circle, true),
+        _ => null
+    };
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
     {
         if (!spell.EventHappened && spell.Action.ID is 48759 or 48760)
         {
-            _ringSequence = spell.Action.ID == 48759 ? Module.CastFinishAt(spell, 8) : default;
+            _sequenceExpires = Module.CastFinishAt(spell, 8);
+            _shape = spell.Action.ID == 48759 ? Ring : Circle;
+            _caster = caster.InstanceID;
             _prediction = null;
         }
-        if (spell.Action.ID == 48763)
+        if (spell.Action.ID is 48763 or 48765)
             _prediction = null;
         base.OnCastStarted(caster, spell);
     }
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
-        if (spell.Action.ID == 48761 && _ringSequence > WorldState.CurrentTime
+        if (spell.Action.ID == 48761 && _sequenceExpires > WorldState.CurrentTime && _shape != null
             && WorldState.Actors.Find(spell.MainTargetID) is { IsDeadOrDestroyed: false } target)
-            _prediction = new(Ring, target.Position, activation: WorldState.FutureTime(6), actorID: target.InstanceID);
-        else if (spell.Action.ID == 48763)
+            _prediction ??= new(_shape, target.Position, activation: WorldState.FutureTime(6), actorID: target.InstanceID);
+        else if (spell.Action.ID is 48763 or 48765)
+        {
             _prediction = null;
+            _shape = null;
+        }
         base.OnEventCast(caster, spell);
     }
+    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID is 48759 or 48760 && spell.Interrupted)
+        {
+            _prediction = null;
+            _shape = null;
+        }
+        base.OnCastFinished(caster, spell);
+    }
+    public override void OnActorDestroyed(Actor actor)
+    {
+        // After the handoff, the receiving golem owns the attack. Killing the
+        // original caster must not erase the surviving receiver's warning.
+        if (actor.InstanceID == (_prediction?.ActorID ?? _caster))
+        {
+            _prediction = null;
+            _shape = null;
+        }
+        base.OnActorDestroyed(actor);
+    }
+    public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {
         if (_prediction is { } p && (p.Activation.AddSeconds(1) < WorldState.CurrentTime || WorldState.Actors.Find(p.ActorID) is not { IsDeadOrDestroyed: false }))
@@ -239,50 +274,131 @@ sealed class CrucibleGolemJump(BossModule module) : CriticalEngagement.ReplayVal
     }
 }
 
-// Moving fire/snow bombs have no cast bar; remaining close is unsafe throughout
-// their approach. Keep their current explosion reach as a proximity warning and
-// clear immediately on detonation. This does not assume a fixed spawn-to-fuse time.
+// User strategy: let the rotation kill the chasing bombs and accept their burst.
+// Keep an informational outline, but never kite them or force add targeting.
 sealed class CrucibleMovingBombs(BossModule module) : Components.GenericAOEs(module)
 {
     private readonly HashSet<ulong> _resolved = [];
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => Module.Enemies(19668).Concat(Module.Enemies(19669))
         .Where(a => !a.IsDeadOrDestroyed && !_resolved.Contains(a.InstanceID))
-        .Select(a => new AOEInstance(new AOEShapeCircle(a.OID == 19668 ? 6 : 10), a.Position, actorID: a.InstanceID)).ToArray();
+        .Select(a => new AOEInstance(new AOEShapeCircle(a.OID == 19668 ? 6 : 10), a.Position, risky: false, actorID: a.InstanceID)).ToArray();
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID is 48792 or 48794)
             _resolved.Add(caster.InstanceID);
     }
     public override void OnActorDestroyed(Actor actor) => _resolved.Remove(actor.InstanceID);
-    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    public override void OnActorCreated(Actor actor) => _resolved.Remove(actor.InstanceID);
+    public override void DrawArenaBackground(int pcSlot, Actor pc) { }
+    public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
-        foreach (var aoe in ActiveAOEs(slot, actor))
-            CrucibleScorpionAI.Avoid(hints, aoe);
+        foreach (var aoe in ActiveAOEs(pcSlot, pc))
+            aoe.Shape.Outline(Arena, aoe.Origin, aoe.Rotation, Colors.AOE);
     }
 }
 
 sealed class CrucibleBombMeltdown(BossModule module) : Components.GenericAOEs(module, 48801u)
 {
+    private static readonly AOEShapeRect Shape = new(40, 6);
     private AOEInstance? _aoe;
+    private Actor? _boss;
+    private Actor? _target;
+    private DateTime _activation;
+    private bool _locked;
+
+    // ARR 15:46:32: icon 412 -> bind 48800 ~7.2s -> hit 48801 ~0.96s.
+    // The marked player cannot dodge after the bind; prepare their landing early.
+    public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
+    {
+        if (iconID == 412 && Module.Enemies(19666).FirstOrDefault(a => !a.IsDeadOrDestroyed) is { } boss)
+        {
+            _boss = boss;
+            _target = actor;
+            _activation = WorldState.FutureTime(8.2);
+            _locked = false;
+            _aoe = null;
+        }
+    }
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID == 48800)
-            _aoe = new(new AOEShapeRect(40, 6), caster.Position, spell.Rotation, WorldState.FutureTime(0.9));
+        {
+            _boss = caster;
+            _target = WorldState.Actors.Find(spell.MainTargetID);
+            _activation = WorldState.FutureTime(0.95);
+            _locked = true;
+            // Boss facing in the bind packet can lag behind the real target.
+            var rotation = _target != null ? Angle.FromDirection(_target.Position - caster.Position) : spell.Rotation;
+            _aoe = new(Shape, caster.Position, rotation, _activation);
+        }
         else if (spell.Action.ID == WatchedAction)
-            _aoe = null;
+            Clear();
+    }
+    private void Clear()
+    {
+        _aoe = null;
+        _boss = _target = null;
     }
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
-        => _aoe is { } a && a.Activation.AddSeconds(1) >= WorldState.CurrentTime ? new[] { a } : [];
+    {
+        if (_boss == null || _boss.IsDeadOrDestroyed || _target is { IsDeadOrDestroyed: true } || _activation.AddSeconds(1) < WorldState.CurrentTime)
+        {
+            Clear();
+            return [];
+        }
+        if (!_locked && _target != null)
+            _aoe = new(Shape, _boss.Position, Angle.FromDirection(_target.Position - _boss.Position), _activation);
+        return _aoe is { } aoe ? new[] { aoe with { Risky = actor != _target } } : [];
+    }
+    public Components.GenericKnockback.Knockback? KnockbackFor(int slot, Actor actor)
+    {
+        var aoes = ActiveAOEs(slot, actor);
+        return aoes.Length > 0 ? new(aoes[0].Origin, 15, _activation,
+            shape: actor == _target ? null : Shape, direction: aoes[0].Rotation) : null;
+    }
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         foreach (var aoe in ActiveAOEs(slot, actor))
-            CrucibleScorpionAI.Avoid(hints, aoe);
+            if (aoe.Risky)
+                CrucibleScorpionAI.Avoid(hints, aoe);
     }
     public override void OnActorDeath(Actor actor)
     {
-        if (actor.OID == 19666)
-            _aoe = null;
+        if (actor == _boss || actor == _target)
+            Clear();
     }
     public override void OnActorDestroyed(Actor actor) => OnActorDeath(actor);
 }
-sealed class CrucibleBombEnrageHint(BossModule module) : Components.CastHints(module, [48790u], "榴弹怪连续大爆炸：优先处理榴弹怪，注意减伤！");
+
+sealed class CrucibleBombMeltdownKnockback(BossModule module) : Components.GenericKnockback(module)
+{
+    public override ReadOnlySpan<Knockback> ActiveKnockbacks(int slot, Actor actor)
+        => Module.FindComponent<CrucibleBombMeltdown>()?.KnockbackFor(slot, actor) is { } source ? new[] { source } : [];
+
+    public override bool DestinationUnsafe(int slot, Actor actor, WPos pos) => !pos.InCircle(Module.Center, 19.5f)
+        || (Module.FindComponent<CrucibleBombPools>()?.ActiveAOEs(slot, actor).ToArray().Any(a => a.Check(pos)) ?? false);
+
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        var pools = Module.FindComponent<CrucibleBombPools>()?.ActiveAOEs(slot, actor).ToArray() ?? [];
+        foreach (var kb in ActiveKnockbacks(slot, actor))
+            if (!IsImmune(slot, kb.Activation))
+                // Prepare before 48800 binds the target, not only before damage.
+                hints.AddForbiddenConstraint(new Landing(Module.Center, kb, pools), kb.Activation.AddSeconds(-1.5));
+    }
+
+    private sealed class Landing(WPos center, Knockback source, Components.GenericAOEs.AOEInstance[] pools) : ShapeDistance
+    {
+        public override float Distance(in WPos p)
+        {
+            if (source.Shape != null && !source.Shape.Check(p, source.Origin, source.Direction))
+                return 1;
+            var landing = AwayFromSource(p, source.Origin, source.Distance);
+            var clearance = Math.Min((p - source.Origin).Length() - 0.5f, 19.5f - (landing - center).Length());
+            foreach (var pool in pools)
+                clearance = Math.Min(clearance, (landing - pool.Origin).Length() - 6.35f);
+            return clearance;
+        }
+    }
+}
+sealed class CrucibleBombEnrageHint(BossModule module) : Components.CastHints(module, [48790u, 48802u], "大爆炸：全场伤害，注意减伤！");

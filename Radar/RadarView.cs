@@ -59,7 +59,7 @@ public sealed class RadarView
     private readonly List<Vector2> _projectedB = new(64);
     private readonly Vector2[] _quad = new Vector2[4];
     private readonly List<Vector2> _pathPoints = new(32);
-    private readonly List<float> _pathLengths = new(32);
+    private readonly List<RadarPathDash> _pathDashes = new(64);
 
     /// <summary>在指定屏幕圆心/半径绘制一帧雷达内容；玩家不存在且无场地边界时返回 false（未绘制）。</summary>
     public bool Draw(ImDrawListPtr drawList, Vector2 screenCenter, float radiusPx, bool hovered = false)
@@ -311,56 +311,17 @@ public sealed class RadarView
         }
 
         _pathPoints.Clear();
-        _pathLengths.Clear();
         foreach (var point in path)
         {
             _pathPoints.Add(_projection.Project(point.Position));
         }
 
-        var total = 0f;
-        for (var i = 1; i < _pathPoints.Count; i++)
+        if (!RadarPathDashes.TryBuild(_pathPoints, animT, _pathDashes)) return;
+        foreach (var dash in _pathDashes)
         {
-            _pathLengths.Add(total);
-            total += Vector2.Distance(_pathPoints[i - 1], _pathPoints[i]);
-        }
-
-        const float dash = 6f;
-        const float period = 10.5f;
-        var offset = PositiveModulo(animT * 16f, period);
-        var totalSafe = MathF.Max(total, 1f);
-
-        for (var i = 1; i < _pathPoints.Count; i++)
-        {
-            var a = _pathPoints[i - 1];
-            var b = _pathPoints[i];
-            var segLen = Vector2.Distance(a, b);
-            if (segLen < 0.01f)
-            {
-                continue;
-            }
-
-            var segStart = _pathLengths[i - 1];
-            var segEnd = segStart + segLen;
-            var s = segStart;
-            while (s < segEnd)
-            {
-                var phase = PositiveModulo(s - offset, period);
-                if (phase >= dash)
-                {
-                    s += period - phase;
-                    continue;
-                }
-
-                var dashEnd = MathF.Min(s + (dash - phase), segEnd);
-                var color = PathColor;
-                color.W *= 0.45f + 0.55f * (s / totalSafe);
-                canvas.StrokeSegment(
-                    Vector2.Lerp(a, b, (s - segStart) / segLen),
-                    Vector2.Lerp(a, b, (dashEnd - segStart) / segLen),
-                    ImGui.GetColorU32(color),
-                    2f);
-                s = dashEnd;
-            }
+            var color = PathColor;
+            color.W *= 0.45f + 0.55f * dash.Progress;
+            canvas.StrokeSegment(dash.Start, dash.End, ImGui.GetColorU32(color), 2f);
         }
 
         var destination = _pathPoints[^1];

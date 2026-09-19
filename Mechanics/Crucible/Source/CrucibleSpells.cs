@@ -172,7 +172,8 @@ class CrucibleCastAOEs(BossModule module, Battle battle) : ReplayValidatedCastAO
 
     protected override AOEConfig? ConfigFor(uint actionID)
     {
-        if ((_battle == Battle.B04 && (CrucibleGroundUpliftAOEs.IsUplift(actionID) || actionID == 46908))
+        if ((_battle == Battle.B03 && actionID == 46889)
+            || (_battle == Battle.B04 && (CrucibleGroundUpliftAOEs.IsUplift(actionID) || actionID == 46908))
             || !CrucibleSpells.Table.TryGetValue(actionID, out var spell))
         {
             return null;
@@ -365,7 +366,7 @@ sealed class XBMB07AOE(BossModule module) : CrucibleCastAOEs(module, Battle.B07)
 
 // 第 8 组（斗兽奇弈 第二盘）
 [SkipLocalsInit]
-sealed class XBMB08AOE(BossModule module) : CrucibleCastAOEs(module, Battle.B08);
+sealed class XBMB08AOE(BossModule module) : CrucibleTaurusAOEs(module);
 
 // 第 9 组（斗兽奇弈 第二盘）
 [SkipLocalsInit]
@@ -535,7 +536,7 @@ sealed class XBMB06Hint0(BossModule module) : Components.CastHints(module, [(uin
 
 // 第 8 组提示：Doom (raidwide)
 [SkipLocalsInit]
-sealed class XBMB08Hint0(BossModule module) : Components.CastHints(module, [(uint)AID.A48143, (uint)AID.A48153], "Doom (raidwide)");
+sealed class XBMB08Hint0(BossModule module) : Components.CastHints(module, [48143u], "全体伤害并附加死亡宣告");
 
 // 第 9 组提示：Knockback!
 [SkipLocalsInit]

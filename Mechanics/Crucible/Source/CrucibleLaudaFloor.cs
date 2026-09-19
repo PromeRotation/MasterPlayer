@@ -1,14 +1,12 @@
-// Ported from BossmodRebornCN f6914f3e8. See docs/reference/CrucibleAll.spec.md.
-using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace MasterPlayer.Mechanics.Crucible;
 
 static class CrucibleLaudaFloor
 {
     public static readonly WPos Center = new(520, -420);
-    // Client b4228yuka1_v2 fire-mesh holes, cross-checked with f1x5 trigger boxes.
+    // Client b4228yuka1_v2 fire-mesh holes. Both f1x3 Gatler and f1x5 Lauda
+    // use sgbg_f1x3_a1_gim05 at (520,-420), without rotation or scaling.
     private static readonly Shape[] Platforms =
     [
         new Rectangle(Center, 10, 20),
