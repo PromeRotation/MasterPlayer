@@ -17,39 +17,42 @@ internal sealed record DangerAwareFollowGoalTemplate : GeometryTemplate
         _boundary = boundary;
     }
     public override GeometryKind Kind => GeometryKind.Circle;
-    public bool HasSafeArea(Vector3 position) => Resolve(position, 0, null) is not ExcludedGoalGeometry { Disabled: true };
-    public override IGeometryShape Resolve(Vector3 position, float rotation, float? lengthOverride)
+    public bool HasSafeArea(Vector3 position)
     {
-        var circle = new CircleGeometry(position, _radius);
-        if (_dangers.Length == 0 && _boundary == null) return circle;
-        var goal = new ExcludedGoalGeometry(circle, _dangers, _boundary);
-        var total = 0; var safe = 0;
+        if (_dangers.Length == 0 && _boundary == null) return true;
+        var goal = Resolve(position, 0, null);
         var step = OptionalGoalSafety.SampleStep;
+        var corner = step / 2;
         for (var z = -_radius + step / 2; z < _radius; z += step)
             for (var x = -_radius + step / 2; x < _radius; x += step)
             {
                 var p = position + new Vector3(x,0,z);
-                if (!circle.Contains(p) || (_boundary != null && !_boundary.Contains(p))) continue;
-                ++total;
-                if (goal.Contains(p)) ++safe;
+                // A usable footprint matters, not its percentage of a large boss's attack circle.
+                // Stop after the first witness; resolving worker snapshots never scans the whole circle.
+                if (goal.Contains(p) && goal.Contains(p + new Vector3(-corner,0,-corner))
+                    && goal.Contains(p + new Vector3(corner,0,-corner))
+                    && goal.Contains(p + new Vector3(-corner,0,corner))
+                    && goal.Contains(p + new Vector3(corner,0,corner))) return true;
             }
-        // Keep the original footprint as denominator; a clipped sliver is not a full safe goal.
-        return total > 0 && safe >= total * OptionalGoalSafety.MinSafeFraction ? goal : new ExcludedGoalGeometry(circle, _dangers, _boundary, disabled: true);
+        return false;
+    }
+    public override IGeometryShape Resolve(Vector3 position, float rotation, float? lengthOverride)
+    {
+        var circle = new CircleGeometry(position, _radius);
+        return _dangers.Length == 0 && _boundary == null ? circle : new ExcludedGoalGeometry(circle, _dangers, _boundary);
     }
 
-    private sealed class ExcludedGoalGeometry(CircleGeometry circle, GoalExclusion[] dangers, IGeometryShape? boundary, bool disabled = false) : IGeometryShape
+    private sealed class ExcludedGoalGeometry(CircleGeometry circle, GoalExclusion[] dangers, IGeometryShape? boundary) : IGeometryShape
     {
-        public bool Disabled => disabled;
         public GeometryKind Kind => GeometryKind.Circle;
         public Vector3 Position => circle.Position;
         public float Rotation => 0;
         public bool Contains(Vector3 point, float epsilon = 0.0001f)
-            => !disabled && circle.Contains(point, epsilon) && (boundary == null || boundary.Contains(point, epsilon))
+            => circle.Contains(point, epsilon) && (boundary == null || boundary.Contains(point, epsilon))
                 && !dangers.Any(d => d.Contains(point, epsilon));
         public GeometryBounds GetBounds() => circle.GetBounds();
         public bool IntersectsSegment(Vector3 start, Vector3 end, float epsilon = 0.0001f)
         {
-            if (disabled) return false;
             if (Contains(start, epsilon) || Contains(end, epsilon)) return true;
             var delta = end - start;
             var offset = start - Position;

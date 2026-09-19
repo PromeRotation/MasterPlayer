@@ -123,7 +123,7 @@ public sealed class ReplayWindow : IDisposable
         {
             DrawToolbar();
             DrawFileList();
-            _page = PromeUi.TabBar("##replay_pages", ["时间轴回放", "日志对比"], _page);
+            _page = PluginUi.TabBar("##replay_pages", ["时间轴回放", "日志对比"], _page);
             if (_page == 0) DrawTimelineTab(); else DrawCompareTab();
         }
         finally { ImGui.End(); }

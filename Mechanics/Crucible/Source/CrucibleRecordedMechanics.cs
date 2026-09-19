@@ -72,7 +72,9 @@ sealed class CrucibleGroundUpliftAOEs(BossModule module) : CriticalEngagement.Re
 
         // PR represents every wave with its own window, including the center reopening.
         if (opening && Pending.Length > 1)
-            hints.AddForbiddenConstraint(new SDInvertedCircle(Pending[0].AOE.Origin, 8f), Pending[0].AOE.Activation.AddSeconds(-1d), Pending[0].AOE.Activation.AddSeconds(0.6));
+            // R8 collapses against the R6 circle after component, user and host
+            // margins. R10 leaves a usable staging annulus for the return inward.
+            hints.AddForbiddenConstraint(new SDInvertedCircle(Pending[0].AOE.Origin, 10f), Pending[0].AOE.Activation.AddSeconds(-1d), Pending[0].AOE.Activation.AddSeconds(0.6));
     }
 }
 

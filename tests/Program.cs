@@ -343,6 +343,8 @@ RadarClipRegression.Run(Run);
 SafeZoneTemporalRegression.RunPrecision(Run);
 SafeZoneTemporalRegression.Run(Run);
 FollowRegression.Run(Run);
+DodgeUptimeRegression.Run(Run);
+RecordedDodgeRefinementRegression.Run(Run);
 VisualScriptRegression.Run(Run);
 ReplayRecordingRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);

@@ -16,21 +16,22 @@ using PromeRotation.Spatial.Geometry;
 using PromeRotation.Spatial.SafeZone;
 using PromeRotation.Spatial.SafeZoneReborn.Solver;
 
-internal static class FollowRegression
+internal static partial class FollowRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        RunCombatRange(run);
         run("Follow approaches a battle target and stops at hitbox distance", () =>
         {
             using var scope = new FollowScope();
             scope.Update();
-            Check(scope.MoveCount == 1 && scope.LastPoint is { Tolerance: 6f, IgnoreY: true } point &&
+            Check(scope.MoveCount == 1 && scope.LastPoint is { Tolerance: 7f, IgnoreY: true } point &&
                 point.Position == scope.TargetPosition, "A living battle target must receive a route with both hitboxes included.");
-            scope.PlayerPosition = new Vector3(4f, 0f, 0f);
+            scope.PlayerPosition = new Vector3(3f, 0f, 0f);
             scope.Update();
             scope.Update();
             Check(scope.StopCount == 1 && scope.MoveCount == 1, "Reaching the configured edge distance must stop once without chasing the boss center.");
-            scope.PlayerPosition = new Vector3(3.95f, 0f, 0f);
+            scope.PlayerPosition = new Vector3(2.95f, 0f, 0f);
             scope.Update();
             Check(scope.MoveCount == 2, "Walking just outside the configured distance must resume following.");
         });
@@ -62,12 +63,13 @@ internal static class FollowRegression
         {
             using var scope = new FollowScope();
             scope.Update();
-            scope.Settings.FollowDistance = 0.5f;
+            scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
+            scope.PlayerPosition = new(-25,0,0);
             scope.Update();
-            Check(scope.MoveCount == 2 && scope.LastPoint?.Tolerance == 5f, "Changing distance must update the active route tolerance.");
+            Check(scope.MoveCount == 2 && scope.LastPoint?.Tolerance == 29f, "Changing mode must update the active route tolerance.");
             scope.TargetRadius = 2f;
             scope.Update();
-            Check(scope.MoveCount == 3 && scope.LastPoint?.Tolerance == 3f, "Changing target size must update the active route tolerance.");
+            Check(scope.MoveCount == 3 && scope.LastPoint?.Tolerance == 27f, "Changing target size must update the active route tolerance.");
         });
 
         foreach (var invalid in new[] { "missing", "dead", "untargetable", "event NPC", "self" })
@@ -234,12 +236,12 @@ internal static class FollowRegression
             Check(snapshot.GoalAreas.Single().Geometry.Contains(new(-3,0,0)), "new mask mutated the previous snapshot");
         });
 
-        run("Auto-follow abandons an attack ring with less than a quarter safe and recovers after cancellation", () =>
+        run("Auto-follow abandons an attack ring without a usable footprint and recovers after cancellation", () =>
         {
             using var scope = new FollowScope { PlayerPosition = new(-13,0,0), TargetPosition = Vector3.Zero };
             scope.Settings.EnableAutoDodge = true;
             var now = DateTime.UtcNow; scope.Now = now;
-            var danger = scope.Manager.AddDangerArea(new CircleTemplate(5.5f), new StaticTransform(Vector3.Zero,0),
+            var danger = scope.Manager.AddDangerArea(new CircleTemplate(6.5f), new StaticTransform(Vector3.Zero,0),
                 [new DangerWindow(now.AddSeconds(3),now.AddSeconds(4))]);
             scope.Update();
             var snapshot = scope.Manager.BuildSnapshot(now);
@@ -266,7 +268,7 @@ internal static class FollowRegression
         });
 
         foreach (var casting in new[] { false, true })
-            run($"Auto-follow suspends uptime for {(casting ? "casting" : "urgent escape")}", () =>
+            run($"Auto-follow {(casting ? "suspends uptime for safe casting" : "retains safe uptime during urgent escape")}", () =>
             {
                 using var scope = new FollowScope { PlayerCasting = casting };
                 scope.Settings.EnableAutoDodge = true;
@@ -275,7 +277,7 @@ internal static class FollowRegression
                     [new DangerWindow(now.AddSeconds(casting ? 4 : 0.8),now.AddSeconds(5))]);
                 scope.Update();
                 var snapshot = scope.Manager.BuildSnapshot(now);
-                Check(snapshot.GoalAreas.Count == 0, "uptime competed with casting or urgent escape");
+                Check(snapshot.GoalAreas.Count == (casting ? 0 : 1), "casting or escape dropped the wrong goal");
                 if (!casting)
                 {
                     var solution = Solve(scope,snapshot,now);
@@ -397,6 +399,8 @@ internal static class FollowRegression
             Settings.FollowSlot = 0;
             Settings.FollowTargetWhenNoSlot = true;
             Settings.FollowDistance = 1.5f;
+            Settings.CombatDistance = CombatDistanceMode.Melee;
+            Settings.RangedAttackRange = 25f;
             Settings.FollowDuringCombat = true;
             Settings.FollowOutOfCombat = false;
             Settings.DebugMode = false;

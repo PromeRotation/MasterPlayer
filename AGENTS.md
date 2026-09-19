@@ -137,6 +137,8 @@ public sealed class MasterPlayerSettings
     public int FollowSlot = 0;                  // 0=不指定小队槽位；1~7=PartyHelper.GetParty() 下标
     public bool FollowTargetWhenNoSlot = true;  // 无有效槽位时回退跟随当前目标（玩家或战斗 NPC）
     public float FollowDistance = 1.5f;
+    public CombatDistanceMode CombatDistance = CombatDistanceMode.Melee;
+    public float RangedAttackRange = 25f;
     public bool FollowDuringCombat = true;
     public bool FollowOutOfCombat = false;
 
@@ -217,7 +219,9 @@ public sealed class FollowController : IDisposable
 ```
 
 - 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或指定成员不可用时按 `FollowTargetWhenNoSlot` 回退当前目标（存活且可选中的 `ObjectKind.Pc` / `ObjectKind.BattleNpc`）；槽位超出 0~7 则不跟随。**`FollowTargetWhenNoSlot = false` 时禁止当前目标回退（槽位 0 同样生效），有效小队槽位仍可跟随**。本地玩家不存在或已死亡时停止跟随。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
-- 跟随距离：战斗 NPC 使用 XZ 平面上双方目标圈边缘间距（到达半径为设置距离加双方 `HitboxRadius`），玩家使用中心间距；判距与 GreenMove 容差一致，不额外加 0.2 码停止余量，设置距离最低按 0.2 码执行。自动躲避开启时，将此距离作为 Reborn 动态圆形目标，复用其危险检查与路线规划；跟随目标排除全部仍待判定的危险形状，使用不可变快照和无版本递增更新，避免提前回位并保持后台解算连续；当前生效的机制目标优先，未来目标未激活前不抢占跟随。关闭自动躲避时，直接跟随的路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、跟随距离或目标圈大小变化时更新，不每帧重置读条等待。
+- 战斗距离：`CombatDistanceMode.Melee` 使用 3 码攻击距离，`Ranged` 使用 `RangedAttackRange`（5～25，默认 25）；怪物到达半径为攻击距离减 0.5 码停步余量，再加双方 `HitboxRadius`。玩家跟随独立使用 `FollowDistance` 中心间距（0.2～10）。旧配置默认近战，保留原玩家跟随距离；远程已在射程内且安全时不主动贴脸。
+- 自动躲避开启时，跟随只注册 Reborn 动态目标，危险排除保留结束安全余量。紧急躲避期间仍保留安全攻击位置，让同一寻路器选择可达的近战侧；安全读条期间暂停可选跟随，读条中必须脱险时恢复安全目标。有效机制站位始终优先。可用安全区按网格站立空间判断，不再要求占原攻击圈 25%；完全无安全攻击位置时停用目标窗口，危险结束后恢复，绝不直线强行返回。几何快照不可变，目标动态更新不每帧取消后台解算。
+- 关闭自动躲避时，直接跟随的路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、战斗距离或目标圈大小变化时更新，不每帧重置读条等待。距离算法与规划模式一致。
 - 自动躲避模式只撤销自己的目标句柄，不直接操作 GreenMove；本体 Reborn 被手动关闭时不会降级成直线跟随绕过危险检查。直接跟随的移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；旧版 `SafeZoneMovementStatus.HasControl` 或 `SafeZoneRebornMovementStatus.HasControl` 为 true 时让位——不发跟随指令，也不 Stop 对方路线；关闭或卸载跟随时同样检查控制权。
 - 通用避险优先级：玩家读条、脚下危险扣除宿主开始余量后不足 1 秒、或处于硬障碍内时，撤销普通跟随目标，保持危险解算运行。普通目标保留宿主 0.5 米硬余量，危险结束后的 0.3 秒余量也纳入排除；按原目标覆盖范围统计安全占比，小于 25% 时停用其 GoalWindow，不能只给空几何（PR 的目标启发式仍会朝空区域中心移动）。仅目标启停递增一次版本，使旧追击解算失效；目标/危险几何正常动态更新仍不递增。精确机制 GoalPoints 不受此普通偏好过滤。
 
@@ -685,3 +689,21 @@ public readonly record struct GreenMovePoint(
 - 自动转火/背对经可选宿主 `PromeRotation.Hosting.MechanicControl` 接口；只有开启自动躲避与走位引导才生效，回放禁用。旧宿主缺接口或签名不兼容时一次提示并保留绘制/走位。禁止硬依赖未发布本体接口，禁止直接覆写用户锁角/目标设置。
 - 新回归入口 `--bmr-local-sync`，可配 `--filter=<用例名称片段>` 定点复现；全量回归也包含这些用例。构建与移动回归须引用配套本体。
 - 本轮新增40项、完整455项回归通过，MasterPlayer Release 0警告0错误，五盘独立脚本编译通过；17:28配套本体/MP已备份替换并核对哈希。测试及宿主补丁在工作区 `analysis/masterplayer-bmr-sync-20260919/`；本体适配未包含在MasterPlayer源码提交中。
+
+### 2026-09-19 通用撤离时机优化
+
+- 自动走位 → 智能躲避新增默认开启的 `OptimizeDodgeTiming`。仅开启智能躲避即可使用，不依赖选中 Boss、跟随或近战/远程模式。配置保存在 MasterPlayer 自身 JSON。
+- `SafeZoneActivation` 每帧在 Reborn 实际自动移动开启时刷新 `SafeZoneSetting.AttackUptimeExpiresAt`，有效期 0.5 秒；关闭或卸载只撤销自身最后写入的请求。此字段表示请求生命周期，不是预定出发时间；需要配套编译、部署本体与 MP。
+- 本体 `SafeZoneRebornMovementSystem.Uptime.cs` 复用既有危险时间窗、剩余折线路线复核与滑步窗口；普通 AOE 有余量时等待，按当前移速验证延后出发后的整条路线，保留原危险起止余量及 0.15 秒起步余量。读条判断按实际离开危险的时间，不再把无害的后半段路线算作逃离耗时。主线程不新增寻路搜索。
+- 已起步、当前危险、紧急缩减余量路径、分阶段转场、激活的机制目标及未知/冻结约束不做起步延后。跟随的可选攻击目标优先级为 -1；非负优先级用于必须完成的机制站位。负优先级不改变现有光栅目标权重。
+- 回归入口 `--filter='Dodge uptime'`，匿名录像 fixture 为 `tests/Fixtures/Crucible/uptime-low1-205342.json`；证据在 `F:/project/卫月插件/analysis/masterplayer-dodge-uptime-20260919/`。用户更正后的录像是普通一盘 20:53:42，不能用高一 15:46:32 代替此次出发时机验证。
+
+### 2026-09-19 连续波次撤离精修
+
+- 普通一盘 21:29:27 ARR 记录 B02 第三条肢解 46879（207.474s）和 B04 第一圈地面隆起 46902（270.226s）命中，旧配套本体在真实组件/移动链路离线重现原地不动。
+- 本体安全时间区间搜索在完整时间路线暂不可行时，返回最近、且安全时间严格优于原地的临时站位；保留全部危险/障碍/场地检查及有限等待期限。`IsPartialEscape` 标识只验证到当前避险阶段，不能当作整套机制已经规划完成。
+- 调度复核临时路线仍安全、快照版本未变时保持该阶段；新事件、动态危险改变、期限到达会失效重算。禁止每次 TTL 都把临时站位推向更远一波。等待及绕行仍由本体负责，MP 不直接竞争移动控制。
+- 错峰未来判定不使用单次 AOE 贪输出等待：不同判定时间超过 0.1 秒时优先起步。保留普通单次技能的撤离优化，不全局修改命中时间或放宽安全余量。
+- B04 地面隆起的外围准备约束由 R8 改为 R10；原 R8 与首圈经过组件/user/PR 余量后没有可达待机带。伤害绘制、各圈真实半径与判定时间不变。
+- 回归入口 `--filter='Recorded dodge refinement'`，fixture 为 `tests/Fixtures/Crucible/dodge-low1-212927.json`；覆盖两套连续波次、跟随开关、80/300ms 后台延迟与80ms移动启动延迟。证据目录 `F:/project/卫月插件/analysis/masterplayer-dodge-refine-20260919-212927/`。本体与 MP 必须配套编译部署。
+- PR 主题 PR #76 尚未合并，`PromeUi.PageHeader` / `TabBar` 不是当前本体主分支的必备 API。统一经 `PluginUi` 缓存可选委托调用；主分支缺少时使用已有 `SectionHeader` / `TabButton`。不要重新硬引用未合并主题 API，合并验证须以最新主分支加本体配套改动编译。

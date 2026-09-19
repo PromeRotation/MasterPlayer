@@ -6,6 +6,30 @@ namespace MasterPlayer.Windows;
 
 internal static class PluginUi
 {
+    private static readonly Func<string, string?, string?, string?, float, bool, float, bool>? HostPageHeader =
+        typeof(PromeUi).GetMethod("PageHeader", [typeof(string), typeof(string), typeof(string), typeof(string), typeof(float), typeof(bool), typeof(float)])
+            ?.CreateDelegate<Func<string, string?, string?, string?, float, bool, float, bool>>();
+    private static readonly Func<string, IReadOnlyList<string>, int, int>? HostTabBar =
+        typeof(PromeUi).GetMethod("TabBar", [typeof(string), typeof(IReadOnlyList<string>), typeof(int)])
+            ?.CreateDelegate<Func<string, IReadOnlyList<string>, int, int>>();
+
+    public static void PageHeader(string title)
+    {
+        if (HostPageHeader != null) HostPageHeader(title, null, null, null, 132f, true, 0f);
+        else PromeUi.SectionHeader(title);
+    }
+
+    public static int TabBar(string id, IReadOnlyList<string> labels, int active)
+    {
+        if (HostTabBar != null) return HostTabBar(id, labels, active);
+        for (var i = 0; i < labels.Count; i++)
+        {
+            if (i > 0) ImGui.SameLine(0f, 6f);
+            if (PromeUi.TabButton($"{id}_{i}", labels[i], i == active)) active = i;
+        }
+        return active;
+    }
+
     public static void Hint(string text)
     {
         ImGui.PushStyleColor(ImGuiCol.Text, PromeUiTheme.TextMuted);

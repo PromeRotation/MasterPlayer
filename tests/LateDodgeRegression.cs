@@ -106,7 +106,9 @@ internal static class LateDodgeRegression
         {
             using var manager = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
             manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 20));
-            manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.Zero, 0), [new DangerWindow(Epoch.AddSeconds(2), Epoch.AddSeconds(2.6))]);
+            // The first leg and part of the turn remain dangerous; the final point is
+            // close in a straight line, but reaching the safe side requires the detour.
+            manager.AddDangerArea(new RectangleTemplate(2,14), new StaticTransform(new(0,0,3), 0), [new DangerWindow(Epoch.AddSeconds(2), Epoch.AddSeconds(2.6))]);
             var snapshot = manager.BuildSnapshot(Epoch);
             var path = new[] { TimedWaypoint.Pass(Vector3.Zero, Epoch), TimedWaypoint.Pass(new(0,0,6), Epoch.AddSeconds(1)),
                 TimedWaypoint.Pass(new(2,0,6), Epoch.AddSeconds(1.333)), TimedWaypoint.Pass(new(2,0,0), Epoch.AddSeconds(2.333)) };

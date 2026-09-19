@@ -66,7 +66,7 @@ public sealed class MainWindow : IDisposable
             ImGui.SameLine();
             if (ImGui.BeginChild("##page_" + _page, new Vector2(-1, -1), false))
             {
-                PromeUi.PageHeader(Pages[_page]);
+                PluginUi.PageHeader(Pages[_page]);
                 switch (_page)
                 {
                     case 0: DrawOverviewTab(); break;
@@ -183,7 +183,7 @@ public sealed class MainWindow : IDisposable
     private void DrawAppearanceTab()
     {
         var settings = MasterPlayerSettings.Instance;
-        _displayPage = PromeUi.TabBar("##display_sections", ["雷达", "世界绘制", "按机制显示"], _displayPage);
+        _displayPage = PluginUi.TabBar("##display_sections", ["雷达", "世界绘制", "按机制显示"], _displayPage);
         if (_displayPage == 0)
         {
             DrawRadarTab();
@@ -271,6 +271,28 @@ public sealed class MainWindow : IDisposable
         Hint("开启智能躲避后，机制站位和脱险优先于接近目标。");
         changed |= Check("启用跟随", settings.EnableFollow, v => settings.EnableFollow = v);
 
+        var combatDistance = settings.CombatDistance == CombatDistanceMode.Ranged ? 1 : 0;
+        ImGui.TextUnformatted("战斗距离");
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.Combo("##战斗距离", ref combatDistance, "近战\0远程\0"))
+        {
+            settings.CombatDistance = (CombatDistanceMode)combatDistance;
+            changed = true;
+        }
+        if (settings.CombatDistance == CombatDistanceMode.Ranged)
+        {
+            var range = settings.RangedAttackRange;
+            if (PluginUi.Slider("远程射程", ref range, 5f, 25f, "%.1f 码"))
+            {
+                settings.RangedAttackRange = range;
+                changed = true;
+            }
+            Hint("射程内优先保持安全站位，超出射程才接近；按常用技能设置射程。");
+        }
+        else
+            Hint("优先选择 3 码攻击范围内的安全位置；必须远离时先躲避，危险结束后回到近战范围。");
+        Hint("对怪物计入双方目标圈，并预留停步余量。跟随队友使用下方距离。");
+
         var slot = settings.FollowSlot;
         if (ImGui.SliderInt("跟随槽位", ref slot, 0, 7))
         {
@@ -283,18 +305,20 @@ public sealed class MainWindow : IDisposable
         Hint("支持玩家和怪物；不跟随已死亡或不可选中的目标。");
 
         var distance = settings.FollowDistance;
-        if (PluginUi.Slider("跟随距离", ref distance, 0.5f, 10f, "%.1f 码"))
+        if (PluginUi.Slider("队友跟随距离", ref distance, 0.5f, 10f, "%.1f 码"))
         {
             settings.FollowDistance = distance;
             changed = true;
         }
-        Hint("怪物按双方目标圈边缘间距计算，玩家按中心距离计算。");
+        Hint("仅用于玩家，按双方中心距离计算。");
 
         changed |= Check("战斗中生效", settings.FollowDuringCombat, v => settings.FollowDuringCombat = v);
         changed |= Check("非战斗中也生效", settings.FollowOutOfCombat, v => settings.FollowOutOfCombat = v);
 
         SectionHeader("智能躲避");
         changed |= Check("启用智能躲避", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
+        changed |= Check("优化撤离时机", settings.OptimizeDodgeTiming, v => settings.OptimizeDodgeTiming = v);
+        Hint("有安全路线时延后起步，保留输出和读条时间；按实际路程与判定时间撤离，无需选中目标或开启跟随。");
         var margin = settings.DodgeDangerMargin;
         if (PluginUi.Slider("危险区安全余量", ref margin, 0f, 2f, "%.2f 码"))
         {
@@ -332,7 +356,7 @@ public sealed class MainWindow : IDisposable
         }
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("##script_filter", "搜索脚本名称 / 区域 ID", ref _scriptFilter, 256);
-        _scriptScope = PromeUi.TabBar("##script_scope", ["全部", "当前区域", "运行中"], _scriptScope);
+        _scriptScope = PluginUi.TabBar("##script_scope", ["全部", "当前区域", "运行中"], _scriptScope);
         var territory = Svc.ClientState.TerritoryType;
         var filter = _scriptFilter.Trim();
         var entries = manager.Scripts.Where(d =>
