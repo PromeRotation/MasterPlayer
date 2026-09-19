@@ -66,7 +66,7 @@ public sealed class MainWindow : IDisposable
             ImGui.SameLine();
             if (ImGui.BeginChild("##page_" + _page, new Vector2(-1, -1), false))
             {
-                PromeUi.PageHeader(Pages[_page]);
+                PluginUi.PageHeader(Pages[_page]);
                 switch (_page)
                 {
                     case 0: DrawOverviewTab(); break;
@@ -183,7 +183,7 @@ public sealed class MainWindow : IDisposable
     private void DrawAppearanceTab()
     {
         var settings = MasterPlayerSettings.Instance;
-        _displayPage = PromeUi.TabBar("##display_sections", ["雷达", "世界绘制", "按机制显示"], _displayPage);
+        _displayPage = PluginUi.TabBar("##display_sections", ["雷达", "世界绘制", "按机制显示"], _displayPage);
         if (_displayPage == 0)
         {
             DrawRadarTab();
@@ -356,7 +356,7 @@ public sealed class MainWindow : IDisposable
         }
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("##script_filter", "搜索脚本名称 / 区域 ID", ref _scriptFilter, 256);
-        _scriptScope = PromeUi.TabBar("##script_scope", ["全部", "当前区域", "运行中"], _scriptScope);
+        _scriptScope = PluginUi.TabBar("##script_scope", ["全部", "当前区域", "运行中"], _scriptScope);
         var territory = Svc.ClientState.TerritoryType;
         var filter = _scriptFilter.Trim();
         var entries = manager.Scripts.Where(d =>

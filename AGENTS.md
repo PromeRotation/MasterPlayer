@@ -706,3 +706,4 @@ public readonly record struct GreenMovePoint(
 - 错峰未来判定不使用单次 AOE 贪输出等待：不同判定时间超过 0.1 秒时优先起步。保留普通单次技能的撤离优化，不全局修改命中时间或放宽安全余量。
 - B04 地面隆起的外围准备约束由 R8 改为 R10；原 R8 与首圈经过组件/user/PR 余量后没有可达待机带。伤害绘制、各圈真实半径与判定时间不变。
 - 回归入口 `--filter='Recorded dodge refinement'`，fixture 为 `tests/Fixtures/Crucible/dodge-low1-212927.json`；覆盖两套连续波次、跟随开关、80/300ms 后台延迟与80ms移动启动延迟。证据目录 `F:/project/卫月插件/analysis/masterplayer-dodge-refine-20260919-212927/`。本体与 MP 必须配套编译部署。
+- PR 主题 PR #76 尚未合并，`PromeUi.PageHeader` / `TabBar` 不是当前本体主分支的必备 API。统一经 `PluginUi` 缓存可选委托调用；主分支缺少时使用已有 `SectionHeader` / `TabButton`。不要重新硬引用未合并主题 API，合并验证须以最新主分支加本体配套改动编译。
