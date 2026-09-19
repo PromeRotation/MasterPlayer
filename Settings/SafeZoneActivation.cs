@@ -2,15 +2,16 @@ using PromeRotation.Spatial.SafeZone;
 
 namespace MasterPlayer.Settings;
 
-internal sealed class SafeZoneActivation(SafeZoneSetting setting) : IDisposable
+internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>? utcNow = null) : IDisposable
 {
     private bool _safeZoneRequested;
     private bool _autoMovementRequested;
     private bool _ownsSafeZone;
     private bool _ownsAutoMovement;
     private bool _disposed;
+    private DateTime _uptimeRequest;
 
-    public void Update(bool enableRadar, bool enableRadarOverlay, bool enableAutoDodge)
+    public void Update(bool enableRadar, bool enableRadarOverlay, bool enableAutoDodge, bool optimizeDodgeTiming = false)
     {
         if (_disposed)
             return;
@@ -40,6 +41,18 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting) : IDisposable
 
         if (!needsSafeZone)
             ReleaseSafeZone();
+
+        if (enableAutoDodge && optimizeDodgeTiming && setting.EnableSafeZone && setting.EnableAutoMovement)
+            setting.AttackUptimeExpiresAt = _uptimeRequest = (utcNow?.Invoke() ?? DateTime.UtcNow).AddSeconds(0.5);
+        else
+            ReleaseUptime();
+    }
+
+    private void ReleaseUptime()
+    {
+        if (_uptimeRequest != default && setting.AttackUptimeExpiresAt == _uptimeRequest)
+            setting.AttackUptimeExpiresAt = default;
+        _uptimeRequest = default;
     }
 
     private void ReleaseAutoMovement()
@@ -64,6 +77,7 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting) : IDisposable
             return;
         _disposed = true;
 
+        ReleaseUptime();
         ReleaseAutoMovement();
         ReleaseSafeZone();
     }

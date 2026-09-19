@@ -689,3 +689,11 @@ public readonly record struct GreenMovePoint(
 - 自动转火/背对经可选宿主 `PromeRotation.Hosting.MechanicControl` 接口；只有开启自动躲避与走位引导才生效，回放禁用。旧宿主缺接口或签名不兼容时一次提示并保留绘制/走位。禁止硬依赖未发布本体接口，禁止直接覆写用户锁角/目标设置。
 - 新回归入口 `--bmr-local-sync`，可配 `--filter=<用例名称片段>` 定点复现；全量回归也包含这些用例。构建与移动回归须引用配套本体。
 - 本轮新增40项、完整455项回归通过，MasterPlayer Release 0警告0错误，五盘独立脚本编译通过；17:28配套本体/MP已备份替换并核对哈希。测试及宿主补丁在工作区 `analysis/masterplayer-bmr-sync-20260919/`；本体适配未包含在MasterPlayer源码提交中。
+
+### 2026-09-19 通用撤离时机优化
+
+- 自动走位 → 智能躲避新增默认开启的 `OptimizeDodgeTiming`。仅开启智能躲避即可使用，不依赖选中 Boss、跟随或近战/远程模式。配置保存在 MasterPlayer 自身 JSON。
+- `SafeZoneActivation` 每帧在 Reborn 实际自动移动开启时刷新 `SafeZoneSetting.AttackUptimeExpiresAt`，有效期 0.5 秒；关闭或卸载只撤销自身最后写入的请求。此字段表示请求生命周期，不是预定出发时间；需要配套编译、部署本体与 MP。
+- 本体 `SafeZoneRebornMovementSystem.Uptime.cs` 复用既有危险时间窗、剩余折线路线复核与滑步窗口；普通 AOE 有余量时等待，按当前移速验证延后出发后的整条路线，保留原危险起止余量及 0.15 秒起步余量。读条判断按实际离开危险的时间，不再把无害的后半段路线算作逃离耗时。主线程不新增寻路搜索。
+- 已起步、当前危险、紧急缩减余量路径、分阶段转场、激活的机制目标及未知/冻结约束不做起步延后。跟随的可选攻击目标优先级为 -1；非负优先级用于必须完成的机制站位。负优先级不改变现有光栅目标权重。
+- 回归入口 `--filter='Dodge uptime'`，匿名录像 fixture 为 `tests/Fixtures/Crucible/uptime-low1-205342.json`；证据在 `F:/project/卫月插件/analysis/masterplayer-dodge-uptime-20260919/`。用户更正后的录像是普通一盘 20:53:42，不能用高一 15:46:32 代替此次出发时机验证。

@@ -317,6 +317,8 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("智能躲避");
         changed |= Check("启用智能躲避", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
+        changed |= Check("优化撤离时机", settings.OptimizeDodgeTiming, v => settings.OptimizeDodgeTiming = v);
+        Hint("有安全路线时延后起步，保留输出和读条时间；按实际路程与判定时间撤离，无需选中目标或开启跟随。");
         var margin = settings.DodgeDangerMargin;
         if (PluginUi.Slider("危险区安全余量", ref margin, 0f, 2f, "%.2f 码"))
         {

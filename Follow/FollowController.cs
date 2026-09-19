@@ -168,7 +168,7 @@ public sealed class FollowController : IDisposable
             .Where(a => a.DangerWindows.Any(w => OptionalGoalSafety.Pending(w.DangerFrom, w.DangerUntil, now)))
             .Select(a => a.Geometry).Concat(snapshot.HardObstacles.Select(a => a.Geometry)), snapshot.ArenaBoundary);
         var active = template.HasSafeArea(targetPosition);
-        GoalWindow[] windows = active ? [new GoalWindow(now, null, 0, PositionPreference.Nearest)] : [];
+        GoalWindow[] windows = active ? [new GoalWindow(now, null, -1, PositionPreference.Nearest)] : [];
         if (_followGoal.IsValid && manager.ContainsArea(_followGoal) && _goalTarget == targetId && _goalDistance == distance)
         {
             // Like FollowEntityPosition, changing resolved geometry must not cancel every in-flight solve.

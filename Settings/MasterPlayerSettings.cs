@@ -25,6 +25,7 @@ public sealed class MasterPlayerSettings
 
     public bool EnableRadar = true;
     public bool EnableAutoDodge = false;
+    public bool OptimizeDodgeTiming = true;
     public bool EnableMechanics = true;
     public bool DebugMode = false;
 
