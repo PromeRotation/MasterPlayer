@@ -89,6 +89,15 @@ internal static class DodgeUptimeRegression
             Check(!CanWait(movement,route,snapshot,.5),"waiting shifted the route into an intermediate hit");
         });
 
+        run("Dodge uptime does not greed staggered waves even with a currently open escape", () =>
+        {
+            var snapshot=Scene(new CircleGeometry(Vector3.Zero,2),5)
+                .WithDanger(new CircleGeometry(new(8,0,0),2),Epoch.AddSeconds(6));
+            var route=Route(snapshot,Vector3.Zero,new(-4,0,0));
+            var (movement,_)=Movement();
+            Check(!CanWait(movement,route,snapshot,.15),"a still-empty lane postponed escape during an unfolding sequence");
+        });
+
         foreach(var reason in new[] {"active damage","obstacle","boundary","mechanic goal","opaque constraint","no threat","invalid solution"})
             run($"Dodge uptime never waits for {reason}", () =>
             {
