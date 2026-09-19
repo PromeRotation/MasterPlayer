@@ -79,6 +79,8 @@ public sealed class ScriptSafeZoneApi : IDisposable
     public float DangerMarginForTest { get; set; }
     public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
         => Manager.AddDangerArea(MasterPlayer.Dodge.DangerMarginInflator.Inflate(template, DangerMarginForTest), binding, windows);
+    public SafeZoneAreaHandle AddExactDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
+        => Manager.AddDangerArea(template, binding, windows);
     public SafeZoneAreaHandle AddPersistentSafeArea(GeometryTemplate template, TransformBinding binding, int priority = 0, PositionPreference preference = PositionPreference.Nearest)
         => Registry.AddPersistentSafeArea(template, binding, priority, preference);
     public SafeZoneAreaHandle AddTimedDanger(GeometryTemplate template, TransformBinding binding, float durationSeconds)

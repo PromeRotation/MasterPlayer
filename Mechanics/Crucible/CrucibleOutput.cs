@@ -67,7 +67,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
             {
                 if (zone.Activation == DateTime.MaxValue) continue;
                 var geometry = Geometry(zone);
-                desired[$"danger/{i++}"] = new(geometry, zone.Activation, AreaKind.Danger, ExpiresAt: zone.ExpiresAt);
+                desired[$"danger/{i++}"] = new(geometry, zone.Activation, AreaKind.Danger, ExpiresAt: zone.ExpiresAt, ExactGeometry: zone.ExactGeometry);
             }
             i = 0;
             foreach (var shape in frame.Hints.TemporaryObstacles)
@@ -97,7 +97,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                 var exclusions = frame.Hints.ForbiddenZones
                     .Where(zone => OptionalGoalSafety.Pending(zone.Activation, zone.ExpiresAt, now))
                     .Select(zone => (Zone: zone, Mask: new GoalExclusion(new ResolvedGeometryTemplate(Geometry(zone))
-                        .Inflate(dangerMargin?.Invoke() ?? 0).Shape))).ToArray();
+                        .Inflate(zone.ExactGeometry ? 0 : dangerMargin?.Invoke() ?? 0).Shape))).ToArray();
                 var urgent = exclusions.Any(e => OptionalGoalSafety.Urgent(e.Zone.Activation, e.Zone.ExpiresAt, now) && e.Mask.Contains(player.Position.ToVec3(y)));
                 if (!urgent)
                 {
@@ -168,7 +168,9 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                     // The producer distinguishes a finite hit from a positioning deadline.
                     var end = area.ExpiresAt;
                     if (end < now) continue;
-                    handle = safeZone.AddDangerSnapshot(template, transform, [new(start, end, now)]);
+                    handle = area.ExactGeometry
+                        ? safeZone.AddExactDangerSnapshot(template, transform, [new(start, end, now)])
+                        : safeZone.AddDangerSnapshot(template, transform, [new(start, end, now)]);
                 }
                 _areas[id] = (signatures[id], handle);
             }
@@ -236,10 +238,10 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         _messages[text] = now.AddSeconds(8);
         log(text);
     }
-    private sealed record Area(IGeometryShape Geometry, DateTime Activation, AreaKind Kind, int Priority = 0, PositionPreference Preference = PositionPreference.Nearest, DateTime? ExpiresAt = null)
+    private sealed record Area(IGeometryShape Geometry, DateTime Activation, AreaKind Kind, int Priority = 0, PositionPreference Preference = PositionPreference.Nearest, DateTime? ExpiresAt = null, bool ExactGeometry = false)
     {
         public string Signature()
-            => $"{GeometrySignature(Geometry)}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}";
+            => $"{GeometrySignature(Geometry)}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}:{ExactGeometry}";
         public static int GeometrySignature(IGeometryShape geometry)
         {
             var hash = new HashCode();

@@ -1,0 +1,1787 @@
+[
+  {
+    "id": "wiki-consolegames",
+    "title": "wiki-consolegames",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Crucible_of_the_Unbroken",
+    "retrieved_at": "2026-09-19T05:06:41.328096+00:00",
+    "http_status": 200,
+    "kind": "web_page",
+    "read_scope": "读取文本；不包含图片、视频或未获取的字幕",
+    "snapshot_sha256": "95a14812e59de28065d5efb125e2f39f32a914f5ed63ae5811c43968418c40a5",
+    "snapshot_file": "wiki-consolegames.raw"
+  },
+  {
+    "id": "board-1",
+    "title": "board-1",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/First_Board_of_the_Unbroken",
+    "retrieved_at": "2026-09-19T05:07:16.733042+00:00",
+    "http_status": 200,
+    "kind": "board_directory",
+    "read_scope": "盘数、出场顺序、敌人名单、弱点表；弱点差异另记",
+    "snapshot_sha256": "e4ee2f6185728c2ab6ac2479967492eb2610aadc60de28972019ac201134b267",
+    "snapshot_file": "board-1.raw"
+  },
+  {
+    "id": "board-2",
+    "title": "board-2",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Second_Board_of_the_Unbroken",
+    "retrieved_at": "2026-09-19T05:07:16.733559+00:00",
+    "http_status": 200,
+    "kind": "board_directory",
+    "read_scope": "盘数、出场顺序、敌人名单、弱点表；弱点差异另记",
+    "snapshot_sha256": "3b45983ba1a36787fdb908a843457c9f6b24cbfe055daf28cc8abfe8db242a48",
+    "snapshot_file": "board-2.raw"
+  },
+  {
+    "id": "board-3",
+    "title": "board-3",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Third_Board_of_the_Unbroken",
+    "retrieved_at": "2026-09-19T05:07:16.733857+00:00",
+    "http_status": 200,
+    "kind": "board_directory",
+    "read_scope": "盘数、出场顺序、敌人名单、弱点表；弱点差异另记",
+    "snapshot_sha256": "289587df95c626361239fcc21cc081b9a3e2f20dc227c99fd16df3792f010775",
+    "snapshot_file": "board-3.raw"
+  },
+  {
+    "id": "board-4",
+    "title": "board-4",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/First_Master%27s_Board",
+    "retrieved_at": "2026-09-19T05:07:16.734105+00:00",
+    "http_status": 200,
+    "kind": "board_directory",
+    "read_scope": "盘数、出场顺序、敌人名单、弱点表；弱点差异另记",
+    "snapshot_sha256": "d4dd7dc6ae8a9ac166f4254ecd1e1cb91a5a534d2dbf9e51aacb37b914be96e2",
+    "snapshot_file": "board-4.raw"
+  },
+  {
+    "id": "board-5",
+    "title": "board-5",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Second_Master%27s_Board",
+    "retrieved_at": "2026-09-19T05:07:19.093072+00:00",
+    "http_status": 200,
+    "kind": "board_directory",
+    "read_scope": "盘数、出场顺序、敌人名单、弱点表；弱点差异另记",
+    "snapshot_sha256": "0d738e754ae0f04005174d1567ee93d013ede9851e6de561abc8c0d1d6f2dfdc",
+    "snapshot_file": "board-5.raw"
+  },
+  {
+    "id": "enemy-001",
+    "title": "Bone Knight",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bone_Knight",
+    "retrieved_at": "2026-09-19T05:08:48.497565+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "6e6e6af5aa99b42bec0e5378b95c8ad5830f268af5a30ac436101f48f88eeabc",
+    "snapshot_file": "enemy-001.raw"
+  },
+  {
+    "id": "enemy-002",
+    "title": "Bone Bishop",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bone_Bishop_(First_Board_of_the_Unbroken)",
+    "retrieved_at": "2026-09-19T05:08:48.498088+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "86cd4f31383967a37fac5f6585fe0d25d42ff3f2e68a3a046dbb626348d6b5ad",
+    "snapshot_file": "enemy-002.raw"
+  },
+  {
+    "id": "enemy-003",
+    "title": "Arch Demon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Arch_Demon_Piece",
+    "retrieved_at": "2026-09-19T05:08:48.498426+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a10a6b5484320fe0edf6eac0b83a6b89876054aef6432c06e80947c50893b09f",
+    "snapshot_file": "enemy-003.raw"
+  },
+  {
+    "id": "enemy-004",
+    "title": "Piscodemon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Piscodemon_Piece",
+    "retrieved_at": "2026-09-19T05:08:48.498735+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "02f35c55febaded2e2cf27ce7968f4060beed06b378ca7e788944026c7949133",
+    "snapshot_file": "enemy-004.raw"
+  },
+  {
+    "id": "enemy-005",
+    "title": "Banemite Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Banemite_Piece",
+    "retrieved_at": "2026-09-19T05:08:49.665949+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "eb7393f737622e71977fe5d3539ebeac348b288a163c5701a58708532ba9ca0c",
+    "snapshot_file": "enemy-005.raw"
+  },
+  {
+    "id": "enemy-006",
+    "title": "Miteling Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Miteling_Piece",
+    "retrieved_at": "2026-09-19T05:08:49.692808+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "5302c5dd68a171f63ace39c59c1679ab449f1e5624ba446a5f2a806fbed319e7",
+    "snapshot_file": "enemy-006.raw"
+  },
+  {
+    "id": "enemy-007",
+    "title": "Ogre Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ogre_Piece",
+    "retrieved_at": "2026-09-19T05:08:49.701707+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "948373e3448f305b58b8bac8de30bc33f7137292a4f0e8662f72d5b1751787c5",
+    "snapshot_file": "enemy-007.raw"
+  },
+  {
+    "id": "enemy-008",
+    "title": "Wisp Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Wisp_Piece",
+    "retrieved_at": "2026-09-19T05:08:49.889819+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "031eea1bd4cec605dbdaecadeadb5be49fd5dfcf1f5f836a30b8d9b0e9f9bc2e",
+    "snapshot_file": "enemy-008.raw"
+  },
+  {
+    "id": "enemy-009",
+    "title": "Great Wisp Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Great_Wisp_Piece",
+    "retrieved_at": "2026-09-19T05:08:50.650459+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "31f5544ec26957b6fb8f0cfed8c57dab2a0aa3f859b06cd7072c94d8899b6384",
+    "snapshot_file": "enemy-009.raw"
+  },
+  {
+    "id": "enemy-010",
+    "title": "Pas de Seul",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Pas_de_Seul",
+    "retrieved_at": "2026-09-19T05:08:50.657657+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "cbe2e73c54044824bd9d78b86714b52937b5a6d353b67a9ef09b7f5ada50c263",
+    "snapshot_file": "enemy-010.raw"
+  },
+  {
+    "id": "enemy-011",
+    "title": "Succubus Mage",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Succubus_Mage",
+    "retrieved_at": "2026-09-19T05:08:51.093338+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "7a13e36dda7a54fbb8391a55a8fe5d624075f2728b2d6635805dd89ee68ae29b",
+    "snapshot_file": "enemy-011.raw"
+  },
+  {
+    "id": "enemy-012",
+    "title": "Succubus Knight",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Succubus_Knight",
+    "retrieved_at": "2026-09-19T05:08:51.157377+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "3f68726f3e1e4526554931d7383c9367dc6f341cc464b595dde0f8c395daa01d",
+    "snapshot_file": "enemy-012.raw"
+  },
+  {
+    "id": "enemy-013",
+    "title": "Manticore Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Manticore_Piece",
+    "retrieved_at": "2026-09-19T05:08:51.884186+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "255969eb2f5e7e5cf021e7d9b59af2d4ae2466015a01198fa1bb94981ed7400f",
+    "snapshot_file": "enemy-013.raw"
+  },
+  {
+    "id": "enemy-014",
+    "title": "Taurus Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Taurus_Piece",
+    "retrieved_at": "2026-09-19T05:08:52.110776+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "53df531b7e40715b88e8946be9a47b013f9e956525348a5a611168a48dd3bd20",
+    "snapshot_file": "enemy-014.raw"
+  },
+  {
+    "id": "enemy-015",
+    "title": "Ahriman Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ahriman_Piece",
+    "retrieved_at": "2026-09-19T05:08:52.148341+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "44c098f64864606419c85801de3afdf4703b0cd354248b3a934e92aaeb6bbe5e",
+    "snapshot_file": "enemy-015.raw"
+  },
+  {
+    "id": "enemy-016",
+    "title": "Wyvern Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Wyvern_Piece_(Enemy)",
+    "retrieved_at": "2026-09-19T05:08:52.259073+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "af8a995f9f74d9cd11f6fc8c8b2ea7bd0a6d865f4696c3144c61de6a8dca04a0",
+    "snapshot_file": "enemy-016.raw"
+  },
+  {
+    "id": "enemy-017",
+    "title": "Voidmancer Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Voidmancer_Piece",
+    "retrieved_at": "2026-09-19T05:08:52.926362+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "760f55d15cd2202a3c22172d942c48ac47df1c48393822697555e642a93f9a95",
+    "snapshot_file": "enemy-017.raw"
+  },
+  {
+    "id": "enemy-018",
+    "title": "Zombie Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Zombie_Piece",
+    "retrieved_at": "2026-09-19T05:08:53.103089+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "792c6c41d440978257c5dbf038c472699ba5b5bb14eb44067d9a2323f56558f6",
+    "snapshot_file": "enemy-018.raw"
+  },
+  {
+    "id": "enemy-019",
+    "title": "Elder Tablitaur Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Elder_Tablitaur_Piece",
+    "retrieved_at": "2026-09-19T05:08:53.137593+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "73688122d77af12dc5a568b0c15ccefa27d8ade8565e5c28a740d5e75fb27402",
+    "snapshot_file": "enemy-019.raw"
+  },
+  {
+    "id": "enemy-020",
+    "title": "Younger Tablitaur Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Younger_Tablitaur_Piece",
+    "retrieved_at": "2026-09-19T05:08:53.260512+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "b1fde18c07a8d658ddff26e714700065dd886c34ea858bd0a76a7b2d19734dc0",
+    "snapshot_file": "enemy-020.raw"
+  },
+  {
+    "id": "enemy-021",
+    "title": "Demon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Demon_Piece",
+    "retrieved_at": "2026-09-19T05:08:53.750304+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "fc99c6cab5f008aab410add2a414ed8abeb11375d2a30cda1b3bddb4adbb2716",
+    "snapshot_file": "enemy-021.raw"
+  },
+  {
+    "id": "enemy-022",
+    "title": "Evil Weapon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Evil_Weapon_Piece",
+    "retrieved_at": "2026-09-19T05:08:53.952858+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "b2de9f0c99e0e5a2623ff24b8c4715b943a6ba15483c367788499cd3aa7e7ba2",
+    "snapshot_file": "enemy-022.raw"
+  },
+  {
+    "id": "enemy-023",
+    "title": "Devilet Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Devilet_Piece",
+    "retrieved_at": "2026-09-19T05:08:54.126887+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "e998168de04939b45482b2a1b4f012d0144c739415e0dd9896628735c15d1c95",
+    "snapshot_file": "enemy-023.raw"
+  },
+  {
+    "id": "enemy-024",
+    "title": "Loosefrox Inkyjots",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Loosefrox_Inkyjots",
+    "retrieved_at": "2026-09-19T05:08:54.284498+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a9e0b8e8b91adbedcb60a7f6e4884759758e1866189f719879fa2774af8dac8e",
+    "snapshot_file": "enemy-024.raw"
+  },
+  {
+    "id": "enemy-025",
+    "title": "Chewchum Popoto",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Chewchum_Popoto",
+    "retrieved_at": "2026-09-19T05:08:54.913054+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "922158c8d641f32d956df93b09f2a08b238be5ea3bdd39ee44939daed22855e0",
+    "snapshot_file": "enemy-025.raw"
+  },
+  {
+    "id": "enemy-026",
+    "title": "Cavalier Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Cavalier_Piece",
+    "retrieved_at": "2026-09-19T05:08:54.934541+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a99fcfd15873a3919ddcb4941a74d30284404fcb01a4307fea9e29269a0e76a9",
+    "snapshot_file": "enemy-026.raw"
+  },
+  {
+    "id": "enemy-027",
+    "title": "Bone Bishop",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bone_Bishop_(Third_Board_of_the_Unbroken)",
+    "retrieved_at": "2026-09-19T05:08:55.478204+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ffc9b380cac97d49e4c43999864475fc1c92a1899f1c5ac80f04b8a28867607c",
+    "snapshot_file": "enemy-027.raw"
+  },
+  {
+    "id": "enemy-028",
+    "title": "Ymir Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ymir_Piece",
+    "retrieved_at": "2026-09-19T05:08:55.788583+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "2651aa2618e1a2416a53e7c77b68a72b64ea19632e2493c5fe1682a9a7651092",
+    "snapshot_file": "enemy-028.raw"
+  },
+  {
+    "id": "enemy-029",
+    "title": "Sahagin Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Sahagin_Piece",
+    "retrieved_at": "2026-09-19T05:08:55.958865+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ab95cd8d6e6a35eaab7bc04ef78577ef93efcaa8f50c03bc7d462d7623f920e1",
+    "snapshot_file": "enemy-029.raw"
+  },
+  {
+    "id": "enemy-030",
+    "title": "Zu Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Zu_Piece",
+    "retrieved_at": "2026-09-19T05:08:56.106906+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "d2009a132ee263d6b56cb0fe17e655d3be6b8e020941746c069dc6f3ef4374c3",
+    "snapshot_file": "enemy-030.raw"
+  },
+  {
+    "id": "enemy-031",
+    "title": "Cockerel Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Cockerel_Piece",
+    "retrieved_at": "2026-09-19T05:08:56.455762+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "4b34a9d3897fbcce129ee7d426e56e341b57d5aba502c559461aca00b5ff1bb3",
+    "snapshot_file": "enemy-031.raw"
+  },
+  {
+    "id": "enemy-032",
+    "title": "Pullet Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Pullet_Piece",
+    "retrieved_at": "2026-09-19T05:08:56.838490+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ce4d3944bf31d3b4aa82a18670476ef0b053644fcc6e5f2f321924623bfe5953",
+    "snapshot_file": "enemy-032.raw"
+  },
+  {
+    "id": "enemy-033",
+    "title": "Catoblepas Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Catoblepas_Piece",
+    "retrieved_at": "2026-09-19T05:08:56.846606+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "4bd70ef2c052d3b430a70b8eefb734c666b71fd7e40e69d924ad63996edd89a6",
+    "snapshot_file": "enemy-033.raw"
+  },
+  {
+    "id": "enemy-034",
+    "title": "Lakhamu Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Lakhamu_Piece",
+    "retrieved_at": "2026-09-19T05:08:57.085476+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "2efaf905e4407f6ad75a23ca8322bfe191868a2d672b9b5f0e3f2a8a33f55177",
+    "snapshot_file": "enemy-034.raw"
+  },
+  {
+    "id": "enemy-035",
+    "title": "Golem Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Golem_Piece_(Third_Board_of_the_Unbroken)",
+    "retrieved_at": "2026-09-19T05:08:57.432077+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a472ebda71ba69c6c2ec9bfa2c9ba70ea0356aeef420bf91c7126ef85fe4de1d",
+    "snapshot_file": "enemy-035.raw"
+  },
+  {
+    "id": "enemy-036",
+    "title": "Siren Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Siren_Piece",
+    "retrieved_at": "2026-09-19T05:08:57.683963+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "4a7cc6fd805218d64998e93b5fb7b16376116978b40e3413ae26fadd2fd09492",
+    "snapshot_file": "enemy-036.raw"
+  },
+  {
+    "id": "enemy-037",
+    "title": "Shambling Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Shambling_Piece",
+    "retrieved_at": "2026-09-19T05:08:57.698570+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "2c0c456312457f5bba8ccf9b58353be715cb6204c5bdb4d0c79376c198322817",
+    "snapshot_file": "enemy-037.raw"
+  },
+  {
+    "id": "enemy-038",
+    "title": "Crawling Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Crawling_Piece",
+    "retrieved_at": "2026-09-19T05:08:57.899493+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "4b49eb0bd716761c492322b63e1fae5d41172df5cfcbbc3dc6eba301b1309eb1",
+    "snapshot_file": "enemy-038.raw"
+  },
+  {
+    "id": "enemy-039",
+    "title": "Campeador Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Campeador_Piece",
+    "retrieved_at": "2026-09-19T05:08:58.236118+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "159ec1c2498834105c22e1a2876f3fdcc35880879959522c96fd8db8e1a24612",
+    "snapshot_file": "enemy-039.raw"
+  },
+  {
+    "id": "enemy-040",
+    "title": "Sabotender Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Sabotender_Piece",
+    "retrieved_at": "2026-09-19T05:08:58.499986+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "dbb11a2f1cfeba21ae634aea8a5df312e3c49b7ba3901d5dbaf51952850aa466",
+    "snapshot_file": "enemy-040.raw"
+  },
+  {
+    "id": "enemy-041",
+    "title": "Flowertender Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Flowertender_Piece",
+    "retrieved_at": "2026-09-19T05:08:58.504081+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "0afb64593b61bfc43315b833dd13cd4745b65ace6975ab32d254f9e40c8f834c",
+    "snapshot_file": "enemy-041.raw"
+  },
+  {
+    "id": "enemy-042",
+    "title": "Soldado Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Soldado_Piece",
+    "retrieved_at": "2026-09-19T05:08:58.732505+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "1797486532a7fb3706e54318dda160f3be885f683e7f5b0b00d738f5f73ca50f",
+    "snapshot_file": "enemy-042.raw"
+  },
+  {
+    "id": "enemy-043",
+    "title": "Guardia Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Guardia_Piece",
+    "retrieved_at": "2026-09-19T05:08:59.014345+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ad820118ad76a5a1a2fde7ca3490f33d55dc6f57f3815cb5ad3754b7048f3a96",
+    "snapshot_file": "enemy-043.raw"
+  },
+  {
+    "id": "enemy-044",
+    "title": "Guttler the Gutter",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Guttler_the_Gutter",
+    "retrieved_at": "2026-09-19T05:08:59.320445+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "40a458246130e9a1af0fdc9df467856796b5c64cfe34311b26402730464b68ad",
+    "snapshot_file": "enemy-044.raw"
+  },
+  {
+    "id": "enemy-045",
+    "title": "Thanatos Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Thanatos_Piece_(Third_Board_of_the_Unbroken)",
+    "retrieved_at": "2026-09-19T05:08:59.538509+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "adb0ca54336d76263ba4adb12af7aef845c07e438dd5fe54d0b7afeb3a6fc2c4",
+    "snapshot_file": "enemy-045.raw"
+  },
+  {
+    "id": "enemy-046",
+    "title": "Strix Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Strix_Piece",
+    "retrieved_at": "2026-09-19T05:08:59.654620+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ffdddbeeb4035b41e86e63704a8b7be0939474f540bea32893425d9ba5a6e1eb",
+    "snapshot_file": "enemy-046.raw"
+  },
+  {
+    "id": "enemy-047",
+    "title": "Morbol Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Morbol_Piece",
+    "retrieved_at": "2026-09-19T05:08:59.987942+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8935912cdf5ee541973515d4fb58420c7ab5220597210865febfa156ec7f9f5f",
+    "snapshot_file": "enemy-047.raw"
+  },
+  {
+    "id": "enemy-048",
+    "title": "Seedling Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Seedling_Piece",
+    "retrieved_at": "2026-09-19T05:09:00.450692+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "e408e8d354aa36c96cdd49fe3f27a1dae4e7a16c86b6da52c4e2e40950469075",
+    "snapshot_file": "enemy-048.raw"
+  },
+  {
+    "id": "enemy-049",
+    "title": "Ochu Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ochu_Piece",
+    "retrieved_at": "2026-09-19T05:09:00.486339+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "54368708d34411a43bd1739c2c24d0335b91616c3cea83e7bb5498b1d9956d2a",
+    "snapshot_file": "enemy-049.raw"
+  },
+  {
+    "id": "enemy-050",
+    "title": "Carrion Broth",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Carrion_Broth",
+    "retrieved_at": "2026-09-19T05:09:00.547006+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "fdfa09dba47bec57615ba0ef504d0aad0608c6b5a41a71045c98936084890ae1",
+    "snapshot_file": "enemy-050.raw"
+  },
+  {
+    "id": "enemy-051",
+    "title": "Corpse Flower Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Corpse_Flower_Piece",
+    "retrieved_at": "2026-09-19T05:09:00.808186+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "cf01cd9a00afe533b96666b12a23a07a145799945c14210dd98ac23301f0d914",
+    "snapshot_file": "enemy-051.raw"
+  },
+  {
+    "id": "enemy-052",
+    "title": "Queen Hawk Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Queen_Hawk_Piece",
+    "retrieved_at": "2026-09-19T05:09:01.437216+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "1687e7682f129a66eacff097fc758ca919d9b41eb3df591e6aa4cd4f026ea47e",
+    "snapshot_file": "enemy-052.raw"
+  },
+  {
+    "id": "enemy-053",
+    "title": "Ice Dragon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ice_Dragon_Piece",
+    "retrieved_at": "2026-09-19T05:09:01.603818+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "da7f7b1f37f4268349d18b83569c4316c5c04dfb7c5e3f8bd34d8ccb3c23edb9",
+    "snapshot_file": "enemy-053.raw"
+  },
+  {
+    "id": "enemy-054",
+    "title": "Ice Sprite",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Ice_Sprite_(First_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:01.663298+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "66fa52ffc86b3b89f8a10026c9a9e0d5283eba4f13edb76a27cbd5c1a8796a16",
+    "snapshot_file": "enemy-054.raw"
+  },
+  {
+    "id": "enemy-055",
+    "title": "Gargoyle Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Gargoyle_Piece",
+    "retrieved_at": "2026-09-19T05:09:01.989206+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "33f7ed4723bd9156aef4a2dc500e762bf2e5ec6c3b19fcd877ff38a5ff1ca881",
+    "snapshot_file": "enemy-055.raw"
+  },
+  {
+    "id": "enemy-056",
+    "title": "Administrator Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Administrator_Piece",
+    "retrieved_at": "2026-09-19T05:09:02.515555+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "732f2578df164dd8a6295a566aa3245e610f860e8ce41ff9563e3429990c576c",
+    "snapshot_file": "enemy-056.raw"
+  },
+  {
+    "id": "enemy-057",
+    "title": "Bug Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bug_Piece",
+    "retrieved_at": "2026-09-19T05:09:02.533871+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ceac66e284c50e0cf9bf9ebb63f1eb5ffcc22ac0e7b737c692b6cb1e24001b44",
+    "snapshot_file": "enemy-057.raw"
+  },
+  {
+    "id": "enemy-058",
+    "title": "Footman Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Footman_Piece",
+    "retrieved_at": "2026-09-19T05:09:02.663850+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "08195f760f31ead8f07e5e6766a02b71a3b1e1c8d1dfefcffd0d0d24d366ff6d",
+    "snapshot_file": "enemy-058.raw"
+  },
+  {
+    "id": "enemy-059",
+    "title": "Dreadnaught Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Dreadnaught_Piece",
+    "retrieved_at": "2026-09-19T05:09:03.209070+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "3fabe5ca5572fd004dfae2045437752209ff54a2685dcd9cbe2c34088992ff80",
+    "snapshot_file": "enemy-059.raw"
+  },
+  {
+    "id": "enemy-060",
+    "title": "Drone Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Drone_Piece",
+    "retrieved_at": "2026-09-19T05:09:03.359929+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "f2a012bfb8fbc224a7956e2c409816df038db943a1532453f25eb96bac15bd61",
+    "snapshot_file": "enemy-060.raw"
+  },
+  {
+    "id": "enemy-061",
+    "title": "Cobra Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Cobra_Piece",
+    "retrieved_at": "2026-09-19T05:09:03.469300+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "caf519c24825f79cdaf95bbbc29fddae0fa9cea82288615c36612895054d6e3e",
+    "snapshot_file": "enemy-061.raw"
+  },
+  {
+    "id": "enemy-062",
+    "title": "Golem Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Golem_Piece_(First_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:03.488425+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "61510d3d27d0784170d9dd63819a7795115b00e15b3caf395b093ac49f787ca4",
+    "snapshot_file": "enemy-062.raw"
+  },
+  {
+    "id": "enemy-063",
+    "title": "Treant Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Treant_Piece",
+    "retrieved_at": "2026-09-19T05:09:04.063480+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "73e854c1654b954de9e6c16f6a1ae160f68cd62c26fb8c6cdb163cbba1820d96",
+    "snapshot_file": "enemy-063.raw"
+  },
+  {
+    "id": "enemy-064",
+    "title": "Slug Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Slug_Piece",
+    "retrieved_at": "2026-09-19T05:09:04.266334+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "674d7d62c9a7d7a0174dbc9f48fc4a7aa63e4ba3ae494e6995ee7eef474caaf0",
+    "snapshot_file": "enemy-064.raw"
+  },
+  {
+    "id": "enemy-065",
+    "title": "Sapling Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Sapling_Piece",
+    "retrieved_at": "2026-09-19T05:09:04.273076+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "c22a6a8076cc5c7307c6de82bb3e7f260a86d977b341dc2d4e4f865ab1588c5f",
+    "snapshot_file": "enemy-065.raw"
+  },
+  {
+    "id": "enemy-066",
+    "title": "Diremite Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Diremite_Piece",
+    "retrieved_at": "2026-09-19T05:09:04.565094+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8d66944f82813d60a8491f1a10f1b05c1c37e5f9a645d93eeee02f994fed2018",
+    "snapshot_file": "enemy-066.raw"
+  },
+  {
+    "id": "enemy-067",
+    "title": "Biloko Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Biloko_Piece",
+    "retrieved_at": "2026-09-19T05:09:04.874576+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "70b17a60b3b452a7a51d412b429533e345c222043e1118aac2c752da06adf2e9",
+    "snapshot_file": "enemy-067.raw"
+  },
+  {
+    "id": "enemy-068",
+    "title": "Progenitrix Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Progenitrix_Piece",
+    "retrieved_at": "2026-09-19T05:09:05.243998+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "83236eca92b69cf0cd005858901486d2fe28e6f9afc66bacadaa382dddd08e09",
+    "snapshot_file": "enemy-068.raw"
+  },
+  {
+    "id": "enemy-069",
+    "title": "Grenade Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Grenade_Piece",
+    "retrieved_at": "2026-09-19T05:09:05.417733+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "91241989a4e483bb4c6f91089bd4dc021514cf7f091f68237f62a1dc9f258506",
+    "snapshot_file": "enemy-069.raw"
+  },
+  {
+    "id": "enemy-070",
+    "title": "Bomb Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bomb_Piece_(First_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:05.450891+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "69705051e85a2b4d3015f7a39fccb493894d1e582abaa003bb7175b8a674b094",
+    "snapshot_file": "enemy-070.raw"
+  },
+  {
+    "id": "enemy-071",
+    "title": "Snoll Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Snoll_Piece",
+    "retrieved_at": "2026-09-19T05:09:06.023375+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "60e258250190ea37a721cbc5b7de7daec68a1b83ce5f4bb477ee1a9d0d38e955",
+    "snapshot_file": "enemy-071.raw"
+  },
+  {
+    "id": "enemy-072",
+    "title": "Pyrobolus Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Pyrobolus_Piece",
+    "retrieved_at": "2026-09-19T05:09:06.292061+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "d7e1fa0a2afbde6b80e4cf24f232da9c9b36d22140732bfba24f5609d7b8d6ca",
+    "snapshot_file": "enemy-072.raw"
+  },
+  {
+    "id": "enemy-073",
+    "title": "Borgny the Venomous",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Borgny_the_Venomous",
+    "retrieved_at": "2026-09-19T05:09:06.322881+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8b8908b9f973b0e7add33ee3d8aa7a00310af6ff49eaf315126ff40d90eaeedd",
+    "snapshot_file": "enemy-073.raw"
+  },
+  {
+    "id": "enemy-074",
+    "title": "Toxic Mass",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Toxic_Mass",
+    "retrieved_at": "2026-09-19T05:09:06.472599+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "3bf57defb457f6d8f587b8c44db9cfc80ccfd8714cf9d24cc7ab925c5a5b63bf",
+    "snapshot_file": "enemy-074.raw"
+  },
+  {
+    "id": "enemy-075",
+    "title": "Flauros Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Flauros_Piece",
+    "retrieved_at": "2026-09-19T05:09:07.039942+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "2051428d0173fdb74591e46a07dae323a535da7309565a125f44c41fbbf641eb",
+    "snapshot_file": "enemy-075.raw"
+  },
+  {
+    "id": "enemy-076",
+    "title": "Lightning Sprite",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Lightning_Sprite_(Second_Master%27s_Board_-_Enemy_1)",
+    "retrieved_at": "2026-09-19T05:09:07.158200+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "55292803e31703182b7a6091815cd230fa6579dfc89090e4cfe24cbbb2bf2c70",
+    "snapshot_file": "enemy-076.raw"
+  },
+  {
+    "id": "enemy-077",
+    "title": "Mindflayer Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Mindflayer_Piece",
+    "retrieved_at": "2026-09-19T05:09:07.240834+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "872eab94dbb4c0052d7b7a4d3c99c1413b0fc51e89d06181e70a83f5f843151c",
+    "snapshot_file": "enemy-077.raw"
+  },
+  {
+    "id": "enemy-078",
+    "title": "Myconid Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Myconid_Piece",
+    "retrieved_at": "2026-09-19T05:09:07.305867+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8479727a82cbd7fc67288520e07b9e839d60fa999b12fca66e7ea8914b816c1c",
+    "snapshot_file": "enemy-078.raw"
+  },
+  {
+    "id": "enemy-079",
+    "title": "Boogyman Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Boogyman_Piece",
+    "retrieved_at": "2026-09-19T05:09:08.042790+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "b360a082196efafa3be28067100d978bd0801f35f6b57933d30214fbf2ba974f",
+    "snapshot_file": "enemy-079.raw"
+  },
+  {
+    "id": "enemy-080",
+    "title": "Deepeye Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Deepeye_Piece",
+    "retrieved_at": "2026-09-19T05:09:08.121313+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "0052f554feccfb78252e068da12fa61f014731d099fd151e9fdf93b229b45ac9",
+    "snapshot_file": "enemy-080.raw"
+  },
+  {
+    "id": "enemy-081",
+    "title": "Bomb Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bomb_Piece_(Second_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:08.254194+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "842298cd8ae1a688edd0d0cc720acd13b3c26e2ddea9d0969a535b1881360488",
+    "snapshot_file": "enemy-081.raw"
+  },
+  {
+    "id": "enemy-082",
+    "title": "Light Sprite",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Light_Sprite_(Second_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:08.304969+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "5177d644c9bc2b6cb969e09cf237505533fa755d8f5671b3f2cb0dfd3808f2f9",
+    "snapshot_file": "enemy-082.raw"
+  },
+  {
+    "id": "enemy-083",
+    "title": "Atomos Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Atomos_Piece",
+    "retrieved_at": "2026-09-19T05:09:08.826767+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "9c9f889cdd0972aa8e868cdb8b21db09f9a6fe985e56c60c6acb2af2fe4fbdad",
+    "snapshot_file": "enemy-083.raw"
+  },
+  {
+    "id": "enemy-084",
+    "title": "Red Gremlin Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Red_Gremlin_Piece",
+    "retrieved_at": "2026-09-19T05:09:08.909071+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "f7321db91fae9169fa506f2efdab577293d9c7a97c275001ef0cf39911bf5b1f",
+    "snapshot_file": "enemy-084.raw"
+  },
+  {
+    "id": "enemy-085",
+    "title": "Gremlin Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Gremlin_Piece",
+    "retrieved_at": "2026-09-19T05:09:09.319790+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "c2c8586eb6db9b2fffb0d1afc033d68edc8d70f1547fec97fdcf35afecf64ff6",
+    "snapshot_file": "enemy-085.raw"
+  },
+  {
+    "id": "enemy-086",
+    "title": "Pudding Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Pudding_Piece",
+    "retrieved_at": "2026-09-19T05:09:09.678715+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "e397727db1e05c4b49aa5a432eb4740fb42fc6a6432cb4743088a2d335ff6ddc",
+    "snapshot_file": "enemy-086.raw"
+  },
+  {
+    "id": "enemy-087",
+    "title": "Bavarois Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Bavarois_Piece",
+    "retrieved_at": "2026-09-19T05:09:09.709699+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "74f18a604e7313d934aadf875922c24c8a6f733345a34c96266da5ba7d8db72a",
+    "snapshot_file": "enemy-087.raw"
+  },
+  {
+    "id": "enemy-088",
+    "title": "Flan Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Flan_Piece",
+    "retrieved_at": "2026-09-19T05:09:09.816432+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8459ec02fa4ba8b9f546688fc62dc275aa00deb967523bfce0bc14f6123fa32c",
+    "snapshot_file": "enemy-088.raw"
+  },
+  {
+    "id": "enemy-089",
+    "title": "Vodoriga Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Vodoriga_Piece",
+    "retrieved_at": "2026-09-19T05:09:10.322790+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a7f7fd93278893229cd61d25d5d9adedcfd50dc51c50a02efb9fab5c2c5d5181",
+    "snapshot_file": "enemy-089.raw"
+  },
+  {
+    "id": "enemy-090",
+    "title": "Menacing Dahak Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Menacing_Dahak_Piece",
+    "retrieved_at": "2026-09-19T05:09:10.495822+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "7bd18d0b6da506c8bc7d0359b42ab465d43e54cb9252e6ef0b5dec12d93f3e73",
+    "snapshot_file": "enemy-090.raw"
+  },
+  {
+    "id": "enemy-091",
+    "title": "Drake Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Drake_Piece",
+    "retrieved_at": "2026-09-19T05:09:10.766908+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "7b71c8b0d84d8a06c43c153a7d9b0ec2e4c0374ef431e990173379932528f6e6",
+    "snapshot_file": "enemy-091.raw"
+  },
+  {
+    "id": "enemy-092",
+    "title": "Barbmole Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Barbmole_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.114549+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "16a986a50368e767aaf981c6ed9cada7f7821ade03cb2818184b9197f709a53f",
+    "snapshot_file": "enemy-092.raw"
+  },
+  {
+    "id": "enemy-093",
+    "title": "Abaddon Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Abaddon_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.156225+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "f10b751d6d464c6effb5118f053932863b1c9964726df5d8c48559f2da3e3088",
+    "snapshot_file": "enemy-093.raw"
+  },
+  {
+    "id": "enemy-094",
+    "title": "Morpho Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Morpho_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.500756+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "8dad091f90c46636b5f7a4bfe2caf0bfc53d52f8088c8922e7f7e723fcccfbbf",
+    "snapshot_file": "enemy-094.raw"
+  },
+  {
+    "id": "enemy-095",
+    "title": "Durga Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Durga_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.554012+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "64e85db373ab6d2795585d9f1e865d53a75cb78de26a8c70ac7666ef8757375a",
+    "snapshot_file": "enemy-095.raw"
+  },
+  {
+    "id": "enemy-096",
+    "title": "Spinner-rook Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Spinner-rook_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.921017+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "d0da0d200bf29afa693c1cbfff50c19f77ed69abe8f4b17a4a968cc696d85ee3",
+    "snapshot_file": "enemy-096.raw"
+  },
+  {
+    "id": "enemy-097",
+    "title": "Medusa Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Medusa_Piece",
+    "retrieved_at": "2026-09-19T05:09:11.955828+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "40cc1afc34c3f2568b373a7d2d37f9d8fec5cd64a3ed589de7fd6751f35f909f",
+    "snapshot_file": "enemy-097.raw"
+  },
+  {
+    "id": "enemy-098",
+    "title": "Lamia Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Lamia_Piece",
+    "retrieved_at": "2026-09-19T05:09:12.522552+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ab1736fa905f77bc3d75835a86f5b62b01dd90a2a5d53534247c007256e1fbbd",
+    "snapshot_file": "enemy-098.raw"
+  },
+  {
+    "id": "enemy-099",
+    "title": "Cyclops Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Cyclops_Piece_(Second_Master%27s_Board_-_Random_3)",
+    "retrieved_at": "2026-09-19T05:09:12.529753+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "c02feb8ebe6752536458233bc649585e937f2e87d101593c721e97a211664031",
+    "snapshot_file": "enemy-099.raw"
+  },
+  {
+    "id": "enemy-100",
+    "title": "Chimera Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Chimera_Piece",
+    "retrieved_at": "2026-09-19T05:09:12.911227+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a2f11fb08c684a31de5c84638128ed5fad734b92763bd510841e6d43bec7a5bd",
+    "snapshot_file": "enemy-100.raw"
+  },
+  {
+    "id": "enemy-101",
+    "title": "Sphinx Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Sphinx_Piece",
+    "retrieved_at": "2026-09-19T05:09:13.131404+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "315c3878b4926e765537c88d3d9a16e236a1f97bb49f9e20051ff7b75c2e6933",
+    "snapshot_file": "enemy-101.raw"
+  },
+  {
+    "id": "enemy-102",
+    "title": "Gigantis Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Gigantis_Piece",
+    "retrieved_at": "2026-09-19T05:09:13.442732+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "0c312b0ea73684d095dec460cbc8f8618e8d588a27f51b4cc3918f2c3851f433",
+    "snapshot_file": "enemy-102.raw"
+  },
+  {
+    "id": "enemy-103",
+    "title": "Cyclops Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Cyclops_Piece_(Second_Master%27s_Board_-_Enemy_4)",
+    "retrieved_at": "2026-09-19T05:09:13.460514+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "ddb0b5d6dda972ebe47677e85213af2d29acdac679511de0059d7865bcf7acb9",
+    "snapshot_file": "enemy-103.raw"
+  },
+  {
+    "id": "enemy-104",
+    "title": "Congealed Lightning",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Congealed_Lightning",
+    "retrieved_at": "2026-09-19T05:09:13.688444+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "845e680a966048f86f0ba7a8c07891f7eed795b9a2e7b35437691d0df6e17491",
+    "snapshot_file": "enemy-104.raw"
+  },
+  {
+    "id": "enemy-105",
+    "title": "Congealed Kindling",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Congealed_Kindling",
+    "retrieved_at": "2026-09-19T05:09:13.907474+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "00308d202a80899c0ea1632492001bfbb97fd8bebbc26e831f2de1e7da7801ab",
+    "snapshot_file": "enemy-105.raw"
+  },
+  {
+    "id": "enemy-106",
+    "title": "Swordsmog Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Swordsmog_Piece",
+    "retrieved_at": "2026-09-19T05:09:14.242080+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "54aab7e8047a7ba550b425e62f86a1f4a7acd94159c274520256298fee60b9ad",
+    "snapshot_file": "enemy-106.raw"
+  },
+  {
+    "id": "enemy-107",
+    "title": "Mogbreaker Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Mogbreaker_Piece",
+    "retrieved_at": "2026-09-19T05:09:14.410918+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "b3bb5981f6b9dfffb64602e01039240cc2d76cb0847745de2d971aaaf626be65",
+    "snapshot_file": "enemy-107.raw"
+  },
+  {
+    "id": "enemy-108",
+    "title": "Kinged Kupocurer",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Kinged_Kupocurer",
+    "retrieved_at": "2026-09-19T05:09:14.859250+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "1052993c949b992a2c4a03e8c644d6644244a60a6637530a74ae89db5a940a46",
+    "snapshot_file": "enemy-108.raw"
+  },
+  {
+    "id": "enemy-109",
+    "title": "Kinged Kupocaster",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Kinged_Kupocaster",
+    "retrieved_at": "2026-09-19T05:09:15.065318+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "db8305ce8b8a0ae444647ab35ad227597149403be7cf5db2ae7a3d9a31e77c29",
+    "snapshot_file": "enemy-109.raw"
+  },
+  {
+    "id": "enemy-110",
+    "title": "Kupocurer Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Kupocurer_Piece",
+    "retrieved_at": "2026-09-19T05:09:15.069016+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "978ac5e7c6c7315d62bc211eed11becbc102c72f80bf76a2d11b67329c1e429f",
+    "snapshot_file": "enemy-110.raw"
+  },
+  {
+    "id": "enemy-111",
+    "title": "Kupocaster Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Kupocaster_Piece",
+    "retrieved_at": "2026-09-19T05:09:15.195513+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "3fab605838756fbff51b6e60848f2e38d36b8f9bbc0d44e2c08a91227fac4ec4",
+    "snapshot_file": "enemy-111.raw"
+  },
+  {
+    "id": "enemy-112",
+    "title": "Kinged Swordsmog",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Kinged_Swordsmog",
+    "retrieved_at": "2026-09-19T05:09:16.022812+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "18fbe6134801d106089743ca5f88f9228d4f8d9628d2c58613239cbaa8cb2957",
+    "snapshot_file": "enemy-112.raw"
+  },
+  {
+    "id": "enemy-113",
+    "title": "Melomog Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Melomog_Piece",
+    "retrieved_at": "2026-09-19T05:09:16.220721+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "84905af3caa3487810572f52226e3e8dc1e6c002950f02e29ebd2d2ad669d838",
+    "snapshot_file": "enemy-113.raw"
+  },
+  {
+    "id": "enemy-114",
+    "title": "Mogmugger Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Mogmugger_Piece",
+    "retrieved_at": "2026-09-19T05:09:16.302606+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "54ead7232c27cc869ab833fba9a926b46713484dfa14a7e11159b9a23c81cfdf",
+    "snapshot_file": "enemy-114.raw"
+  },
+  {
+    "id": "enemy-115",
+    "title": "Behemoth Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Behemoth_Piece",
+    "retrieved_at": "2026-09-19T05:09:16.547672+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "4c448faf90fbf57184b5e371092c885c981c3b71948cd5b7708842b0d5cad5b7",
+    "snapshot_file": "enemy-115.raw"
+  },
+  {
+    "id": "enemy-116",
+    "title": "Giant Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Giant_Piece",
+    "retrieved_at": "2026-09-19T05:09:16.990123+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "0ec8583fd1c3b6277542d43e6d83dadbca3dd508679c453374817f810bb89fac",
+    "snapshot_file": "enemy-116.raw"
+  },
+  {
+    "id": "enemy-117",
+    "title": "Lightning Sprite",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Lightning_Sprite_(Second_Master%27s_Board_-_Random_5)",
+    "retrieved_at": "2026-09-19T05:09:17.124922+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "61b03f7d306fca5055764c26ea42cdb53336dbbf9ac302e5b9940ca75edf9a58",
+    "snapshot_file": "enemy-117.raw"
+  },
+  {
+    "id": "enemy-118",
+    "title": "King Ahriman Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/King_Ahriman_Piece",
+    "retrieved_at": "2026-09-19T05:09:17.178095+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "0474848f5ebb04b6d34619ec84dbe0ed9c40e6832a805b15b40072220e23b78e",
+    "snapshot_file": "enemy-118.raw"
+  },
+  {
+    "id": "enemy-119",
+    "title": "Hapalit Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Hapalit_Piece",
+    "retrieved_at": "2026-09-19T05:09:17.367949+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "f4205f881767ae242cc980a9dac0a89cd50f9d938aca7e676ab4143524a8e0f0",
+    "snapshot_file": "enemy-119.raw"
+  },
+  {
+    "id": "enemy-120",
+    "title": "Dirty Eye Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Dirty_Eye_Piece",
+    "retrieved_at": "2026-09-19T05:09:17.797984+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "a5e4f5ce3f86b8b71c4f9aff06dd6cf1e0e5358da0fcf6812490cc5410b4fe9e",
+    "snapshot_file": "enemy-120.raw"
+  },
+  {
+    "id": "enemy-121",
+    "title": "Lauda the Spellcleaver",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Lauda_the_Spellcleaver",
+    "retrieved_at": "2026-09-19T05:09:17.929355+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "d60f44f8b33f06227d64943c3d1deac37faa86fb8bf377094d88d1f6fc12b1f4",
+    "snapshot_file": "enemy-121.raw"
+  },
+  {
+    "id": "enemy-122",
+    "title": "Thanatos Piece",
+    "url": "https://ffxiv.consolegameswiki.com/wiki/Thanatos_Piece_(Second_Master%27s_Board)",
+    "retrieved_at": "2026-09-19T05:09:18.036305+00:00",
+    "http_status": 200,
+    "kind": "enemy_directory",
+    "read_scope": "敌人名称/所属内容；Actions栏为空，没有技能攻略",
+    "snapshot_sha256": "63e8bdf0f8ae36dcc4f83c950f4f2a75af8783967d435e062124620ef1ce3e2f",
+    "snapshot_file": "enemy-122.raw"
+  },
+  {
+    "id": "datamine-Action",
+    "title": "Action CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/Action.csv",
+    "retrieved_at": "2026-09-19T05:14:01.904645+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "b71cb86dcb802ac86a83b3177f08163150cce86ee461c803ffbb23def59c85d6",
+    "snapshot_file": "datamine-Action.raw"
+  },
+  {
+    "id": "datamine-BNpcName",
+    "title": "BNpcName CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/BNpcName.csv",
+    "retrieved_at": "2026-09-19T05:14:01.905116+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "505e81326a6dcf11b8c015922c5eb9f4bc766c96e32488eda5daefcd885e6982",
+    "snapshot_file": "datamine-BNpcName.raw"
+  },
+  {
+    "id": "datamine-Status",
+    "title": "Status CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/Status.csv",
+    "retrieved_at": "2026-09-19T05:14:01.905401+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "7df85c10e4a22ae0c681e36c352763600e4fb630a28eca6b1124487ba4300963",
+    "snapshot_file": "datamine-Status.raw"
+  },
+  {
+    "id": "datamine-XBMBattleDetail",
+    "title": "XBMBattleDetail CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/XBMBattleDetail.csv",
+    "retrieved_at": "2026-09-19T05:14:01.905622+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "035e7ff74b6ea2b27afeac96bc4583b7e6d50698f2fa7a82812957e9e764d165",
+    "snapshot_file": "datamine-XBMBattleDetail.raw"
+  },
+  {
+    "id": "datamine-XBMBattleDetailAction",
+    "title": "XBMBattleDetailAction CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/XBMBattleDetailAction.csv",
+    "retrieved_at": "2026-09-19T05:14:03.344340+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "d97eaf31517abfcd9458ca66acde932e6bbe369bfcdff6ef83da9a30d3c0d277",
+    "snapshot_file": "datamine-XBMBattleDetailAction.raw"
+  },
+  {
+    "id": "datamine-XBMActionTarget",
+    "title": "XBMActionTarget CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/XBMActionTarget.csv",
+    "retrieved_at": "2026-09-19T05:14:03.495846+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "88fdd8351601846602c936dd058d9711abc64920bc3ddcd13b298591aef36dfc",
+    "snapshot_file": "datamine-XBMActionTarget.raw"
+  },
+  {
+    "id": "datamine-XBMActionEffectType",
+    "title": "XBMActionEffectType CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/XBMActionEffectType.csv",
+    "retrieved_at": "2026-09-19T05:14:03.664863+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "1006426f2c92b6919c0dcc1660479d9e585d2da5af71dc053b43771fd4c91b96",
+    "snapshot_file": "datamine-XBMActionEffectType.raw"
+  },
+  {
+    "id": "datamine-XBMElement",
+    "title": "XBMElement CN table",
+    "url": "https://raw.githubusercontent.com/thewakingsands/ffxiv-datamining-cn/3ba064a64e21ff62b587d886701bbe6e74d8d224/XBMElement.csv",
+    "retrieved_at": "2026-09-19T05:14:04.121378+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "3d78b8be150f41221b8224b1be42b1606684f8f7934012e43c2facf5f0906b52",
+    "snapshot_file": "datamine-XBMElement.raw"
+  },
+  {
+    "id": "guide-BV1c1Y46AEnN",
+    "title": "【FF14/7.56】斗兽奇奕冲分思路、副本机制简易教学（1+2面传说级成就，1-4面机制介绍）",
+    "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/",
+    "retrieved_at": "2026-09-19T05:14:04.465750+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "7f70bc30dd8e4bdaa5e968e98581b34eedf715b930dac6cdf10b9c9d3cc35666",
+    "snapshot_file": "guide-BV1c1Y46AEnN.raw",
+    "author": "夜风yzf",
+    "published_at": "2026-09-09T14:52:46+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "前言，冲分词缀介绍",
+        "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/?p=1"
+      },
+      {
+        "page": 2,
+        "title": "第一面 传说级1.9万分讲解",
+        "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/?p=2"
+      },
+      {
+        "page": 3,
+        "title": "第二面 传说级1.76万分讲解",
+        "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/?p=3"
+      },
+      {
+        "page": 4,
+        "title": "第三面 机制介绍",
+        "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/?p=4"
+      },
+      {
+        "page": 5,
+        "title": "第四面 机制介绍",
+        "url": "https://www.bilibili.com/video/BV1c1Y46AEnN/?p=5"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1bkYH6fEYH",
+    "title": "【FF14】斗兽奇弈丨1 — 3层BOSS机制讲解",
+    "url": "https://www.bilibili.com/video/BV1bkYH6fEYH/",
+    "retrieved_at": "2026-09-19T05:14:04.653923+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "f7243a81f36c460aa597590e36503286f3a29558db22e04bcb6e6bef177b6d58",
+    "snapshot_file": "guide-BV1bkYH6fEYH.raw",
+    "author": "缇特_Tinte",
+    "published_at": "2026-09-08T17:54:42+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "【一层】",
+        "url": "https://www.bilibili.com/video/BV1bkYH6fEYH/?p=1"
+      },
+      {
+        "page": 2,
+        "title": "【二层】",
+        "url": "https://www.bilibili.com/video/BV1bkYH6fEYH/?p=2"
+      },
+      {
+        "page": 3,
+        "title": "【三层】",
+        "url": "https://www.bilibili.com/video/BV1bkYH6fEYH/?p=3"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1a6Yv6BEWH",
+    "title": "FF14斗兽奇奕兽道III难度高段第二盘（思路在简介）",
+    "url": "https://www.bilibili.com/video/BV1a6Yv6BEWH/",
+    "retrieved_at": "2026-09-19T05:14:04.690860+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "b9196b664fc04e6e9e2ba6951e4d06c4c15578e5412d359407145b3919202bdc",
+    "snapshot_file": "guide-BV1a6Yv6BEWH.raw",
+    "author": "三鹿_36",
+    "published_at": "2026-09-13T07:23:12+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "FF14斗兽奇奕兽道III难度高段第二盘通关视角",
+        "url": "https://www.bilibili.com/video/BV1a6Yv6BEWH/?p=1"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1eNYX6xEip",
+    "title": "【FF14/7.56】斗兽奇奕最难的终局——兽道3难度下的第五层配队思路、通关视频讲解",
+    "url": "https://www.bilibili.com/video/BV1eNYX6xEip/",
+    "retrieved_at": "2026-09-19T05:14:04.901527+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "8a603c6ede2ba0123b75c31027aac24177269fafbb2ac3b23137329d05911387",
+    "snapshot_file": "guide-BV1eNYX6xEip.raw",
+    "author": "夜风yzf",
+    "published_at": "2026-09-12T03:45:13+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "前言 在打兽道3难度下共通的一些配队想法",
+        "url": "https://www.bilibili.com/video/BV1eNYX6xEip/?p=1"
+      },
+      {
+        "page": 2,
+        "title": "兽道3难度 高段2 实战通关录像解说",
+        "url": "https://www.bilibili.com/video/BV1eNYX6xEip/?p=2"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1reYu62EXA",
+    "title": "想要发型嘛？驯兽师5间传说级攻略，百虫神了！（更新第5面、超低装等3面）",
+    "url": "https://www.bilibili.com/video/BV1reYu62EXA/",
+    "retrieved_at": "2026-09-19T05:14:04.939587+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "8da2e272ce6e1d1c261758836b98cadb67e576e9a83476923fa6c94ae18203ea",
+    "snapshot_file": "guide-BV1reYu62EXA.raw",
+    "author": "AAA牢爱融号",
+    "published_at": "2026-09-10T11:19:01+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "笔记周常（重点）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=1"
+      },
+      {
+        "page": 2,
+        "title": "1层（注意失误了拿了装备，不拿装备够）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=2"
+      },
+      {
+        "page": 3,
+        "title": "2层（开荒视角，推荐看另一个）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=3"
+      },
+      {
+        "page": 4,
+        "title": "3层（旧，推荐看新）尾王没录上",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=4"
+      },
+      {
+        "page": 5,
+        "title": "3层（旧，推荐看新）坐了一次火",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=5"
+      },
+      {
+        "page": 6,
+        "title": "4层（4层开始必须要刷补正了，推荐刷衣服的，武器盾牌有成就可以送满补）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=6"
+      },
+      {
+        "page": 7,
+        "title": "5层（补正不够会吃战损，可以让宝宝多抗不需要宝宝满血）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=7"
+      },
+      {
+        "page": 8,
+        "title": "2层（推荐食用，超低装等传说）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=8"
+      },
+      {
+        "page": 9,
+        "title": "3层（推荐食用，超低装等传说）",
+        "url": "https://www.bilibili.com/video/BV1reYu62EXA/?p=9"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1oQYe63EPo",
+    "title": "【FF14】 斗兽奇弈第四面 1-20级魔兽练级刷石头速通流程参考",
+    "url": "https://www.bilibili.com/video/BV1oQYe63EPo/",
+    "retrieved_at": "2026-09-19T05:14:04.958514+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "9f5d1e612bb99391c010bff66dd05fef9f75d810cbccda7ee16108289c3f76d3",
+    "snapshot_file": "guide-BV1oQYe63EPo.raw",
+    "author": "地狱屎忽鬼",
+    "published_at": "2026-09-13T09:38:35+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "FF14 斗兽奇弈第四面 1-20级魔兽练级刷石头速通流程参考",
+        "url": "https://www.bilibili.com/video/BV1oQYe63EPo/?p=1"
+      }
+    ]
+  },
+  {
+    "id": "guide-BV1N3Yy6JEpL",
+    "title": "【FF14】 斗兽奇弈第五面 20-25级魔兽练级刷石头速通流程参考",
+    "url": "https://www.bilibili.com/video/BV1N3Yy6JEpL/",
+    "retrieved_at": "2026-09-19T05:14:05.199504+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "c82d40d69a4c18a98e46598c978c0c32e5d349f40fef7b69a675eb61d1a3b932",
+    "snapshot_file": "guide-BV1N3Yy6JEpL.raw",
+    "author": "地狱屎忽鬼",
+    "published_at": "2026-09-14T13:12:58+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "【FF14】 斗兽奇弈第五面 20-25级魔兽练级刷石头速通流程参考",
+        "url": "https://www.bilibili.com/video/BV1N3Yy6JEpL/?p=1"
+      }
+    ]
+  },
+  {
+    "id": "datamine-en-names",
+    "title": "datamine-en-names",
+    "url": "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/en/BNpcName.csv",
+    "retrieved_at": "2026-09-19T05:19:41.178997+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "08614d48fd45ab0db1b8705425a363b71dc143cccb961a5b916723c81edc0449",
+    "snapshot_file": "datamine-en-names.raw"
+  },
+  {
+    "id": "datamine-en-actions",
+    "title": "datamine-en-actions",
+    "url": "https://raw.githubusercontent.com/xivapi/ffxiv-datamining/master/csv/en/Action.csv",
+    "retrieved_at": "2026-09-19T05:19:41.179434+00:00",
+    "http_status": 200,
+    "kind": "public_game_data",
+    "read_scope": "在线数据表；CN技能字段与当前安装客户端逐项对照",
+    "snapshot_sha256": "2e10eb72eb961434893672215e29df98d39a909cc31d01629b95da9f656433db",
+    "snapshot_file": "datamine-en-actions.raw"
+  },
+  {
+    "id": "bili-notes",
+    "title": "【FF14】7.0驯兽师练级及传说级驯兽师成就攻略心得",
+    "url": "https://www.bilibili.com/opus/1247259181368475653",
+    "retrieved_at": "2026-09-19T05:11:54.610673+00:00",
+    "http_status": 200,
+    "kind": "community_article",
+    "read_scope": "已读取图文正文文字；图片未解析",
+    "snapshot_sha256": "d3c2129c454d7c13c7928894cc8ae31f2ba085447beff632d60999ebcc911c9d",
+    "snapshot_file": "bili-notes.raw",
+    "author": "地狱屎忽鬼",
+    "updated_at_display": "2026-09-15 09:46"
+  },
+  {
+    "id": "bili-guide",
+    "title": "【FF14】斗兽奇弈兽道3高段第二盘过本视频+简要思路",
+    "url": "https://www.bilibili.com/video/BV1PVYd6mEsS/",
+    "retrieved_at": "2026-09-19T05:11:54.610349+00:00",
+    "http_status": 200,
+    "kind": "video_metadata",
+    "read_scope": "只读取作者、标题、简介和分P标题；未观看视频或读取字幕",
+    "snapshot_sha256": "aae8d0a7b2bd6caff5983fe210cce75b671c03fe04e89a938d02effb229778aa",
+    "snapshot_file": "bili-guide.raw",
+    "author": "丶行殇丶",
+    "published_at": "2026-09-12T12:17:19+00:00",
+    "parts": [
+      {
+        "page": 1,
+        "title": "新思路+有卓异",
+        "url": "https://www.bilibili.com/video/BV1PVYd6mEsS/?p=1"
+      },
+      {
+        "page": 2,
+        "title": "旧思路+无卓异",
+        "url": "https://www.bilibili.com/video/BV1PVYd6mEsS/?p=2"
+      }
+    ]
+  },
+  {
+    "id": "local-user-policy",
+    "title": "用户明确要求：僵尸优先击杀、不再绕行",
+    "kind": "user_instruction",
+    "url": null,
+    "reference": "../../../AGENTS.md"
+  },
+  {
+    "id": "local-current-fix",
+    "title": "当前MasterPlayer机制规格与实录修复",
+    "kind": "existing_local_implementation",
+    "url": null,
+    "reference": "../CrucibleAll.spec.md"
+  }
+]

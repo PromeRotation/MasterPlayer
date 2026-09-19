@@ -32,6 +32,8 @@ class HighCrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngagemen
         (Battle.B28, 48753) => new(new AOEShapeDonut(5f, 50f), true), // 核心环光 gl_sircle_5005_j2 | Range 0
         (Battle.B28, 48755) => new(new AOEShapeCircle(20f), true), // 平原震裂 | Range 0
         (Battle.B28, 48768) => new(new AOEShapeCone(40f, 30f.Degrees()), true), // 岩突 gl_fan060 | Range 0
+        (Battle.B30, 48791) => new(new AOEShapeCircle(5f), true),
+        (Battle.B30, 48796) => new(new AOEShapeCone(40f, 10f.Degrees()), true),
         (Battle.B30, 48799) => new(new AOEShapeCone(40f, 90f.Degrees()), true), // 烈火怒骂 gl_fan180 | Range 0
         (Battle.B31, 48812 or 48819) => new(new AOEShapeCircle(6f), true), // 浓烟呛呕 / 蠕动的痰 | Range 100
         (Battle.B31, 48814) => new(new AOEShapeRect(48f, 10f), true), // 低温俯冲 | Range 0

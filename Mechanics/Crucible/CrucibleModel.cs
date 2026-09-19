@@ -72,6 +72,7 @@ internal sealed class ActorCollection : IEnumerable<Actor>
 }
 internal sealed class WorldState
 {
+    public float NavigationMargin = 0.5f;
     public DateTime CurrentTime;
     public ActorCollection Actors { get; } = new();
     public Actor? Player;
@@ -92,7 +93,7 @@ internal static class Colors
 
 internal sealed class AIHints
 {
-    public readonly record struct ForbiddenZone(ShapeDistance Shape, DateTime Activation, DateTime? ExpiresAt)
+    public readonly record struct ForbiddenZone(ShapeDistance Shape, DateTime Activation, DateTime? ExpiresAt, bool ExactGeometry = false)
     {
         public ShapeDistance ShapeDistance => Shape;
         public ShapeDistance shapeDistance => Shape;
@@ -111,13 +112,14 @@ internal sealed class AIHints
     public readonly List<Func<WPos, float>> GoalZones = [];
     public readonly List<(WPos Position, float Radius, int Priority)> GoalPoints = [];
     public readonly List<Enemy> PotentialTargets = [];
+    public readonly List<(Angle Center, Angle HalfWidth, DateTime Activation)> ForbiddenDirections = [];
     public readonly List<string> ActionHints = [];
     public WPos PathfindMapCenter;
     public ArenaBounds? PathfindMapBounds;
     public Actor? ForcedTarget, InteractWithTarget;
     public ulong ClearTargetID;
     public float MaxCastTime = float.MaxValue;
-    public bool ForceCancelCast, ForcedMarchImminent;
+    public bool ForceCancelCast, ForcedMarchImminent, OwnsTargetSelection;
     public Vector3? ForcedMovement;
     public Angle? DesiredFacing;
     public DateTime DesiredFacingExpire;

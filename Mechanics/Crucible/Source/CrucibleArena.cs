@@ -1,7 +1,4 @@
-// Ported from BossmodRebornCN f6914f3e8. See docs/reference/CrucibleAll.spec.md.
-using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace MasterPlayer.Mechanics.Crucible;
 
@@ -46,10 +43,10 @@ sealed class CrucibleArena(WPos center, byte? index, bool circular, float halfWi
     // control encounter props and must not toggle another board's boundary.
     private static readonly CrucibleArena ThirdSquare = new(new(120, 0), 0, false, 20, 20);
     private static readonly CrucibleArena ThirdCircle = new(new(120, -420), 1, true, 20, 20);
-    // f1x3 LVD_STAGE_BOSS: 3x5 cells, half extents 5, at X 510/520/530,
-    // Z -440/-430/-420/-410/-400. The side targets (MapEffect 23..36)
-    // are outside this floor at X 500/540; they are not disappearing floor tiles.
-    private static readonly CrucibleArena ThirdFinal = new(new(520, -420), 22, false, 15, 25, boundaryWidth: 0, wallMargin: 0.6f);
+    // f1x3 uses the same gim05 SGB / b4228 fire mesh as f1x5, at unit scale.
+    // Its 3x5 LVD trigger envelope includes burning gaps, not only safe floor.
+    private static readonly CrucibleArena ThirdFinal = new(new(520, -420), 22, false, 15, 25, boundaryWidth: 0,
+        customDisplay: CrucibleLaudaFloor.Display, customSafe: CrucibleLaudaFloor.Safe);
 
     // b4228yuka1_v2's fire mesh leaves a 20x40 core and six 5x5 extensions.
     // LGB trigger cells cover the surrounding fire too; they are not the floor.

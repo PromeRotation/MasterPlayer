@@ -1,6 +1,3 @@
-// Ported from BossmodRebornCN f6914f3e8. See docs/reference/CrucibleAll.spec.md.
-using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace MasterPlayer.Mechanics.Crucible;
@@ -17,15 +14,22 @@ class Low3CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngagemen
         (Battle.B15, 48483) => new(new AOEShapeCircle(6), true),
         (Battle.B16, 48492) => new(new AOEShapeCross(50, 4), true),
         (Battle.B16, 48501) => new(new AOEShapeCircle(6), true),
+        (Battle.B17, 48512) => new(new AOEShapeCone(60, 90f.Degrees()), true),
         (Battle.B18, 48560) => new(new AOEShapeCircle(6), true),
         (Battle.B19, 48570) => new(new AOEShapeRect(50, 8), true),
         // gl_sircle_5003bf scaled to Action's outer radius 43.
         (Battle.B19, 48575) => new(new AOEShapeDonut(2.58f, 43), true),
         (Battle.B21, 48605) => new(new AOEShapeRect(80, 10), true),
-        (Battle.B21, 48620) => new(new AOEShapeRect(50, 3), true), // client width 6, not spreadsheet width 40
         (Battle.B21, 48614) => new(new AOEShapeRect(60, 3), true),
+        (Battle.B21, 48618) => new(new AOEShapeCircle(6), true),
         _ => null
     };
+
+    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.EventHappened || spell.Interrupted)
+            base.OnCastFinished(caster, spell);
+    }
 
     protected override void AddAOEForbiddenZones(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -64,14 +68,13 @@ sealed class CrucibleYmirRocks(BossModule module) : BossComponent(module)
             {
                 target.Spikes = true;
                 target.ShouldBeDispelled = true;
-                target.Priority = AIHints.Enemy.PriorityForbidden;
             }
     }
 
     public override void AddGlobalHints(GlobalHints hints)
     {
         if (Module.Enemies(19605).Any(a => !a.IsDeadOrDestroyed && a.FindStatus(5434u) != null))
-            hints.Add("鱼人有麻痹尖刺：先驱散或换目标，避免反击麻痹！");
+            hints.Add("鱼人有麻痹尖刺：优先驱散，继续击杀鱼人！");
     }
 }
 
@@ -360,21 +363,6 @@ sealed class CrucibleSirenSong(BossModule module) : Components.GenericAOEs(modul
     public override void OnActorDestroyed(Actor actor) => OnActorDeath(actor);
 }
 
-// SourceLeft (row 235), not a radial push. With the source east of the floor
-// facing west, this moves the player SOUTH by 20y. LocXZ is 40y from the stale
-// helper actor position, so both the direction and packet location matter.
-sealed class CrucibleGatlerTorrent(BossModule module)
-    : Low3CrucibleKnockback(module, 48607u, 20, Kind.DirLeft, new AOEShapeRect(80, 40))
-{
-    public override bool DestinationUnsafe(int slot, Actor actor, WPos pos) => !pos.InRect(Module.Center, 14.4f, 24.4f);
-    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
-    {
-        foreach (var kb in ActiveKnockbacks(slot, actor))
-            if (!IsImmune(slot, kb.Activation))
-                hints.AddForbiddenConstraint(new LandingZone([kb], Module.Center, 14.4f, 24.4f, []), kb.Activation.AddSeconds(-0.5d));
-    }
-}
-
 // R8 bombs resolve ~3.5s before the R40 bite. Allow the current safe gaps while
 // staging close enough to the far end that the large circle can be escaped.
 sealed class CrucibleGatlerExplosions(BossModule module) : CriticalEngagement.ReplayValidatedCastAOEs(module)
@@ -382,58 +370,80 @@ sealed class CrucibleGatlerExplosions(BossModule module) : CriticalEngagement.Re
     protected override double RiskyActivationWindow => 0.5d;
     protected override AOEConfig? ConfigFor(uint actionID) => actionID switch
     {
+        48594 or 48595 or 48596 => new(new AOEShapeCircle(2), true),
         48597 => new(new AOEShapeCircle(8), true),
+        48600 => new(new AOEShapeRect(50, 20), true),
         48603 => new(new AOEShapeCircle(40), true),
         _ => null
     };
 
-    private sealed class BiteStaging(WPos origin, WPos center, float travel) : ShapeDistance
+    private EscapeRoutes? _escape;
+
+    // Cache walking distances on the actual floor, once per large cast. A
+    // straight-line estimate can cut across burning notches or choose a false
+    // corner refuge. R40 escapes to the opposite tip; the rectangle goes behind.
+    private sealed class EscapeRoutes
     {
-        private const float Radius = 40.5f;
-        private readonly WPos[] _edgeCandidates = EdgeCandidates(origin, center);
-        // Nearest point outside R40 AND on the 30x50 floor. A radial escape
-        // near a side wall would leave the floor, so also consider the circle's
-        // intersections with every floor edge. The floor is convex; the segment
-        // to any accepted candidate stays on it once the small bombs resolve.
-        public float EscapeDistance(WPos p)
+        public readonly AOEInstance AOE;
+        private const int Width = 61, Height = 101;
+        private readonly float[] _distance = new float[Width * Height];
+        private static WPos Position(int x, int z) => new(505 + x * 0.5f, -445 + z * 0.5f);
+
+        public EscapeRoutes(AOEInstance aoe)
         {
-            var delta = p - origin;
-            var length = delta.Length();
-            if (length >= Radius)
-                return 0;
-            var nearest = float.MaxValue;
-            if (length > 0 && (origin + Radius / length * delta).InRect(center, 14.35f, 24.35f))
-                nearest = Radius - length;
-            foreach (var candidate in _edgeCandidates)
-                nearest = Math.Min(nearest, (candidate - p).Length());
-            return nearest;
+            AOE = aoe;
+            Array.Fill(_distance, float.PositiveInfinity);
+            var walkable = new bool[_distance.Length];
+            var queue = new PriorityQueue<int, float>();
+            var damage = aoe.Shape.Distance(aoe.Origin, aoe.Rotation);
+            for (var z = 0; z < Height; ++z)
+                for (var x = 0; x < Width; ++x)
+                {
+                    var i = z * Width + x;
+                    var p = Position(x, z);
+                    walkable[i] = CrucibleLaudaFloor.Contains(p);
+                    if (walkable[i] && damage.Distance(p) >= 0.75f)
+                    {
+                        _distance[i] = 0;
+                        queue.Enqueue(i, 0);
+                    }
+                }
+            while (queue.TryDequeue(out var i, out var d))
+            {
+                if (d > _distance[i])
+                    continue;
+                var x = i % Width;
+                var z = i / Width;
+                for (var dz = -1; dz <= 1; ++dz)
+                    for (var dx = -1; dx <= 1; ++dx)
+                    {
+                        var nx = x + dx;
+                        var nz = z + dz;
+                        if ((dx == 0 && dz == 0) || nx < 0 || nx >= Width || nz < 0 || nz >= Height)
+                            continue;
+                        var ni = nz * Width + nx;
+                        if (!walkable[ni] || !walkable[z * Width + nx] || !walkable[nz * Width + x])
+                            continue;
+                        var next = d + (dx == 0 || dz == 0 ? 0.5f : 0.707107f);
+                        if (next < _distance[ni])
+                        {
+                            _distance[ni] = next;
+                            queue.Enqueue(ni, next);
+                        }
+                    }
+            }
         }
-        private static WPos[] EdgeCandidates(WPos origin, WPos center)
+        public float Distance(WPos p)
         {
-            var result = new List<WPos>();
-            foreach (var x in new[] { center.X - 14.35f, center.X + 14.35f })
-            {
-                var square = Radius * Radius - (x - origin.X) * (x - origin.X);
-                if (square < 0)
-                    continue;
-                var dz = MathF.Sqrt(square);
-                foreach (var z in new[] { origin.Z - dz, origin.Z + dz })
-                    if (Math.Abs(z - center.Z) <= 24.35f)
-                        result.Add(new(x, z));
-            }
-            foreach (var z in new[] { center.Z - 24.35f, center.Z + 24.35f })
-            {
-                var square = Radius * Radius - (z - origin.Z) * (z - origin.Z);
-                if (square < 0)
-                    continue;
-                var dx = MathF.Sqrt(square);
-                foreach (var x in new[] { origin.X - dx, origin.X + dx })
-                    if (Math.Abs(x - center.X) <= 14.35f)
-                        result.Add(new(x, z));
-            }
-            return result.ToArray();
+            var x = (int)MathF.Round((p.X - 505) * 2);
+            var z = (int)MathF.Round((p.Z + 445) * 2);
+            return x >= 0 && x < Width && z >= 0 && z < Height
+                ? _distance[z * Width + x] + (p - Position(x, z)).Length() : float.PositiveInfinity;
         }
-        public override float Distance(in WPos p) => travel - EscapeDistance(p);
+    }
+    private sealed class Staging(EscapeRoutes routes, float travel) : ShapeDistance
+    {
+        public override float Distance(in WPos p) => travel - routes.Distance(p);
     }
 
     protected override void AddAOEForbiddenZones(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
@@ -444,7 +454,7 @@ sealed class CrucibleGatlerExplosions(BossModule module) : CriticalEngagement.Re
         if (aoes.Length == 0)
             return;
         foreach (ref readonly var aoe in aoes)
-            if (!aoe.Risky && aoe.Shape is AOEShapeCircle { Radius: 40 })
+            if (!aoe.Risky && aoe.Shape is AOEShapeCircle { Radius: 40 } or AOEShapeRect)
             {
                 var lastBomb = aoes[0].Activation;
                 foreach (ref readonly var earlier in aoes)
@@ -452,9 +462,11 @@ sealed class CrucibleGatlerExplosions(BossModule module) : CriticalEngagement.Re
                         lastBomb = earlier.Activation;
                 // 6y/s after the LAST bomb; reserve 1.5y for reaction/turning.
                 var travel = Math.Max(0f, 6f * (float)(aoe.Activation - lastBomb).TotalSeconds - 1.5f);
-                var staging = new BiteStaging(aoe.Origin, Module.Center, travel);
-                hints.AddForbiddenConstraint(staging, aoes[0].Activation.AddSeconds(-0.4d), aoes[0].Activation.AddSeconds(0.6));
-                hints.GoalZones.Add(p => Math.Max(0f, 50f - staging.EscapeDistance(p)));
+                if (_escape == null || _escape.AOE.Origin != aoe.Origin || _escape.AOE.Rotation != aoe.Rotation || _escape.AOE.Activation != aoe.Activation)
+                    _escape = new(aoe);
+                var routes = _escape;
+                hints.AddForbiddenConstraint(new Staging(routes, travel), aoes[0].Activation.AddSeconds(-0.4d), aoes[0].Activation.AddSeconds(0.6));
+                hints.GoalZones.Add(p => Math.Max(0, 50 - routes.Distance(p)));
             }
     }
 }

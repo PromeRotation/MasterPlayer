@@ -9,6 +9,7 @@
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Remove="ScriptCompilation\**\*.cs" />
     <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
@@ -17,6 +18,7 @@
     <Compile Include="..\Follow\DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
     <Compile Include="..\Follow\OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
     <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
+    <Compile Include="..\Radar\RadarPathDashes.cs" Link="RadarPathDashes.cs" />
     <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
     <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />

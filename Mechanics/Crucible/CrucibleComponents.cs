@@ -161,19 +161,56 @@ internal class SimpleKnockbacks(BossModule module, uint aid, float distance) : G
     public override void OnCastStarted(Actor actor, ActorCastInfo spell) { if (spell.Action.ID == WatchedAction) Casters.Add(new(spell.LocXZ, Distance, spell.FinishAt, actorID: actor.InstanceID)); }
     public override void OnCastFinished(Actor actor, ActorCastInfo spell) { if (spell.Action.ID == WatchedAction) Casters.RemoveAll(b => b.ActorID == actor.InstanceID); }
 }
-internal class GenericGaze(BossModule module, uint aid = 0, float range = 60) : BossComponent(module)
+internal class GenericGaze(BossModule module, uint aid = 0, float range = float.MaxValue) : BossComponent(module)
 {
     public readonly uint WatchedAction = aid;
-    public readonly record struct Eye(WPos Position, DateTime Activation, ulong ActorID = 0);
+    protected readonly float Range = range;
+    public int NumCasts;
+    public readonly struct Eye(WPos position, DateTime activation, ulong actorID = 0, float range = float.MaxValue)
+    {
+        public readonly WPos Position = position;
+        public readonly DateTime Activation = activation;
+        public readonly ulong ActorID = actorID;
+        public readonly float Range = range;
+    }
     public virtual ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor) => [];
-    public override void AddHints(int slot, Actor actor, TextHints hints) { if (ActiveEyes(slot, actor).ToArray().Any(e => actor.Position.InCircle(e.Position, range))) hints.Add("视线判定：背对眼睛／施法者！"); }
+    protected static bool HitByEye(ref Actor actor, Eye eye) => actor.Rotation.ToDirection().Dot((eye.Position - actor.Position).Normalized()) >= 0.707107f;
+    public override void AddHints(int slot, Actor actor, TextHints hints)
+    {
+        foreach (var eye in ActiveEyes(slot, actor))
+            if (actor.Position.InCircle(eye.Position, Math.Min(Range, eye.Range)))
+                hints.Add("视线判定：背对眼睛／施法者！", HitByEye(ref actor, eye));
+    }
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        foreach (var eye in ActiveEyes(slot, actor))
+            if (actor.Position.InCircle(eye.Position, Math.Min(Range, eye.Range)))
+                hints.ForbiddenDirections.Add((Angle.FromDirection(eye.Position - actor.Position), 45.Degrees(), eye.Activation));
+    }
     public override void DrawArenaForeground(int slot, Actor actor) { foreach (var e in ActiveEyes(slot, actor)) Arena.AddLine(actor.Position, e.Position, Colors.Danger); }
 }
 internal class CastGazes(BossModule module, uint[] actions, float range = 60) : GenericGaze(module, range: range)
 {
     protected readonly List<Eye> Eyes = [];
-    public override ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor) => CollectionsMarshal.AsSpan(Eyes);
-    public override void OnCastStarted(Actor actor, ActorCastInfo spell) { if (actions.Contains(spell.Action.ID)) Eyes.Add(new(actor.Position, spell.FinishAt, actor.InstanceID)); }
-    public override void OnCastFinished(Actor actor, ActorCastInfo spell) { if (actions.Contains(spell.Action.ID)) Eyes.RemoveAll(e => e.ActorID == actor.InstanceID); }
+    public override ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor)
+    {
+        Eyes.RemoveAll(e => e.Activation.AddSeconds(1) < WorldState.CurrentTime);
+        return CollectionsMarshal.AsSpan(Eyes);
+    }
+    public override void OnCastStarted(Actor actor, ActorCastInfo spell)
+    {
+        if (actions.Contains(spell.Action.ID) && !spell.EventHappened)
+        {
+            Eyes.RemoveAll(e => e.ActorID == actor.InstanceID);
+            Eyes.Add(new(spell.LocXZ, spell.FinishAt, actor.InstanceID, Range));
+        }
+    }
+    public override void OnCastFinished(Actor actor, ActorCastInfo spell) { if (actions.Contains(spell.Action.ID) && (spell.Interrupted || spell.EventHappened)) Eyes.RemoveAll(e => e.ActorID == actor.InstanceID); }
+    public override void OnEventCast(Actor actor, ActorCastEvent spell) { if (actions.Contains(spell.Action.ID)) { Eyes.RemoveAll(e => e.ActorID == actor.InstanceID); ++NumCasts; } }
     public override void OnActorDestroyed(Actor actor) => Eyes.RemoveAll(e => e.ActorID == actor.InstanceID);
+    public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
+}
+internal class CastGaze(BossModule module, uint aid, float range = 60) : CastGazes(module, [aid], range)
+{
+    public new readonly uint WatchedAction = aid;
 }

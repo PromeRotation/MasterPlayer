@@ -113,7 +113,7 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
         Module.Arena.ClearDrawings();
         result.Hints.PathfindMapCenter = Module.Center;
         result.Hints.PathfindMapBounds = Module.FindComponent<CrucibleMiasma>()?.NavigationBounds ?? Module.Arena.Bounds;
-        result.Hints.PotentialTargets.AddRange(World.Actors.Where(a => a.Type == ActorType.Enemy && !a.IsDeadOrDestroyed).Select(a => new AIHints.Enemy(a)));
+        result.Hints.PotentialTargets.AddRange(World.Actors.Where(a => a.Type == ActorType.Enemy && a != player && a.OwnerID != player.InstanceID && !a.IsDeadOrDestroyed && a.HPMP.CurHP > 0).Select(a => new AIHints.Enemy(a)));
         foreach (var c in Module.Components)
         {
             if (_disabled.Contains(c)) continue;

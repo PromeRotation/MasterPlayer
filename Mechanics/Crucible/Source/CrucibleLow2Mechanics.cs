@@ -60,13 +60,76 @@ sealed class CrucibleLiquidHell(BossModule module) : Components.Voidzone(module,
     }
 }
 
-// Contact avoidance for the moving actors. These are clearance envelopes, not
-// an invented Action AOE: zombies apply 5424 with the 3y melee action 48251;
-// the tornado rows have no documented damage radius. Allow a 2y contact margin.
-sealed class CrucibleZombies(BossModule module) : Components.Voidzone(module, 3.5f,
-    m => m.Enemies(19549).Where(a => !a.IsDeadOrDestroyed), 1.5f);
-sealed class CrucibleTornadoes(BossModule module) : Components.Voidzone(module, 2f,
-    m => m.Enemies(19545).Concat(m.Enemies(19546)).Where(a => !a.IsDeadOrDestroyed), 3f);
+// User strategy: kill zombies rather than kite them. Keep target information,
+// but never publish their bodies or movement as navigation hazards.
+sealed class CrucibleZombies(BossModule module) : BossComponent(module)
+{
+    private IEnumerable<Actor> Sources => Module.Enemies(19549).Where(a => !a.IsDeadOrDestroyed);
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        var target = Sources.OrderBy(a => (a.Position - actor.Position).LengthSq()).FirstOrDefault();
+        if (target != null) hints.SetPriority(target, 1);
+    }
+    public override void AddGlobalHints(GlobalHints hints)
+    {
+        if (Sources.Any()) hints.Add("优先击杀僵尸");
+    }
+}
+
+// The tornado action has no documented damage radius. Retain the existing
+// conservative 2y contact envelope; it is not an Action-sheet AOE radius.
+sealed class CrucibleTornadoes(BossModule module) : CrucibleMovingContact(module, 2f, 3f, [19545, 19546]);
+
+// Contact actors can turn to their victim when striking. Measure displacement,
+// not facing, and drop the forecast when they stop or teleport. Analytic circles
+// and rectangles avoid resampling an 84x84 field for every moving actor/frame.
+abstract class CrucibleMovingContact(BossModule module, float radius, float lookAhead, uint[] oids) : Components.GenericAOEs(module)
+{
+    private readonly record struct Motion(WPos Position, DateTime SampledAt, WDir Velocity);
+    private readonly Dictionary<ulong, Motion> _motion = [];
+    private readonly List<AOEInstance> _display = [];
+    public IEnumerable<Actor> Sources => WorldState.Actors.Where(a => oids.Contains(a.OID) && !a.IsDeadOrDestroyed);
+
+    public override void Update()
+    {
+        var seen = new HashSet<ulong>();
+        foreach (var source in Sources)
+        {
+            seen.Add(source.InstanceID);
+            var velocity = default(WDir);
+            if (_motion.TryGetValue(source.InstanceID, out var previous))
+            {
+                var dt = (WorldState.CurrentTime - previous.SampledAt).TotalSeconds;
+                if (dt < 0.05) continue;
+                var delta = source.Position - previous.Position;
+                if (dt <= 0.5 && delta.LengthSq() >= 0.0025f && delta.Length() / dt <= 12)
+                    velocity = delta / (float)dt;
+            }
+            _motion[source.InstanceID] = new(source.Position, WorldState.CurrentTime, velocity);
+        }
+        foreach (var id in _motion.Keys.Where(id => !seen.Contains(id)).ToArray()) _motion.Remove(id);
+    }
+
+    public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
+    {
+        _display.Clear();
+        foreach (var source in Sources)
+        {
+            _display.Add(new(new AOEShapeCircle(radius), source.Position, actorID: source.InstanceID));
+            if (!_motion.TryGetValue(source.InstanceID, out var motion) || (WorldState.CurrentTime - motion.SampledAt).TotalSeconds > 0.5)
+                continue;
+            var length = Math.Min(lookAhead, motion.Velocity.Length() * 1.1f);
+            if (length < 0.05f) continue;
+            var direction = motion.Velocity.Normalized();
+            _display.Add(new(new AOEShapeRect(length, radius), source.Position, Angle.FromDirection(direction), actorID: source.InstanceID));
+            _display.Add(new(new AOEShapeCircle(radius), source.Position + length * direction, actorID: source.InstanceID));
+        }
+        return CollectionsMarshal.AsSpan(_display);
+    }
+
+    public override void OnActorDestroyed(Actor actor) => _motion.Remove(actor.InstanceID);
+    public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
+}
 
 // Four stationary miasmas pulse R8 every ~5.1s. The first warning starts at
 // spawn, 3.9s before damage, instead of waiting for the 0.7s cast each time.
@@ -76,19 +139,22 @@ sealed class CrucibleNecromist(BossModule module) : Components.Voidzone(module, 
 sealed class CrucibleTyphoon(BossModule module) : HighCrucibleKnockback(module, 48168u, 10f)
 {
     public override bool DestinationUnsafe(int slot, Actor actor, WPos pos)
-        => !pos.InRect(Module.Center, 19.5f, 14.5f) || Module.FindComponent<CrucibleLiquidHell>() is { } fire
-            && fire.ActiveAOEs(slot, actor).ToArray().Any(a => a.Check(pos));
+        => !pos.InRect(Module.Center, 19.5f, 14.5f) || LandingHazards(slot, actor, WorldState.CurrentTime).Any(a => a.Check(pos));
 
-    private sealed class Landing(WPos origin, WPos center, WPos[] fire) : ShapeDistance
+    private Components.GenericAOEs.AOEInstance[] LandingHazards(int slot, Actor actor, DateTime activation)
+        => Module.Components.OfType<Components.GenericAOEs>().SelectMany(c => c.ActiveAOEs(slot, actor).ToArray())
+            .Where(a => a.Risky && (a.Activation == default || a.Activation >= activation.AddSeconds(-0.6) && a.Activation <= activation.AddSeconds(0.8))).ToArray();
+
+    private sealed class Landing(WPos origin, WPos center, ShapeDistance[] hazards) : ShapeDistance
     {
         public override float Distance(in WPos p)
         {
             var delta = p - origin;
             var end = p + delta.Normalized() * 10f;
-            if (!end.InRect(center, 19.5f, 14.5f))
+            if (delta.LengthSq() < 0.01f || !end.InRect(center, 19.5f, 14.5f))
                 return -1;
-            foreach (var pool in fire)
-                if (end.InCircle(pool, 6.5f))
+            foreach (var hazard in hazards)
+                if (hazard.Distance(end) <= 0.5f)
                     return -1;
             return 1;
         }
@@ -99,9 +165,8 @@ sealed class CrucibleTyphoon(BossModule module) : HighCrucibleKnockback(module, 
         foreach (var kb in ActiveKnockbacks(slot, actor))
             if (!IsImmune(slot, kb.Activation))
             {
-                var fire = Module.FindComponent<CrucibleLiquidHell>()?.ActiveAOEs(slot, actor).ToArray()
-                    .Where(a => a.Activation <= kb.Activation).Select(a => a.Origin).ToArray() ?? [];
-                hints.AddForbiddenConstraint(new Landing(kb.Origin, Module.Center, fire), kb.Activation.AddSeconds(-0.4d));
+                hints.AddForbiddenConstraint(new Landing(kb.Origin, Module.Center, LandingHazards(slot, actor, kb.Activation)
+                    .Select(a => a.ShapeDistance ?? a.Shape.Distance(a.Origin, a.Rotation)).ToArray()), kb.Activation.AddSeconds(-0.4d));
             }
     }
 }
@@ -304,6 +369,6 @@ sealed class CrucibleSandPillars(BossModule module) : Components.GenericAOEs(mod
         => _route is { } route && (WorldState.CurrentTime - _lastTime).TotalSeconds < 0.7d ? new[] { route } : [];
 }
 
-sealed class CrucibleNecromancerHint(BossModule module) : Components.CastHints(module, [48183u], "全体伤害；避开僵尸与持续瘴气！");
+sealed class CrucibleNecromancerHint(BossModule module) : Components.CastHints(module, [48183u], "全体伤害；优先击杀僵尸，避开持续瘴气！");
 sealed class CrucibleMinotaurEnrageHint(BossModule module) : Components.CastHints(module, [48214u], "无尽挥打覆盖全场：尽快击败牛魔！");
 sealed class CrucibleWormQuakeHint(BossModule module) : Components.CastHints(module, [48239u], "连续全体地震：治疗并尽快击败小地豆！");

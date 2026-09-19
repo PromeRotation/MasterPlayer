@@ -147,7 +147,7 @@ sealed class CrucibleFungalBeds(BossModule module) : Components.Voidzone(module,
 
 // Icon-marked attacks follow their targets (including the beastmaster's companion).
 // Drawing the cast-start position as a ground AOE causes pointless running.
-abstract class High2CrucibleSpread(BossModule module, uint icon, uint action, float radius, double delay)
+abstract class High2CrucibleSpread(BossModule module, uint icon, uint action, float radius, double delay, uint visualAction = 0)
     : Components.GenericBaitAway(module, action, centerAtTarget: true)
 {
     public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
@@ -155,6 +155,8 @@ abstract class High2CrucibleSpread(BossModule module, uint icon, uint action, fl
         if (iconID != icon)
             return;
         var target = WorldState.Actors.Find(targetID) ?? actor;
+        if (ActiveBaits.Any(b => b.Target == target && b.Activation.AddSeconds(1) > WorldState.CurrentTime))
+            return; // Duplicate icons must not postpone an already running mechanic.
         CurrentBaits.RemoveAll(b => b.Target.InstanceID == target.InstanceID);
         CurrentBaits.Add(new(Module.PrimaryActor, target, new AOEShapeCircle(radius), WorldState.FutureTime(delay)));
     }
@@ -174,7 +176,7 @@ abstract class High2CrucibleSpread(BossModule module, uint icon, uint action, fl
 
     public override void OnCastFinished(Actor caster, ActorCastInfo spell)
     {
-        if (spell.Action.ID == WatchedAction && spell.Interrupted)
+        if ((spell.Action.ID == WatchedAction || visualAction != 0 && spell.Action.ID == visualAction) && spell.Interrupted)
             CurrentBaits.RemoveAll(b => b.Source.InstanceID == caster.InstanceID);
     }
 
@@ -190,15 +192,16 @@ abstract class High2CrucibleSpread(BossModule module, uint icon, uint action, fl
     }
 }
 
-sealed class CrucibleMindflayerWater(BossModule module) : High2CrucibleSpread(module, 135, 49200, 8, 5.9)
+sealed class CrucibleMindflayerWater(BossModule module) : High2CrucibleSpread(module, 135, 49200, 8, 5.9, 49199)
 {
-    public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
-    {
-        var target = WorldState.Actors.Find(targetID) ?? actor;
-        if (iconID == 135 && CurrentBaits.Any(b => b.Target == target && b.Activation.AddSeconds(1) > WorldState.CurrentTime))
-            return; // Duplicate packets must not extend the movement deadline.
-        base.OnEventIcon(actor, iconID, targetID);
-    }
+    public const float PoolRadius = 8;
+    // ARR: pools are created after the water hit, at their own final positions.
+    // Read live objects so reloads recover them without retaining stale icon locations.
+    public IEnumerable<Actor> Pools => WorldState.Actors.Where(a => a.OID == 0x1E9998 && a.EventState != 7 && !a.IsDeadOrDestroyed);
+
+    public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
+        => base.ActiveAOEs(slot, actor).ToArray().Concat(Pools.Select(p => new AOEInstance(new AOEShapeCircle(PoolRadius),
+            p.Position, color: Colors.Object, risky: false, actorID: p.InstanceID))).ToArray();
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -229,21 +232,33 @@ sealed class CrucibleMindflayerWater(BossModule module) : High2CrucibleSpread(mo
             hints.MaxCastTime = 0;
     }
 }
-sealed class CrucibleMindflayerThunder(BossModule module) : High2CrucibleSpread(module, 344, 49206, 6, 5.9)
+sealed class CrucibleMindflayerThunder(BossModule module) : High2CrucibleSpread(module, 344, 49206, 6, 5.9, 49205)
 {
+    private const float PlacementRadius = CrucibleMindflayerWater.PoolRadius + 6;
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         // Apply this only to the thunder target. During a water-only mechanic,
         // forbidding the player's own moving water circle makes every new
         // position unsafe again and causes perpetual movement corrections.
         if (IsBaitTarget(actor) && Module.FindComponent<CrucibleMindflayerWater>() is { } water)
-            foreach (var sourceBait in water.CurrentBaits)
-            {
-                var bait = sourceBait;
-                if (bait.Target != actor && !bait.Target.IsDeadOrDestroyed)
-                    hints.AddForbiddenZone(bait.Shape, water.BaitOrigin(ref bait), bait.Rotation, bait.Activation);
-            }
+        {
+            var activation = ActiveBaits.First(b => b.Target == actor).Activation;
+            // Keep the entire R6 thunder footprint outside the R8 pools.
+            // This is a placement constraint at thunder time, not a permanent water hazard.
+            var centers = water.Pools.Select(p => p.Position)
+                .Concat(water.ActiveBaits.Where(b => b.Target != actor).Select(b => b.Target.Position));
+            foreach (var center in centers)
+                hints.AddForbiddenConstraint(new SDCircle(center, PlacementRadius), activation.AddSeconds(-0.5), activation.AddSeconds(1));
+        }
         base.AddAIHints(slot, actor, assignment, hints);
+    }
+
+    public override void AddHints(int slot, Actor actor, TextHints hints)
+    {
+        base.AddHints(slot, actor, hints);
+        if (IsBaitTarget(actor) && Module.FindComponent<CrucibleMindflayerWater>() is { } water
+            && water.Pools.Any(p => actor.Position.InCircle(p.Position, PlacementRadius)))
+            hints.Add("雷点名：将雷圈放到水圈外");
     }
 };
 sealed class CrucibleJellyFire(BossModule module) : High2CrucibleSpread(module, 100, 49243, 6, 8);
