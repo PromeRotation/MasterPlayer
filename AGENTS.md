@@ -137,6 +137,8 @@ public sealed class MasterPlayerSettings
     public int FollowSlot = 0;                  // 0=不指定小队槽位；1~7=PartyHelper.GetParty() 下标
     public bool FollowTargetWhenNoSlot = true;  // 无有效槽位时回退跟随当前目标（玩家或战斗 NPC）
     public float FollowDistance = 1.5f;
+    public CombatDistanceMode CombatDistance = CombatDistanceMode.Melee;
+    public float RangedAttackRange = 25f;
     public bool FollowDuringCombat = true;
     public bool FollowOutOfCombat = false;
 
@@ -217,7 +219,9 @@ public sealed class FollowController : IDisposable
 ```
 
 - 跟随对象：`FollowSlot` 1~7 取 `PromeRotation.Helpers.PartyHelper.GetParty()` 下标；槽位为 0 或指定成员不可用时按 `FollowTargetWhenNoSlot` 回退当前目标（存活且可选中的 `ObjectKind.Pc` / `ObjectKind.BattleNpc`）；槽位超出 0~7 则不跟随。**`FollowTargetWhenNoSlot = false` 时禁止当前目标回退（槽位 0 同样生效），有效小队槽位仍可跟随**。本地玩家不存在或已死亡时停止跟随。战斗状态经 `PromeRotation.Core.GameData.IsInCombat()` 判定，按 `FollowDuringCombat` / `FollowOutOfCombat` 门控。
-- 跟随距离：战斗 NPC 使用 XZ 平面上双方目标圈边缘间距（到达半径为设置距离加双方 `HitboxRadius`），玩家使用中心间距；判距与 GreenMove 容差一致，不额外加 0.2 码停止余量，设置距离最低按 0.2 码执行。自动躲避开启时，将此距离作为 Reborn 动态圆形目标，复用其危险检查与路线规划；跟随目标排除全部仍待判定的危险形状，使用不可变快照和无版本递增更新，避免提前回位并保持后台解算连续；当前生效的机制目标优先，未来目标未激活前不抢占跟随。关闭自动躲避时，直接跟随的路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、跟随距离或目标圈大小变化时更新，不每帧重置读条等待。
+- 战斗距离：`CombatDistanceMode.Melee` 使用 3 码攻击距离，`Ranged` 使用 `RangedAttackRange`（5～25，默认 25）；怪物到达半径为攻击距离减 0.5 码停步余量，再加双方 `HitboxRadius`。玩家跟随独立使用 `FollowDistance` 中心间距（0.2～10）。旧配置默认近战，保留原玩家跟随距离；远程已在射程内且安全时不主动贴脸。
+- 自动躲避开启时，跟随只注册 Reborn 动态目标，危险排除保留结束安全余量。紧急躲避期间仍保留安全攻击位置，让同一寻路器选择可达的近战侧；安全读条期间暂停可选跟随，读条中必须脱险时恢复安全目标。有效机制站位始终优先。可用安全区按网格站立空间判断，不再要求占原攻击圈 25%；完全无安全攻击位置时停用目标窗口，危险结束后恢复，绝不直线强行返回。几何快照不可变，目标动态更新不每帧取消后台解算。
+- 关闭自动躲避时，直接跟随的路线结束或停止后仍在距离外则重新下发；路线运行中仅在目标位置、战斗距离或目标圈大小变化时更新，不每帧重置读条等待。距离算法与规划模式一致。
 - 自动躲避模式只撤销自己的目标句柄，不直接操作 GreenMove；本体 Reborn 被手动关闭时不会降级成直线跟随绕过危险检查。直接跟随的移动纪律（铁律 3）：只有 `_hasControl`（自己下发过 MoveTo）才 `Stop()`；旧版 `SafeZoneMovementStatus.HasControl` 或 `SafeZoneRebornMovementStatus.HasControl` 为 true 时让位——不发跟随指令，也不 Stop 对方路线；关闭或卸载跟随时同样检查控制权。
 - 通用避险优先级：玩家读条、脚下危险扣除宿主开始余量后不足 1 秒、或处于硬障碍内时，撤销普通跟随目标，保持危险解算运行。普通目标保留宿主 0.5 米硬余量，危险结束后的 0.3 秒余量也纳入排除；按原目标覆盖范围统计安全占比，小于 25% 时停用其 GoalWindow，不能只给空几何（PR 的目标启发式仍会朝空区域中心移动）。仅目标启停递增一次版本，使旧追击解算失效；目标/危险几何正常动态更新仍不递增。精确机制 GoalPoints 不受此普通偏好过滤。
 

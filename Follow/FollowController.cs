@@ -89,10 +89,14 @@ public sealed class FollowController : IDisposable
         _lastMasterPos = masterPos;
         _hasLastMasterPos = true;
 
-        var followDistance = MathF.Max(0.2f, settings.FollowDistance);
+        var followDistance = float.IsFinite(settings.FollowDistance) ? Math.Clamp(settings.FollowDistance, 0.2f, 10f) : 1.5f;
         if (master.ObjectKind == ObjectKind.BattleNpc)
         {
-            followDistance += player.HitboxRadius + master.HitboxRadius;
+            // Leave room for GreenMove's arrival tolerance instead of stopping at the skill's exact range limit.
+            var attackRange = settings.CombatDistance == CombatDistanceMode.Ranged
+                ? (float.IsFinite(settings.RangedAttackRange) ? Math.Clamp(settings.RangedAttackRange, 5f, 25f) : 25f)
+                : 3f;
+            followDistance = attackRange - 0.5f + player.HitboxRadius + master.HitboxRadius;
         }
 
         // A settled dodge route releases HasControl while the danger is still present.
@@ -154,7 +158,7 @@ public sealed class FollowController : IDisposable
         var now = _utcNow();
         var snapshot = manager.BuildSnapshot(now);
         // Mechanic destinations (bait, knockback, number tiles) take precedence over attack uptime.
-        if (player.IsCasting || OptionalGoalSafety.NeedsEscape(snapshot, player.Position, now)
+        if ((player.IsCasting && !OptionalGoalSafety.NeedsEscape(snapshot, player.Position, now))
             || snapshot.GoalAreas.Any(g => g.Handle != _followGoal && g.GoalWindows.Any(w => w.IsActiveAt(now))))
         {
             ClearFollowGoal();

@@ -3,6 +3,12 @@ using ECommons.DalamudServices;
 
 namespace MasterPlayer.Settings;
 
+public enum CombatDistanceMode
+{
+    Melee,
+    Ranged,
+}
+
 public sealed class MasterPlayerSettings
 {
     private static readonly string ConfigFilePath = Path.Combine(
@@ -41,6 +47,8 @@ public sealed class MasterPlayerSettings
     public int FollowSlot = 0;
     public bool FollowTargetWhenNoSlot = true;
     public float FollowDistance = 1.5f;
+    public CombatDistanceMode CombatDistance = CombatDistanceMode.Melee;
+    public float RangedAttackRange = 25f;
     public bool FollowDuringCombat = true;
     public bool FollowOutOfCombat = false;
 

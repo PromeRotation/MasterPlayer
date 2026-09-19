@@ -271,6 +271,28 @@ public sealed class MainWindow : IDisposable
         Hint("开启智能躲避后，机制站位和脱险优先于接近目标。");
         changed |= Check("启用跟随", settings.EnableFollow, v => settings.EnableFollow = v);
 
+        var combatDistance = settings.CombatDistance == CombatDistanceMode.Ranged ? 1 : 0;
+        ImGui.TextUnformatted("战斗距离");
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.Combo("##战斗距离", ref combatDistance, "近战\0远程\0"))
+        {
+            settings.CombatDistance = (CombatDistanceMode)combatDistance;
+            changed = true;
+        }
+        if (settings.CombatDistance == CombatDistanceMode.Ranged)
+        {
+            var range = settings.RangedAttackRange;
+            if (PluginUi.Slider("远程射程", ref range, 5f, 25f, "%.1f 码"))
+            {
+                settings.RangedAttackRange = range;
+                changed = true;
+            }
+            Hint("射程内优先保持安全站位，超出射程才接近；按常用技能设置射程。");
+        }
+        else
+            Hint("优先选择 3 码攻击范围内的安全位置；必须远离时先躲避，危险结束后回到近战范围。");
+        Hint("对怪物计入双方目标圈，并预留停步余量。跟随队友使用下方距离。");
+
         var slot = settings.FollowSlot;
         if (ImGui.SliderInt("跟随槽位", ref slot, 0, 7))
         {
@@ -283,12 +305,12 @@ public sealed class MainWindow : IDisposable
         Hint("支持玩家和怪物；不跟随已死亡或不可选中的目标。");
 
         var distance = settings.FollowDistance;
-        if (PluginUi.Slider("跟随距离", ref distance, 0.5f, 10f, "%.1f 码"))
+        if (PluginUi.Slider("队友跟随距离", ref distance, 0.5f, 10f, "%.1f 码"))
         {
             settings.FollowDistance = distance;
             changed = true;
         }
-        Hint("怪物按双方目标圈边缘间距计算，玩家按中心距离计算。");
+        Hint("仅用于玩家，按双方中心距离计算。");
 
         changed |= Check("战斗中生效", settings.FollowDuringCombat, v => settings.FollowDuringCombat = v);
         changed |= Check("非战斗中也生效", settings.FollowOutOfCombat, v => settings.FollowOutOfCombat = v);
