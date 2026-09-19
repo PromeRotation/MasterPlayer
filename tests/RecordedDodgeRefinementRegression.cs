@@ -18,12 +18,16 @@ internal static class RecordedDodgeRefinementRegression
             foreach(var delay in new[] { .08, .3 })
                 foreach(var follow in new[] { false, true })
                     run($"Recorded dodge refinement {key}, {delay:F2}s worker, follow={follow}",()=>Replay(key,delay,follow));
+        foreach(var key in new[] { "dark-orb", "goblin-ring", "stomp" })
+            foreach(var delay in new[] { .08, .3 })
+                foreach(var follow in new[] { false, true })
+                    run($"Recorded low-two {key}, {delay:F2}s worker, follow={follow}",()=>Replay(key,delay,follow,"low2-225025.json"));
     }
 
     private static Vector3 Vector(JsonElement e) => new(e[0].GetSingle(),0,e[2].GetSingle());
-    private static void Replay(string key, double delay, bool follow)
+    private static void Replay(string key, double delay, bool follow, string file = "dodge-low1-212927.json")
     {
-        using var fixture=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","Crucible","dodge-low1-212927.json")));
+        using var fixture=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","Crucible",file)));
         var fight=fixture.RootElement.GetProperty("fights").EnumerateArray().Single(f=>f.GetProperty("key").GetString()==key);
         var events=fight.GetProperty("casts").EnumerateArray().ToArray();
         var world=new WorldState {CurrentTime=Epoch};
@@ -47,6 +51,7 @@ internal static class RecordedDodgeRefinementRegression
         SafeZoneSolution? pending=null;
         double ready=0, nextSolve=0,firstMove=-1;
         double movementReady=0;
+        double knockbackUntil=0;
         var wasMoving=false;
         var followHandle=default(SafeZoneAreaHandle);
         var followActive=false;
@@ -64,13 +69,25 @@ internal static class RecordedDodgeRefinementRegression
                     engine.Cast(helpers[i],new() {Action=new(action),FinishAt=Epoch.AddSeconds(e.GetProperty("finish").GetDouble()),LocXZ=WPos.FromVec3(Vector(e.GetProperty("location"))),Rotation=e.GetProperty("rotation").GetSingle().Degrees()});
                 if(t>=e.GetProperty("hit").GetDouble() && resolved.Add(i))
                 {
-                    var shape=CrucibleSpells.Table[action].Shape;
-                    if(shape.Check(player.Position,WPos.FromVec3(Vector(e.GetProperty("location"))),e.GetProperty("rotation").GetSingle().Degrees()))
-                        throw new InvalidOperationException($"{key} hit {action} at {t:F2}s, pos={position}, firstMove={firstMove:F2}, last={lastStatus}");
+                    if(action is 48199 or 48202)
+                    {
+                        position += Vector3.Normalize(position-Vector(e.GetProperty("location")))*20;
+                        knockbackUntil=t+.5; // Knockback row 96: 20y at 40y/s, no walking during displacement.
+                        if(!WPos.FromVec3(position).InRect(engine.Module!.Center,19.5f,19.5f))
+                            throw new InvalidOperationException($"{key} knockback {action} leaves the arena at {t:F2}s: {position}");
+                    }
+                    else
+                    {
+                        var shape=engine.Module!.Components.OfType<MasterPlayer.Mechanics.Crucible.CriticalEngagement.ReplayValidatedCastAOEs>()
+                            .Select(c=>c.Describe(action)?.Shape).First(s=>s!=null)!;
+                        if(shape.Check(player.Position,WPos.FromVec3(Vector(e.GetProperty("location"))),e.GetProperty("rotation").GetSingle().Degrees()))
+                            throw new InvalidOperationException($"{key} hit {action} at {t:F2}s, pos={position}, firstMove={firstMove:F2}, last={lastStatus}");
+                    }
                     engine.Effect(helpers[i],new() {Action=new(action),GlobalSequence=(uint)i+1});
                     engine.FinishCast(helpers[i],action);
                 }
             }
+            player.Position=WPos.FromVec3(position);
             engine.Update();output.Apply(engine,engine.Frame(),0,true,true,true);
             var snapshot=safeZone.Manager.BuildSnapshot(now);
             if(follow)
@@ -99,7 +116,7 @@ internal static class RecordedDodgeRefinementRegression
             dispatch.Invoke(movement,[accepted,new PlayerState(position,0,6,false,false,0,true,snapshot.Version),snapshot,now]);
             if(move.IsRunning && firstMove<0)firstMove=t;
             if(move.IsRunning && !wasMoving)movementReady=t+.08;
-            if(t>=movementReady)position=(Vector3)advance.Invoke(move,[position,.02f])!;
+            if(t>=movementReady && t>=knockbackUntil)position=(Vector3)advance.Invoke(move,[position,.02f])!;
             wasMoving=move.IsRunning;
         }
         Console.WriteLine($"  {key}: firstMove={firstMove:F2}, all {events.Length} impacts avoided");

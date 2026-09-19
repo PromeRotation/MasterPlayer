@@ -204,12 +204,16 @@ internal static class CrucibleTimingRegression
             f.Engine.Dispatch(c => c.OnStatusGain(f.Player, ref bound));
             f.Engine.Dispatch(c => c.OnStatusGain(f.Player, ref mark));
             f.Engine.Effect(f.Boss, new() { Action = new(49485), GlobalSequence = 1, Targets = [new(f.Player.InstanceID)] });
+            f.World.CurrentTime = mark.ExpireAt.AddSeconds(-7);
+            f.Render();
+            var approach = f.Solve();
+            Check(approach.IsSuccess && approach.ExecutablePath.Count >= 2, $"shockwave approach failed: {approach.Status}");
+            f.Player.Position = f.Engine.Frame().Hints.GoalPoints.Single().Position;
             f.World.CurrentTime = mark.ExpireAt.AddSeconds(-0.1);
             f.Render();
-            Check(f.Snapshot.DangerAreas.Any(a => a.DangerWindows.Any(w => w.DangerUntil == null && w.IsActiveAt(f.World.CurrentTime))), "shockwave standing constraint expired 2.9 seconds early");
+            Check(f.Snapshot.DangerAreas.Any(a => a.DangerWindows.Any(w => w.DangerUntil == null && w.DangerFrom == mark.ExpireAt)), "shockwave standing constraint disappeared before the impact");
             var solution = f.Solve();
-            Check(solution.IsSuccess && solution.ExecutablePath.Count >= 2 && solution.TargetPosition is { } target
-                && Math.Abs(Math.Abs(target.Z - f.Center.Z) - 18) < 0.8f, $"shockwave staging failed: {solution.Status}");
+            Check(solution.IsSuccess && solution.ExecutablePath.Count == 0, $"shockwave left the final safe point: {solution.Status}");
             f.Engine.Effect(f.Boss, new() { Action = new(49489), GlobalSequence = 2, Targets = [new(f.Player.InstanceID)] });
             f.Render();
             Check(f.Snapshot.DangerAreas.Count == baselineDangers && f.Snapshot.GoalAreas.Count == 0, "knockback resolution retained its old standing point");

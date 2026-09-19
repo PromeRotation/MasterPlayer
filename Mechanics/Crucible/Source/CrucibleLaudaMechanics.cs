@@ -93,6 +93,7 @@ sealed class CrucibleLaudaTorrent(BossModule module) : Components.GenericKnockba
     private ulong _caster;
     private Angle _rotation;
     private readonly Knockback[] _source = new Knockback[1];
+    private LandingZone? _landing;
 
     private WDir Displacement(WPos position)
     {
@@ -110,18 +111,27 @@ sealed class CrucibleLaudaTorrent(BossModule module) : Components.GenericKnockba
 
     public override bool DestinationUnsafe(int slot, Actor actor, WPos pos) => !CrucibleLaudaFloor.Contains(pos);
 
-    private sealed class LandingZone(CrucibleLaudaTorrent component) : ShapeDistance
+    private sealed class LandingZone(Angle rotation) : ShapeDistance
     {
-        public override float Distance(in WPos p) => CrucibleLaudaFloor.SafeTravel(p, component.Displacement(p)) ? 1 : -1;
+        private FrozenConstraintGeometry? _geometry;
+        public override float Distance(in WPos p)
+        {
+            var normal = rotation.ToDirection().OrthoR();
+            var displacement = normal * ((p - CrucibleLaudaFloor.Center).Dot(normal) >= 0 ? 20 : -20);
+            return CrucibleLaudaFloor.SafeTravel(p, displacement) ? 1 : -1;
+        }
+        public override PromeRotation.Spatial.Geometry.IGeometryShape Geometry(float y)
+        {
+            if (_geometry != null && _geometry.Position.Y == y) return _geometry;
+            return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), CrucibleLaudaFloor.Center, y, radius: 26);
+        }
     }
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         if (ActiveKnockbacks(slot, actor).Length != 0 && !IsImmune(slot, _activation))
         {
-            hints.AddForbiddenConstraint(new LandingZone(this), _activation.AddSeconds(-0.5));
-            // After the 40y shockwave, leave the tip and return close to the midline.
-            hints.GoalZones.Add(p => Math.Max(0, 10 - Math.Abs((p - Module.Center).Dot(_rotation.ToDirection().OrthoR()))));
+            hints.AddForbiddenConstraint(_landing ??= new(_rotation), _activation.AddSeconds(-0.5));
         }
     }
 
@@ -131,6 +141,7 @@ sealed class CrucibleLaudaTorrent(BossModule module) : Components.GenericKnockba
         {
             _activation = Module.CastFinishAt(spell);
             _rotation = spell.Rotation;
+            _landing = null;
             _caster = caster.InstanceID;
         }
     }

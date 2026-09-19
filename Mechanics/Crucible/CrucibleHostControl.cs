@@ -12,6 +12,7 @@ internal sealed class CrucibleHostControl(Action<string> log, Type? hostType = n
     private UpdateRequest? _update;
     private Action<string>? _clear;
     private bool _resolved, _warned;
+    private ulong _lastTarget, _lastClearTarget;
     public void Apply(CrucibleControlPlan plan)
     {
         if (!_resolved)
@@ -29,13 +30,21 @@ internal sealed class CrucibleHostControl(Action<string> log, Type? hostType = n
             }
         }
         if (_update != null && _clear != null)
-            _update(_owner, plan.Target, plan.ClearTarget, plan.ForbiddenTargets, plan.Heading?.Rad,
-                plan.HoldActions, plan.BlockCasts, plan.CancelCast);
+        {
+            var target = plan.Target != _lastTarget ? plan.Target : 0;
+            var clearTarget = plan.ClearTarget != _lastClearTarget ? plan.ClearTarget : 0;
+            _lastTarget = plan.Target; _lastClearTarget = plan.ClearTarget;
+            if (target != 0 || clearTarget != 0)
+                _update(_owner, target, clearTarget, [], plan.Heading?.Rad, plan.HoldActions, plan.BlockCasts, plan.CancelCast);
+            // Update selects synchronously. Immediately release target ownership,
+            // including the host's 500ms lease, while retaining facing/cast control.
+            _update(_owner, 0, 0, [], plan.Heading?.Rad, plan.HoldActions, plan.BlockCasts, plan.CancelCast);
+        }
         else if (!_warned && (plan.Target != 0 || plan.ClearTarget != 0 || plan.Heading != null || plan.BlockCasts || plan.HoldActions || plan.ForbiddenTargets.Length != 0))
         {
             _warned = true;
             log("当前 PR 本体未提供机制控制接口：自动转火、背对和停止读条不可用；请更新配套本体。机制绘制与走位继续工作。");
         }
     }
-    public void Clear() => _clear?.Invoke(_owner);
+    public void Clear() { _clear?.Invoke(_owner); _lastTarget = _lastClearTarget = 0; }
 }

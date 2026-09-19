@@ -13,6 +13,8 @@ sealed class CrucibleSphinxNumbers(BossModule module) : Components.GenericAOEs(m
     private static readonly AOEShapeRect Tile = new(5.5f, 5.5f, 5.5f);
     private uint _spokenRule;
     private DateTime _spokenExpires;
+    private WPos[] _safePositions = [];
+    private SafeCells? _constraint;
 
     private (uint rule, DateTime expires) Rule(Actor actor)
     {
@@ -31,7 +33,7 @@ sealed class CrucibleSphinxNumbers(BossModule module) : Components.GenericAOEs(m
         _ => false
     };
 
-    private IEnumerable<Actor> Tiles() => WorldState.Actors.Where(a => a.OID is >= 2015493 and <= 2015501 && !a.IsDeadOrDestroyed);
+    private IEnumerable<Actor> Tiles() => WorldState.Actors.Where(a => a.OID is >= 2015493 and <= 2015501 && !a.IsDeadOrDestroyed && a.EventState != 7);
     private IEnumerable<Actor> SafeTiles(uint rule) => Tiles().Where(a => Matches(rule, a.OID - 2015492));
 
     public override void OnEventDirectorUpdate(uint updateID, uint param1, uint param2, uint param3, uint param4)
@@ -68,8 +70,29 @@ sealed class CrucibleSphinxNumbers(BossModule module) : Components.GenericAOEs(m
             return;
         // Outside every correct tile is forbidden at the deadline, while all
         // correct tiles remain available for avoiding other casts and attacking.
-        hints.AddForbiddenConstraint(new SDIntersection(tiles.Select(p => (ShapeDistance)new SDInvertedRect(p, default(Angle), 5.5f, 5.5f, 5.5f)).ToArray()), expires.AddSeconds(-1));
-        hints.GoalZones.Add(p => tiles.Any(t => Tile.Check(p, t, default)) ? 3 : 0);
+        if (_constraint == null || !_safePositions.SequenceEqual(tiles))
+        {
+            _safePositions = tiles;
+            _constraint = new(tiles, Module.Center);
+        }
+        hints.AddForbiddenConstraint(_constraint, expires.AddSeconds(-1));
+    }
+
+    private sealed class SafeCells(WPos[] positions, WPos center) : ShapeDistance
+    {
+        private FrozenConstraintGeometry? _geometry;
+        public override float Distance(in WPos p)
+        {
+            var clearance = float.MinValue;
+            foreach (var cell in positions)
+                clearance = Math.Max(clearance, 5.5f - Math.Max(Math.Abs(p.X - cell.X), Math.Abs(p.Z - cell.Z)));
+            return clearance;
+        }
+        public override PromeRotation.Spatial.Geometry.IGeometryShape Geometry(float y)
+        {
+            if (_geometry != null && _geometry.Position.Y == y) return _geometry;
+            return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), center, y, radius: 21);
+        }
     }
 
     public override void AddHints(int slot, Actor actor, TextHints hints)

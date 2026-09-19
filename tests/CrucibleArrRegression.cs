@@ -50,11 +50,13 @@ internal static class CrucibleArrRegression
             frame.Hints.AddForbiddenZone(new SDCircle(blockedPeak, 3), f.World.FutureTime(4));
             frame.Hints.AddForbiddenZone(new SDCircle(safePeak, 3), DateTime.MaxValue);
             frame.Hints.AddForbiddenZone(new SDCircle(safePeak, 3), f.World.FutureTime(-10), f.World.FutureTime(-1));
-            frame.Hints.GoalPoints.Add((blockedPeak, 0.2f, 100));
             f.Output.Apply(f.Engine, frame, 0, true, true, true);
             var preferences = f.Snapshot.GoalAreas.Single(a => a.Geometry is FrozenConstraintGeometry);
             Check(preferences.Geometry.Contains(safePeak.ToVec3()) && !preferences.Geometry.Contains(blockedPeak.ToVec3()),
                 "unsafe maximum suppressed the lower safe peak, or expired/unknown danger blocked it");
+            frame.Hints.GoalPoints.Add((blockedPeak, 0.2f, 100));
+            f.Output.Apply(f.Engine, frame, 0, true, true, true);
+            Check(!f.Snapshot.GoalAreas.Any(a => a.Geometry is FrozenConstraintGeometry), "optional full-arena scoring competed with an explicit mechanic point");
             Check(f.Snapshot.GoalAreas.Any(a => a.Geometry is PromeRotation.Spatial.Geometry.CircleGeometry { Radius: 0.2f }
                 && a.Geometry.Contains(blockedPeak.ToVec3())), "explicit mechanic point was clipped as an attack preference");
             frame.Hints.GoalPoints.Clear();

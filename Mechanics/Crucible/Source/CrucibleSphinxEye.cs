@@ -90,7 +90,7 @@ sealed class CrucibleSphinxRiddles(BossModule module) : BossComponent(module)
                     _gathered.Add(a.InstanceID);
             }
         // Once the chosen interaction is consumed, never start a second answer.
-        if (_interact is { } target && (target.IsDestroyed || !target.IsTargetable))
+        if (_interact is { } target && (target.IsDestroyed || !target.IsTargetable || target.EventState == 7))
             Finish();
     }
 
@@ -117,7 +117,7 @@ sealed class CrucibleSphinxRiddles(BossModule module) : BossComponent(module)
         Update();
         if (AnswerAnimal() is not { } animal || !ReadyToApproach(animal))
             return;
-        var target = _answering ? WorldState.Actors.FirstOrDefault(a => a.OID == 2015459 && a.IsTargetable && !a.IsDestroyed && a.Position.InCircle(animal.Position, 2)) : null;
+        var target = _answering ? WorldState.Actors.FirstOrDefault(a => a.OID == 2015459 && a.IsTargetable && !a.IsDestroyed && a.EventState != 7 && a.Position.InCircle(animal.Position, 2)) : null;
         if (target != null)
         {
             _interact = target;

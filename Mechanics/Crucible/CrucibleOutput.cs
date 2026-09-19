@@ -17,6 +17,9 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
     private ArenaBounds? _bounds;
     private WPos _center;
     private int _generation = -1;
+    private ArenaBounds? _goalBounds;
+    private WPos _goalCenter;
+    private readonly Dictionary<WPos, bool> _goalFloor = [];
 
     internal (IGeometryShape Boundary, Vector3 Center)? GetRadarArena(IGeometryShape? navigationBoundary)
         => _boundary != null && _displayBoundary != null && ReferenceEquals(navigationBoundary, _boundary)
@@ -30,6 +33,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         _drawIds.Clear();
         if (_boundary != null && ReferenceEquals(manager.BuildSnapshot(DateTime.UtcNow).ArenaBoundary, _boundary)) manager.ClearArenaBoundary();
         _boundary = null; _displayBoundary = null; _bounds = null; _messages.Clear();
+        _goalBounds = null; _goalFloor.Clear();
     }
     public void Apply(CrucibleEngine engine, CrucibleFrame frame, float y, bool dangerEnabled, bool goalsEnabled, bool boundaryEnabled)
     {
@@ -92,7 +96,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
             var i = 0;
             foreach (var point in frame.Hints.GoalPoints)
                 desired[$"goal/{i++}"] = new(new CircleGeometry(point.Position.ToVec3(y), point.Radius), default, AreaKind.Goal, point.Priority, PositionPreference.Center);
-            if (frame.Hints.GoalZones.Count > 0 && player.CastInfo == null)
+            if (frame.Hints.GoalPoints.Count == 0 && frame.Hints.GoalZones.Count > 0 && player.CastInfo == null)
             {
                 var exclusions = frame.Hints.ForbiddenZones
                     .Where(zone => OptionalGoalSafety.Pending(zone.Activation, zone.ExpiresAt, now))
@@ -101,17 +105,31 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                 var urgent = exclusions.Any(e => OptionalGoalSafety.Urgent(e.Zone.Activation, e.Zone.ExpiresAt, now) && e.Mask.Contains(player.Position.ToVec3(y)));
                 if (!urgent)
                 {
+                    if (_goalBounds != module.Arena.Bounds || _goalCenter != module.Center)
+                    {
+                        _goalBounds = module.Arena.Bounds; _goalCenter = module.Center; _goalFloor.Clear();
+                    }
+                    // Floor topology is immutable until the bounds change. Cache only
+                    // that geometry; dynamic goals and danger masks are evaluated afresh.
+                    bool OnFloor(WPos p)
+                    {
+                        if (!_goalFloor.TryGetValue(p, out var inside)) _goalFloor[p] = inside = module.Arena.InBounds(p);
+                        return inside;
+                    }
+                    var extent = module.Arena.Bounds.Geometry(module.Center, y).GetBounds();
+                    var radius = MathF.Ceiling(Math.Max(Math.Max(module.Center.X - extent.MinX, extent.MaxX - module.Center.X),
+                        Math.Max(module.Center.Z - extent.MinZ, extent.MaxZ - module.Center.Z)));
                     var goals = frame.Hints.GoalZones;
                     var totals = new int[goals.Count];
                     var safeCounts = new int[goals.Count];
                     bool Safe(WPos p) => !exclusions.Any(e => e.Mask.Contains(p.ToVec3(y)))
                         && !frame.Hints.TemporaryObstacles.Any(o => o.Distance(p) <= 0);
                     // Measure each original preference before clipping, as BMR does.
-                    for (var z = -40f; z <= 40; z += OptionalGoalSafety.SampleStep)
-                        for (var x = -40f; x <= 40; x += OptionalGoalSafety.SampleStep)
+                    for (var z = -radius; z <= radius; z += OptionalGoalSafety.SampleStep)
+                        for (var x = -radius; x <= radius; x += OptionalGoalSafety.SampleStep)
                         {
                             var p = module.Center + new WDir(x,z);
-                            if (!module.Arena.InBounds(p)) continue;
+                            if (!OnFloor(p)) continue;
                             bool? safe = null;
                             for (var g = 0; g < goals.Count; ++g)
                                 if (goals[g](p) > 0)
@@ -130,16 +148,16 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                         return score;
                     }
                     var max = 0f;
-                    for (var z = -40f; z <= 40; z += OptionalGoalSafety.SampleStep)
-                        for (var x = -40f; x <= 40; x += OptionalGoalSafety.SampleStep)
+                    for (var z = -radius; z <= radius; z += OptionalGoalSafety.SampleStep)
+                        for (var x = -radius; x <= radius; x += OptionalGoalSafety.SampleStep)
                         {
                             var p = module.Center + new WDir(x,z);
-                            if (module.Arena.InBounds(p)) max = Math.Max(max,Score(p));
+                            if (OnFloor(p)) max = Math.Max(max,Score(p));
                         }
                     if (max > 0)
                     {
                         var threshold = max * 0.9f;
-                        var geometry = FrozenConstraintGeometry.Create(p => module.Arena.InBounds(p) ? threshold - Score(p) : 1, module.Center, y, visible: true, safeRegion: true);
+                        var geometry = FrozenConstraintGeometry.Create(p => OnFloor(p) ? threshold - Score(p) : 1, module.Center, y, radius: radius, visible: true, safeRegion: true);
                         desired[$"goal/{i}"] = new(geometry, default, AreaKind.Goal, 1, PositionPreference.Nearest);
                     }
                 }

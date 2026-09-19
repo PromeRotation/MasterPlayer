@@ -18,9 +18,11 @@ class Low2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngagemen
         (Battle.B09, 48180) => new(new AOEShapeCircle(8), true),
         (Battle.B10, 48182) => new(new AOEShapeCircle(10), true),
         (Battle.B10, 48186) => new(new AOEShapeCircle(18), true),
+        (Battle.B11, 48198 or 48201) => new(new AOEShapeCircle(5), true),
         (Battle.B11, 48206) => new(new AOEShapeCircle(8), true),
         (Battle.B13, 48227) => new(new AOEShapeCone(60, 45f.Degrees()), true),
         (Battle.B13, 48229) => new(new AOEShapeCircle(8), true),
+        (Battle.B13, 48231) => new(new AOEShapeDonut(4, 40), true),
         (Battle.B13, 48519) => new(new AOEShapeCircle(6), true),
         _ => null
     };

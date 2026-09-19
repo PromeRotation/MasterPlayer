@@ -64,7 +64,7 @@ internal static class CrucibleCatalog
         8 => [new CrucibleBoundary(m), new CrucibleTaurusExplosions(m), new CrucibleTaurusDarkRay(m), new CrucibleTaurusGaze(m), new CrucibleTaurusStare(m), new XBMB08AOE(m), new XBMB08Hint0(m)],
         9 => [new CrucibleBoundary(m), new XBMB09AOE(m), new CrucibleLiquidHell(m), new CrucibleTyphoon(m), new CrucibleTornadoes(m), new XBMB09Hint0(m)],
         10 => [new CrucibleBoundary(m), new XBMB10AOE(m), new CrucibleZombies(m), new CrucibleNecromist(m), new CrucibleNecromancerHint(m), new CrucibleDeathDrive(m), new CrucibleNecromancerMarch(m)],
-        11 => [new CrucibleBoundary(m), new XBMB11AOE(m), new CrucibleMinotaurSequence(m), new CrucibleMinotaurRotation(m), new CrucibleMinotaurEnrageHint(m)],
+        11 => [new CrucibleBoundary(m), new XBMB11AOE(m), new CrucibleMinotaurSequence(m), new CrucibleMinotaurStomp(m), new CrucibleMinotaurRotation(m), new CrucibleMinotaurEnrageHint(m)],
         12 => [new XBMB12AOE(m), new XBMB12Hint0(m)],
         13 => [new CrucibleBoundary(m), new XBMB13AOE(m), new CrucibleSandpits(m), new CrucibleGoblinBombs(m), new CrucibleSandPillars(m), new CrucibleWormQuakeHint(m), new XBMB13Hint0(m)],
         14 => [new CrucibleBoundary(m), new XBMB14AOE(m), new CrucibleRangerKnockback(m)],

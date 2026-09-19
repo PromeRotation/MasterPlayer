@@ -26,9 +26,9 @@ internal static class BmrLocalSyncRegression
             var b = new CrucibleHostControl(_ => {}, typeof(CompatibleHost));
             a.Apply(new(3, 0, [4], 90.Degrees(), true, true, true));
             b.Apply(new(5, 0, [], null, false, false, false));
-            Check(CompatibleHost.Requests.Count == 2 && CompatibleHost.Requests.Values.Any(p => p.Target == 3 && p.CancelCast && p.Heading != null), "control values or owner identity lost");
+            Check(CompatibleHost.Requests.Count == 2 && CompatibleHost.Requests.Values.Any(p => p.Target == 0 && p.CancelCast && p.Heading != null), "facing control or immediate target release lost");
             a.Clear();
-            Check(CompatibleHost.Requests.Count == 1 && CompatibleHost.Requests.Values.Single().Target == 5, "clear removed other script controls");
+            Check(CompatibleHost.Requests.Count == 1 && CompatibleHost.Requests.Values.Single().Target == 0, "clear removed other script controls or left a target lock");
             b.Clear();
         });
         foreach (var fixture in new[] { "eye-fixture", "gaze-fixture" })

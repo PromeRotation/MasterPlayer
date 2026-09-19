@@ -134,13 +134,19 @@
 | 48193 | 千百十一吨回转 / 1111-tonze Swing | 7 | — | 自身 / 圆形范围 |
 | 48194 | 千百十一吨回转 / 1111-tonze Swing | 8 | Circle(23) | 代码关联；非该组官方展示项 |
 | 48196 | 千百十一吨回转 / 1111-tonze Swing | 14 | Circle(23) | 代码关联；非该组官方展示项 |
+| 48198 | 十吨重踏 | 7 | Circle(5)，包内落点 | 22:50 ARR + 客户端字段 |
+| 48199 | 冲击波 | 7 | 径向击退 20m | 效果包 Knockback=96；不画全场月环 |
+| 48201 | 十吨重踏 | 10.5 | Circle(5)，包内落点 | 第二段，实际比首段晚 3.462s |
+| 48202 | 冲击波 | 10.5 | 径向击退 20m | 从上一段落点继续推算，不从初始位置重算 |
 | 48203 | 声援 / Rallying Cheer | 7 | — | 友方 / 单体 / 伤害提高 [1225] |
 | 48206 | 无尽回转 / Endless Swing | 6 | Circle(8) | 代码关联；非该组官方展示项 |
 | 48210 | 无尽横扫 / Endless Swipes | 5.2 | — | 代码关联；非该组官方展示项 |
 | 48212 | 无尽横扫 / Endless Swipes | 0.2 | — | 代码关联；非该组官方展示项 |
 | 48214 | 无尽挥打 / Endless Slashes | 9 | — | 代码关联；非该组官方展示项 |
 
-当前组件：`CrucibleBoundary`、`XBMB11AOE`、`CrucibleMinotaurSequence`、`CrucibleMinotaurRotation`、`CrucibleMinotaurEnrageHint`。
+当前组件：`CrucibleBoundary`、`XBMB11AOE`、`CrucibleMinotaurSequence`、`CrucibleMinotaurStomp`、`CrucibleMinotaurRotation`、`CrucibleMinotaurEnrageHint`。
+
+22:50 ARR 补充：首击就准备两次击退均留在电网内的站位；仅在首击后临时跑位可能来不及。新增字段与实战时序见 [迁移规格](../CrucibleAll.spec.md)，早期 `catalog.json` 收集快照尚不含本次新增动作。
 
 字段级来源、源码位置、CastType/EffectRange/Omen和未简化的形状表达式见[catalog.json](catalog.json)。
 
@@ -188,6 +194,7 @@
 | 48225 | 沙柱 / Sand Pillar | 0 | — | 代码关联；非该组官方展示项 |
 | 48227 | 黄沙吐息 / Sand Breath | 9 | Cone(60, 45f.Degrees()); Cone(60f, 45f.Degrees()) | 未标 / 前方范围 / 失明 [5381] |
 | 48229 | 哥布流回旋剑 / Gobspin Headlops | 6 | Circle(8); Circle(8f) | 自身 / 圆/环范围 |
+| 48231 | 哥布流回旋剑 | 6 | Donut(4,40)，包内落点 | Omen=gl_sircle_4004bp1；22:50 ARR 的月环分支 |
 | 48235 | 爆炸 / Explosion | 2 | — | 代码关联；非该组官方展示项 |
 | 48239 | 地震 / Earthquake | 5 | — | 代码关联；非该组官方展示项 |
 | 48242 | 借我力量哥布 / Kinborrow | 4 | — | 自身 / 单体 / 小地豆肤 [5423] |

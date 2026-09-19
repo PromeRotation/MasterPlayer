@@ -29,7 +29,7 @@ sealed class CrucibleLaudaShockwave(BossModule module) : Components.GenericKnock
             else
             {
                 // Native scans and queued status packets can arrive in either order.
-                mark.Facing = actor.Rotation;
+                if (mark.BoundUntil == default && mark.Forward == null) mark.Facing = actor.Rotation;
                 mark.BoundUntil = status.ExpireAt;
             }
         }
@@ -144,19 +144,20 @@ sealed class CrucibleLaudaShockwave(BossModule module) : Components.GenericKnock
         }
         mark.Side = Score(1) < Score(-1) ? 1 : -1;
         var goal = Module.Center + new WDir(0, mark.Side * 18);
-        var facing = new WDir(0, -mark.Side * (forward ? 1 : -1));
-        var remaining = (mark.Activation - WorldState.CurrentTime).TotalSeconds;
-        // Approach the final point along the required facing. A short real step
-        // also updates the server's movement/facing snapshot before standing still.
-        var waypoint = remaining > 4.5 ? goal - facing * 1.5f : goal;
-        hints.GoalPoints.Add((waypoint, 0.2f, 100));
-        hints.AddForbiddenConstraint(new SDInvertedCircle(waypoint, 0.6f), mark.Activation.AddSeconds(remaining > 4.5 ? -5 : -3.5));
+        var landing = Module.Center - new WDir(0, mark.Side * 22);
+        hints.GoalPoints.Add((goal, 0.2f, 100));
+        // This standing pocket must survive grid dilation. Do not add damage
+        // inflation or advance the deadline: the preceding R8 circles still
+        // cover it. PR adds its own preparation time before the actual impact.
+        hints.ForbiddenZones.Add(new(new SDInvertedCircle(goal, 2), mark.Activation, null, ExactGeometry: true));
         hints.MaxCastTime = 0;
-        if (remaining < 3.0 && actor.Position.InCircle(goal, 0.8f))
+        var direction = (landing - actor.Position).Normalized();
+        var actualLanding = actor.Position + direction * 40;
+        if (actor.Position.InCircle(goal, 2.0f) && !LandingUnsafe(slot, actor, actualLanding, mark.Activation))
         {
-            // ARR used the pre-turn server facing when turning only 1.2s before expiry.
-            // Establish it earlier and keep automatic actions from changing it.
-            hints.DesiredFacing = Angle.FromDirection(facing);
+            // Aim from the actual position. A 12-degree facing error moves a
+            // 40y landing almost 9y sideways and misses the narrow end platform.
+            hints.DesiredFacing = Angle.FromDirection(forward ? direction : -direction);
             hints.DesiredFacingExpire = mark.Activation.AddSeconds(0.5);
             hints.ForcedMarchImminent = true;
             hints.ForceCancelCast = true;

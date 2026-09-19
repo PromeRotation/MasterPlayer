@@ -17,6 +17,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     private CrucibleEventAdapter? _events;
     private bool _suspended;
     private CrucibleHostControl? _control;
+    private readonly CrucibleInteraction _interaction = new();
     private DateTime _nextScan, _nextDraw;
     private DateTime _nextDiagnostic;
     private bool _dirty;
@@ -56,15 +57,27 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
             && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true && _world.Player is { IsDeadOrDestroyed: false } player)
         {
             var plan = CrucibleControlPlan.Build(frame.Hints, player, _world.CurrentTime);
-            _control?.Apply(plan);
+            if (frame.Hints.InteractWithTarget is { } interact)
+            {
+                // Once interaction was sent, never cancel its progress as an attack cast.
+                plan = plan with { HoldActions = true, BlockCasts = true, CancelCast = !_interaction.Attempted && plan.CancelCast };
+                _control?.Apply(plan);
+                _interaction.Update(interact, player, _world.CurrentTime, PromeRotation.Plugin.Instance.GreenMoveSystem.IsRunning,
+                    Svc.Objects.LocalPlayer?.IsCasting == true, CrucibleInteraction.Interact);
+            }
+            else
+            {
+                _interaction.Clear();
+                _control?.Apply(plan);
+            }
         }
-        else _control?.Clear();
+        else { _control?.Clear(); _interaction.Clear(); }
         _output.Apply(_engine, frame, Svc.Objects.LocalPlayer?.Position.Y ?? 0,
             IsMechanismEnabled("危险区域"), IsMechanismEnabled("走位引导"), IsMechanismEnabled("场地边界"));
         DiagnoseMovement();
     }
     protected override void OnStop() => Reset();
-    private void Reset() { _control?.Clear(); _events?.Clear(); _output?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
+    private void Reset() { _control?.Clear(); _interaction.Clear(); _events?.Clear(); _output?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
     private void Suspend() { _suspended = true; Reset(); }
     private void Resume() { _suspended = false; _nextScan = default; _dirty = true; }
 
