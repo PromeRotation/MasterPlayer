@@ -493,6 +493,7 @@ public sealed class MainWindow : IDisposable
         ImGui.PushID(id);
         ImGui.TextWrapped(metadata.Name);
         Hint($"v{metadata.Version} · {metadata.Author}");
+        Hint(descriptor.Source == ScriptSource.BuiltIn ? "来源：插件内置" : "来源：配置目录");
         var enabled = manager.IsScriptEnabled(id);
         if (PluginUi.Toggle("enabled", "启用此脚本", "在适用区域自动运行。", ref enabled)) manager.SetScriptEnabled(id, enabled);
         if (descriptor.Source == ScriptSource.Visual && ImGui.Button("编辑脚本")) _visualEditor.Open(descriptor.SourcePath);

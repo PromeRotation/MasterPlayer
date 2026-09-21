@@ -17,3 +17,4 @@ foreach (var file in Directory.EnumerateFiles(Path.Combine(args[0], "Scripts", "
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
 if (count != 5) throw new InvalidOperationException($"Expected five boards, got {count}.");
+ScriptCatalogRegression.Run(args[1], references);

@@ -34,6 +34,7 @@ public sealed class ScriptManager : IDisposable
 
         EnsureDirectory();
         LoadExternalScripts();
+        LoadBuiltInScripts();
 
         SetStatus($"已刷新脚本列表，共 {_descriptors.Count} 个脚本。");
     }
@@ -41,6 +42,20 @@ public sealed class ScriptManager : IDisposable
     private void EnsureDirectory()
     {
         Directory.CreateDirectory(ScriptsDirectory);
+    }
+
+    private void LoadBuiltInScripts()
+    {
+        try
+        {
+            var assembly = typeof(ScriptManager).Assembly;
+            LoadScriptTypesFromAssembly(assembly, $"{assembly.GetName().Name}.dll", ScriptSource.BuiltIn);
+        }
+        catch (Exception ex)
+        {
+            SetError($"加载内置脚本失败：{ex.Message}");
+            Svc.Log.Error(ex, "[MasterPlayer] Failed to load built-in scripts");
+        }
     }
 
     private void LoadExternalScripts()
@@ -84,8 +99,9 @@ public sealed class ScriptManager : IDisposable
     internal string SaveVisualScript(string path, VisualScriptDefinition definition, string? expectedContent)
     {
         var fullPath = Path.GetFullPath(path);
-        var existing = _descriptors.FirstOrDefault(d => string.Equals(d.Metadata.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(d.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase));
+        var existing = _descriptors.FirstOrDefault(d => d.Source != ScriptSource.BuiltIn
+            && (string.Equals(d.Metadata.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(d.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase)));
         if (existing != null && (existing.Source != ScriptSource.Visual || expectedContent == null
             || !string.Equals(existing.Metadata.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
             || !string.Equals(existing.SourcePath, fullPath, StringComparison.OrdinalIgnoreCase)))
@@ -96,6 +112,7 @@ public sealed class ScriptManager : IDisposable
         StopScript(definition.Id);
         if (existing != null) _descriptors.Remove(existing);
         AddDescriptor(descriptor);
+        LoadBuiltInScripts();
         if (MasterPlayerSettings.Instance.EnableScripts && IsScriptEnabled(definition.Id)
             && IsTerritoryMatched(descriptor.Metadata, Svc.ClientState.TerritoryType) && !StartScript(definition.Id))
             return json;
@@ -109,10 +126,14 @@ public sealed class ScriptManager : IDisposable
         VisualScriptStore.Delete(descriptor.SourcePath, expectedContent);
         StopScript(descriptor.Metadata.Id);
         _descriptors.Remove(descriptor);
+        LoadBuiltInScripts();
         var settings = MasterPlayerSettings.Instance;
-        settings.ScriptEnabled.Remove(descriptor.Metadata.Id);
-        settings.ScriptSettings.Remove(descriptor.Metadata.Id);
-        settings.MechanismEnabled.Remove(descriptor.Metadata.Id);
+        if (!_descriptors.Any(d => string.Equals(d.Metadata.Id, descriptor.Metadata.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            settings.ScriptEnabled.Remove(descriptor.Metadata.Id);
+            settings.ScriptSettings.Remove(descriptor.Metadata.Id);
+            settings.MechanismEnabled.Remove(descriptor.Metadata.Id);
+        }
         settings.Save();
         SetStatus($"已删除可视化脚本：{descriptor.Metadata.Name}。");
     }
@@ -159,6 +180,10 @@ public sealed class ScriptManager : IDisposable
     {
         foreach (var type in GetAssemblyTypes(assembly))
         {
+            if (source == ScriptSource.BuiltIn && type.Namespace != "MasterPlayer.Scripts"
+                && type.Namespace?.StartsWith("MasterPlayer.Scripts.", StringComparison.Ordinal) != true)
+                continue;
+
             if (type.IsAbstract || type.GetConstructor(Type.EmptyTypes) == null)
                 continue;
 
@@ -204,7 +229,11 @@ public sealed class ScriptManager : IDisposable
 
     private void AddDescriptor(ScriptDescriptor descriptor)
     {
-        var exists = _descriptors.Any(x => string.Equals(
+        if (descriptor.Source == ScriptSource.BuiltIn
+            && _descriptors.Any(x => MatchesScript(x, descriptor)))
+            return;
+
+        var exists = _descriptors.Any(x => x.Source != ScriptSource.BuiltIn && string.Equals(
             x.Metadata.Id,
             descriptor.Metadata.Id,
             StringComparison.OrdinalIgnoreCase));
@@ -214,8 +243,18 @@ public sealed class ScriptManager : IDisposable
             return;
         }
 
+        foreach (var builtIn in _descriptors.Where(x => x.Source == ScriptSource.BuiltIn && MatchesScript(x, descriptor)).ToArray())
+        {
+            StopScript(builtIn.Metadata.Id);
+            _descriptors.Remove(builtIn);
+        }
+
         _descriptors.Add(descriptor);
     }
+
+    private static bool MatchesScript(ScriptDescriptor first, ScriptDescriptor second)
+        => string.Equals(first.Metadata.Id, second.Metadata.Id, StringComparison.OrdinalIgnoreCase)
+           || string.Equals(first.Metadata.Name, second.Metadata.Name, StringComparison.OrdinalIgnoreCase);
 
     // ── 运行管理（每脚本独立生命周期）────────────────
 
@@ -439,7 +478,7 @@ public sealed class ScriptManager : IDisposable
 
             foreach (var id in wasRunning)
             {
-                if (IsScriptEnabled(id))
+                if (IsScriptEnabled(id) && _descriptors.Any(d => string.Equals(d.Metadata.Id, id, StringComparison.OrdinalIgnoreCase)))
                     StartScript(id);
             }
 

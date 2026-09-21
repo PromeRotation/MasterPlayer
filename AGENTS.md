@@ -63,7 +63,7 @@ MasterPlayer/
 │   ├── ExampleGenericScript.cs    # 通用机制示例脚本（编译进插件 DLL 做冒烟检查）
 │   └── ExampleZoneScript.cs       # 区域限定示例脚本
 ├── Scripts/
-│   └── CrucibleHigh1.cs           # 斗兽棋·高一机制脚本（迁移自 BossModReborn；编译进 DLL 冒烟，亦可复制到脚本目录热加载）
+│   └── Crucible/                 # 斗兽奇弈五盘入口（随 DLL 内置加载，配置目录版本可覆盖）
 ├── docs/
 │   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
 │   ├── BMR机制迁移指南.md         # BMR→MasterPlayer 机制迁移的语义对照/流程/踩坑（配合 .agents/skills/bmr-mechanic-migration 技能）
@@ -325,7 +325,7 @@ public sealed class MainWindow : IDisposable
 ```csharp
 public sealed record ScriptMetadata(string Id, string Name, uint[] Territorys, string Version, string Author, string Note, string Region, string SourcePath);
 
-public enum ScriptSource { LocalSource, LocalDll, Visual }
+public enum ScriptSource { LocalSource, LocalDll, Visual, BuiltIn }
 
 public sealed class ScriptDescriptor
 {
@@ -562,10 +562,10 @@ public readonly record struct GreenMovePoint(
 
 ### 5.6 脚本系统（`Scripting\`，模式照抄 PromePainter `Scripting\`）
 
-- **目录**：`ConfigDirectory\MasterPlayer\Scripts\`（即 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\`；可用面板「打开脚本目录」直达）。递归扫描 `.cs`（Roslyn 编译）与 `.dll`（直接加载）；**严禁放 `Plugins\MasterPlayer\` 插件目录内**（会被 PR 当子插件程序集扫描）。
-- **元数据**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；`guid` 是身份主键（启停/设置/机制开关/去重都以它为准），同 guid 重复只保留一个。`territorys` 空数组 = 通用脚本。
+- **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
+- **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
-- **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫重编译 → 按启用状态重启。
+- **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。
 - **owner 清理**：每个脚本上下文持独立 ownerId（`PromeOwnerRegistry.CreateScriptSessionOwnerId()`），事件订阅全部经 `PromeEventBus` 挂在该 owner 下；停止时 `PromeOwnerRegistry.MarkClosing(ownerId)` + `PromeEventBus.UnsubscribeAll(ownerId)` + 三门面各自 `Cleanup()`（SafeZone 移除本脚本全部区域、Move 若接管过则 `Stop()`、Draw `RemoveByRegex("^MasterPlayer_Script_{guid}_")`）。
 - **异常隔离**：单脚本编译失败进 `ErrorMessage`（面板红字可滚动）；运行中 `OnUpdate`/事件回调异常只停止该脚本，不影响其他脚本与插件本体。
 - **编译引用定位**：部分程序集被流式加载（`Assembly.Location` 为空，如本插件自身，可能还包括宿主体）。`ScriptCompiler` 的引用解析回退链为：程序集 `Location` → `ConfigDirectory\Plugins\<程序集名>\` 包目录 → 宿主 PR 安装目录（`Svc.PluginInterface.AssemblyLocation`）；首次构建引用集时会 Info 日志记录引用数量、探测目录与未能解析的程序集名——脚本编译报 CS0234 类错误时先看这条日志。
@@ -619,7 +619,7 @@ public readonly record struct GreenMovePoint(
 4. **绘制 id 统一 `MasterPlayer_` 前缀**：所有 `DrawManager.Add*` 的 id 必须以 `MasterPlayer_` 开头。Dispose 用 `RemoveByRegex("^MasterPlayer_")` 一键清干净，也避免与其他插件/脚本的绘制 id 冲突。
 5. **设置持久化走自己的 `MasterPlayer.json`**：不用 Dalamud 的 `GetPluginConfig`（那是 PR 宿主自己的配置通道，卫星插件调用会拿到宿主的配置）。本插件设置一律经 `MasterPlayerSettings`（`System.Text.Json`）读写 `ConfigDirectory\MasterPlayer.json`。
 6. **脚本回调与 OnUpdate 均在主线程执行**（PromeEventBus 事件由主线程派发），脚本内可直接调 SafeZone / Move / Draw 三门面，无需自行入队；脚本不得再订阅 `CombatEventManager` 裸事件（那是 hook/网络线程，绕过了 owner 管理）。
-7. **脚本不得持静态状态跨热重载**：每次热重载是全新编译的程序集 + 全新实例，`static` 字段会在旧程序集中残留副本并与新实例并存（重复订阅、状态错乱）。状态一律放实例字段，`OnStop` 做收尾。
+7. **脚本不得持静态状态跨热重载**：脚本重启创建新实例，内置脚本刷新复用当前程序集，静态状态不会重置；外部脚本旧程序集也可能残留（重复订阅、状态错乱）。状态一律放实例字段，`OnStop` 做收尾。
 
 
 ### 2026-09-18 界面与高一复核补充

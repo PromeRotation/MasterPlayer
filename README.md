@@ -63,16 +63,14 @@ dotnet run --project tests/MasterPlayer.RegressionTests.csproj
 
 ## 机制脚本
 
-插件自带机制脚本框架：把单个 `.cs` 脚本（继承 `MasterPlayerScript`，标注 `[MechanicScript]`）放进脚本目录即可被 Roslyn 动态编译、热加载，无需重新构建插件本体。脚本开发细节见 `docs/脚本开发指南.md`。
+仓库 `Scripts/` 下使用 `MasterPlayer.Scripts` 及其子命名空间的机制脚本随 DLL 内置加载，无需复制到配置目录。斗兽奇弈五盘入口已内置；更新并重载插件后，在「机制脚本」页勾选所需脚本，进入对应区域自动启动。详情显示脚本来源，启用状态、设置与机制开关仍保存在 `MasterPlayer.json`。
 
-以仓库自带的斗兽棋·高一脚本为例：
+自定义 `.cs`、`.dll` 或 `*.mechanic.json` 仍放在配置目录：
 
-1. 把 `Scripts/CrucibleHigh1.cs` 复制到脚本目录：
-   ```
-   %AppData%\XIVLauncherCN\pluginConfigs\PromeRotation\MasterPlayer\Scripts\
-   ```
-   （**不要**放进 `Plugins\MasterPlayer\` 插件程序集目录；面板「脚本」页的「打开脚本目录」按钮可直达。）
-2. 文件保存后约 500ms 防抖自动热加载，也可在 MasterPlayer 面板「脚本」页点「刷新脚本」手动触发。
-3. 在面板勾选启用该脚本；脚本的机制开关（按机制分组）在脚本详情的「机制开关」区逐个控制，启用状态与开关选择都会持久化到 `MasterPlayer.json`。
+```
+%AppData%\XIVLauncherCN\pluginConfigs\PromeRotation\MasterPlayer\Scripts\
+```
 
-该脚本为通用脚本（不限区域，按敌人 NameID 扫描自动激活对应组的机制处理）；区域限定脚本则进本自动启动、出本自动停止。
+配置目录中成功加载的脚本若与内置脚本**名称或 GUID 相同**（忽略大小写），优先使用配置目录版本，只保留一份；名称指 `[MechanicScript]` 的 `name`，不是文件名。即使外部版本停用，也不会启动内置版本。保留相同 GUID 可沿用设置；移除外部文件并点击「刷新脚本」后恢复内置版本。编译失败会显示错误，并保留可用的内置版本。
+
+外部脚本修改后需手动点击「刷新脚本」；内置脚本修改后需重新构建并重载插件。**不要**把外部脚本放进 `Plugins\MasterPlayer\` 插件程序集目录。开发细节见 [脚本开发指南](docs/脚本开发指南.md)。
