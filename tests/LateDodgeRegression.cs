@@ -1,9 +1,9 @@
 using System.Numerics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class LateDodgeRegression
 {
@@ -38,6 +38,38 @@ internal static class LateDodgeRegression
             var (movement, move) = CreateMovement();
             Dispatch(movement, solution, snapshot, position, now.AddSeconds(0.15));
             Check(move.IsRunning, "emergency escape became unusable during 150ms of computation/dispatch delay");
+        });
+
+        run("ordinary escape spends emergency cushion after publication delay without another solve", () =>
+        {
+            using var manager = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
+            manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 10));
+            manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(Vector3.Zero, 0),
+                [new DangerWindow(Epoch.AddSeconds(1.2), Epoch.AddSeconds(1.8))]);
+            manager.AddGoalArea(new CircleTemplate(0.2f), new StaticTransform(new(4, 0, 0), 0),
+                [new GoalWindow(Epoch, null, 100, PositionPreference.Center)]);
+            var snapshot = manager.BuildSnapshot(Epoch);
+            var solution = new SafeZoneSolver().Solve(snapshot, new(Vector3.Zero, 0, 6, false, false, 0, true, snapshot.Version),
+                new(6, 6, 0, false, 6, 6), new(), Epoch);
+            var margin = typeof(SafeZoneSolution).GetProperty("ReducedDangerStartSafetyTime", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            Check(solution.IsSuccess && margin.GetValue(solution) == null, "fixture requires an ordinary successful route");
+            var (movement, move) = CreateMovement();
+            Dispatch(movement, solution, snapshot, Vector3.Zero, Epoch.AddSeconds(0.3));
+            Check(move.IsRunning, "publication delay unnecessarily discarded an executable emergency route");
+            var latest = movement.GetType().GetField("_latestSolution", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var emergency = (SafeZoneSolution)latest.GetValue(movement)!;
+            Check(margin.GetValue(emergency) is 0.25f && margin.GetValue(solution) == null,
+                "dispatch must retain the emergency cushion without mutating a result shared with a worker");
+            Dispatch(movement, emergency, snapshot, Vector3.Zero, Epoch.AddSeconds(0.38));
+            Check(move.IsRunning, "startup latency revoked the emergency route before movement began");
+
+            var blocked = new SafeZoneSnapshot(snapshot.Version + 1, Epoch, snapshot.ArenaBoundary,
+                [new ObstacleSnapshot(default, new CircleGeometry(new(1.5f, 0, 0), 0.5f))], snapshot.DangerAreas, snapshot.GoalAreas);
+            Dispatch(movement, emergency, blocked, Vector3.Zero, Epoch.AddSeconds(0.4));
+            Check(!move.IsRunning, "emergency dispatch crossed a newly placed obstacle");
+            var (lateMovement, lateMove) = CreateMovement();
+            Dispatch(lateMovement, solution, snapshot, Vector3.Zero, Epoch.AddSeconds(1));
+            Check(!lateMove.IsRunning, "emergency dispatch accepted a route that misses the damage window");
         });
 
         run("finite-deadline search prunes already-late branches before emergency replanning", () =>
@@ -204,7 +236,7 @@ internal static class LateDodgeRegression
 
     private static bool ShouldWait(SafeZoneSolution solution, SafeZoneSnapshot snapshot, Vector3 position, DateTime now, float castRemaining)
     {
-        var type = typeof(SafeZoneSolver).Assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
+        var type = typeof(SafeZoneSolver).Assembly.GetType("MasterPlayer.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
         var movement = RuntimeHelpers.GetUninitializedObject(type);
         type.GetField("_options", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(movement, new SolveOptions());
         return (bool)type.GetMethod("ShouldWaitForCast", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(movement,

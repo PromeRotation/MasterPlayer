@@ -3,7 +3,7 @@ using System.Numerics;
 using ECommons.DalamudServices;
 using PromeRotation.LogSystem;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
+using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Mechanics.Handlers;
 
@@ -101,7 +101,7 @@ public sealed class ExampleMechanicHandler : IMechanicHandler
         var entityId = (uint)ev.TargetId;
         PromeRotation.Plugin.Instance.DrawManager.AddBound(
             $"{DrawIdPrefix}TargetIcon_{entityId:X8}",
-            new CircleGeometry(Vector3.Zero, 1.5f),
+            Radar.HostDrawingGeometry.Convert(new CircleGeometry(Vector3.Zero, 1.5f)),
             DrawBinding.Follow(entityId),
             DrawStyle.Danger,
             durationMs: 3000f);

@@ -8,13 +8,14 @@ using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
+using MasterPlayer;
 using MasterPlayer.Follow;
 using MasterPlayer.Scripting;
 using MasterPlayer.Settings;
 using PromeRotation.GreenMoveSystem;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static partial class FollowRegression
 {
@@ -92,7 +93,7 @@ internal static partial class FollowRegression
             });
         }
 
-        foreach (var gate in new[] { "disabled", "fallback disabled", "invalid slot", "combat disabled", "out of combat", "missing player", "dead player" })
+        foreach (var gate in new[] { "disabled", "fallback disabled", "invalid slot", "combat disabled", "out of combat", "missing player", "dead player", "replay" })
         {
             run($"Follow respects activation gate: {gate}", () =>
             {
@@ -106,6 +107,7 @@ internal static partial class FollowRegression
                     case "out of combat": scope.InCombat = false; break;
                     case "missing player": scope.HasPlayer = false; break;
                     case "dead player": scope.PlayerDead = true; break;
+                    case "replay": scope.ReplayModeActive = true; break;
                 }
                 scope.Update();
                 Check(scope.MoveCount == 0 && scope.StopCount == 0, "A blocked follow must neither issue nor stop a route it never owned.");
@@ -128,7 +130,7 @@ internal static partial class FollowRegression
             Check(scope.MoveCount == 1, "An unavailable party member must allow the enabled current-target fallback.");
         });
 
-        foreach (var owner in new[] { "legacy", "Reborn" })
+        foreach (var owner in new[] { "legacy", "Reborn", "plugin" })
         {
             run($"Follow yields to {owner} and resumes after control is released", () =>
             {
@@ -359,10 +361,11 @@ internal static partial class FollowRegression
         private readonly List<string> _errors = [];
         private readonly object _legacy;
         private readonly object _reborn;
+        private readonly MasterPlayerPlugin _localPlugin;
         public MasterPlayerSettings Settings { get; }
         public FollowController Controller { get; }
         public SafeZoneManager Manager { get; }
-        private readonly SafeZoneSetting _plannerSetting = new() { EnableSafeZone = true, EnableAutoMovement = true };
+        private SafeZoneSetting _plannerSetting => _localPlugin.SafeZone.Setting;
         public IPlayerCharacter Player { get; }
         public IGameObject? Target { get; set; }
         public Vector3 PlayerPosition { get; set; }
@@ -375,6 +378,7 @@ internal static partial class FollowRegression
         public bool PlayerCasting { get; set; }
         public bool HasPlayer { get; set; } = true;
         public bool InCombat { get; set; } = true;
+        public bool ReplayModeActive { set => _localPlugin.Scripts.ReplayModeActive = value; }
         public DateTime? Now { get; set; }
         public bool IsRunning { get; set; }
         public int MoveCount { get; private set; }
@@ -445,9 +449,8 @@ internal static partial class FollowRegression
             _reborn = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!);
             SetField(plugin, "_safeZoneMovementSystem", _legacy);
             SetField(plugin, "_safeZoneRebornMovementSystem", _reborn);
-            Manager = new SafeZoneManager(_plannerSetting);
-            SetField(plugin, "_safeZoneRebornSetting", _plannerSetting);
-            SetField(plugin, "_safeZoneRebornManager", Manager);
+            SetField(plugin, "_safeZoneSetting", new PromeRotation.Spatial.SafeZone.SafeZoneSetting());
+            SetField(plugin, "_safeZoneRebornSetting", new PromeRotation.Spatial.SafeZone.SafeZoneSetting());
             Replace(typeof(PromeRotation.Plugin), nameof(PromeRotation.Plugin.Instance), plugin);
             var movement = ScriptServiceProxy.Create<IGreenMoveSystem>((name, args) =>
             {
@@ -459,6 +462,10 @@ internal static partial class FollowRegression
                     default: throw new NotSupportedException(name);
                 }
             });
+            _localPlugin = new MasterPlayerPlugin(movement);
+            _plannerSetting.EnableSafeZone = true;
+            _plannerSetting.EnableAutoMovement = true;
+            Manager = _localPlugin.SafeZone.Manager;
             Controller = new FollowController(movement, () => Now ?? DateTime.UtcNow);
         }
 
@@ -469,7 +476,7 @@ internal static partial class FollowRegression
         }
 
         public void SetDodgeControl(string owner, bool hasControl)
-            => SetField(owner == "legacy" ? _legacy : _reborn, "_hasControl", hasControl);
+            => SetField(owner == "plugin" ? _localPlugin.SafeZone.MovementStatus : owner == "legacy" ? _legacy : _reborn, "_hasControl", hasControl);
 
         private static void SetField(object target, string name, object value)
             => target.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(target, value);
@@ -484,7 +491,7 @@ internal static partial class FollowRegression
         public void Dispose()
         {
             Controller.Dispose();
-            Manager.Dispose();
+            _localPlugin.Dispose();
             foreach (var (field, value) in _savedSettings)
                 field.SetValue(Settings, value);
             foreach (var (property, value) in _savedProperties.AsEnumerable().Reverse())

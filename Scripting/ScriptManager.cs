@@ -261,9 +261,17 @@ public sealed class ScriptManager : IDisposable
     /// <summary>回放会话进行中为 true：Update 跳过区域自动启停，脚本由 ReplayController 驱动。</summary>
     internal bool ReplayModeActive { get; private set; }
 
-    internal void EnterReplayMode() => ReplayModeActive = true;
+    internal void EnterReplayMode()
+    {
+        ReplayModeActive = true;
+        MasterPlayerPlugin.Instance!.SafeZone.Clear();
+    }
 
-    internal void ExitReplayMode() => ReplayModeActive = false;
+    internal void ExitReplayMode()
+    {
+        MasterPlayerPlugin.Instance!.SafeZone.Clear();
+        ReplayModeActive = false;
+    }
 
     public bool StartScript(string id) => StartScript(id, null);
 

@@ -1,14 +1,14 @@
 using ECommons.DalamudServices;
 using MasterPlayer.Dodge;
 using MasterPlayer.Settings;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Scripting;
 
 /// <summary>
-/// SafeZone 注册门面：包装 PR SafeZoneRebornRegistry（相对秒数语义，仅主线程）。
+/// SafeZone 注册门面：包装插件本地 SafeZoneRegistry（相对秒数语义，仅主线程）。
 /// 本脚本注册的全部句柄都会被追踪，脚本停止时由 Cleanup 统一移除。
-/// 不提供 SetArenaBoundary（场地脚本通过本体 SafeZoneRebornRegistry 管理边界）。
+/// 不提供 SetArenaBoundary（场地脚本通过 MasterPlayerPlugin.Instance.SafeZone.Registry 管理边界）。
 /// 危险区注册统一按 DodgeDangerMargin 外扩（框架级余量，DangerMarginInflator）；
 /// 脚本自身再加的余量（如斗兽棋脚本的 +0.35）会与之叠加。SafeArea / Obstacle 不外扩。
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class ScriptSafeZoneApi
         return new DrawingGroupScope(this, previous);
     }
 
-    private static SafeZoneRegistry Registry => PromeRotation.Plugin.Instance.SafeZoneRebornRegistry;
+    private static SafeZoneRegistry Registry => MasterPlayerPlugin.Instance!.SafeZone.Registry;
 
     internal void SetNavigationOnly(SafeZoneAreaHandle handle, bool value)
         => MasterPlayerPlugin.Instance?.AoeVisibility?.SetNavigationOnly(handle, value);
@@ -62,11 +62,11 @@ public sealed class ScriptSafeZoneApi
 
     /// <summary>注册已确定的绝对 UTC 危险窗口，适用于需要每次快照保留原判定时刻的机制。</summary>
     public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
-        => Track(PromeRotation.Plugin.Instance.SafeZoneRebornManager.AddDangerArea(WithDangerMargin(template), binding, windows));
+        => Track(MasterPlayerPlugin.Instance!.SafeZone.Manager.AddDangerArea(WithDangerMargin(template), binding, windows));
 
-    // Only for explicitly validated precision transitions; the host safety margin still applies.
+    // Only for explicitly validated precision transitions; the solver safety margin still applies.
     internal SafeZoneAreaHandle AddExactDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
-        => Track(PromeRotation.Plugin.Instance.SafeZoneRebornManager.AddDangerArea(template, binding, windows));
+        => Track(MasterPlayerPlugin.Instance!.SafeZone.Manager.AddDangerArea(template, binding, windows));
 
     // ── 目标区（安全点）─────────────────────────────────
 

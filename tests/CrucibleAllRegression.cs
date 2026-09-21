@@ -3,9 +3,9 @@ using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Mechanics.Crucible.Components;
 using MasterPlayer.Dodge;
 using MasterPlayer.Scripting;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class CrucibleAllRegression
 {
@@ -20,7 +20,7 @@ internal static class CrucibleAllRegression
             Check(displayed is { } arena && arena.Center == new Vector3(520,0,-420)
                 && arena.Boundary.Contains(new Vector3(534.9f,0,-427.5f))
                 && !navigation.Contains(new Vector3(534.9f,0,-427.5f)), "radar still used the navigation-inset floor");
-            var foreign = new PromeRotation.Spatial.Geometry.CircleGeometry(Vector3.Zero,12);
+            var foreign = new MasterPlayer.Spatial.Geometry.CircleGeometry(Vector3.Zero,12);
             Check(f.Output.GetRadarArena(foreign) == null, "stale encounter display replaced another owner's map");
             f.Output.Apply(f.Engine,f.Frame,0,true,true,false);
             Check(f.Output.GetRadarArena(navigation) == null, "disabling boundaries left the display active");
@@ -181,7 +181,7 @@ internal static class CrucibleAllRegression
         });
         run("Crucible geometry snapshots keep configured margins and freeze mutable constraints", () =>
         {
-            var template = new ResolvedGeometryTemplate(new PromeRotation.Spatial.Geometry.CircleGeometry(Vector3.Zero, 6));
+            var template = new ResolvedGeometryTemplate(new MasterPlayer.Spatial.Geometry.CircleGeometry(Vector3.Zero, 6));
             var inflated = DangerMarginInflator.Inflate(template, 0.5f).Resolve(Vector3.Zero, 0, null);
             Check(inflated.Contains(new(6.4f, 0, 0)) && !inflated.Contains(new(6.6f, 0, 0)), "configured margin was lost");
             var origin = new WPos(0,0);
@@ -389,7 +389,7 @@ internal static class CrucibleAllRegression
             Check(f.Snapshot.DangerAreas.Count > 0, "no danger");
             f.Output.Apply(f.Engine, f.Frame, 0, false, false, false);
             Check(f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.ArenaBoundary == null, "disabled mechanisms leaked");
-            var foreign = new PromeRotation.Spatial.Geometry.CircleGeometry(Vector3.Zero, 12);
+            var foreign = new MasterPlayer.Spatial.Geometry.CircleGeometry(Vector3.Zero, 12);
             f.SafeZone.Manager.SetArenaBoundary(foreign); f.Output.Clear(); f.Output.Clear();
             Check(ReferenceEquals(f.Snapshot.ArenaBoundary, foreign), "clear removed another owner's boundary");
         });

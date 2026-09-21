@@ -5,9 +5,9 @@ using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Scripting;
 using MasterPlayer.Settings;
 using PromeRotation.GreenMoveSystem;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class DodgeUptimeRegression
 {

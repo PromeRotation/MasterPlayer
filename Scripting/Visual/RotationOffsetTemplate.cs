@@ -1,6 +1,6 @@
 using System.Numerics;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Scripting.Visual;
 

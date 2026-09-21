@@ -4,8 +4,8 @@ using System.Numerics;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Radar;
 
@@ -93,7 +93,7 @@ public sealed class RadarRenderer : IDisposable
     private void RenderFrame(PromeRotation.Plugin plugin)
     {
         var now = DateTime.UtcNow;
-        var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(now);
+        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
         var appearance = MasterPlayerSettings.Instance.WorldAoe;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var draw = plugin.DrawManager;
@@ -103,7 +103,7 @@ public sealed class RadarRenderer : IDisposable
         if (snapshot.ArenaBoundary is { } boundary)
         {
             var id = IdPrefix + "Boundary";
-            draw.Add(id, boundary, BoundaryStyle, durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(boundary), BoundaryStyle, durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
@@ -112,7 +112,7 @@ public sealed class RadarRenderer : IDisposable
             if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Obstacle_{obstacle.Handle.Id}";
-            draw.Add(id, obstacle.Geometry, appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(obstacle.Geometry), appearance.GetDangerStyle(), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
@@ -121,7 +121,7 @@ public sealed class RadarRenderer : IDisposable
             if (!appearance.IsVisible(goal.Geometry, true, visibility?.GetVisibility(goal.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Goal_{goal.Handle.Id}";
-            draw.Add(id, goal.Geometry, appearance.GetSafeStyle(), durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(goal.Geometry), appearance.GetSafeStyle(), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
@@ -131,7 +131,7 @@ public sealed class RadarRenderer : IDisposable
             if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Danger_{danger.Handle.Id}";
-            draw.Add(id, danger.Geometry, appearance.GetDangerStyle(danger, now), durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(danger.Geometry), appearance.GetDangerStyle(danger, now), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
@@ -141,7 +141,7 @@ public sealed class RadarRenderer : IDisposable
                 if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.World))
                     continue;
                 var id = IdPrefix + "Preview_" + preview.Id;
-                draw.Add(id, preview.Geometry, preview.Style(appearance), durationMs: SelfExpireMs);
+                draw.Add(id, HostDrawingGeometry.Convert(preview.Geometry), preview.Style(appearance), durationMs: SelfExpireMs);
                 frameIds.Add(id);
             }
 
@@ -169,7 +169,7 @@ public sealed class RadarRenderer : IDisposable
 
     private void DrawPath(PromeRotation.Plugin plugin, HashSet<string> frameIds)
     {
-        var path = plugin.SafeZoneRebornMovementStatus.LatestSolution?.ExecutablePath;
+        var path = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution?.ExecutablePath;
         if (path is null || path.Count == 0)
         {
             return;
@@ -179,7 +179,7 @@ public sealed class RadarRenderer : IDisposable
         for (var i = 0; i < path.Count; i++)
         {
             var dotId = $"{IdPrefix}Path_Dot_{i}";
-            draw.Add(dotId, new CircleGeometry(path[i].Position, 0.3f), PathDotStyle, durationMs: SelfExpireMs);
+            draw.Add(dotId, HostDrawingGeometry.Convert(new CircleGeometry(path[i].Position, 0.3f)), PathDotStyle, durationMs: SelfExpireMs);
             frameIds.Add(dotId);
 
             if (i > 0)

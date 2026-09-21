@@ -80,7 +80,7 @@ sealed class CrucibleBombFuryKnockback(BossModule module) : HighCrucibleKnockbac
             return _candidates.Where(p => p.Clearance >= required).OrderBy(p => (p.Position - current).LengthSq())
                 .Select(p => (WPos?)p.Position).FirstOrDefault();
         }
-        public override PromeRotation.Spatial.Geometry.IGeometryShape Geometry(float y)
+        public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {
             if (_geometry != null && _geometry.Position.Y == y) return _geometry;
             // Three chained landings leave a narrow valid starting pocket.

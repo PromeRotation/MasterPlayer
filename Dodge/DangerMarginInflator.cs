@@ -1,5 +1,5 @@
 using MasterPlayer.Scripting.Visual;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Dodge;
 

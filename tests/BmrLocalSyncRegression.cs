@@ -1,8 +1,8 @@
 using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Mechanics.Crucible.Components;
 using MasterPlayer.Scripting;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class BmrLocalSyncRegression
 {

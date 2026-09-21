@@ -1,8 +1,8 @@
 using System.Collections.Frozen;
 using MasterPlayer.Dodge;
 using MasterPlayer.Mechanics.Crucible.CriticalEngagement;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Mechanics.Crucible;
 

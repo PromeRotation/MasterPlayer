@@ -120,7 +120,7 @@ sealed class CrucibleLaudaTorrent(BossModule module) : Components.GenericKnockba
             var displacement = normal * ((p - CrucibleLaudaFloor.Center).Dot(normal) >= 0 ? 20 : -20);
             return CrucibleLaudaFloor.SafeTravel(p, displacement) ? 1 : -1;
         }
-        public override PromeRotation.Spatial.Geometry.IGeometryShape Geometry(float y)
+        public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {
             if (_geometry != null && _geometry.Position.Y == y) return _geometry;
             return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), CrucibleLaudaFloor.Center, y, radius: 26);

@@ -4,8 +4,8 @@ using System.Text.Json;
 using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Scripting;
 using PromeRotation.GreenMoveSystem;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class RecordedLaudaRegression
 {

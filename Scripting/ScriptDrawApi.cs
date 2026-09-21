@@ -1,7 +1,8 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
+using MasterPlayer.Radar;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
+using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Scripting;
 
@@ -51,7 +52,7 @@ public sealed class ScriptDrawApi
         DrawStyle? style = null,
         float durationMs = 0f,
         float startDelayMs = 0f)
-        => Manager.Add(Id(id), geometry, style, durationMs, startDelayMs);
+        => Manager.Add(Id(id), HostDrawingGeometry.Convert(geometry), style, durationMs, startDelayMs);
 
     /// <summary>绑定绘制（跟随实体 / 朝向 / 延伸）。</summary>
     public DrawHandle AddBound(
@@ -60,7 +61,7 @@ public sealed class ScriptDrawApi
         DrawBinding binding,
         DrawStyle? style = null,
         float durationMs = 0f)
-        => Manager.AddBound(Id(id), geometry, binding, style, durationMs);
+        => Manager.AddBound(Id(id), HostDrawingGeometry.Convert(geometry), binding, style, durationMs);
 
     /// <summary>两点连线。</summary>
     public DrawHandle AddTether(

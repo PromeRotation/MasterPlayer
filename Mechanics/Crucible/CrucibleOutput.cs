@@ -2,8 +2,8 @@ using System.Numerics;
 using MasterPlayer.Follow;
 using MasterPlayer.Scripting;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Mechanics.Crucible;
 

@@ -4,10 +4,17 @@ using MasterPlayer.Dodge;
 using MasterPlayer.Radar;
 using MasterPlayer.Settings;
 using PromeRotation.Helpers;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 var passed = 0;
+if (args.Contains("--local-safezone"))
+{
+    LocalSafeZoneRegression.Run(Run);
+    FollowRegression.Run(Run);
+    Console.WriteLine($"PASS: {passed} local safe-zone scenarios");
+    return;
+}
 if (args.Contains("--bmr-local-sync"))
 {
     BmrLocalSyncRegression.Run(Run);
@@ -345,6 +352,7 @@ CastRotationRegression.Run(Run);
 RadarClipRegression.Run(Run);
 SafeZoneTemporalRegression.RunPrecision(Run);
 SafeZoneTemporalRegression.Run(Run);
+LocalSafeZoneRegression.Run(Run);
 FollowRegression.Run(Run);
 DodgeUptimeRegression.Run(Run);
 RecordedDodgeRefinementRegression.Run(Run);

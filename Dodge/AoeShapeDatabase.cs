@@ -4,7 +4,7 @@ using System.Numerics;
 using ECommons.DalamudServices;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Dodge;
 

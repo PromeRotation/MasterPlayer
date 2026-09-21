@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Examples;
 

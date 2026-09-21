@@ -1,5 +1,5 @@
 using System.Numerics;
-using PromeRotation.Spatial.Geometry;
+using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Radar;
 

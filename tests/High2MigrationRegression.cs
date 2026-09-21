@@ -7,8 +7,8 @@ using MasterPlayer.Mechanics.Crucible.Components;
 using MasterPlayer.Mechanics.Crucible.CriticalEngagement;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class High2MigrationRegression
 {
@@ -279,7 +279,7 @@ internal static class High2MigrationRegression
         run("Preview outlines honor opacity, remove on owner cleanup, and leave solver hazards", () =>
         {
             var registry = new AoeVisibilityRegistry([]);
-            var geometry = new PromeRotation.Spatial.Geometry.CircleGeometry(Vector3.Zero, 6);
+            var geometry = new MasterPlayer.Spatial.Geometry.CircleGeometry(Vector3.Zero, 6);
             registry.AddPreview("owner/circle",geometry,false,0,"source","source",true);
             registry.AddLine("owner/line",Vector3.Zero,Vector3.UnitZ,false,"source","source");
             var appearance = new AoeViewSettings { DangerFill = new(1,0,0,0.2f), DangerOutline = new(1,0,0,0.3f) };

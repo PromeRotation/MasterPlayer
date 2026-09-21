@@ -3,6 +3,8 @@ using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
+using MasterPlayer.Spatial;
+using PromeRotation.Hosting;
 using PromeRotation.Plugins;
 
 namespace MasterPlayer;
@@ -27,6 +29,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Windows.MainWindow? _mainWindow;
     private Windows.ReplayWindow? _replayWindow;
     private SafeZoneActivation? _safeZoneActivation;
+    private SafeZoneRuntime? _safeZone;
+    private IDisposable? _safeZoneTerritory, _safeZoneDeath, _safeZoneBattleEnd;
+    public SafeZoneRuntime SafeZone => _safeZone ?? throw new InvalidOperationException("MasterPlayer 安全区尚未初始化。");
     internal Radar.AoeVisibilityRegistry? AoeVisibility { get; private set; }
     private bool _disposed;
 
@@ -48,7 +53,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
         var settings = MasterPlayerSettings.Instance;
         AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility);
-        _safeZoneActivation = new SafeZoneActivation(PromeRotation.Plugin.Instance.SafeZoneRebornSetting);
+        _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
+            () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
+        _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => _safeZone.Clear());
+        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, _safeZone.Clear);
+        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, _safeZone.Clear);
+        _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
         _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
 
         _radar = new Radar.RadarRenderer();
@@ -111,13 +121,15 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var settings = MasterPlayerSettings.Instance;
         var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
-        AoeVisibility?.Update(PromeRotation.Plugin.Instance.SafeZoneRebornManager);
-        _radar?.Update();
         _dodge?.Update();
         _mechanics?.Update();
         _replayController?.Update(deltaTime);
         _scripts?.Update(deltaTime);
         _follow?.Update();
+        _safeZone?.Update(PromeRotation.Plugin.Instance.SpeedMultiplierService.EffectiveMultiplier,
+            _scripts?.ReplayModeActive != true);
+        AoeVisibility?.Update(SafeZone.Manager);
+        _radar?.Update();
     }
 
     public void Dispose()
@@ -160,6 +172,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _dodge);
         SafeDispose(ref _radar);
         SafeDispose(ref _safeZoneActivation);
+        SafeDispose(ref _safeZoneTerritory);
+        SafeDispose(ref _safeZoneDeath);
+        SafeDispose(ref _safeZoneBattleEnd);
+        SafeDispose(ref _safeZone);
         AoeVisibility = null;
 
         Instance = null;

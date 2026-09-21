@@ -2,8 +2,8 @@
 using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class CrucibleArrRegression
 {
@@ -57,7 +57,7 @@ internal static class CrucibleArrRegression
             frame.Hints.GoalPoints.Add((blockedPeak, 0.2f, 100));
             f.Output.Apply(f.Engine, frame, 0, true, true, true);
             Check(!f.Snapshot.GoalAreas.Any(a => a.Geometry is FrozenConstraintGeometry), "optional full-arena scoring competed with an explicit mechanic point");
-            Check(f.Snapshot.GoalAreas.Any(a => a.Geometry is PromeRotation.Spatial.Geometry.CircleGeometry { Radius: 0.2f }
+            Check(f.Snapshot.GoalAreas.Any(a => a.Geometry is MasterPlayer.Spatial.Geometry.CircleGeometry { Radius: 0.2f }
                 && a.Geometry.Contains(blockedPeak.ToVec3())), "explicit mechanic point was clipped as an attack preference");
             frame.Hints.GoalPoints.Clear();
             frame.Hints.AddForbiddenZone(new SDCircle(safePeak, 3), f.World.FutureTime(3));

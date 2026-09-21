@@ -5,7 +5,7 @@ using ECommons.DalamudServices;
 using MasterPlayer.Settings;
 using PromeRotation.Hosting;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 using NativeActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
 using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
@@ -29,7 +29,8 @@ public sealed class DodgeController : IDisposable
     private void HandleStartCast(LogSystemCastStartEvent e)
     {
         var settings = MasterPlayerSettings.Instance;
-        if (_disposed || !(settings.EnableAutoDodge || settings.EnableRadar || settings.EnableRadarOverlay))
+        if (_disposed || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ||
+            !(settings.EnableAutoDodge || settings.EnableRadar || settings.EnableRadarOverlay))
         {
             return;
         }
@@ -82,7 +83,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var handle = PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.AddDelayedHit(template, binding, delaySeconds);
+            var handle = MasterPlayerPlugin.Instance!.SafeZone.Registry.AddDelayedHit(template, binding, delaySeconds);
             if (handle.IsValid)
             {
                 _registeredHandles.Add(handle);
@@ -146,7 +147,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var manager = PromeRotation.Plugin.Instance.SafeZoneRebornManager;
+            var manager = MasterPlayerPlugin.Instance!.SafeZone.Manager;
             for (var i = _registeredHandles.Count - 1; i >= 0; i--)
             {
                 if (!manager.ContainsArea(_registeredHandles[i]))
@@ -181,7 +182,7 @@ public sealed class DodgeController : IDisposable
 
         try
         {
-            var registry = PromeRotation.Plugin.Instance.SafeZoneRebornRegistry;
+            var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
             foreach (var handle in _registeredHandles)
             {
                 try
@@ -197,7 +198,7 @@ public sealed class DodgeController : IDisposable
         }
         catch (Exception ex)
         {
-            SafeLogError(ex, "[MasterPlayer] 获取 SafeZoneRegistry 失败，残留危险区由本体生命周期事件清理");
+            SafeLogError(ex, "[MasterPlayer] 获取本地 SafeZoneRegistry 失败，残留危险区由插件生命周期事件清理");
         }
 
         _registeredHandles.Clear();

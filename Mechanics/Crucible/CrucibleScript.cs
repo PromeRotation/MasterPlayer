@@ -21,7 +21,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     private DateTime _nextScan, _nextDraw;
     private DateTime _nextDiagnostic;
     private bool _dirty;
-    internal (PromeRotation.Spatial.Geometry.IGeometryShape Boundary, Vector3 Center)? GetRadarArena(PromeRotation.Spatial.Geometry.IGeometryShape? navigationBoundary)
+    internal (MasterPlayer.Spatial.Geometry.IGeometryShape Boundary, Vector3 Center)? GetRadarArena(MasterPlayer.Spatial.Geometry.IGeometryShape? navigationBoundary)
         => _output?.GetRadarArena(navigationBoundary);
     public override IEnumerable<string> GetMechanisms() => ["危险区域", "走位引导", "场地边界", "文字提示"];
 
@@ -29,7 +29,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     {
         _engine = new(_world, firstGroup, lastGroup);
         _control = new(Log);
-        _output = new(SafeZone, Draw, PromeRotation.Plugin.Instance.SafeZoneRebornManager, text => { if (IsMechanismEnabled("文字提示")) Log(text); },
+        _output = new(SafeZone, Draw, MasterPlayerPlugin.Instance!.SafeZone.Manager, text => { if (IsMechanismEnabled("文字提示")) Log(text); },
             () => MasterPlayer.Settings.MasterPlayerSettings.Instance.DodgeDangerMargin);
         _suspended = false;
         _events = new(_engine, Find, e => CastRotation.TryGet(e, out var r) ? r : null, Scan, LogError);
@@ -85,8 +85,8 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     {
         if (_engine?.Module is not { } module || _world.Player is not { } player || _world.CurrentTime < _nextDiagnostic) return;
         var plugin = PromeRotation.Plugin.Instance;
-        var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(_world.CurrentTime);
-        var movement = plugin.SafeZoneRebornMovementStatus;
+        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(_world.CurrentTime);
+        var movement = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
         var solution = movement.LatestSolution;
         var dangers = snapshot.DangerAreas.Where(a => a.Geometry.Contains(player.Position.ToVec3())
             && a.DangerWindows.Any(w => w.DangerUntil == null || w.DangerUntil > _world.CurrentTime)).ToArray();
@@ -102,7 +102,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
             + $"快照={snapshot.Version}/{solution?.SourceSnapshotVersion}, "
             + $"解算开始/接受/丢弃={movement.AsyncSolveStartedCount}/{movement.AsyncSolveAcceptedCount}/{movement.AsyncSolveDiscardedCount}, "
             + $"结果年龄={(solution == null ? -1 : (_world.CurrentTime - solution.SolveTime).TotalMilliseconds):F0}ms, "
-            + $"自动移动={plugin.SafeZoneRebornSetting.EnableAutoMovement}, 持有/执行={movement.HasControl}/{moveRunning}, 读条={casts}");
+            + $"自动移动={MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement}, 持有/执行={movement.HasControl}/{moveRunning}, 读条={casts}");
     }
 
     private unsafe void Scan()

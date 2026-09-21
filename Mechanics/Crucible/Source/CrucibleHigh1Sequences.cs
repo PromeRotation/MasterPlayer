@@ -16,14 +16,20 @@ sealed class CrucibleGargoyleInOut(BossModule module) : Components.GenericAOEs(m
     private AOEInstance? _ring;
     private DateTime _steelResolved;
     private DateTime _ringResolved;
+    private WPos? _stagingPoint;
+    private (WPos Origin, WPos Position)? _ringPoint;
     private readonly List<AOEInstance> _display = [];
 
     public override void Update()
     {
-        if (_steel is { } steel && steel.Activation.AddSeconds(0.25) < WorldState.CurrentTime)
+        // Activation already includes the NPC finish delay. Waiting another
+        // 250ms before requesting the return can consume its entire solve budget.
+        if (_steel is { } steel && steel.Activation <= WorldState.CurrentTime)
             _steel = null;
         if (_ring is { } ring && ring.Activation.AddSeconds(1) < WorldState.CurrentTime)
             _ring = null;
+        if (_steel == null && _ring == null)
+            (_stagingPoint, _ringPoint) = (null, null);
     }
 
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
@@ -79,7 +85,9 @@ sealed class CrucibleGargoyleInOut(BossModule module) : Components.GenericAOEs(m
         Update();
         if (_steel is { } steel)
         {
-            hints.AddForbiddenZone(Steel, steel.Origin, activation: steel.Activation, expiresAt: steel.Activation.AddSeconds(0.6));
+            // Two seconds must cover the return and event/worker latency. Keep
+            // PR's margin without inflating the real shapes again in the facade.
+            hints.ForbiddenZones.Add(new(Steel.Distance(steel.Origin, default), steel.Activation, steel.Activation.AddSeconds(0.6), ExactGeometry: true));
             // Match the visible countdown, excluding the NPC finish delay and 48719's 0.6s hit delay.
             var castFinish = Module.PrimaryActor.CastInfo is { Action.ID: 48719 } cast
                 ? WorldState.FutureTime(cast.RemainingTime)
@@ -88,7 +96,7 @@ sealed class CrucibleGargoyleInOut(BossModule module) : Components.GenericAOEs(m
                 return;
             if (_ring is { } next)
             {
-                // The goal fixes the 14y staging distance. Leave room around that
+                // The goal fixes the 13.5y staging distance. Leave room around that
                 // route for PR's grid and hard margin instead of sealing the annulus.
                 hints.AddForbiddenConstraint(new SDInvertedCircle(steel.Origin, 15.5f), steel.Activation.AddSeconds(-0.5), steel.Activation.AddSeconds(0.6));
                 var mines = Module.FindComponent<CrucibleMiasma>()?.ArmedPositions().ToArray() ?? [];
@@ -98,21 +106,27 @@ sealed class CrucibleGargoyleInOut(BossModule module) : Components.GenericAOEs(m
                 // A precise staging goal preserves the safe strip between the steel and
                 // the outer positioning constraint after PR dilates both by its margin.
                 var stagingApproach = new RingApproach(next.Origin, mines, 1.25f);
-                var candidates = Enumerable.Range(0, 72).Select(i => steel.Origin + 14 * (i * 5f).Degrees().ToDirection())
-                    .Where(p => Arena.InBounds(p) && stagingApproach.Distance(p) > 0)
-                    .OrderBy(p => (p - actor.Position).LengthSq()).ToArray();
-                if (candidates.Length > 0)
-                    hints.GoalPoints.Add((candidates[0], 0.25f, 100));
+                if (_stagingPoint is not { } stage || MathF.Abs((stage - steel.Origin).Length() - 13.5f) > 0.01f
+                    || !Arena.InBounds(stage) || stagingApproach.Distance(stage) <= 0)
+                    _stagingPoint = Enumerable.Range(0, 72).Select(i => steel.Origin + 13.5f * (i * 5f).Degrees().ToDirection())
+                        .Where(p => Arena.InBounds(p) && stagingApproach.Distance(p) > 0)
+                        .OrderBy(p => (p - actor.Position).LengthSq()).Select(p => (WPos?)p).FirstOrDefault();
+                if (_stagingPoint is { } point)
+                    hints.GoalPoints.Add((point, 0.2f, 100));
             }
         }
         else if (_ring is { } ring)
         {
-            // PR subtracts 0.5s from the registered start. Retain 0.15s of that
-            // lead: two-second transitions also need to allow the 0.25s missed-effect fallback.
-            hints.AddForbiddenZone(Ring, ring.Origin, activation: ring.Activation.AddSeconds(0.35), expiresAt: ring.Activation.AddSeconds(0.6));
-            var offset = actor.Position - ring.Origin;
-            var destination = offset.LengthSq() > 25 ? ring.Origin + 5 * offset.Normalized() : actor.Position;
-            hints.GoalPoints.Add((destination, 0.2f, 100));
+            // PR uses 0.5s normally and 0.25s for emergency routes. Even the
+            // emergency deadline must precede the actual hit, never exceed it.
+            hints.ForbiddenZones.Add(new(Ring.Distance(ring.Origin, default), ring.Activation.AddSeconds(0.2), ring.Activation.AddSeconds(0.6), ExactGeometry: true));
+            if (_ringPoint is not { } point || point.Origin != ring.Origin)
+            {
+                var offset = actor.Position - ring.Origin;
+                var destination = offset.LengthSq() > 25 ? ring.Origin + 5 * offset.Normalized() : actor.Position;
+                _ringPoint = (ring.Origin, destination);
+            }
+            hints.GoalPoints.Add((_ringPoint.Value.Position, 0.2f, 100));
         }
     }
 

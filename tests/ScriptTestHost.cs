@@ -5,12 +5,12 @@ using Lumina.Data;
 using Lumina.Excel;
 using PromeRotation.LogSystem;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Scripting;
 
-// Compile the real standalone script against a headless host; geometry and area lifetimes use PR itself.
+// Compile the real standalone script against a headless host using the plugin's geometry and registry.
 [AttributeUsage(AttributeTargets.Class)]
 internal sealed class MechanicScriptAttribute : Attribute
 {
@@ -77,12 +77,13 @@ public sealed class ScriptSafeZoneApi : IDisposable
     public SafeZoneAreaHandle AddPersistentDanger(GeometryTemplate template, TransformBinding binding)
         => Registry.AddPersistentDanger(template, binding);
     public float DangerMarginForTest { get; set; }
+    public DateTime? UtcNowForTest { get; set; }
     public SafeZoneAreaHandle AddDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
         => Manager.AddDangerArea(MasterPlayer.Dodge.DangerMarginInflator.Inflate(template, DangerMarginForTest), binding, windows);
     public SafeZoneAreaHandle AddExactDangerSnapshot(GeometryTemplate template, TransformBinding binding, IReadOnlyList<DangerWindow> windows)
         => Manager.AddDangerArea(template, binding, windows);
     public SafeZoneAreaHandle AddPersistentSafeArea(GeometryTemplate template, TransformBinding binding, int priority = 0, PositionPreference preference = PositionPreference.Nearest)
-        => Registry.AddPersistentSafeArea(template, binding, priority, preference);
+        => Manager.AddGoalArea(template, binding, [GoalWindow.Persistent(UtcNowForTest ?? DateTime.UtcNow, priority, preference)]);
     public SafeZoneAreaHandle AddTimedDanger(GeometryTemplate template, TransformBinding binding, float durationSeconds)
         => Registry.AddTimedDanger(template, binding, durationSeconds);
     public SafeZoneAreaHandle AddTimedSafeArea(GeometryTemplate template, TransformBinding binding, float durationSeconds,

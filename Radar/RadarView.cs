@@ -8,8 +8,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using MasterPlayer.Settings;
 using MasterPlayer.Mechanics.Crucible;
 using PromeRotation.Helpers;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Radar;
 
@@ -69,7 +69,7 @@ public sealed class RadarView
         var player = Svc.Objects.LocalPlayer;
         var now = DateTime.UtcNow;
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
-        var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(now);
+        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
 
         var rotation = settings.RadarRotateWithCamera ? GetCameraAzimuth() : RadarProjection.NorthUpRotation;
         _screenCenter = screenCenter;
@@ -304,7 +304,7 @@ public sealed class RadarView
 
     private void DrawSolutionPath(RadarCanvas canvas, PromeRotation.Plugin plugin, float animT)
     {
-        var path = plugin.SafeZoneRebornMovementStatus.LatestSolution?.ExecutablePath;
+        var path = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution?.ExecutablePath;
         if (path is null || path.Count == 0)
         {
             return;

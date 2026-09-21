@@ -11,8 +11,8 @@ using MasterPlayer.Scripting;
 using MasterPlayer.Scripts;
 using PromeRotation.Helpers;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 using NativeBattleChara = FFXIVClientStructs.FFXIV.Client.Game.Character.BattleChara;
 
 internal static class CrucibleMechanicRegression

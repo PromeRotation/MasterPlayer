@@ -105,28 +105,27 @@ public sealed class MainWindow : IDisposable
     {
         try
         {
-            var plugin = PromeRotation.Plugin.Instance;
-            var hostSetting = plugin.SafeZoneRebornSetting;
-            var status = plugin.SafeZoneRebornMovementStatus;
+            var setting = MasterPlayerPlugin.Instance!.SafeZone.Setting;
+            var status = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
             var scripts = MasterPlayerPlugin.Instance?.Scripts;
-            var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow);
+            var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow);
 
             ImGui.Text($"当前区域 ID：{Svc.ClientState.TerritoryType}");
             HintInline($"运行中脚本 {scripts?.Running.Count ?? 0} / {scripts?.Scripts.Count ?? 0}");
             HintInline($"活动危险区 {snapshot.DangerAreas.Count}");
-            Hint($"安全区 Reborn：{status.PhaseText}");
+            Hint($"插件安全区：{status.PhaseText}");
 
             var needsSafeZone = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge;
-            if (needsSafeZone && !hostSetting.EnableSafeZone)
-                ImGui.TextColored(WarningColor, "安全区 Reborn 已关闭，机制范围无法显示；请在诊断页开启 Reborn 解算。");
-            if (settings.EnableAutoDodge && !hostSetting.EnableAutoMovement)
-                ImGui.TextColored(WarningColor, "Reborn 自动移动已关闭，智能躲避不会走位；请在诊断页开启 Reborn 自动移动。");
+            if (needsSafeZone && !setting.EnableSafeZone)
+                ImGui.TextColored(WarningColor, "插件安全区已关闭，机制范围无法显示；请在诊断页开启解算。");
+            if (settings.EnableAutoDodge && !setting.EnableAutoMovement)
+                ImGui.TextColored(WarningColor, "插件自动移动已关闭，智能躲避不会走位；请在诊断页开启自动移动。");
             if (settings.EnableAutoDodge &&
-                ((plugin.SafeZoneSetting.EnableSafeZone && plugin.SafeZoneSetting.EnableAutoMovement) || plugin.SafeZoneMovementStatus.HasControl))
+                (Spatial.HostMovement.AutomaticMovementEnabled || Spatial.HostMovement.HasControl))
             {
-                ImGui.TextColored(WarningColor, "旧版安全区自动移动优先，Reborn 已让位。");
-                if (ImGui.Button("关闭旧版自动移动"))
-                    plugin.SafeZoneSetting.EnableAutoMovement = false;
+                ImGui.TextColored(WarningColor, "PR 本体安全区正在使用自动移动，插件已让位。");
+                if (ImGui.Button("关闭 PR 本体安全区自动移动"))
+                    Spatial.HostMovement.DisableAutomaticMovement();
             }
 
             var anyModuleOn = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge ||
@@ -404,8 +403,8 @@ public sealed class MainWindow : IDisposable
             settings.Save();
         }
 
-        SectionHeader("本体状态");
-        DrawHostStatus(settings);
+        SectionHeader("插件安全区状态");
+        DrawSafeZoneStatus(settings);
 
         SectionHeader("机制处理器");
         DrawMechanicHandlers();
@@ -441,20 +440,19 @@ public sealed class MainWindow : IDisposable
         }
     }
 
-    private static void DrawHostStatus(MasterPlayerSettings settings)
+    private static void DrawSafeZoneStatus(MasterPlayerSettings settings)
     {
         try
         {
-            var plugin = PromeRotation.Plugin.Instance;
-            var setting = plugin.SafeZoneRebornSetting;
-            var status = plugin.SafeZoneRebornMovementStatus;
-            var snapshot = plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow);
+            var setting = MasterPlayerPlugin.Instance!.SafeZone.Setting;
+            var status = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
+            var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow);
 
             var enableSolve = setting.EnableSafeZone;
-            if (ImGui.Checkbox("启用 Reborn 解算", ref enableSolve))
+            if (ImGui.Checkbox("启用插件解算", ref enableSolve))
                 setting.EnableSafeZone = enableSolve;
             var enableMovement = setting.EnableAutoMovement;
-            if (ImGui.Checkbox("启用 Reborn 自动移动", ref enableMovement))
+            if (ImGui.Checkbox("启用插件自动移动", ref enableMovement))
                 setting.EnableAutoMovement = enableMovement;
             ImGui.Text($"移动控制权：{(status.HasControl ? "持有" : "无")}    阶段：{status.PhaseText}");
             ImGui.Text($"最新解算方案：{(status.LatestSolution != null ? "有" : "无")}");

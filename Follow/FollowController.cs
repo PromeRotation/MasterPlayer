@@ -4,8 +4,9 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
+using MasterPlayer.Spatial;
 using PromeRotation.GreenMoveSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Follow;
 
@@ -62,7 +63,7 @@ public sealed class FollowController : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var player = Svc.Objects.LocalPlayer;
 
-        if (!settings.EnableFollow || player == null || player.IsDead)
+        if (!settings.EnableFollow || player == null || player.IsDead || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
         {
             ReleaseControl();
             _hasLastMasterPos = false;
@@ -110,8 +111,8 @@ public sealed class FollowController : IDisposable
         ClearFollowGoal();
 
         // Direct following is retained when auto-dodge is explicitly disabled.
-        if (PromeRotation.Plugin.Instance.SafeZoneMovementStatus.HasControl ||
-            PromeRotation.Plugin.Instance.SafeZoneRebornMovementStatus.HasControl)
+        if (HostMovement.HasControl ||
+            MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.HasControl)
         {
             _hasControl = false;
             return;
@@ -146,13 +147,12 @@ public sealed class FollowController : IDisposable
 
     private void UpdatePlannedFollow(uint targetId, Vector3 targetPosition, float distance, IBattleChara player)
     {
-        var plugin = PromeRotation.Plugin.Instance;
-        if (!plugin.SafeZoneRebornSetting.EnableSafeZone || !plugin.SafeZoneRebornSetting.EnableAutoMovement)
+        if (!MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableSafeZone || !MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement)
         {
             ClearFollowGoal();
             return;
         }
-        var manager = plugin.SafeZoneRebornManager;
+        var manager = MasterPlayerPlugin.Instance!.SafeZone.Manager;
         if (_goalManager != null && !ReferenceEquals(_goalManager, manager)) ClearFollowGoal();
         _goalManager = manager;
         var now = _utcNow();
@@ -172,7 +172,7 @@ public sealed class FollowController : IDisposable
         if (_followGoal.IsValid && manager.ContainsArea(_followGoal) && _goalTarget == targetId && _goalDistance == distance)
         {
             // Like FollowEntityPosition, changing resolved geometry must not cancel every in-flight solve.
-            // An empty shape still attracts the host's goal heuristic: deactivate its window as well.
+            // An empty shape still attracts the goal heuristic: deactivate its window as well.
             manager.UpdateArea(_followGoal, template: template, goalWindows: windows, incrementVersion: active != _followGoalActive);
             _followGoalActive = active;
             return;
@@ -242,8 +242,7 @@ public sealed class FollowController : IDisposable
 
         try
         {
-            var plugin = PromeRotation.Plugin.Instance;
-            if (!plugin.SafeZoneMovementStatus.HasControl && !plugin.SafeZoneRebornMovementStatus.HasControl)
+            if (!HostMovement.HasControl && !MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.HasControl)
                 _greenMove.Stop();
         }
         catch (Exception ex)

@@ -26,7 +26,7 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 
 | BMR | MasterPlayer 脚本 |
 |---|---|
-| `BossModule` 场地中心/边界 | handler 的 `LockedArena`/`ArenaCenter` + `SafeZoneRebornRegistry.SetArenaBoundary` |
+| `BossModule` 场地中心/边界 | handler 的 `LockedArena`/`ArenaCenter` + `MasterPlayerPlugin.Instance.SafeZone.Registry.SetArenaBoundary` |
 | States `ActivateOnEnter` | handler 注册进 `_handlers`，按 NameID 扫描激活 |
 | 组件事件回调 | handler 的 `OnCastStart/OnEffect/OnTether/...` 覆写 |
 | 组件 `Update()` | handler 的 `Update(deltaTime)`（脚本 `OnUpdate` 每帧驱动） |
@@ -42,7 +42,7 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 - `activation = Module.CastFinishAt(spell)` = 读条剩余 + **0.3s NPC 完成补正**（`ActorCastInfo.NPCFinishDelay`）。
 - `origin = config.LocationTargeted ? spell.LocXZ : caster.Position`；`rotation = spell.Rotation`（来自 FFCS `Character.CastRotation`，**不是**实体朝向）。全部为**读包时刻的静态快照**，不跟随实体。
 - 同 (action, caster) ±0.75s 内重复读条只刷新；命中事件按 activation+0.5s 窗口结算；`OnCastFinished` 剩余 >0.5s 且事件未发生 = 打断撤销；actor 死亡/销毁移除其全部 pending。
-- `Risky` 分级（只禁第一波/只画前两段等）是**显示与 AI 紧迫度**取舍——**不迁移**：SafeZone 全部注册，PR Reborn 解算器的安全时间区间搜索天然支持错峰判定转场。
+- `Risky` 分级应结合机制时序转换；通用错峰判定由插件内 Reborn 安全时间区间搜索处理，钢铁接月环等紧凑连续机制仍使用已验证的分阶段导航，后续波可以仅预览。不要把互斥阶段无条件同时作为步行危险。
 
 ---
 
@@ -106,7 +106,7 @@ BMR 的 `AddAIHints` 是导航约束语言，本插件用 SafeZone 目标区/危
 | 击退落点校验（`DestinationUnsafe`/落点禁区） | 降级：提示 + 画源点 + 可选场心安全区引导 | B22 暴风 25y、B26 五连斩 20y、B28 击退 17y |
 | 击杀优先级（`hints.SetPriority`/`FindEnemy`） | 降级：节流文字提示 | B22 羽毛优先击杀、B29 小怪提示 |
 | Sprint 推送（`hints.ActionsToExecute`） | 不移植 | — |
-| 错峰判定（先站后判定区、再进已判定区） | **不需要脚本处理**：PR Reborn 解算器的安全时间区间搜索原生支持；脚本只须把每段的准确时间窗注册全 | 龙卷五连、五连锥 |
+| 错峰判定（先站后判定区、再进已判定区） | 插件 Reborn 安全时间区间搜索支持；注册准确时间窗，紧凑连续机制还须验证下发/起步延迟，必要时分阶段导航 | 龙卷五连、五连锥 |
 
 **安全区形状必须贴合机制几何语义**：引导区覆盖的区域若任何角度都被危险覆盖（如锥心、全场正中），用环带/偏心点把它排除，否则雷达上的绿圈会把玩家引向必死点。
 

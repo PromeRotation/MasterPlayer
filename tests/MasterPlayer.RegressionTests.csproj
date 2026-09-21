@@ -5,12 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**</DefaultItemExcludes>
     <PromeRotationRoot Condition="'$(PromeRotationRoot)' == ''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
-    <Compile Remove="ScriptCompilation\**\*.cs" />
     <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
     <Compile Include="..\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />

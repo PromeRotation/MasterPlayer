@@ -1,8 +1,9 @@
 using System.Numerics;
+using System.Reflection;
 using MasterPlayer.Mechanics.Crucible;
 using MasterPlayer.Scripting;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class CrucibleTimingRegression
 {
@@ -75,7 +76,7 @@ internal static class CrucibleTimingRegression
             solution = f.Solve();
             Check(solution.IsSuccess && solution.TargetPosition != null, $"steel staging has no safe approach: {solution.Status}");
             var stage = WPos.FromVec3(solution.TargetPosition!.Value);
-            Check(!stage.InCircle(f.Center, 13.5f) && stage.InCircle(f.Center, 14.5f), "staging point is inside steel or too far to return");
+            Check(!stage.InCircle(f.Center, 13.25f) && stage.InCircle(f.Center, 13.75f), "staging point is inside steel or too far to return");
             var steel = f.Engine.Module!.FindComponent<CrucibleGargoyleInOut>()!.ActiveAOEs(0, f.Player)[0];
             var impact = steel.Activation;
             f.World.CurrentTime = impact.AddSeconds(-0.05);
@@ -120,6 +121,17 @@ internal static class CrucibleTimingRegression
             f.Render();
             Check(f.Snapshot.GoalAreas.Count == 0, "interrupted steel/ring retained staging goal");
         });
+        foreach (var delay in new[] { 0.08, 0.3 })
+        foreach (var effectReceived in new[] { true, false })
+        foreach (var angle in new[] { 0f, 45f })
+        foreach (var phase in new[] { 0, 2 })
+        run($"high-one Gargoyle continuous movement, worker={delay:F2}s, effect={effectReceived}, angle={angle}, tick={phase}", () =>
+            GargoyleMovement(delay, effectReceived, angle, phase));
+        run("high-one Gargoyle immediate worker does not reenter a slightly late steel hit", () =>
+            GargoyleMovement(0, false, 45, 0, startup: 0, steelDelayTicks: 2));
+        foreach (var effectReceived in new[] { true, false })
+        run($"high-one Gargoyle continuous mine avoidance, effect={effectReceived}", () =>
+            GargoyleMovement(0.3, effectReceived, 0, 2, mine: true));
         run("high-one Morbol breath predicts five windows and consumes only real damage effects", () =>
         {
             using var f = new Fight(14599, new(520,-420));
@@ -295,10 +307,97 @@ internal static class CrucibleTimingRegression
         });
     }
 
+    private static void GargoyleMovement(double delay, bool effectReceived, float angle, int phase, double startup = 0.08, int steelDelayTicks = 0, bool mine = false)
+    {
+        using var f = new Fight(14608, new(120, 0), 0.5f);
+        f.Boss.OID = 19650;
+        f.Player.Position = f.Center + 8 * angle.Degrees().ToDirection();
+        var epoch = f.World.CurrentTime;
+        var steelHelper = f.Spawn(9020, f.Center, ActorType.Enemy);
+        var ringHelper = f.Spawn(9020, f.Center, ActorType.Enemy);
+        Actor? armedMine = null;
+        if (mine)
+        {
+            armedMine = f.Spawn(19651, f.Center + new WDir(0, 10.5f), ActorType.Enemy);
+            f.Engine.Dispatch(c => c.OnTethered(armedMine, new(426, f.Boss.InstanceID)));
+        }
+        f.Engine.Cast(f.Boss, new() { Action = new(48719), FinishAt = epoch.AddSeconds(4.5), LocXZ = f.Center });
+        const BindingFlags binding = BindingFlags.Instance | BindingFlags.NonPublic;
+        var (movement, move) = ((object, PromeRotation.GreenMoveSystem.IGreenMoveSystem))typeof(LateDodgeRegression)
+            .GetMethod("CreateMovement", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!;
+        var type = movement.GetType();
+        type.GetField("_manager", binding)!.SetValue(movement, f.SafeZone.Manager);
+        type.GetField("_setting", binding)!.SetValue(movement, new SafeZoneSetting
+        {
+            EnableSafeZone = true, EnableAutoMovement = true, AttackUptimeExpiresAt = epoch.AddMinutes(1)
+        });
+        var latest = type.GetField("_latestSolution", binding)!;
+        var dispatch = type.GetMethod("Dispatch", binding)!;
+        var valid = type.GetMethod("IsSolutionValid", binding)!;
+        var advance = move.GetType().GetMethod("Advance")!;
+        SafeZoneSolution? pending = null;
+        var position = f.Player.Position.ToVec3();
+        double ready = 0, nextSolve = 0, movementReady = 0;
+        var wasMoving = false;
+        for (var tick = 0; tick <= 360; ++tick)
+        {
+            var t = tick * 0.02;
+            var now = epoch.AddSeconds(t);
+            f.World.CurrentTime = now;
+            f.Player.Position = WPos.FromVec3(position);
+            foreach (var actor in f.World.Actors)
+                if (actor.CastInfo is { } cast)
+                {
+                    cast.NPCRemainingTime = (float)(cast.FinishAt - now).TotalSeconds;
+                    cast.RemainingTime = cast.NPCRemainingTime - ActorCastInfo.NPCFinishDelay;
+                }
+            if (tick == 220)
+                f.Engine.Cast(steelHelper, new() { Action = new(48720), FinishAt = epoch.AddSeconds(5.1), LocXZ = f.Center });
+            if (tick == 225) f.Engine.FinishCast(f.Boss, 48719);
+            if (tick == 255 + steelDelayTicks)
+            {
+                Check(!f.Player.Position.InCircle(f.Center, 13.1f), $"steel hit or insufficient clearance at {position}");
+                if (effectReceived) f.Engine.Effect(steelHelper, new() { Action = new(48720), GlobalSequence = 1 });
+                f.Engine.FinishCast(steelHelper, 48720);
+            }
+            if (tick == 320)
+                f.Engine.Cast(ringHelper, new() { Action = new(48721), FinishAt = epoch.AddSeconds(7.1), LocXZ = f.Center });
+            if (tick == 355)
+            {
+                Check(f.Player.Position.InCircle(f.Center, 5.75f), $"ring hit or insufficient clearance at {position}; latest={((SafeZoneSolution?)latest.GetValue(movement))?.Status}");
+                f.Engine.Effect(ringHelper, new() { Action = new(48721), GlobalSequence = 2 });
+                f.Engine.FinishCast(ringHelper, 48721);
+            }
+            Check(armedMine == null || !f.Player.Position.InCircle(armedMine.Position, CrucibleMiasma.ContactRadius), "steel/ring route crossed an armed mine");
+            Check(f.Engine.Module!.Arena.InBounds(f.Player.Position), "steel/ring route left the arena");
+            if (tick == 0 || tick % 5 == phase) f.Render();
+            var snapshot = f.Snapshot;
+            var player = new PlayerState(position, 0, 6, false, false, 0, true, snapshot.Version);
+            if (pending != null && t >= ready) { latest.SetValue(movement, pending); pending = null; }
+            var accepted = (SafeZoneSolution?)latest.GetValue(movement);
+            if (pending == null && t >= nextSolve && !(bool)valid.Invoke(movement, [accepted, snapshot, player, now])!)
+            {
+                pending = new SafeZoneSolver().Solve(snapshot, player, new(6, 6, 0, false, 6, 6), new(), now, accepted);
+                ready = t + delay;
+                nextSolve = t + 0.1;
+                if (delay == 0)
+                {
+                    latest.SetValue(movement, accepted = pending);
+                    pending = null;
+                }
+            }
+            dispatch.Invoke(movement, [accepted, player, snapshot, now]);
+            if (move.IsRunning && !wasMoving) movementReady = t + startup;
+            if (t >= movementReady) position = (Vector3)advance.Invoke(move, [position, 0.02f])!;
+            wasMoving = move.IsRunning;
+        }
+        Check(f.Snapshot.GoalAreas.Count == 0, "ring resolution retained its movement goal");
+    }
+
     private static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
     private sealed class Fight : IDisposable
     {
-        public readonly WorldState World = new() { CurrentTime = DateTime.UtcNow };
+        public readonly WorldState World = new() { CurrentTime = new(2026, 9, 21, 0, 0, 0, DateTimeKind.Utc) };
         public readonly ScriptSafeZoneApi SafeZone = new();
         public readonly CrucibleEngine Engine;
         public readonly CrucibleOutput Output;
@@ -325,7 +424,12 @@ internal static class CrucibleTimingRegression
             frame.Hints.PathfindMapBounds = Engine.Module!.Arena.Bounds;
             return frame;
         }
-        public void Apply(CrucibleFrame frame) => Output.Apply(Engine, frame, 0, true, true, true);
+        public void Apply(CrucibleFrame frame)
+        {
+            // Goals and damage must share the simulated clock even when solving is slower than real time.
+            SafeZone.UtcNowForTest = World.CurrentTime;
+            Output.Apply(Engine, frame, 0, true, true, true);
+        }
         public void Render() { Engine.Update(); Apply(Engine.Frame()); }
         public SafeZoneSnapshot Snapshot => SafeZone.Manager.BuildSnapshot(World.CurrentTime);
         public SafeZoneSolution Solve()

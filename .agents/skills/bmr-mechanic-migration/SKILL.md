@@ -36,7 +36,7 @@ metadata:
 - `LocationTargeted = true` → 静态 `At(e.EffectPosition, rotation)`；朝向锁定用 `CastRotation.TryGet`（失败记日志跳过，不回退 `SourceRotation`）。BMR 从不跟随实体，落点型机制禁止 Follow 绑定。
 - `OnEventCast` → `OnActionEffect`：PR 按目标展开同一动作，必须 `GlobalSequence` 去重。
 - BMR AI hints：GoalZone → `AddTimedSafeArea`（精确踩点用 R0.2 + `PositionPreference.Center`）；InvertedCircle → 环带安全区（排除被全向覆盖的中心点）；non-risky 预览 → `Draw.AddAoe` + 门控注册；击退落点校验/仇恨优先级 → 降级为提示。
-- 错峰判定不迁移 BMR 的 Risky 分级——每段按准确时间窗全量注册，PR Reborn 解算器原生处理。
+- 错峰判定由插件内 Reborn 处理准确时间窗；紧凑连续机制须验证后台与起步延迟，按需要分阶段导航，后续波保留预览。不得将互斥阶段无条件同时注册成步行危险。
 
 ## 红线（违反即 bug）
 

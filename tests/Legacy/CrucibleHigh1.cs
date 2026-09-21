@@ -11,8 +11,8 @@ using ECommons.DalamudServices;
 using MasterPlayer.Scripting;
 using PromeRotation.LogSystem;
 using PromeRotation.Spatial.Drawing;
-using PromeRotation.Spatial.Geometry;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
 using FfxivGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace MasterPlayer.Scripts;
@@ -360,7 +360,7 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         try { _tracker.Clear(); }
         catch (Exception ex) { LogError($"【斗兽棋高一】读条追踪清理失败：{ex.Message}"); }
         // SetArenaBoundary 是手工直调本体 API（门面不含），必须自行清理
-        try { PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.ClearArenaBoundary(); }
+        try { MasterPlayerPlugin.Instance!.SafeZone.Registry.ClearArenaBoundary(); }
         catch (Exception ex) { LogError($"【斗兽棋高一】场地边界清理失败：{ex.Message}"); }
         _activeGroups.Clear();
         _boundaryOwner = BattleGroup.None;
@@ -504,9 +504,9 @@ public sealed class CrucibleHigh1Script : MasterPlayerScript
         try
         {
             if (shape is null)
-                PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.ClearArenaBoundary();
+                MasterPlayerPlugin.Instance!.SafeZone.Registry.ClearArenaBoundary();
             else
-                PromeRotation.Plugin.Instance.SafeZoneRebornRegistry.SetArenaBoundary(shape);
+                MasterPlayerPlugin.Instance!.SafeZone.Registry.SetArenaBoundary(shape);
         }
         catch (Exception ex)
         {

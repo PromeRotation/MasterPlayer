@@ -10,7 +10,7 @@ using MasterPlayer.Scripting;
 using MasterPlayer.Scripting.Visual;
 using PromeRotation.Helpers;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 internal static class VisualScriptRegression
 {

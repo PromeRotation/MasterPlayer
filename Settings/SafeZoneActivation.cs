@@ -1,4 +1,4 @@
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Settings;
 
@@ -16,7 +16,7 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>
         if (_disposed)
             return;
 
-        // 本体开关被外部关闭后放弃归属，避免之后撤销用户手动重新开启的状态。
+        // 本地开关被手动关闭后放弃归属，避免之后撤销用户手动重新开启的状态。
         _ownsSafeZone &= setting.EnableSafeZone;
         _ownsAutoMovement &= setting.EnableAutoMovement;
 

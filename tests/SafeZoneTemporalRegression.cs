@@ -3,15 +3,17 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
+using MasterPlayer;
 using MasterPlayer.Scripting;
 using MasterPlayer.Scripts;
 using MasterPlayer.Settings;
 using PromeRotation.GreenMoveSystem;
 using PromeRotation.Service;
-using PromeRotation.Spatial.SafeZone;
-using PromeRotation.Spatial.SafeZoneReborn;
-using PromeRotation.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 using LegacySolver = PromeRotation.Spatial.SafeZone.Solver;
+using HostZone = PromeRotation.Spatial.SafeZone;
 
 internal static class SafeZoneTemporalRegression
 {
@@ -262,7 +264,17 @@ internal static class SafeZoneTemporalRegression
         run("Reborn temporal planning leaves the legacy solver behavior unchanged", () =>
         {
             var position = new Vector3(8f, 0f, 0f);
-            var legacy = new LegacySolver.SafeZoneSolver().Solve(Staggered(),
+            var hostSnapshot = new HostZone.SafeZoneSnapshot(1, Epoch,
+                new HostZone.RectangleTemplate(24f, 10f).Resolve(Vector3.Zero, 0f, null), [],
+                [
+                    new HostZone.DangerAreaSnapshot(default,
+                        new HostZone.RectangleTemplate(13f, 12f).Resolve(new(-6f, 0f, 0f), 0f, null),
+                        [new HostZone.DangerWindow(Epoch.AddSeconds(2), Epoch.AddSeconds(2.6), Epoch)]),
+                    new HostZone.DangerAreaSnapshot(default,
+                        new HostZone.RectangleTemplate(13f, 12f).Resolve(new(6f, 0f, 0f), 0f, null),
+                        [new HostZone.DangerWindow(Epoch.AddSeconds(4), Epoch.AddSeconds(4.6), Epoch)])
+                ], []);
+            var legacy = new LegacySolver.SafeZoneSolver().Solve(hostSnapshot,
                 new LegacySolver.PlayerState(position, 0f, 6f, false, false, 0f, true, 1),
                 new LegacySolver.MovementCapability(6f, 6f, 0f, false, 6f, 6f),
                 new LegacySolver.SolveOptions(), Epoch);
@@ -271,47 +283,39 @@ internal static class SafeZoneTemporalRegression
                 "The same snapshot must activate temporal staging only in Reborn.");
         });
 
-        run("host Reborn settings, areas and boundaries are independent of legacy", () =>
+        run("plugin settings, areas and boundaries are independent of the host", () =>
         {
-            var plugin = (PromeRotation.Plugin)RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
-            var legacySetting = new SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true };
-            var rebornSetting = new SafeZoneSetting();
-            using var legacyManager = new SafeZoneManager(legacySetting);
-            using var rebornManager = new SafeZoneManager(rebornSetting);
-            SetField(plugin, "_safeZoneSetting", legacySetting);
-            SetField(plugin, "_safeZoneManager", legacyManager);
-            SetField(plugin, "_safeZoneRegistry", new SafeZoneRegistry(legacyManager));
-            SetField(plugin, "_safeZoneRebornSetting", rebornSetting);
-            SetField(plugin, "_safeZoneRebornManager", rebornManager);
-            SetField(plugin, "_safeZoneRebornRegistry", new SafeZoneRegistry(rebornManager));
-            Check(!ReferenceEquals(plugin.SafeZoneSetting, plugin.SafeZoneRebornSetting) &&
-                !ReferenceEquals(plugin.SafeZoneManager, plugin.SafeZoneRebornManager) &&
-                !ReferenceEquals(plugin.SafeZoneRegistry, plugin.SafeZoneRebornRegistry),
-                "Host entrypoints must publish separate state instances.");
-
-            var legacyBoundary = new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null);
-            plugin.SafeZoneRegistry.SetArenaBoundary(legacyBoundary);
-            var legacyArea = plugin.SafeZoneRegistry.AddPersistentDanger(new CircleTemplate(2f), new StaticTransform(Vector3.Zero, 0f));
+            var legacySetting = new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true };
+            using var legacyManager = new HostZone.SafeZoneManager(legacySetting);
+            var hostRegistry = new HostZone.SafeZoneRegistry(legacyManager);
+            using var plugin = new MasterPlayerPlugin();
+            var rebornSetting = plugin.SafeZone.Setting;
+            Check(typeof(SafeZoneSolver).Assembly != typeof(PromeRotation.Plugin).Assembly &&
+                typeof(SafeZoneManager).Assembly != typeof(HostZone.SafeZoneManager).Assembly,
+                "The plugin must own both its solver and its registry data types.");
+            var legacyBoundary = new HostZone.CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null);
+            hostRegistry.SetArenaBoundary(legacyBoundary);
+            var legacyArea = hostRegistry.AddPersistentDanger(new HostZone.CircleTemplate(2f), new HostZone.StaticTransform(Vector3.Zero, 0f));
             var legacyVersion = legacyManager.Version;
-            using (var activation = new SafeZoneActivation(plugin.SafeZoneRebornSetting))
+            using (var activation = new SafeZoneActivation(MasterPlayerPlugin.Instance!.SafeZone.Setting))
             {
                 activation.Update(true, true, true);
                 Check(rebornSetting.EnableSafeZone && rebornSetting.EnableAutoMovement, "Activation must enable Reborn.");
-                plugin.SafeZoneRebornRegistry.SetArenaBoundary(new CircleTemplate(5f).Resolve(Vector3.Zero, 0f, null));
-                var rebornArea = plugin.SafeZoneRebornRegistry.AddPersistentDanger(new CircleTemplate(4f), new StaticTransform(Vector3.UnitX * 8f, 0f));
-                Check(plugin.SafeZoneRebornManager.BuildSnapshot(DateTime.UtcNow).DangerAreas.Count == 1,
+                MasterPlayerPlugin.Instance!.SafeZone.Registry.SetArenaBoundary(new CircleTemplate(5f).Resolve(Vector3.Zero, 0f, null));
+                var rebornArea = MasterPlayerPlugin.Instance!.SafeZone.Registry.AddPersistentDanger(new CircleTemplate(4f), new StaticTransform(Vector3.UnitX * 8f, 0f));
+                Check(MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow).DangerAreas.Count == 1,
                     "Reborn must contain only its own area, excluding legacy registrations.");
-                plugin.SafeZoneRebornRegistry.Remove(rebornArea);
-                plugin.SafeZoneRebornRegistry.ClearAll();
-                Check(plugin.SafeZoneManager.ContainsArea(legacyArea) && plugin.SafeZoneManager.Version == legacyVersion,
+                MasterPlayerPlugin.Instance!.SafeZone.Registry.Remove(rebornArea);
+                MasterPlayerPlugin.Instance!.SafeZone.Registry.ClearAll();
+                Check(legacyManager.ContainsArea(legacyArea) && legacyManager.Version == legacyVersion,
                     "Reborn removal and clearing must not mutate legacy areas or their version.");
-                Check(ReferenceEquals(plugin.SafeZoneManager.BuildSnapshot(DateTime.UtcNow).ArenaBoundary, legacyBoundary),
+                Check(ReferenceEquals(legacyManager.BuildSnapshot(DateTime.UtcNow).ArenaBoundary, legacyBoundary),
                     "Reborn boundary changes must not replace or clear the legacy boundary.");
             }
             Check(!rebornSetting.EnableSafeZone && !rebornSetting.EnableAutoMovement &&
                 legacySetting.EnableSafeZone && legacySetting.EnableAutoMovement,
                 "Releasing MasterPlayer activation must leave legacy switches unchanged.");
-            rebornManager.Dispose();
+            plugin.SafeZone.Dispose();
             Check(legacyManager.ContainsArea(legacyArea), "Disposing Reborn must not remove legacy areas.");
         });
 
@@ -325,7 +329,7 @@ internal static class SafeZoneTemporalRegression
             var movement = CreateMovement(move, legacySetting);
             Dispatch(movement, solution, position, snapshot, Epoch);
             var status = (ISafeZoneRebornMovementStatus)movement;
-            Check(!status.HasControl && !move.IsRunning && move.StopCount == 0 && status.PhaseText == "让位旧版安全区",
+            Check(!status.HasControl && !move.IsRunning && move.StopCount == 0 && status.PhaseText == "让位宿主自动移动",
                 "Reborn must neither issue nor stop movement when legacy automation is enabled.");
             legacySetting.EnableAutoMovement = false;
             Dispatch(movement, solution, position, snapshot, Epoch);
@@ -338,22 +342,18 @@ internal static class SafeZoneTemporalRegression
 
         run("Crucible boundary registration and stopping use only Reborn", () =>
         {
-            var instance = typeof(PromeRotation.Plugin).GetProperty(nameof(PromeRotation.Plugin.Instance))!;
-            var previous = instance.GetValue(null);
-            var plugin = (PromeRotation.Plugin)RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
-            using var legacy = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
-            using var reborn = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
-            SetField(plugin, "_safeZoneRegistry", new SafeZoneRegistry(legacy));
-            SetField(plugin, "_safeZoneRebornRegistry", new SafeZoneRegistry(reborn));
-            var legacyBoundary = new CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null);
-            plugin.SafeZoneRegistry.SetArenaBoundary(legacyBoundary);
+            using var plugin = new MasterPlayerPlugin();
+            using var legacy = new HostZone.SafeZoneManager(new HostZone.SafeZoneSetting { EnableSafeZone = true });
+            var reborn = plugin.SafeZone.Manager;
+            plugin.SafeZone.Setting.EnableSafeZone = true;
+            var legacyBoundary = new HostZone.CircleTemplate(20f).Resolve(Vector3.Zero, 0f, null);
+            new HostZone.SafeZoneRegistry(legacy).SetArenaBoundary(legacyBoundary);
             var version = legacy.Version;
             var script = new CrucibleHigh1Script();
             var trackerType = typeof(CrucibleHigh1Script).GetNestedType("CastAoeTracker", BindingFlags.NonPublic)!;
             SetField(script, "_tracker", Activator.CreateInstance(trackerType, script)!);
             try
             {
-                instance.SetValue(null, plugin);
                 var boundary = new CircleTemplate(5f).Resolve(Vector3.Zero, 0f, null);
                 var setBoundary = typeof(CrucibleHigh1Script).GetMethod("SetBoundaryShape", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 setBoundary.Invoke(script, [boundary]);
@@ -370,12 +370,11 @@ internal static class SafeZoneTemporalRegression
             }
             finally
             {
-                instance.SetValue(null, previous);
                 script.SafeZone.Dispose();
             }
         });
 
-        foreach (var owner in new[] { "none", "legacy", "Reborn" })
+        foreach (var owner in new[] { "none", "legacy", "Reborn", "plugin", "replay" })
         {
             run($"script route cleanup respects actual safe-zone ownership: {owner}", () => CheckScriptCleanup(owner));
         }
@@ -598,12 +597,12 @@ internal static class SafeZoneTemporalRegression
 
     private static object CreateMovement(FakeMove move, SafeZoneSetting? legacySetting = null, LegacyStatus? legacyStatus = null)
     {
-        var type = typeof(SafeZoneSolver).Assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
+        var type = typeof(SafeZoneSolver).Assembly.GetType("MasterPlayer.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
         var movement = RuntimeHelpers.GetUninitializedObject(type);
         SetField(movement, "_options", Options);
         SetField(movement, "_greenMove", move);
-        SetField(movement, "_legacySetting", legacySetting ?? new SafeZoneSetting());
-        SetField(movement, "_legacyMovementStatus", legacyStatus ?? new LegacyStatus());
+        SetField(movement, "_externalMovementEnabled", (Func<bool>)(() => legacySetting is { EnableSafeZone: true, EnableAutoMovement: true }));
+        SetField(movement, "_externalHasControl", (Func<bool>)(() => legacyStatus?.HasControl == true));
         return movement;
     }
 
@@ -619,13 +618,15 @@ internal static class SafeZoneTemporalRegression
         var assembly = typeof(PromeRotation.Plugin).Assembly;
         var plugin = (PromeRotation.Plugin)RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
         var legacy = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZone.SafeZoneMovementSystem")!);
-        var reborn = CreateMovement(new FakeMove());
+        var reborn = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!);
+        using var localPlugin = new MasterPlayerPlugin(new FakeMove());
+        SetField(localPlugin.SafeZone.MovementStatus, "_hasControl", owner == "plugin");
         SetField(legacy, "_hasControl", owner == "legacy");
         SetField(reborn, "_hasControl", owner == "Reborn");
         SetField(plugin, "_safeZoneMovementSystem", legacy);
         SetField(plugin, "_safeZoneRebornMovementSystem", reborn);
-        SetField(plugin, "_safeZoneSetting", new SafeZoneSetting { EnableAutoMovement = true });
-        SetField(plugin, "_safeZoneRebornSetting", new SafeZoneSetting { EnableAutoMovement = true });
+        SetField(plugin, "_safeZoneSetting", new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true });
+        SetField(plugin, "_safeZoneRebornSetting", new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true });
 
         // Seed an accepted route without installing game hooks or executing game input.
         var movement = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.GreenMoveSystem.GreenMoveManager")!);
@@ -638,6 +639,21 @@ internal static class SafeZoneTemporalRegression
             instance.SetValue(null, plugin);
             objects.SetValue(null, ScriptServiceProxy.Create<IObjectTable>((_, _) => null));
             var route = new List<GreenMovePoint> { new(Vector3.UnitX), new(Vector3.UnitX * 2), new(Vector3.UnitX * 3) };
+            if (owner == "replay")
+            {
+                plugin.SafeZoneSetting.EnableAutoMovement = plugin.SafeZoneRebornSetting.EnableAutoMovement = false;
+                localPlugin.Scripts.ReplayModeActive = true;
+                SetField(movement, "route", route.ToList());
+                SetField(movement, "currentIndex", 0);
+                SetField(movement, "isRunning", true);
+                var api = new ScriptMoveApi();
+                api.MoveTo(new GreenMovePoint(-Vector3.UnitX));
+                api.Append(new GreenMovePoint(-Vector3.UnitX));
+                api.CatmullRomMoveTo(new GreenMovePoint(-Vector3.UnitX));
+                Check(plugin.GreenMoveSystem.GetStatus().FinalPoint == route[^1] && plugin.GreenMoveSystem.GetStatus().TotalCount == route.Count,
+                    "Replay must block script movement even when all automatic movement is disabled.");
+                return;
+            }
             foreach (var operation in new[] { "Stop", "Cleanup", "ClearQueue", "SkipCurrent", "MoveTo" })
             {
                 SetField(movement, "route", route.ToList());
@@ -675,18 +691,9 @@ internal static class SafeZoneTemporalRegression
         }
     }
 
-    private sealed class LegacyStatus : ISafeZoneMovementStatus
+    private sealed class LegacyStatus
     {
-        public LegacySolver.SafeZoneSolution? LatestSolution => null;
         public bool HasControl { get; set; }
-        public string PhaseText => "legacy";
-        public int DispatchCount => 0;
-        public DateTime LastDispatchUtc => default;
-        public bool IsAsyncSolveRunning => false;
-        public int AsyncSolveStartedCount => 0;
-        public int AsyncSolveAcceptedCount => 0;
-        public int AsyncSolveCancelledCount => 0;
-        public int AsyncSolveDiscardedCount => 0;
     }
 
     private static void Dispatch(object movement, SafeZoneSolution solution, Vector3 position, SafeZoneSnapshot snapshot, DateTime now)

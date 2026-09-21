@@ -6,18 +6,18 @@ MasterPlayer 是 FFXIV 插件 **PromeRotation（PR）** 的卫星插件（PR 子
 
 聊天输入 `/prmp` 或在 PR 插件管理器中点「打开 MasterPlayer 设置面板」即可开关设置面板。
 - **真实世界绘制**：AOE 预告 / 安全点等游戏内 3D 世界范围提示（DrawManager）
-- **智能躲避**：经本体日志系统事件（PromeEventBus 主线程派发）监听读条并注册危险区（带可调安全余量外扩），由 PR 安全区 Reborn + GreenMove 自动走位躲避；支持按不同 AOE 的判定时间暂避、等待并转入已结束判定的区域
+- **智能躲避**：经本体日志系统事件（PromeEventBus 主线程派发）监听读条并注册危险区（带可调安全余量外扩），由插件内置 SafeZoneReborn 解算、PR GreenMove 执行走位；支持按不同 AOE 的判定时间暂避、等待并转入已结束判定的区域
 - **战斗中跟随**：跟随小队成员或当前选中的玩家、怪物；超出设置距离时自动靠近，路线停止后可恢复，躲避接管时自动让位。怪物距离按双方目标圈边缘计算，玩家按中心计算。在「自动化」页启用跟随、将槽位设为 0 并勾选「无有效槽位时跟随当前目标」与「战斗中生效」，即可在战斗中跟随当前目标。
 - **智能机制处理**：监听战斗事件（读条、连线、点名图标等），按机制分发处理器
 - **机制脚本框架**：Roslyn 热编译的单文件机制脚本（`.cs`），按副本区域自动启停
 
-开启雷达悬浮窗、真实世界绘制或智能躲避时，插件会启用 PR 安全区 Reborn（关闭时不会提供危险区快照）；开启智能躲避还会启用 Reborn 自动移动。只开启绘制不会启用自动移动。关闭对应功能或卸载插件时，只撤销本插件开启的 Reborn 开关；手动关闭后不会每帧强行打开，可在「诊断」页恢复。
+开启雷达悬浮窗、真实世界绘制或智能躲避时，插件会启用自己的安全区；开启智能躲避还会启用插件自动移动。只开启绘制不会启用自动移动。诊断页显示并控制插件自己的解算器，不会改动 PR 本体的安全区开关。
 
-Reborn 与旧版安全区的解算代码、配置实例、区域注册表和场地边界隔离，MasterPlayer 的脚本和绘制均使用 Reborn。两套共用 GreenMove，旧版自动移动开启时 Reborn 让位，面板显示原因；要使用本插件的智能躲避，请在 MasterPlayer「总览」页点击「关闭旧版自动移动」。
+插件的几何、配置、注册表、快照、解算器与调度器均位于 `MasterPlayer.Spatial`，与 PR 本体独立。最终移动共用 GreenMove；PR 旧版或 Reborn 自动移动开启或持有控制权时，插件让位。发生冲突时，可在「总览」页点击「关闭 PR 本体安全区自动移动」。
 
 绘制和躲避只针对已识别并注册的危险区；普通读条由 AOE 数据识别，复杂机制需要运行对应脚本。设置面板的「诊断」页可查看当前危险区数量与运行中脚本数量。
 
-定位类似 BossModReborn，但全部构建在 PromeRotation 本体 API 之上（SafeZoneRebornRegistry 安全区注册、GreenMove 移动、DrawManager 绘制、CombatEventManager / PromeEventBus 事件总线），不做独立的机制解算。
+安全区实现完整迁自 PromeRotation SafeZoneReborn，后续解算修复只需更新并重载 MasterPlayer。PR 继续提供 GreenMove 移动执行、DrawManager 世界绘制、事件总线与移速信息。迁移来源及接口边界见 [Spatial/README.md](Spatial/README.md)。
 
 ## AOE 显示设置
 
@@ -25,11 +25,11 @@ Reborn 与旧版安全区的解算代码、配置实例、区域注册表和场�
 
 下方列表为每个已识别技能或脚本 AOE 分组提供「真实世界」「雷达」两个独立开关。新 AOE 首次注册后加入列表，编辑后自动保存。斗兽棋脚本按读条技能、毒池、地雷、引导安全点等分别分组；旧脚本未指定分组时按整个脚本控制。隐藏绘制不会移除危险区，也不会关闭躲避。脚本的连线、路线标记等辅助提示仍由脚本自身控制。
 
-雷达直接用 PR `GeometryHelper.WorldToLocal` 投影 PR 提供的世界轮廓，固定朝向时北（−Z）向上、东（+X）向右；跟随摄像机时与 PR 的相机朝向约定一致。真实世界绘制将相同世界几何交给 PR `DrawManager`。直线读条使用从施法者向前延伸的 `RayRectangleTemplate`，中心矩形仍使用 `RectangleTemplate`。
+雷达用本地 `GeometryHelper.WorldToLocal` 投影本地世界轮廓，固定朝向时北（−Z）向上、东（+X）向右；跟随摄像机时与 PR 的相机朝向约定一致。真实世界绘制在接口边界转换几何后交给 PR `DrawManager`。直线读条使用从施法者向前延伸的 `RayRectangleTemplate`，中心矩形仍使用 `RectangleTemplate`。
 
 ## 构建前置
 
-- 已编译并加载支持 **SafeZone Reborn** 的 PromeRotation 本体（需要提供 `PromeRotation.dll` / `PromeRotation.Scripting.dll` / `ECommons.dll` 等运行时程序集）；首次升级必须重载本体，仅热重载 MasterPlayer 不足以加载新 API
+- 与实际运行版本一致的 PromeRotation 程序集（`PromeRotation.dll` / `PromeRotation.Scripting.dll` / `ECommons.dll` 等）；仍需公开 GreenMove、事件、绘制和安全区控制状态接口，但不依赖本体的解算修复
 - 本机 XIVLauncherCN 的 Dalamud 开发环境（`%AppData%\XIVLauncherCN\addon\Hooks\dev\`，提供 Dalamud / ImGui / FFXIVClientStructs / Lumina 等引用）
 - 所有引用均 `Private=false`（不随输出拷贝），运行时由 PR 本体与 Dalamud 提供
 - 若本体不在默认路径，可用命令行属性覆盖：
@@ -45,7 +45,7 @@ dotnet build
 
 （默认 Debug 配置；`-c Release` 亦可，输出路径相同。CI 环境下设 `CI=true` 时输出回退到本地 `bin\<Configuration>\`。）
 
-跟随目标筛选、距离边界、路线恢复、移动让位，以及新旧安全区隔离、错峰 AOE、开关联动、绘制与机制回归验证使用同一份 PR DLL，无需启动游戏：
+回归直接编译插件内的安全区源码，覆盖跟随、移动让位、插件与本体隔离、错峰 AOE、生命周期、绘制转换与机制处理，无需启动游戏：
 
 ```
 dotnet run --project tests/MasterPlayer.RegressionTests.csproj
@@ -74,3 +74,5 @@ dotnet run --project tests/MasterPlayer.RegressionTests.csproj
 配置目录中成功加载的脚本若与内置脚本**名称或 GUID 相同**（忽略大小写），优先使用配置目录版本，只保留一份；名称指 `[MechanicScript]` 的 `name`，不是文件名。即使外部版本停用，也不会启动内置版本。保留相同 GUID 可沿用设置；移除外部文件并点击「刷新脚本」后恢复内置版本。编译失败会显示错误，并保留可用的内置版本。
 
 外部脚本修改后需手动点击「刷新脚本」；内置脚本修改后需重新构建并重载插件。**不要**把外部脚本放进 `Plugins\MasterPlayer\` 插件程序集目录。开发细节见 [脚本开发指南](docs/脚本开发指南.md)。
+
+旧自定义脚本的 `PromeRotation.Spatial.SafeZone` / `.Geometry` 引用需改为 `MasterPlayer.Spatial.SafeZone` / `.Geometry`；直接使用注册表时改为 `MasterPlayerPlugin.Instance.SafeZone.Registry`。外部脚本 DLL 需要重新编译，PR 的绘制样式和移动点类型保持使用宿主 API。

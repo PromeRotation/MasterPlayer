@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reflection;
+using System.Numerics;
 using System.Runtime.Loader;
 using System.Text.Json;
 using Dalamud.Plugin;
@@ -7,6 +8,7 @@ using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
@@ -135,6 +137,7 @@ internal static class ScriptCatalogRegression
             Check(Scripts().Length == 5 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
+            CheckLocalSafeZone(assembly, (object)manager);
         }
         finally
         {
@@ -149,6 +152,53 @@ internal static class ScriptCatalogRegression
         [MechanicScript({{JsonSerializer.Serialize(name)}}, new uint[0], {{JsonSerializer.Serialize(id)}}, "1.0", "test")]
         public sealed class OverrideScript : MasterPlayerScript { }
         """;
+
+    private static void CheckLocalSafeZone(Assembly assembly, object manager)
+    {
+        var pluginType = assembly.GetType("MasterPlayer.MasterPlayerPlugin")!;
+        var instance = pluginType.GetProperty("Instance")!;
+        var previous = instance.GetValue(null);
+        var runtimeType = assembly.GetType("MasterPlayer.Spatial.SafeZoneRuntime")!;
+        var moveCalls = 0;
+        var movement = CatalogServiceProxy.Create<IGreenMoveSystem>((name, _) =>
+        {
+            moveCalls++;
+            throw new InvalidOperationException("Registration/preview must not call GreenMove: " + name);
+        });
+        dynamic runtime = Activator.CreateInstance(runtimeType, BindingFlags.NonPublic | BindingFlags.Instance,
+            null, [movement, (Func<bool>)(() => false), (Func<bool>)(() => false)], null)!;
+        using var lifetime = (IDisposable)runtime;
+        try
+        {
+            var plugin = Activator.CreateInstance(pluginType)!;
+            pluginType.GetField("_safeZone", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, (object)runtime);
+            pluginType.GetField("_scripts", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, manager);
+            instance.SetValue(null, plugin);
+            runtime.Setting.EnableSafeZone = true;
+            var apiType = assembly.GetType("MasterPlayer.Scripting.ScriptSafeZoneApi")!;
+            dynamic api = Activator.CreateInstance(apiType, BindingFlags.NonPublic | BindingFlags.Instance,
+                null, ["local-migration-test", "Local migration test"], null)!;
+            dynamic template = Activator.CreateInstance(assembly.GetType("MasterPlayer.Spatial.SafeZone.CircleTemplate")!, [3f])!;
+            dynamic binding = Activator.CreateInstance(assembly.GetType("MasterPlayer.Spatial.SafeZone.StaticTransform")!, [Vector3.Zero, 0f])!;
+            dynamic handle = api.AddPersistentDanger(template, binding);
+            Check(runtime.Manager.ContainsArea(handle), "The actual script facade must register in the plugin runtime.");
+            dynamic snapshot = runtime.Manager.BuildSnapshot(DateTime.UtcNow);
+            var dangers = ((IEnumerable)snapshot.DangerAreas).Cast<dynamic>().ToArray();
+            Check(dangers.Length == 1 && dangers[0].Geometry.GetType().Assembly == assembly,
+                "The production snapshot and geometry must belong to MasterPlayer.");
+            apiType.GetMethod("Cleanup", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke((object)api, null);
+            Check(!runtime.Manager.ContainsArea(handle), "The actual facade cleanup must remove its local handle.");
+            foreach (var method in new[] { "EnterReplayMode", "ExitReplayMode" })
+            {
+                handle = api.AddPersistentDanger(template, binding);
+                manager.GetType().GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(manager, null);
+                Check(!runtime.Manager.ContainsArea(handle), "Replay transitions must clear the previous session's areas.");
+            }
+            Check(moveCalls == 0, "Registration and replay preview must not invoke movement.");
+            Console.WriteLine("PASS production local runtime: script registration, cleanup and replay transitions");
+        }
+        finally { instance.SetValue(null, previous); }
+    }
 
     private static void SetService(string name, object? value)
         => typeof(Svc).GetProperty(name, BindingFlags.Public | BindingFlags.Static)!.SetValue(null, value);

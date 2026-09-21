@@ -1,4 +1,5 @@
 using ECommons.DalamudServices;
+using MasterPlayer.Spatial;
 using PromeRotation.GreenMoveSystem;
 
 namespace MasterPlayer.Scripting;
@@ -8,7 +9,7 @@ namespace MasterPlayer.Scripting;
 /// 内置移动纪律：
 /// - MoveTo / Append / CatmullRomMoveTo 视为本脚本接管移动（_hasControl = true）；
 /// - Stop 只在本脚本接管过时才真正下发，绝不停掉本体或其他插件发起的移动；
-/// - 旧版或 Reborn 安全区开启自动移动或持有控制权时让位，
+/// - 插件或宿主安全区开启自动移动或持有控制权时让位，
 ///   指令不下发，并以 5 秒节流写一条日志提示。
 /// </summary>
 public sealed class ScriptMoveApi
@@ -25,8 +26,8 @@ public sealed class ScriptMoveApi
     }
 
     private static IGreenMoveSystem System => PromeRotation.Plugin.Instance.GreenMoveSystem;
-    private static bool SafeZoneHasControl => PromeRotation.Plugin.Instance.SafeZoneMovementStatus.HasControl ||
-        PromeRotation.Plugin.Instance.SafeZoneRebornMovementStatus.HasControl;
+    private static bool SafeZoneHasControl => HostMovement.HasControl ||
+        MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.HasControl;
 
     /// <summary>是否正在执行移动。</summary>
     public bool IsRunning => System.IsRunning;
@@ -119,9 +120,10 @@ public sealed class ScriptMoveApi
 
     private bool TryTakeControl()
     {
-        var plugin = PromeRotation.Plugin.Instance;
         var safeZoneHasControl = SafeZoneHasControl;
-        if (!plugin.SafeZoneSetting.EnableAutoMovement && !plugin.SafeZoneRebornSetting.EnableAutoMovement &&
+        if (MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+            return false;
+        if (!HostMovement.AutomaticMovementEnabled && !MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement &&
             !safeZoneHasControl)
             return true;
 

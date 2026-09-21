@@ -64,7 +64,7 @@ sealed class CrucibleMinotaurStomp(BossModule module) : Components.GenericKnockb
     private sealed class Landing(WPos center, Knockback[] sources, float[] distances, ShapeDistance[][] hazards) : ShapeDistance
     {
         private FrozenConstraintGeometry? _geometry;
-        public override PromeRotation.Spatial.Geometry.IGeometryShape Geometry(float y)
+        public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {
             if (_geometry != null && _geometry.Position.Y == y) return _geometry;
             return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), center, y, radius: 21);

@@ -1,7 +1,7 @@
 using System.Numerics;
 using ECommons.DalamudServices;
 using PromeRotation.LogSystem;
-using PromeRotation.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Scripting.Visual;
 

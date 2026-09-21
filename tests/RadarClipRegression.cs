@@ -1,7 +1,7 @@
 using System.Numerics;
 using MasterPlayer.Radar;
 using MasterPlayer.Mechanics.Crucible;
-using PromeRotation.Spatial.Geometry;
+using MasterPlayer.Spatial.Geometry;
 
 internal static class RadarClipRegression
 {
