@@ -238,11 +238,13 @@ sealed class CrucibleGargoyleCharge(BossModule module) : Components.GenericAOEs(
         if (aoes.Length == 0)
             return;
         var next = aoes[0];
-        foreach (var aoe in aoes) CrucibleScorpionAI.Avoid(hints, aoe);
+        // The two half-cleaves cover the arena together. Keep the later one as
+        // a preview so settling behind the first cannot start a full-field time search.
+        CrucibleScorpionAI.Avoid(hints, next);
         // Stay near the landing to cross to the first cleave's safe side after
         // it resolves, even when the dash lands beside the electric boundary.
         var destination = next.Origin - 3 * next.Rotation.ToDirection();
-        hints.GoalPoints.Add((destination, 0.2f, 100));
+        hints.GoalPoints.Add((destination, 1f, 100));
     }
     public override void OnActorDeath(Actor actor)
     {

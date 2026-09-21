@@ -132,6 +132,49 @@ internal static class CrucibleTimingRegression
         foreach (var effectReceived in new[] { true, false })
         run($"high-one Gargoyle continuous mine avoidance, effect={effectReceived}", () =>
             GargoyleMovement(0.3, effectReceived, 0, 2, mine: true));
+        foreach (var optimize in new[] { false, true })
+        foreach (var start in new[] { 6f, -6f })
+        run($"high-one Gargoyle charge cleaves, optimize={optimize}, start={start}", () =>
+            GargoyleChargeMovement(optimize, start, 0.3));
+        foreach (var optimize in new[] { false, true })
+        foreach (var effectReceived in new[] { true, false })
+        foreach (var delay in new[] { 0, 0.3 })
+        foreach (var angle in new[] { -0.6f, 45f })
+        run($"high-one Gargoyle charge cleaves recorded landing, optimize={optimize}, effect={effectReceived}, worker={delay}, angle={angle}", () =>
+            GargoyleChargeMovement(optimize, 0, delay, angle, effectReceived));
+        foreach (var optimize in new[] { false, true })
+        run($"high-one Gargoyle charge cleaves near boundary, optimize={optimize}", () =>
+            GargoyleChargeMovement(optimize, 0, 0.3, 0, landingDistance: 16));
+        run("high-one Gargoyle charge holds the first refuge and switches on a single damage event", () =>
+        {
+            using var f = new Fight(14608, new(120, 0), 0.3f);
+            f.Boss.OID = 19650;
+            var facing = (-0.6f).Degrees();
+            f.Boss.Position = f.Center + new WDir(-0.1f, 0.9f);
+            f.Engine.Effect(f.Boss, new() { Action = new(50932), GlobalSequence = 100, TargetXZ = f.Boss.Position, Rotation = facing });
+            f.World.CurrentTime = f.World.FutureTime(1);
+            f.Player.Position = f.Boss.Position - 3 * facing.ToDirection();
+            f.Render();
+            var component = f.Engine.Module!.FindComponent<CrucibleGargoyleCharge>()!;
+            Check(component.ActiveAOEs(0, f.Player).Length == 2, "second cleave preview disappeared");
+            var solution = f.Solve();
+            Check(solution.IsSuccess && !solution.UsesTemporalPlanning && solution.ExecutablePath.Count == 0,
+                "settling behind the first cleave started a full-field temporal search instead of holding its refuge");
+            f.World.CurrentTime = f.World.FutureTime(1.8);
+            var effect = new ActorCastEvent { Action = new(48718), GlobalSequence = 101, Rotation = facing };
+            f.Engine.Effect(f.Boss, effect);
+            f.Engine.Effect(f.Boss, effect);
+            f.Render();
+            Check(component.ActiveAOEs(0, f.Player).Length == 1, "duplicate first-cleave effect consumed the second cleave");
+            Check(f.Snapshot.GoalAreas.Single().Geometry.Contains((f.Boss.Position + 3 * facing.ToDirection()).ToVec3()),
+                "first hit did not immediately switch to the opposite refuge");
+            solution = f.Solve();
+            Check(solution.IsSuccess && solution.ExecutablePath.Count >= 2, "second-cleave escape has no executable route");
+            f.Engine.Destroy(f.Boss, false);
+            f.Render();
+            Check(component.ActiveAOEs(0, f.Player).Length == 0 && f.Snapshot.GoalAreas.Count == 0,
+                "source death retained the pending cleave or its goal");
+        });
         run("high-one Morbol breath predicts five windows and consumes only real damage effects", () =>
         {
             using var f = new Fight(14599, new(520,-420));
@@ -392,6 +435,80 @@ internal static class CrucibleTimingRegression
             wasMoving = move.IsRunning;
         }
         Check(f.Snapshot.GoalAreas.Count == 0, "ring resolution retained its movement goal");
+    }
+
+    private static void GargoyleChargeMovement(bool optimize, float start, double delay, float angle = 0,
+        bool effectReceived = true, float landingDistance = 0)
+    {
+        using var f = new Fight(14608, new(120, 0), 0.5f);
+        f.Boss.OID = 19650;
+        var facing = angle.Degrees();
+        var landing = f.Center + new WDir(-0.1f, 0.9f) + landingDistance * facing.ToDirection();
+        f.Boss.Position = landing;
+        f.Player.Position = landing + start * facing.ToDirection();
+        if (landingDistance > 0)
+            Check(!f.Engine.Module!.Arena.InBounds(landing + 4 * facing.ToDirection()),
+                "boundary fixture must clip the second refuge's outer edge");
+        var epoch = f.World.CurrentTime;
+        f.Engine.Effect(f.Boss, new() { Action = new(50932), GlobalSequence = 100, TargetXZ = landing, Rotation = facing });
+        const BindingFlags binding = BindingFlags.Instance | BindingFlags.NonPublic;
+        var (movement, move) = ((object, PromeRotation.GreenMoveSystem.IGreenMoveSystem))typeof(LateDodgeRegression)
+            .GetMethod("CreateMovement", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null)!;
+        var type = movement.GetType();
+        type.GetField("_manager", binding)!.SetValue(movement, f.SafeZone.Manager);
+        var setting = new SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true };
+        type.GetField("_setting", binding)!.SetValue(movement, setting);
+        var latest = type.GetField("_latestSolution", binding)!;
+        var dispatch = type.GetMethod("Dispatch", binding)!;
+        var valid = type.GetMethod("IsSolutionValid", binding)!;
+        var advance = move.GetType().GetMethod("Advance")!;
+        SafeZoneSolution? pending = null;
+        var position = f.Player.Position.ToVec3();
+        double ready = 0, nextSolve = 0, movementReady = 0, slowestSolve = 0;
+        var wasMoving = false;
+        var trace = new List<string>();
+        var cleave = new AOEShapeCone(60, 90f.Degrees());
+        for (var tick = 0; tick <= 550; ++tick)
+        {
+            var t = tick * 0.01;
+            var now = epoch.AddSeconds(t);
+            f.World.CurrentTime = now;
+            f.Player.Position = WPos.FromVec3(position);
+            setting.AttackUptimeExpiresAt = optimize ? now.AddSeconds(0.5) : DateTime.MinValue;
+            if (tick is 280 or 485)
+            {
+                var rotation = tick == 280 ? facing : facing + 180f.Degrees();
+                Check(!cleave.Check(f.Player.Position, landing, rotation),
+                    $"cleave {tick} hit at {position}; {string.Join("; ", trace)}");
+                if (effectReceived || tick == 485)
+                    f.Engine.Effect(f.Boss, new() { Action = new(48718), GlobalSequence = tick == 280 ? 101u : 102u, Rotation = rotation });
+            }
+            Check(f.Engine.Module!.Arena.InBounds(f.Player.Position), "charge cleave route left the arena");
+            if (tick % 10 == 0 || tick == 485) f.Render();
+            var snapshot = f.Snapshot;
+            var player = new PlayerState(position, 0, 6, false, false, 0, true, snapshot.Version);
+            if (pending != null && t >= ready) { latest.SetValue(movement, pending); pending = null; }
+            var accepted = (SafeZoneSolution?)latest.GetValue(movement);
+            if (pending == null && t >= nextSolve && !(bool)valid.Invoke(movement, [accepted, snapshot, player, now])!)
+            {
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                pending = new SafeZoneSolver().Solve(snapshot, player, new(6, 6, 0, false, 6, 6), new(), now, accepted);
+                timer.Stop();
+                slowestSolve = Math.Max(slowestSolve, timer.Elapsed.TotalSeconds);
+                // Count actual solver cost too: a fixed artificial delay hid the
+                // multi-second search that kept the live second cleave from moving.
+                ready = t + Math.Max(delay, timer.Elapsed.TotalSeconds);
+                nextSolve = t + 0.1;
+            }
+            dispatch.Invoke(movement, [accepted, player, snapshot, now]);
+            if (tick % 20 == 0)
+                trace.Add($"{t:F2}:pos={position},phase={type.GetProperty("PhaseText")!.GetValue(movement)},solution={accepted?.Status},temporal={accepted?.UsesTemporalPlanning},running={move.IsRunning}");
+            if (move.IsRunning && !wasMoving) movementReady = t + 0.08;
+            if (t >= movementReady) position = (Vector3)advance.Invoke(move, [position, 0.01f])!;
+            wasMoving = move.IsRunning;
+        }
+        Check(f.Snapshot.GoalAreas.Count == 0, "charge cleave resolution retained its movement goal");
+        Console.WriteLine($"INFO charge cleaves: slowest solve={slowestSolve * 1000:F1}ms");
     }
 
     private static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }

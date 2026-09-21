@@ -110,7 +110,7 @@
 - 瘴气布防 0xBE4B：圆 R6 落点。荒芜新星 0xBE57：RayRect Symmetric(7, 60)。沥青圈 0xBE59：圆 R6 落点。
 - **瘴气地雷**：瘴气球（NameID 14609/OID 0x4CC3）与本体间 tether 0x01AA = 已布防 → 对球位置 AddObstacle R1.8（接触即爆语义）；命中 0xBE4C → 清该球障碍。每帧 Update 兜底扫存活球+其 tether 状态。
 - **圆环连斩**：0xBE4F 读条开始 → 注册钢铁 圆 R13（delay=读条剩余+0.3+0.6）+ 月环 DonutTemplate(6,30)（delay=钢铁+2s）；0xBE50/0xBE51 实际读条出现时按新读条校正（移除旧句柄重注册）。提示"先远离 R13，2s 内进怀中"。
-- **冲锋双向半场斩**：效果包 0xC6F4（SourceDataId=0x4CC2、落点距场心 X/Z 各不超过 25y）→ TargetXZ=冲刺落点，注册第一刀 FanTemplate(60, 180°)（delay 2.8s，hit 0.3s），第二刀反向 +180°（delay 4.85s，hit 0.3s）。两刀伤害均为 **0xBE4E**：先按 GlobalSequence 去重（PR 按目标展开同一动作），第一次立即移除第一刀、按命中时施法者位置与朝向反向校正第二刀（delay 2.05s）；第二次立即清空，不能再生成预测。第一刀事件缺失且已超过其 activation+0.5s 时，下一次伤害直接结束序列；第二刀也以 activation+0.5s 兜底收尾。BMR 伤害分支不限定 SourceId，保留辅助体发出伤害的可能。来源：`CrucibleHigh1Sequences.cs` 的 `CrucibleGargoyleCharge`。
+- **冲锋双向半场斩**：效果包 0xC6F4（SourceDataId=0x4CC2、落点距场心 X/Z 各不超过 25y）→ TargetXZ=冲刺落点，预测第一刀 FanTemplate(60, 180°)（delay 2.8s），第二刀反向 +180°（delay 4.85s）。两刀均预览，仅当前一刀进入导航，窗口为 `[activation−0.25s, activation+0.6s]`；在落点后方 3y 的 R1、Center、优先级100目标等待，整圈距半场分界至少2y；不使用需要细化全场网格的R0.2精确踩点。不能把两片互补半场同时注册，否则到达第一刀安全点后的全场时间搜索可能耗尽第二刀的反应时间。两刀伤害均为 **0xBE4E**：先按 GlobalSequence 去重（PR 按目标展开同一动作），第一次立即移除第一刀、按命中时施法者位置与朝向反向校正第二刀（delay 2.05s），同时翻转导航目标；第二次立即清空，不能再生成预测。第一刀事件缺失且已超过其 activation+0.5s 时切到第二阶段，下一次伤害直接结束序列；第二刀也以 activation+0.5s 兜底收尾。BMR 伤害分支不限定 SourceId，保留辅助体发出伤害的可能。来源：`CrucibleHigh1Sequences.cs` 的 `CrucibleGargoyleCharge`。
 - **五连斩击退链**：0xC607→预测击退 delay+9.5s；0xC608→+9.0s；0xBE54→+0.6s；0xBE55→即刻。链上任一出现即提示"五连斩最后一击 20y 击退：提前靠中，避开瘴气与电网"，并在预测时刻前注册场心方向安全区引导（AddTimedSafeArea 场心 R5）。落点校验降级为文字提示。
 - 文字：0xBE4D、0xBE51、0xBE55。
 

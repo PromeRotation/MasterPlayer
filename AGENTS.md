@@ -706,6 +706,7 @@ public readonly record struct GreenMovePoint(
 - `SafeZoneActivation` 每帧在本地自动移动开启时刷新 `SafeZoneSetting.AttackUptimeExpiresAt`，有效期 0.5 秒；关闭或卸载只撤销自身最后写入的请求。此字段表示请求生命周期，不是预定出发时间；实现位于插件内。
 - 本地 `SafeZoneRebornMovementSystem.Uptime.cs` 复用危险时间窗、剩余折线路线复核与0.2秒滑步窗口；普通 AOE 有余量时等待，按当前移速验证整条路线，保留危险起止余量及0.15秒起步余量。读条按实际离开危险的时间判断，主线程不新增寻路搜索。
 - 已起步、当前危险、紧急缩减余量路径、分阶段转场、激活的机制目标及未知/冻结约束不做起步延后。跟随的可选攻击目标优先级为 -1；非负优先级用于必须完成的机制站位。负优先级不改变现有光栅目标权重。
+- 石像鬼50932后的48718前后刀只让当前一刀参与导航，两刀保留预览；第一刀效果立即切换反向目标；目标为后方3y的R1区域，避免不必要的R0.2精确网格。互补半场同时注册会在第一刀就位后触发数秒时间搜索，拖住第二刀。`--filter='Gargoyle charge'`覆盖此链路，连续模拟必须计入真实求解耗时，不能只代入固定后台延迟。
 - 回归入口 `--filter='Dodge uptime'`，匿名录像 fixture 为 `tests/Fixtures/Crucible/uptime-low1-205342.json`；证据在 `F:/project/卫月插件/analysis/masterplayer-dodge-uptime-20260919/`。用户更正后的录像是普通一盘 20:53:42，不能用高一 15:46:32 代替此次出发时机验证。
 
 ### 2026-09-19 连续波次撤离精修
