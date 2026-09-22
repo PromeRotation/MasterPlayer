@@ -4,10 +4,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using PromeRotation.LogSystem;
+using MasterPlayer.Scripting;
 
 namespace MasterPlayer.Replay;
 
-/// <summary>录制文件头（首行 JSON）。territoryName 为后加字段：旧文件缺省为空串，新文件对旧读取器向后兼容（未知字段忽略）。</summary>
+/// <summary>录制文件头（首行 JSON）。v1 只有事件；v2 增加对象快照与读条包朝向。</summary>
 public sealed record ReplayHeader(
     [property: JsonPropertyName("v")] int Version,
     [property: JsonPropertyName("territory")] ushort Territory,
@@ -19,17 +20,18 @@ public sealed record ReplayHeader(
 }
 
 /// <summary>一条录制事件：T = 相对录制开始的秒数。</summary>
-public sealed record ReplayEventEntry(double T, LogSystemEvent Event);
+public sealed record ReplayEventEntry(double T, LogSystemEvent Event, long Sequence = 0);
 
 /// <summary>一份完整录制（内存形态）。</summary>
 public sealed record ReplayRecording(ReplayHeader Header, IReadOnlyList<ReplayEventEntry> Events, int SkippedEvents)
 {
-    public double Duration => Events.Count == 0 ? 0d : Events[^1].T;
+    public IReadOnlyList<ReplayWorldFrameEntry> WorldFrames { get; init; } = [];
+    public double Duration => Math.Max(Events.Count == 0 ? 0d : Events[^1].T, WorldFrames.Count == 0 ? 0d : WorldFrames[^1].T);
 }
 
 /// <summary>
-/// 录制写入器：JSON Lines，首行 header，之后每行一个事件。
-/// 事件 record 的 Raw（运行态对象图）与 Kind（由类型固定派生）不写入。
+/// 录制写入器：JSON Lines，首行 header，之后每行一个事件或对象快照。
+/// Raw 对象图不写入；读条只提取可序列化的 PacketFacing。相同时间按文件行序回放。
 /// </summary>
 public sealed class ReplayRecordingWriter : IDisposable
 {
@@ -52,9 +54,17 @@ public sealed class ReplayRecordingWriter : IDisposable
             Kind = ev.Kind.ToString(),
             Type = ev.GetType().FullName!,
             Data = JsonSerializer.SerializeToElement(ev, ev.GetType(), ReplayJson.Options),
+            PacketFacing = ev is LogSystemCastStartEvent cast && CastRotation.TryGetPacket(cast, out var facing) ? facing : null,
         };
         _writer.WriteLine(JsonSerializer.Serialize(line, ReplayJson.Options));
     }
+
+    public void WriteWorldFrame(double t, ReplayWorldFrame frame)
+        => _writer.WriteLine(JsonSerializer.Serialize(new ReplayEventLine
+        {
+            T = Math.Round(t, 4), Kind = "WorldFrame", Type = "MasterPlayer.WorldFrame",
+            Data = JsonSerializer.SerializeToElement(frame, ReplayJson.Options)
+        }, ReplayJson.Options));
 
     public void Flush() => _writer.Flush();
 
@@ -67,7 +77,7 @@ public sealed class ReplayRecordingWriter : IDisposable
     }
 }
 
-/// <summary>录制读取器：解析 JSON Lines，未知/损坏的事件行跳过并计数。</summary>
+/// <summary>未知事件跳过并计数；v2 损坏的 JSON 或对象快照拒绝加载，防止后续增量污染场景。</summary>
 public static class ReplayRecordingReader
 {
     public const string FileExtension = ".mpreplay.jsonl";
@@ -89,14 +99,18 @@ public static class ReplayRecordingReader
 
         var header = JsonSerializer.Deserialize<ReplayHeader>(headerLine, ReplayJson.Options)
             ?? throw new InvalidDataException("录制文件头解析失败。");
+        if (header.Version is < 1 or > 2) throw new InvalidDataException($"不支持录制版本 {header.Version}。");
 
         var events = new List<ReplayEventEntry>();
+        var frames = new List<ReplayWorldFrameEntry>();
         var skipped = 0;
+        long sequence = 0;
         string? line;
         while ((line = reader.ReadLine()) != null)
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
+            ++sequence;
 
             ReplayEventLine? parsed;
             try
@@ -105,11 +119,32 @@ public static class ReplayRecordingReader
             }
             catch (JsonException)
             {
+                if (header.Version >= 2) throw new InvalidDataException($"第 {sequence + 1} 行 JSON 损坏，无法保证对象快照完整。");
                 skipped++;
                 continue;
             }
 
-            var type = parsed?.Type == null ? null : ResolveType(parsed.Type);
+            if (parsed == null || !double.IsFinite(parsed.T) || parsed.T < 0
+                || parsed.T > (DateTime.MaxValue - header.StartedUtc.ToUniversalTime()).TotalSeconds)
+            {
+                if (parsed?.Kind == "WorldFrame") throw new InvalidDataException("对象快照时间无效。");
+                skipped++;
+                continue;
+            }
+            if (parsed.Kind == "WorldFrame")
+            {
+                var frame = parsed.Data.Deserialize<ReplayWorldFrame>(ReplayJson.Options)
+                    ?? throw new InvalidDataException("对象快照为空。");
+                if (frame.Actors == null || frame.Party == null || frame.Removed == null
+                    || frame.Actors.Any(a => a == null || a.Statuses == null || a.Tethers == null
+                        || a.Statuses.Any(s => s == null) || a.Tethers.Any(t => t == null))
+                    || frame.Party.Any(p => p == null)
+                    || frame.Actors.Select(a => a.Id).Distinct().Count() != frame.Actors.Length)
+                    throw new InvalidDataException("对象快照包含空值或重复对象。");
+                frames.Add(new(parsed.T, frame, sequence));
+                continue;
+            }
+            var type = parsed.Type == null ? null : ResolveType(parsed.Type);
             if (parsed == null || type == null)
             {
                 skipped++;
@@ -119,7 +154,10 @@ public static class ReplayRecordingReader
             try
             {
                 if (parsed.Data.Deserialize(type, ReplayJson.Options) is LogSystemEvent ev)
-                    events.Add(new ReplayEventEntry(parsed.T, ev));
+                {
+                    if (ev is LogSystemCastStartEvent cast) ev = cast with { Raw = new ReplayCastData(parsed.PacketFacing) };
+                    events.Add(new ReplayEventEntry(parsed.T, ev, sequence));
+                }
                 else
                     skipped++;
             }
@@ -129,8 +167,12 @@ public static class ReplayRecordingReader
             }
         }
 
-        events.Sort(static (a, b) => a.T.CompareTo(b.T));
-        return new ReplayRecording(header, events, skipped);
+        events.Sort(static (a, b) => a.T != b.T ? a.T.CompareTo(b.T) : a.Sequence.CompareTo(b.Sequence));
+        frames.Sort(static (a, b) => a.T != b.T ? a.T.CompareTo(b.T) : a.Sequence.CompareTo(b.Sequence));
+        if ((header.Version >= 2 && (frames.Count == 0 || frames[0].T != 0))
+            || (frames.Count > 0 && !frames[0].Frame.Full))
+            throw new InvalidDataException("录制缺少零时刻的完整初始对象快照。");
+        return new ReplayRecording(header, events, skipped) { WorldFrames = frames };
     }
 
     private static Type? ResolveType(string fullName)
@@ -156,6 +198,9 @@ internal sealed class ReplayEventLine
     [JsonPropertyName("kind")] public string Kind { get; set; } = "";
     [JsonPropertyName("type")] public string Type { get; set; } = "";
     [JsonPropertyName("data")] public JsonElement Data { get; set; }
+    [JsonPropertyName("packetFacing")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public float? PacketFacing { get; set; }
 }
 
 /// <summary>录制/回放共用的 JSON 配置：剔除 Raw/Kind，支持 Vector3。</summary>

@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="ScriptCatalogRegression.cs" />
+    <Compile Include="BmrSourceInventory.cs" />
     <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/Microsoft.CodeAnalysis.CSharp.dll" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/PromeRotation.dll" />

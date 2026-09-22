@@ -333,6 +333,7 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 });
 
 CrucibleMechanicRegression.Run(Run);
+ArrDungeonRegression.Run(Run);
 BmrLocalSyncRegression.Run(Run);
 CrucibleAllRegression.Run(Run);
 CrucibleTimingRegression.Run(Run);
@@ -358,6 +359,7 @@ DodgeUptimeRegression.Run(Run);
 RecordedDodgeRefinementRegression.Run(Run);
 VisualScriptRegression.Run(Run);
 ReplayRecordingRegression.Run(Run);
+ReplayWorldRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");

@@ -1,4 +1,4 @@
-﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
@@ -52,12 +52,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         Instance = this;
 
         var settings = MasterPlayerSettings.Instance;
-        AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility);
+        AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility, () => SafeZone.CurrentTime);
         _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
             () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
-        _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => _safeZone.Clear());
-        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, _safeZone.Clear);
-        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, _safeZone.Clear);
+        _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
+        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, ClearLiveSafeZone);
+        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, ClearLiveSafeZone);
         _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
         _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
 
@@ -123,6 +123,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
         _dodge?.Update();
         _mechanics?.Update();
+        _replayRecorder?.Update();
         _replayController?.Update(deltaTime);
         _scripts?.Update(deltaTime);
         _follow?.Update();
@@ -130,6 +131,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             _scripts?.ReplayModeActive != true);
         AoeVisibility?.Update(SafeZone.Manager);
         _radar?.Update();
+    }
+
+    private void ClearLiveSafeZone()
+    {
+        if (_scripts?.ReplayModeActive != true) _safeZone?.Clear();
     }
 
     public void Dispose()

@@ -26,6 +26,8 @@ public abstract class MasterPlayerScript
 
     /// <summary>本脚本的设置存取（[UserSetting] 属性自动映射，亦可键值读写）。</summary>
     public ScriptSettingStore Settings => Host.Settings;
+    public DateTime CurrentTime => Host.CurrentTime;
+    public Replay.ReplayWorldState? ReplayWorld => Host.ReplayWorld;
 
     /// <summary>
     /// 暴露给用户的机制开关列表。返回的每个名称都会在 UI 显示独立开关，

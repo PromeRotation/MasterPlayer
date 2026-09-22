@@ -16,11 +16,13 @@ public sealed class SafeZoneRegistry
     public const float DefaultHitDurationSeconds = 0.6f;
 
     private readonly SafeZoneManager _manager;
+    private readonly Func<DateTime> _clock;
 
     /// <summary>使用目标 <see cref="SafeZoneManager"/> 创建注册层。</summary>
-    public SafeZoneRegistry(SafeZoneManager manager)
+    public SafeZoneRegistry(SafeZoneManager manager, Func<DateTime>? clock = null)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
+        _clock = clock ?? (() => DateTime.UtcNow);
     }
 
     // ============================================================
@@ -30,14 +32,14 @@ public sealed class SafeZoneRegistry
     /// <summary>注册一个从现在开始、永不结束的持续危险区。</summary>
     public SafeZoneAreaHandle AddPersistentDanger(GeometryTemplate template, TransformBinding binding)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         return _manager.AddDangerArea(template, binding, new[] { new DangerWindow(now, null) });
     }
 
     /// <summary>注册一个从现在开始、持续 <paramref name="durationSeconds"/> 秒的危险区。</summary>
     public SafeZoneAreaHandle AddTimedDanger(GeometryTemplate template, TransformBinding binding, float durationSeconds)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         return _manager.AddDangerArea(
             template,
             binding,
@@ -55,7 +57,7 @@ public sealed class SafeZoneRegistry
         float delaySeconds,
         float hitDurationSeconds = DefaultHitDurationSeconds)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         var from = now + TimeSpan.FromSeconds(delaySeconds);
         return _manager.AddDangerArea(
             template,
@@ -74,7 +76,7 @@ public sealed class SafeZoneRegistry
         float delaySeconds,
         float durationSeconds = 0f)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         var from = now + TimeSpan.FromSeconds(delaySeconds);
         DateTime? until = durationSeconds > 0f ? from + TimeSpan.FromSeconds(durationSeconds) : null;
         return _manager.AddDangerArea(template, binding, new[] { new DangerWindow(from, until, now) });
@@ -92,7 +94,7 @@ public sealed class SafeZoneRegistry
     {
         if (windows is null) throw new ArgumentNullException(nameof(windows));
 
-        var now = DateTime.UtcNow;
+        var now = _clock();
         var resolved = new List<DangerWindow>();
         foreach (var (delaySeconds, durationSeconds) in windows)
         {
@@ -116,7 +118,7 @@ public sealed class SafeZoneRegistry
         int priority = 0,
         PositionPreference preference = PositionPreference.Center)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         return _manager.AddGoalArea(template, binding, new[] { new GoalWindow(now, null, priority, preference) });
     }
 
@@ -128,7 +130,7 @@ public sealed class SafeZoneRegistry
         int priority = 0,
         PositionPreference preference = PositionPreference.Center)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         return _manager.AddGoalArea(
             template,
             binding,
@@ -147,7 +149,7 @@ public sealed class SafeZoneRegistry
         int priority = 0,
         PositionPreference preference = PositionPreference.Center)
     {
-        var now = DateTime.UtcNow;
+        var now = _clock();
         var from = now + TimeSpan.FromSeconds(delaySeconds);
         DateTime? until = durationSeconds > 0f ? from + TimeSpan.FromSeconds(durationSeconds) : null;
         return _manager.AddGoalArea(template, binding, new[] { new GoalWindow(from, until, priority, preference) });
@@ -167,7 +169,7 @@ public sealed class SafeZoneRegistry
     {
         if (windows is null) throw new ArgumentNullException(nameof(windows));
 
-        var now = DateTime.UtcNow;
+        var now = _clock();
         var resolved = new List<GoalWindow>();
         foreach (var (delaySeconds, durationSeconds) in windows)
         {

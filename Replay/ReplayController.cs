@@ -4,9 +4,9 @@ using MasterPlayer.Scripting;
 namespace MasterPlayer.Replay;
 
 /// <summary>
-/// 回放控制器：加载录制文件，按录制时间轴把合成事件经 ReplayScriptEventRouter 喂给回放会话中的脚本。
+/// 回放控制器：按录制时间轴恢复对象快照，再将事件经 ReplayScriptEventRouter 派发给脚本。
 /// 回放会话 = 停掉实时脚本 → 按录制区域重启启用脚本（回放模式）→ 主线程时钟驱动派发；
-/// 结束/跳转 = 停回放脚本并 ExitReplayMode（下一帧区域自动启停恢复实时脚本）。
+/// 跳转重建对象与脚本状态；停止才 ExitReplayMode（下一帧恢复实时脚本）。
 /// 合成事件只在脚本层派发，不进 PromeEventBus，DodgeController/Follow 等不响应回放。
 /// </summary>
 public sealed class ReplayController : IDisposable
@@ -15,7 +15,7 @@ public sealed class ReplayController : IDisposable
     private readonly ReplayRecorder _recorder;
     private readonly List<(string ScriptId, ReplayScriptEventRouter Router)> _routers = [];
     private ReplayRecording? _recording;
-    private int _nextIndex;
+    private ReplayPlayback? _playback;
     private bool _disposed;
 
     internal ReplayController(ScriptManager scripts, ReplayRecorder recorder)
@@ -38,8 +38,10 @@ public sealed class ReplayController : IDisposable
     public string? LoadedFilePath { get; private set; }
 
     public ReplayRecording? Recording => _recording;
+    private string WorldWarning => _recording?.WorldFrames.Count == 0 ? " 旧录制缺少对象状态，场景不能完整还原。" : "";
 
-    public int NextEventIndex => _nextIndex;
+    public int NextEventIndex => _playback?.NextEventIndex ?? 0;
+    public ReplayWorldState? World => SessionActive ? _playback?.World : null;
 
     public int ReplayScriptCount => _routers.Count;
 
@@ -62,9 +64,9 @@ public sealed class ReplayController : IDisposable
             _recording = ReplayRecordingReader.Load(path);
             LoadedFilePath = path;
             Clock = 0;
-            _nextIndex = 0;
+            _playback = null;
             var skipped = _recording.SkippedEvents > 0 ? $"，跳过 {_recording.SkippedEvents} 条未知事件" : "";
-            StatusMessage = $"已加载：{Path.GetFileName(path)}（{_recording.Events.Count} 个事件，时长 {_recording.Duration:F1} 秒{skipped}）。";
+            StatusMessage = $"已加载：{Path.GetFileName(path)}（{_recording.Events.Count} 个事件，时长 {_recording.Duration:F1} 秒{skipped}）。" + WorldWarning;
             return true;
         }
         catch (Exception ex)
@@ -88,12 +90,16 @@ public sealed class ReplayController : IDisposable
 
     public void Pause() => Playing = false;
 
-    public void SetSpeed(float speed) => Speed = speed;
+    public void SetSpeed(float speed)
+    {
+        if (!float.IsFinite(speed) || speed <= 0) throw new ArgumentOutOfRangeException(nameof(speed));
+        Speed = speed;
+    }
 
     /// <summary>跳转到指定秒数：重启回放脚本后从开头补发事件（BMR 式重置 + 快进）。</summary>
     public void Seek(double t)
     {
-        if (_recording == null || _disposed)
+        if (_recording == null || _disposed || !double.IsFinite(t))
             return;
 
         var resume = Playing;
@@ -107,10 +113,7 @@ public sealed class ReplayController : IDisposable
             RestartSessionScripts();
         }
 
-        Clock = Math.Clamp(t, 0d, _recording.Duration);
-        _nextIndex = 0;
-        DispatchUpTo(Clock);
-        Playing = resume;
+        if (DispatchUpTo(Math.Clamp(t, 0d, _recording.Duration))) Playing = resume;
     }
 
     public void StopSession()
@@ -124,10 +127,13 @@ public sealed class ReplayController : IDisposable
                 _scripts.StopScript(id);
         _routers.Clear();
 
+        var runtime = MasterPlayerPlugin.Instance!.SafeZone;
+        runtime.ReplayClock = null;
+        runtime.Manager.EntityPoseOverride = null;
         SessionActive = false;
         Playing = false;
         Clock = 0;
-        _nextIndex = 0;
+        _playback = null;
         _scripts.ExitReplayMode();
         StatusMessage = "已停止回放。";
     }
@@ -147,16 +153,15 @@ public sealed class ReplayController : IDisposable
             return;
         }
 
-        if (!Playing || _recording == null)
+        if (!Playing || _recording == null || !float.IsFinite(deltaTime))
             return;
 
-        Clock += deltaTime * Speed;
-        DispatchUpTo(Clock);
+        if (!DispatchUpTo(Clock + Math.Max(0d, deltaTime) * Speed)) return;
 
-        if (_nextIndex >= _recording.Events.Count)
+        if (Clock >= _recording.Duration)
         {
             Playing = false;
-            StatusMessage = "回放结束（已到文件末尾）。";
+            StatusMessage = "回放结束（已到文件末尾）。" + WorldWarning;
         }
     }
 
@@ -172,15 +177,19 @@ public sealed class ReplayController : IDisposable
 
         _scripts.StopAll();
         _scripts.EnterReplayMode();
+        _playback = new(_recording);
         SessionActive = true;
-        StartSessionScripts();
+        var runtime = MasterPlayerPlugin.Instance!.SafeZone;
+        runtime.ReplayClock = () => World!.CurrentTime;
+        runtime.Manager.EntityPoseOverride = id => World!.Actors.TryGetValue(id, out var actor) ? (actor.Position, actor.Rotation) : null;
         Clock = 0;
-        _nextIndex = 0;
+        StartSessionScripts();
         Playing = false;
+        if (!DispatchUpTo(0)) return false;
 
-        StatusMessage = _routers.Count == 0
+        StatusMessage = (_routers.Count == 0
             ? "回放会话已启动，但没有匹配录制区域的已启用脚本（仅时间轴推进）。"
-            : $"回放会话已启动：{_routers.Count} 个脚本。";
+            : $"回放会话已启动：{_routers.Count} 个脚本。") + WorldWarning;
         return true;
     }
 
@@ -190,6 +199,9 @@ public sealed class ReplayController : IDisposable
             if (_scripts.Running.TryGetValue(id, out var run) && run.IsReplaySession)
                 _scripts.StopScript(id);
         _routers.Clear();
+        _scripts.EnterReplayMode();
+        _playback = new(_recording!);
+        Clock = 0;
         StartSessionScripts();
     }
 
@@ -204,7 +216,7 @@ public sealed class ReplayController : IDisposable
             if (!ScriptManager.IsTerritoryMatched(descriptor.Metadata, territory))
                 continue;
 
-            var router = new ReplayScriptEventRouter();
+            var router = new ReplayScriptEventRouter(_playback!.World);
             if (_scripts.StartScript(id, router))
                 _routers.Add((id, router));
             else
@@ -212,18 +224,27 @@ public sealed class ReplayController : IDisposable
         }
     }
 
-    private void DispatchUpTo(double clock)
+    private bool DispatchUpTo(double clock)
     {
         if (_recording == null)
-            return;
+            return false;
 
-        var events = _recording.Events;
-        while (_nextIndex < events.Count && events[_nextIndex].T <= clock)
+        try
         {
-            var ev = events[_nextIndex].Event;
-            foreach (var (_, router) in _routers)
-                router.Raise(ev);
-            _nextIndex++;
+            _playback!.AdvanceTo(clock, ev =>
+            {
+                foreach (var (_, router) in _routers)
+                    router.Raise(ev);
+            }, _scripts.UpdateReplayScripts);
+            Clock = _playback.Clock;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            StopSession();
+            StatusMessage = $"回放失败，已停止：{ex.Message}";
+            Svc.Log.Error(ex, "[MasterPlayer] 回放对象或事件失败");
+            return false;
         }
     }
 

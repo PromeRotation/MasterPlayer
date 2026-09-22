@@ -67,7 +67,8 @@ public sealed class RadarView
         var settings = MasterPlayerSettings.Instance;
         var plugin = PromeRotation.Plugin.Instance;
         var player = Svc.Objects.LocalPlayer;
-        var now = DateTime.UtcNow;
+        var world = MasterPlayerPlugin.Instance?.Replay?.World;
+        var now = MasterPlayerPlugin.Instance!.SafeZone.CurrentTime;
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
         var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
 
@@ -95,12 +96,13 @@ public sealed class RadarView
         }
         else
         {
-            if (player == null)
+            var position = world != null ? world.LocalPlayer?.Position : player?.Position;
+            if (position == null)
             {
                 return false;
             }
 
-            _center = player.Position;
+            _center = position.Value;
             visibleRadius = DefaultVisibleRadius;
             _projection = new(_center, _screenCenter,
                 radiusPx / DefaultVisibleRadius, rotation);
@@ -112,7 +114,8 @@ public sealed class RadarView
         DrawRimTicks(canvas);
         DrawAreas(canvas, snapshot, settings, now, animT);
         DrawSolutionPath(canvas, plugin, animT);
-        DrawActors(canvas, player, visibleRadius, animT);
+        if (world != null) DrawReplayActors(canvas, world, visibleRadius, animT);
+        else DrawActors(canvas, player, visibleRadius, animT);
         DrawRim(canvas);
         DrawCompass(drawList, canvas, settings);
         return true;
@@ -400,9 +403,34 @@ public sealed class RadarView
     }
 
     private void DrawSelfMarker(RadarCanvas canvas, IPlayerCharacter player)
+        => DrawSelfMarker(canvas, player.Position, player.Rotation);
+
+    private void DrawReplayActors(RadarCanvas canvas, Replay.ReplayWorldState world, float radius, float animT)
     {
-        var selfPos = _projection.Project(player.Position);
-        var forward = GeometryHelper.PointFromRotationDistanceXZ(player.Position, player.Rotation, 1f);
+        var party = world.Party.Select(p => p.EntityId).ToHashSet();
+        foreach (var actor in world.Actors.Values)
+        {
+            if (actor.Id == world.LocalPlayerId || actor.Dead || !WithinRange(actor.Position, radius * radius)) continue;
+            var isParty = party.Contains(actor.Id);
+            if (!isParty && (!actor.Hostile || !actor.Targetable)) continue;
+            var pos = _projection.Project(actor.Position);
+            var size = isParty ? 3f : 3.5f;
+            canvas.FillCircle(pos, size, ImGui.GetColorU32(isParty ? PartyColor : EnemyColor));
+            canvas.StrokeCircle(pos, size, ImGui.GetColorU32(MarkerOutlineColor), 1.5f);
+            if (world.TargetId == actor.Id)
+            {
+                var ring = TargetRingColor;
+                ring.W *= 0.65f + 0.35f * MathF.Sin(animT * 2f * MathF.PI * 2.4f);
+                canvas.StrokeCircle(pos, 6.5f, ImGui.GetColorU32(ring), 1.5f, 24);
+            }
+        }
+        if (world.LocalPlayer is { } player) DrawSelfMarker(canvas, player.Position, player.Rotation);
+    }
+
+    private void DrawSelfMarker(RadarCanvas canvas, Vector3 position, float rotation)
+    {
+        var selfPos = _projection.Project(position);
+        var forward = GeometryHelper.PointFromRotationDistanceXZ(position, rotation, 1f);
         var dir = _projection.Project(forward) - selfPos;
         dir = dir.LengthSquared() <= float.Epsilon ? new Vector2(0f, -1f) : Vector2.Normalize(dir);
         var ortho = new Vector2(dir.Y, -dir.X);

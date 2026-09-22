@@ -363,9 +363,9 @@ public sealed class ScriptManager : IDisposable
             return;
         }
 
-        uint territory = Svc.ClientState.TerritoryType;
         if (!ReplayModeActive)
         {
+            uint territory = Svc.ClientState.TerritoryType;
             foreach (var descriptor in _descriptors)
             {
                 var id = descriptor.Metadata.Id;
@@ -380,8 +380,20 @@ public sealed class ScriptManager : IDisposable
             }
         }
 
+        if (!ReplayModeActive) UpdateRunning(deltaTime, false);
+    }
+
+    internal void UpdateReplayScripts(float deltaTime)
+    {
+        if (!MasterPlayerSettings.Instance.EnableScripts) { StopAll(); return; }
+        UpdateRunning(deltaTime, true);
+    }
+
+    private void UpdateRunning(float deltaTime, bool replay)
+    {
         foreach (var (id, running) in _running.ToArray())
         {
+            if (running.IsReplaySession != replay) continue;
             try
             {
                 running.Script.UpdateInternal(deltaTime);
@@ -478,7 +490,8 @@ public sealed class ScriptManager : IDisposable
     {
         try
         {
-            var wasRunning = _running.Keys.ToArray();
+            var wasRunning = ReplayModeActive ? [] : _running.Keys.ToArray();
+            if (ReplayModeActive) MasterPlayerPlugin.Instance?.Replay?.StopSession();
             foreach (var id in wasRunning)
                 StopScript(id);
 

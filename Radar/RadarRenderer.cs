@@ -92,7 +92,7 @@ public sealed class RadarRenderer : IDisposable
 
     private void RenderFrame(PromeRotation.Plugin plugin)
     {
-        var now = DateTime.UtcNow;
+        var now = MasterPlayerPlugin.Instance!.SafeZone.CurrentTime;
         var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
         var appearance = MasterPlayerSettings.Instance.WorldAoe;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;

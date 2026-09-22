@@ -22,6 +22,7 @@ public sealed class SafeZoneManager : IDisposable
     private ulong _nextHandleId = 1UL;
     private int _version;
     private bool _disposed;
+    internal Func<uint, (System.Numerics.Vector3 Position, float Rotation)?>? EntityPoseOverride { get; set; }
 
     public SafeZoneManager(SafeZoneSetting setting)
     {
@@ -545,6 +546,7 @@ public sealed class SafeZoneManager : IDisposable
 
     private bool TryGetEntityPosition(uint entityId, out System.Numerics.Vector3 position)
     {
+        if (EntityPoseOverride != null) return TryGetEntityPose(entityId, out position, out _);
         var entity = ResolveEntity(entityId);
         if (entity is null)
         {
@@ -558,6 +560,13 @@ public sealed class SafeZoneManager : IDisposable
 
     private bool TryGetEntityPose(uint entityId, out System.Numerics.Vector3 position, out float rotation)
     {
+        if (EntityPoseOverride != null)
+        {
+            var pose = EntityPoseOverride(entityId);
+            position = pose?.Position ?? default;
+            rotation = pose?.Rotation ?? 0;
+            return pose != null;
+        }
         var entity = ResolveEntity(entityId);
         if (entity is null)
         {

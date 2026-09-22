@@ -29,9 +29,9 @@ internal sealed class VisualMechanicScript : MasterPlayerScript
     {
         if (!_active || !_definition.Rules.Any(r => r.Enabled && r.SuppressGeneric && r.ActionId == e.ActionId))
             return false;
-        var cast = VisualCast.Capture(e);
+        var cast = VisualCast.Capture(e, ReplayWorld);
         return _definition.Rules.Any(r => r.SuppressGeneric && VisualAoeBinding.Matches(r, cast)
-            && TryTiming(e, r, DateTime.UtcNow, out _, out _, out _)
+            && TryTiming(e, r, CurrentTime, out _, out _, out _)
             && VisualAoeBinding.TryCreate(r, cast, out _, out _));
     }
 
@@ -41,11 +41,11 @@ internal sealed class VisualMechanicScript : MasterPlayerScript
         var sequence = ++_sequence;
         _casts[e.SourceId] = sequence;
         if (!_definition.Rules.Any(r => r.Enabled && r.ActionId == e.ActionId)) return;
-        var cast = VisualCast.Capture(e);
+        var cast = VisualCast.Capture(e, ReplayWorld);
         foreach (var rule in _definition.Rules)
         {
             if (!VisualAoeBinding.Matches(rule, cast)) continue;
-            if (!TryTiming(e, rule, DateTime.UtcNow, out var delay, out var duration, out var expiresUtc)) continue;
+            if (!TryTiming(e, rule, CurrentTime, out var delay, out var duration, out var expiresUtc)) continue;
             if (!VisualAoeBinding.TryCreate(rule, cast, out var binding, out var error))
             {
                 LogError($"{rule.Name}（读条 {e.ActionId}）：{error}");
@@ -88,7 +88,7 @@ internal sealed class VisualMechanicScript : MasterPlayerScript
 
     protected override void OnUpdate(float deltaTime)
     {
-        var now = DateTime.UtcNow;
+        var now = CurrentTime;
         for (var i = _pending.Count - 1; i >= 0; i--)
         {
             if (now <= _pending[i].ExpiresUtc) continue;

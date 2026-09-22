@@ -135,7 +135,7 @@ internal static class ReplayRecordingRegression
         Check(((LogSystemTerritoryEvent)loaded.Events[4].Event).TerritoryName == "斗技场", "Non-ASCII strings must round trip.");
         Check(((LogSystemChatLogEvent)loaded.Events[5].Event).Message == "你好", "Chat fields must round trip.");
         Check(((LogSystemWeatherChangedEvent)loaded.Events[6].Event).WeatherId == 7, "Weather payload must round trip.");
-        Check(loaded.Events[7].Event.Raw == null, "Raw must be stripped from recordings instead of serialized.");
+        Check(loaded.Events[7].Event.Raw is ReplayCastData { PacketFacing: null }, "Runtime Raw must be replaced by safe replay metadata without inventing facing.");
     }
 
     private static void RouterDispatch()

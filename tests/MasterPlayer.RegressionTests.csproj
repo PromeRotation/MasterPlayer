@@ -31,12 +31,15 @@
     <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
     <Compile Include="..\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
+    <Compile Include="..\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />
+    <Compile Include="..\Replay\ReplayPlayback.cs" Link="Replay\ReplayPlayback.cs" />
     <Compile Include="..\Replay\ReplayRecordFilter.cs" Link="Replay\ReplayRecordFilter.cs" />
     <Compile Include="..\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
     <Compile Include="..\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
 
     <Compile Include="..\Mechanics\Crucible\**\*.cs" Exclude="..\Mechanics\Crucible\CrucibleScript.cs" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Mechanics\Dungeons\**\*.cs" Exclude="..\Mechanics\Dungeons\DungeonScript.cs" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation\bin\Debug\ECommons.dll" />
     <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" />

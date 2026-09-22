@@ -27,6 +27,8 @@ public abstract class MasterPlayerScript
     public ScriptSafeZoneApi SafeZone { get; } = new();
     public ScriptDrawApi Draw { get; } = new();
     public List<string> Errors { get; } = [];
+    public Replay.ReplayWorldState? ReplayWorld { get; set; }
+    public DateTime CurrentTime => ReplayWorld?.CurrentTime ?? DateTime.UtcNow;
     protected virtual void OnStart() { }
     protected virtual void OnUpdate(float deltaTime) { }
     protected virtual void OnStop() { }
@@ -70,7 +72,7 @@ public sealed class ScriptSafeZoneApi : IDisposable
         Manager = manager;
         _ownsManager = false;
     }
-    private SafeZoneRegistry Registry => new(Manager);
+    private SafeZoneRegistry Registry => new(Manager, () => UtcNowForTest ?? DateTime.UtcNow);
     public IDisposable BeginDrawingGroup(string name) => new Scope();
     public SafeZoneAreaHandle AddDelayedHit(GeometryTemplate template, TransformBinding binding, float delaySeconds, float hitDurationSeconds = 0.6f)
         => Registry.AddDelayedHit(template, binding, delaySeconds, hitDurationSeconds);

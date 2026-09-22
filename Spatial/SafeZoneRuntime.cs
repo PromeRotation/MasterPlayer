@@ -17,11 +17,13 @@ public sealed class SafeZoneRuntime : IDisposable
     public SafeZoneManager Manager { get; }
     public SafeZoneRegistry Registry { get; }
     public ISafeZoneRebornMovementStatus MovementStatus => _movement;
+    internal Func<DateTime>? ReplayClock { get; set; }
+    public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
 
     internal SafeZoneRuntime(IGreenMoveSystem movement, Func<bool> externalMovementEnabled, Func<bool> externalHasControl)
     {
         Manager = new(Setting);
-        Registry = new(Manager);
+        Registry = new(Manager, () => CurrentTime);
         _movement = new(Setting, Manager, externalMovementEnabled, externalHasControl);
         _movement.Attach(movement);
     }
@@ -29,6 +31,13 @@ public sealed class SafeZoneRuntime : IDisposable
     internal void Update(float speedMultiplier, bool allowMovement)
     {
         if (_disposed) return;
+        if (!allowMovement)
+        {
+            _movement.Update(null, default, CurrentTime, false);
+            Manager.PruneExpiredAreas(CurrentTime - TimeSpan.FromSeconds(MathF.Max(0f, SolveOptionsDefaults.Default.DangerEndSafetyTime)));
+            _previousPosition = null;
+            return;
+        }
         var capability = MovementCapability.CaptureFromMainThread(speedMultiplier);
         PlayerState? player = null;
         if (Svc.Objects.LocalPlayer is { IsDead: false } actor)
@@ -38,7 +47,7 @@ public sealed class SafeZoneRuntime : IDisposable
             _previousPosition = actor.Position;
         }
         else _previousPosition = null;
-        _movement.Update(player, capability, DateTime.UtcNow, allowMovement);
+        _movement.Update(player, capability, CurrentTime, allowMovement);
     }
 
     public void Clear()

@@ -56,6 +56,9 @@ MasterPlayer/
 │                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
 ├── Replay/
 │   ├── ReplayRecording.cs         # 录制文件模型 + JSON Lines 读写（.mpreplay.jsonl；纯逻辑不依赖游戏服务，tests 可链接）
+│   ├── ReplayWorldState.cs        # v2对象／状态／施法／队伍快照、增量及独立回放世界
+│   ├── ReplayWorldCapture.cs      # 主线程采样对象，保存已观察到的完整EAnim
+│   ├── ReplayPlayback.cs          # 按录制时间及文件行序合并对象帧和事件
 │   ├── ReplayScriptEventRouter.cs # 回放事件路由：脚本订阅落本地注册表，Raise 按类型派发 + 简单事件映射补发
 │   ├── ReplayRecorder.cs          # 录制器：PromeEventBus.OnLogEvent 全量订阅写文件；手动或战斗自动开停
 │   ├── ReplayRecordFilter.cs      # 录制过滤：跳过玩家（PC）/玩家召唤物来源的动作·状态·读条（纯逻辑）
@@ -66,7 +69,8 @@ MasterPlayer/
 │   ├── ExampleGenericScript.cs    # 通用机制示例脚本（编译进插件 DLL 做冒烟检查）
 │   └── ExampleZoneScript.cs       # 区域限定示例脚本
 ├── Scripts/
-│   └── Crucible/                 # 斗兽奇弈五盘入口（随 DLL 内置加载，配置目录版本可覆盖）
+│   ├── Crucible/                 # 斗兽奇弈五盘入口（随 DLL 内置加载，配置目录版本可覆盖）
+│   └── Dungeons/                 # BMR 地城入口；实现与固定场地轮廓位于 Mechanics/Dungeons/
 ├── docs/
 │   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
 │   ├── BMR机制迁移指南.md         # BMR→MasterPlayer 机制迁移的语义对照/流程/踩坑（配合 .agents/skills/bmr-mechanic-migration 技能）
@@ -104,10 +108,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 ```
 
 - `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 创建 `_safeZone` 与切区/死亡/战斗结束订阅 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_replayRecorder = new Replay.ReplayRecorder()`、`_replayController = new Replay.ReplayController(_scripts, _replayRecorder)`、`_replayWindow = new Windows.ReplayWindow()`、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `+= _radarOverlay.Draw` → `+= _replayWindow.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，无参开关设置面板，`/prmp rec` 或 `/prmp record` 开始/停止录制，`/prmp replay` 开关录制回放窗口）。
-- `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒），由 `SafeZoneActivation.Update` 应用开关，再按 `_dodge` → `_mechanics` → `_replayController` → `_scripts` → `_follow` → `_safeZone` → `AoeVisibility` → `_radar` 更新。回放事件在脚本之前，解算在脚本与跟随注册区域之后，绘制读取本地结果。`SafeZoneRuntime.Update` 接收 PR 移速倍率和回放移动门控。**EnableScripts 总开关门控在 ScriptManager 内部**。另有 internal 属性 `Recorder` / `Replay` / `ReplayWindow` 供 UI 使用。
+- `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒），由 `SafeZoneActivation.Update` 应用开关，再按 `_dodge` → `_mechanics` → `_replayRecorder` → `_replayController` → `_scripts` → `_follow` → `_safeZone` → `AoeVisibility` → `_radar` 更新。回放控制器先还原对象帧和事件，并用录制时钟更新回放脚本；普通脚本更新不再重复推进回放。解算在实时脚本与跟随注册区域之后，绘制读取本地结果。`SafeZoneRuntime.Update` 接收 PR 移速倍率和回放移动门控，回放禁止移动但按录制时钟回收限时区域。**EnableScripts 总开关门控在 ScriptManager 内部**。另有 internal 属性 `Recorder` / `Replay` / `ReplayWindow` 供 UI 使用。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
 - `Dispose()`：退订上述事件（Framework.Update、UiBuilder.Draw 三处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 十一个组件，顺序 `_replayWindow` → `_mainWindow` → `_follow` → `_radarOverlay` → `_replayController`（其 Dispose 先停回放会话）→ `_replayRecorder`（其 Dispose 先停录制）→ `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → 安全区事件订阅 → `_safeZone` → `Instance = null`。
-- `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
+- `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解，这三个实时回调在回放期间跳过，保护录制场景。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
 - `SafeZoneActivation` 注入本地 `SafeZone.Setting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`；仅智能躲避请求 `EnableAutoMovement`。关闭/卸载仅撤销自己开启的本地开关，手动关闭不每帧覆写，可在诊断页恢复。功能联动不修改 PR 本体安全区。
 
 **Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
@@ -353,6 +357,8 @@ public sealed class RunningScript
 public abstract class MasterPlayerScript
 {
     public IScriptHostContext Host { get; internal set; }
+    public DateTime CurrentTime { get; }           // 实时UTC或录制时钟；暂停冻结
+    public Replay.ReplayWorldState? ReplayWorld { get; } // 回放世界，实时为null
     public ScriptSafeZoneApi SafeZone { get; }      // => Host.SafeZone
     public ScriptMoveApi Move { get; }              // => Host.Move
     public ScriptDrawApi Draw { get; }              // => Host.Draw
@@ -380,6 +386,8 @@ public abstract class MasterPlayerScript
 
 public interface IScriptHostContext
 {
+    DateTime CurrentTime { get; }                  // 默认实现DateTime.UtcNow，保持外部实现兼容
+    Replay.ReplayWorldState? ReplayWorld { get; }   // 默认实现null，回放上下文提供独立世界
     ScriptSafeZoneApi SafeZone { get; }
     ScriptMoveApi Move { get; }
     ScriptDrawApi Draw { get; }
@@ -415,7 +423,8 @@ public sealed class ScriptManager : IDisposable
     public void StopScript(string id);
     public void StopAll();
     public void Update(float deltaTime);
-    internal bool ReplayModeActive { get; }     // 回放会话门控：Update 跳过区域自动启停（回放脚本仍照常 UpdateInternal）
+    internal bool ReplayModeActive { get; }     // 回放会话门控：Update 跳过实时区域启停及脚本更新
+    internal void UpdateReplayScripts(float deltaTime); // 由ReplayController按录制时钟调用
     internal void EnterReplayMode();
     internal void ExitReplayMode();
     public bool IsScriptEnabled(string id);
@@ -570,6 +579,7 @@ public readonly record struct GreenMovePoint(
 ### 5.6 脚本系统（`Scripting\`，模式照抄 PromePainter `Scripting\`）
 
 - **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
+- **非斗兽棋 BMR 移植**：逐模块状态与能力缺口见 `docs/BMR全量迁移记录.md`；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
 - **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
 - **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。
@@ -602,14 +612,15 @@ public readonly record struct GreenMovePoint(
 
 机制事件的录制与时间轴回放，用于复现战斗、测试脚本运行状态。**PR 本体的 PromeEventBus/LogSystem 只订阅不发布（无公开 Raise），合成事件因此只在 MasterPlayer 脚本层派发**：录制走 `PromeEventBus.OnLogEvent` 全量订阅，回放经每脚本 `ReplayScriptEventRouter` 直喂，不进总线，DodgeController/Follow/其他插件不响应回放事件。
 
-- **录制文件**（`.mpreplay.jsonl`，JSON Lines）：首行 header `{"v":1,"territory":…,"territoryName":…,"startedUtc":…,"pluginVersion":…}`（territoryName 为后加字段，旧文件缺省空串、新文件对旧读取器兼容）；之后每行 `{"t":秒,"kind":"CastStart","type":"CLR 全名","data":{…}}`。序列化配置（`ReplayJson.Options`）：剔除 `LogSystemEvent.Raw`（运行态对象图不可序列化，回放后恒为 null）与 get-only `Kind`；自带 `Vector3JsonConverter`（`Vector3?` 同用）。未知类型/损坏行跳过并计入 `ReplayRecording.SkippedEvents`。
+- **录制文件**（`.mpreplay.jsonl`，JSON Lines）：新文件header为v2，仍读v1；事件行使用t/kind/type/data，CastStart额外保存packetFacing，WorldFrame行保存初始完整快照与后续增量。Raw对象图不序列化，读回CastStart仅重建ReplayCastData标记；缺朝向的旧事件也不会回退实时对象。v2要求零时刻完整快照、拒绝损坏JSON及对象数据，未知事件类型跳过计数。格式和字段见 `docs/录制回放格式.md`。
 - **ReplayRecorder**：手动（面板按钮或 `/prmp rec`）或 `AutoRecordOnBattleStart` 自动（战斗开始录、结束停）。目录 `ConfigDirectory\MasterPlayer\Replays\`，文件名 `rec_yyyyMMdd_HHmmss_t{territory}_{区域名}.mpreplay.jsonl`（区域名取 Lumina TerritoryType：优先副本名 ContentFinderCondition、回退 PlaceName，非法文件名字符替换为 `_`，取不到则省略）。`IsRecording` / `CurrentFilePath` / `EventCount` / `FilteredCount` / `Elapsed` / `StatusMessage` 供面板轮询；录制与回放互斥。**来源过滤**：`ReplayRecordFilter.ShouldRecord(ev, isPlayerOwnedSource)` 跳过来源为玩家（ObjectKind.Pc）或玩家召唤物（OwnerId 属于 PC，录制器侧 0.5s 对象表缓存）的动作/状态/读条（CastStart/CancelCast/InterruptCast/ActionEffect/StatusAdd/StatusRemove），且聊天日志（ChatLog）一律不录（NpcYell/InstanceContentText 战斗台词不属于聊天，保留）；SourceId 为 0 或无法判定一律放行，连线/点名/场地/战斗等事件不过滤。
-- **ReplayController**：`Load(path)` → `Play()/Pause()/SetSpeed(0.25~4)/Seek(秒)/StopSession()`；`Update(deltaTime)` 在插件主循环中先于 `_scripts.Update` 调用。会话启动 = `ScriptManager.StopAll()` → `EnterReplayMode()` → 对「已启用 && 区域匹配**录制区域**」的描述符 `StartScript(id, new ReplayScriptEventRouter())`；时钟按 `deltaTime × Speed` 推进，到期事件对每个 router `Raise`。`Seek` 为 BMR 式「重置 + 快进」：重启回放脚本后从开头补发至目标时刻（脚本须确定性重放，契合铁律 7）。回放脚本被外部停光（刷新脚本/关总开关）时自动 `StopSession`；`StopSession` 只停仍是回放会话的脚本，之后下一帧区域自动启停恢复实时脚本。
+- **ReplayWorldCapture**：每0.1秒、保留事件前和停止时采样当前对象表，包含玩家／宠物状态（事件过滤不影响对象快照）；队伍排序和本人时间轴职能分开记录。EAnim从插件初始化起缓存已观察到的历史，插件加载前未知；切区或对象移除清理。
+- **ReplayController**：`Load(path)` → `Play()/Pause()/SetSpeed(正有限值)/Seek(秒)/StopSession()`（UI提供0.25~4倍）；先于普通脚本Update运行。以录制区域启动脚本，所有router共享独立ReplayWorld。Playback按t和文件行序应用帧／派发事件，推进录制时钟和脚本更新；暂停冻结，Seek从开头重建世界与脚本，末尾暂停保留最终场景。Stop撤销时钟／实体位置覆盖后恢复实时；刷新脚本先完整退出回放，普通Update再按实际区域启动。
 - **ReplayScriptEventRouter**：强类型 LogSystem 订阅按 `registeredType.IsAssignableFrom(ev.GetType())` 派发（`LogEvent` 兜底/泛型天然覆盖）；`LogSystemBattleStarted/Ended/CountdownStarted/WeatherChanged/Territory/ChatLog` 映射补发同名简单事件（含负载：WeatherId/(ushort)TerritoryId/Sender+Message+LogKind）。EventManager/LogMessageManager 独有的简单事件（PlayerDied/PlayerRevived/PlayerMoveStateChanged/SystemLog/BattleLog/ShowMessage）无 LogSystem 对应记录，回放不触发。逐订阅者异常隔离（对齐 LogSystemHub），异常计入 `ErrorCount`/`LastError`。
-- **边界**：不录 actor 位置快照、不重建 WorldState——脚本经 `Svc.Objects` 直读游戏状态在回放中仍是实时值；事件自带的位置/朝向字段（SourcePosition/EffectPosition/SourceRotation 等）可正常回放。回放中脚本照常注册 SafeZone 区域（雷达/真实世界绘制可见），`OnUpdate` 照常按真实帧时间 tick。
+- **脚本接入边界**：首批地城和可视化脚本通过CurrentTime／ReplayWorld读取录制状态；雷达、SafeZone相对时间和实体绑定、AddAoe预览使用录制时钟／对象，缺实体绝不回退实时对象。旧v1文件无法补回对象与朝向；外部脚本直读Svc.Objects／DateTime.UtcNow或使用PR原始Draw接口仍需单独改造。斗兽棋机制本轮不改。
 - **ReplayTimeline / ReplayComparison**（纯逻辑，tests 可链接）：`ReplayTimeline.Build(ReplayRecording)` 产出读条区间（同 SourceId 的取消/打断事件截断横条并标记）、泳道分类打点（Cast/Effect/Tether/Status/Mark/Arena/Battle/Misc）与实体名映射（ObjectCreate/ActionEffect）；`ReplayComparison.Compare(IReadOnlyList<ComparisonLog>)` 按读条 ActionId 聚合每日志次数、对齐后首用时间与首用最大差，`FirstCastTime`/`FirstBattleTime` 供对齐锚点。名称解析（Lumina）只在 UI 层做。
 - **ReplayWindow**（独立窗口，契约见 §3.1）：时间轴回放页签上内嵌 `RadarView`（回放中实时呈现脚本注册的机制范围）下时间轴（点击 Seek 调 `ReplayController.Seek`）；日志对比页签支持按战斗开始/首次读条对齐与手动偏移，归纳共同/差异技能。
-- 回归：`tests/ReplayRecordingRegression.cs`（序列化往返 + 路由派发 + 异常隔离/退订 + 玩家来源过滤）与 `tests/ReplayTimelineRegression.cs`（时间轴构建 + 对比对齐），经 tests csproj 源码链接 `ReplayRecording.cs` / `ReplayRecordFilter.cs` / `ReplayScriptEventRouter.cs` / `ReplayTimeline.cs` / `ReplayComparison.cs` / `IScriptEventRouter.cs`（均不依赖 Svc/PromeEventBus）。
+- 回归：`tests/ReplayRecordingRegression.cs`、`ReplayTimelineRegression.cs`、`ReplayWorldRegression.cs`覆盖数据、事件、时间顺序、快照、时钟、绑定与旧文件边界；`tests/ScriptCompilation/ScriptCatalogRegression.cs`加载实际DLL验证暂停／速度／跳转／区域过期／实时隔离／刷新及退出清理。
 
 ## 6. 铁律（违反任何一条都等于 bug）
 

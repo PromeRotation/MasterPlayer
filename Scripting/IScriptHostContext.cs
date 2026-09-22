@@ -10,6 +10,8 @@ namespace MasterPlayer.Scripting;
 /// </summary>
 public interface IScriptHostContext
 {
+    DateTime CurrentTime => DateTime.UtcNow;
+    Replay.ReplayWorldState? ReplayWorld => null;
     // ── 三门面 ────────────────────────────────────────
     ScriptSafeZoneApi SafeZone { get; }
     ScriptMoveApi Move { get; }

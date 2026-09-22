@@ -41,6 +41,8 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     public ScriptMoveApi Move => _move;
     public ScriptDrawApi Draw => _draw;
     public ScriptSettingStore Settings => _settings;
+    public Replay.ReplayWorldState? ReplayWorld => (_router as Replay.ReplayScriptEventRouter)?.World;
+    public DateTime CurrentTime => ReplayWorld?.CurrentTime ?? DateTime.UtcNow;
 
     internal bool IsReplay => !ReferenceEquals(_router, LiveScriptEventRouter.Instance);
 

@@ -9,10 +9,12 @@ internal sealed record VisualActor(uint EntityId, uint DataId, Vector3 Position,
 
 internal sealed record VisualCast(LogSystemCastStartEvent Event, VisualActor? Caster, VisualActor? Target, float? CastRotation)
 {
-    internal static VisualCast Capture(LogSystemCastStartEvent e)
+    internal static VisualCast Capture(LogSystemCastStartEvent e, Replay.ReplayWorldState? world = null)
     {
-        static VisualActor? Actor(uint id)
+        VisualActor? Actor(uint id)
         {
+            if (world != null)
+                return world.Actors.TryGetValue(id, out var recorded) ? new(recorded.EntityId, recorded.Oid, recorded.Position, recorded.Rotation) : null;
             var actor = Svc.Objects.SearchByEntityId(id);
             return actor == null ? null : new VisualActor(actor.EntityId, actor.BaseId, actor.Position, actor.Rotation);
         }

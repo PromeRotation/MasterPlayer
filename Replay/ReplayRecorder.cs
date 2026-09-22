@@ -16,17 +16,22 @@ public sealed class ReplayRecorder : IDisposable
     private readonly IDisposable _battleStartedSub;
     private readonly IDisposable _battleEndedSub;
     private readonly HashSet<uint> _playerSourceIds = [];
-    private IDisposable? _logSub;
+    private readonly IDisposable _logSub;
     private ReplayRecordingWriter? _writer;
     private DateTime _startLocal;
     private DateTime _playerSourceCacheAt;
     private bool _autoStarted;
     private bool _disposed;
+    private readonly ReplayWorldCapture _worldCapture = new();
+    private ReplayWorldFrame? _lastWorld;
+    private DateTime _nextWorldCapture;
+    private double _lastTime;
 
     public ReplayRecorder()
     {
         _battleStartedSub = PromeEventBus.OnBattleStarted(this, OnBattleStarted);
         _battleEndedSub = PromeEventBus.OnBattleEnded(this, OnBattleEnded);
+        _logSub = PromeEventBus.OnLogEvent(this, OnLogEvent);
     }
 
     public static string RecordingsDirectory => Path.Combine(
@@ -72,15 +77,15 @@ public sealed class ReplayRecorder : IDisposable
             var writer = new ReplayRecordingWriter(new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read));
             _startLocal = DateTime.Now;
             EventCount = 0;
-            writer.WriteHeader(new ReplayHeader(1, territory, DateTime.UtcNow, version) { TerritoryName = territoryName });
-
             _writer = writer;
+            writer.WriteHeader(new ReplayHeader(2, territory, _startLocal.ToUniversalTime(), version) { TerritoryName = territoryName });
+            _lastWorld = null;
+            _lastTime = 0;
+            CaptureWorld(_startLocal.ToUniversalTime());
             CurrentFilePath = path;
             _autoStarted = automatic;
             FilteredCount = 0;
             _playerSourceCacheAt = DateTime.MinValue;
-            _logSub = PromeEventBus.OnLogEvent(this, OnLogEvent);
-
             StatusMessage = $"录制中：{Path.GetFileName(path)}";
             Svc.Log.Info($"[MasterPlayer] 开始录制：{path}");
             return true;
@@ -100,6 +105,8 @@ public sealed class ReplayRecorder : IDisposable
             return;
 
         var file = CurrentFilePath;
+        try { CaptureWorld(DateTime.UtcNow); }
+        catch (Exception ex) { FailRecording(ex); return; }
         var count = EventCount;
         var filtered = FilteredCount;
         CleanupRecording();
@@ -109,6 +116,7 @@ public sealed class ReplayRecorder : IDisposable
 
     private void OnLogEvent(LogSystemEvent ev)
     {
+        _worldCapture.Observe(ev);
         var writer = _writer;
         if (writer == null)
             return;
@@ -119,16 +127,42 @@ public sealed class ReplayRecorder : IDisposable
             return;
         }
 
-        var t = Math.Max(0d, (ev.Timestamp - _startLocal).TotalSeconds);
         try
         {
+            var t = CaptureWorld(DateTime.UtcNow);
             writer.WriteEvent(t, ev);
             EventCount++;
         }
         catch (Exception ex)
         {
-            Svc.Log.Warning(ex, $"[MasterPlayer] 写入录制事件失败（{ev.Kind}）");
+            FailRecording(ex);
         }
+    }
+
+    public void Update()
+    {
+        if (_writer == null || DateTime.UtcNow < _nextWorldCapture) return;
+        try { CaptureWorld(DateTime.UtcNow); }
+        catch (Exception ex) { FailRecording(ex); }
+    }
+
+    private double CaptureWorld(DateTime now)
+    {
+        var world = _worldCapture.Capture(now);
+        var t = Math.Max(_lastTime, (now - _startLocal.ToUniversalTime()).TotalSeconds);
+        _writer!.WriteWorldFrame(t, ReplayWorldFrame.Delta(_lastWorld, world));
+        _lastWorld = world;
+        _lastTime = t;
+        _nextWorldCapture = now.AddSeconds(0.1);
+        return t;
+    }
+
+    private void FailRecording(Exception ex)
+    {
+        var path = CurrentFilePath;
+        CleanupRecording();
+        StatusMessage = $"录制已中止，文件可能不完整：{Path.GetFileName(path)}；{ex.Message}";
+        Svc.Log.Error(ex, "[MasterPlayer] 录制对象状态或事件失败");
     }
 
     /// <summary>来源实体是否为玩家（PC）或玩家召唤物（OwnerId 属于 PC）；0.5s 缓存，无法判定视为 false（放行）。</summary>
@@ -198,10 +232,9 @@ public sealed class ReplayRecorder : IDisposable
 
     private void CleanupRecording()
     {
-        try { _logSub?.Dispose(); } catch { }
         try { _writer?.Dispose(); } catch { }
-        _logSub = null;
         _writer = null;
+        _lastWorld = null;
         CurrentFilePath = null;
         _autoStarted = false;
     }
@@ -214,6 +247,7 @@ public sealed class ReplayRecorder : IDisposable
 
         try { _battleStartedSub.Dispose(); } catch { }
         try { _battleEndedSub.Dispose(); } catch { }
+        try { _logSub.Dispose(); } catch { }
         CleanupRecording();
     }
 }

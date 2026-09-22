@@ -6,8 +6,9 @@ using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Radar;
 
-internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> rules)
+internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> rules, Func<DateTime>? clock = null)
 {
+    private DateTime Now => clock?.Invoke() ?? DateTime.UtcNow;
     private const string OtherKey = "other";
     private readonly Dictionary<SafeZoneAreaHandle, string> _areaSources = new();
     private readonly HashSet<SafeZoneAreaHandle> _navigationOnly = [];
@@ -35,7 +36,7 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 
     public void AddPreview(string id, IGeometryShape geometry, bool safe, float durationMs, string key, string name, bool outlineOnly = false, float progress = 1f)
         => _previews[id] = new AoePreview(id, geometry, safe, GetRule(key, name),
-            durationMs > 0f ? DateTime.UtcNow.AddMilliseconds(durationMs) : DateTime.MaxValue, outlineOnly, progress);
+            durationMs > 0f ? Now.AddMilliseconds(durationMs) : DateTime.MaxValue, outlineOnly, progress);
 
     public void AddLine(string id, Vector3 start, Vector3 end, bool safe, string key, string name)
         => _lines[id] = new(id, start, end, safe, GetRule(key, name));
@@ -56,8 +57,8 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 
     public void Update(SafeZoneManager manager)
     {
-        var now = DateTime.UtcNow;
-        if (now < _nextPruneUtc)
+        var now = Now;
+        if (now < _nextPruneUtc && _nextPruneUtc - now <= TimeSpan.FromSeconds(0.5))
             return;
         _nextPruneUtc = now.AddSeconds(0.5);
         foreach (var handle in _areaSources.Keys.Where(h => !manager.ContainsArea(h)).ToArray())

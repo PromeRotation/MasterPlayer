@@ -10,6 +10,8 @@ namespace MasterPlayer.Replay;
 /// </summary>
 internal sealed class ReplayScriptEventRouter : IScriptEventRouter
 {
+    public ReplayWorldState World { get; }
+    public ReplayScriptEventRouter(ReplayWorldState? world = null) => World = world ?? new();
     private readonly List<(Type EventType, Delegate Handler)> _logHandlers = [];
     private readonly Dictionary<string, List<Delegate>> _namedHandlers = new(StringComparer.Ordinal);
     private bool _disposed;
