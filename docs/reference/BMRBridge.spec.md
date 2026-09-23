@@ -65,6 +65,8 @@
 
 ## 导航桥（M5）
 
+状态：2026-09-23 已实现（MP 侧 `BmrBridge/BmrNavigationBridge.cs` + `BmrHintsConvert.cs`，DodgeController 加 BMR 激活模块压制；离线回归 `tests/BmrHintsConvertRegression.cs` 9 场景）。
+
 - 每帧 `session.Update()` 后驱动 `AIHintsBuilder.Update(hints, playerSlot, false)`（rsr=null），消费：
   - `ForbiddenZones` → SD* 具体类型识别（SDCircle/SDRect/SDCone/SDDonut/SDCross 及组合）→ MP GeometryTemplate；无法识别回退 0.5 码网格采样连通域 → LocalPolygonTemplate。activation → 绝对时间（注册 AddDelayedHit/AddDelayedDanger；default=立即 → AddPersistentDanger + 帧 diff 续命）。键：`bmr/{sourceInstanceID}/{activationTick}/{序}`，帧 diff 移除未刷新句柄。
   - `TemporaryObstacles` → AddObstacle（同样 diff 生命周期）。
@@ -74,6 +76,7 @@
   - `ImminentSpecialMode`（Pyretic/NoMovement/Misdirection）：映射为移动门控提示（初版仅记录+文字提示，不解算）。
   - `PredictedDamage/敌人优先级/ActionsToExecute`：不执行动作/减伤/转火调度（缺口记录；文字提示保留）。
 - 注册仅当 `EnableAutoDodge`（智能躲避）开启时生效；绘制不受该开关限制（与 DodgeController 同纪律：绘制/雷达/躲避任一开启即识别）。两套余量体系不叠加：BMR activation 原样传入，MP 侧余量照常吃（结果更保守，可接受）。
+- 落地差异（相对上一段设计）：ShapeDistance 具体类的参数全部存在私有字段（Cone/DonutSector/ArcCapsule 只存派生法线），直转经反射配方读取（Cone/DonutSector 由边法线还原朝向与半角，coneFactor<0 分角线反向）；采样产物为 WorldPolygonTemplate（外轮廓用角点网格 marching-squares 边链接，对角捏合拆环、孔洞环随最大环丢弃）；Inverted 族/补集语义不注册（采样填充率 >65% 也判补集丢弃），避免把「禁止在 X 外」误画成全场危险。危险区注册仍吃 MP 侧 `DodgeDangerMargin` 外扩（与脚本门面一致），障碍/边界不外扩；实体不绑定（StaticTransform 快照 + 签名变化才 UpdateArea/重建）。DodgeController 在桥有激活模块时压制通用躲避推断。
 
 ## 时间轴（M6）
 

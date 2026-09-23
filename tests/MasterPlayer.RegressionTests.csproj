@@ -28,6 +28,7 @@
     <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\BmrBridge\BmrDrawConvert.cs" Link="BmrBridge\BmrDrawConvert.cs" />
+    <Compile Include="..\BmrBridge\BmrHintsConvert.cs" Link="BmrBridge\BmrHintsConvert.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />

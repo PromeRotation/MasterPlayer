@@ -17,6 +17,7 @@ public sealed class BmrBridgeController : IDisposable
     private BmrWorldFeed? _feed;
     private BmrActionEffectCapture? _capture;
     private BmrDrawBridge? _drawBridge;
+    private BmrNavigationBridge? _navBridge;
     private bool _disposed;
     private string? _lastLoggedError;
 
@@ -34,6 +35,13 @@ public sealed class BmrBridgeController : IDisposable
     public string? DrawModuleName => _drawBridge?.ActiveDrawModuleName;
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
+    public bool HasActiveModule => _session?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
+    public bool NavigationActive => _navBridge?.NavigationActive == true;
+    public int NavDangerZoneCount => _navBridge?.DangerZoneCount ?? 0;
+    public int NavObstacleCount => _navBridge?.ObstacleZoneCount ?? 0;
+    public bool NavBoundaryActive => _navBridge?.BoundaryActive == true;
+    public string? SpecialModeHint => _navBridge?.SpecialModeHint;
+    public string? PredictedDamageText => _navBridge?.PredictedDamageText;
 
     public BmrBridgeController()
     {
@@ -44,6 +52,7 @@ public sealed class BmrBridgeController : IDisposable
             _session = new BmrSession(ResolveGameVersion());
             _feed = new BmrWorldFeed(_session);
             _capture = new BmrActionEffectCapture();
+            _navBridge = new BmrNavigationBridge(_session);
             _drawBridge = new BmrDrawBridge(_session);
             SubscribeEvents();
             IsAvailable = true;
@@ -127,6 +136,7 @@ public sealed class BmrBridgeController : IDisposable
             || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
         {
             _capture?.Drain(null);
+            _navBridge?.Sleep();
             _drawBridge?.Sleep();
             return;
         }
@@ -141,6 +151,7 @@ public sealed class BmrBridgeController : IDisposable
             _feed.ApplyFrame(frame);
             _feed.Flush();
             _session.Update();
+            _navBridge?.Update();
             _drawBridge?.Update();
         }
         catch (Exception ex)
@@ -197,6 +208,16 @@ public sealed class BmrBridgeController : IDisposable
             catch { }
         }
         _capture = null;
+        try
+        {
+            _navBridge?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            try { Svc.Log.Warning($"[MasterPlayer] BMR 导航桥释放失败：{ex.Message}"); }
+            catch { }
+        }
+        _navBridge = null;
         try
         {
             _drawBridge?.Dispose();

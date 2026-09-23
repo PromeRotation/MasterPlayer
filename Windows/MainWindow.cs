@@ -480,6 +480,12 @@ public sealed class MainWindow : IDisposable
             HintInline($"区域模块：{zoneModule}");
         if (bridge.DrawModuleName is { } drawModule)
             HintInline($"绘制来源：{drawModule}");
+        if (bridge.NavigationActive)
+            HintInline($"导航区：危险 {bridge.NavDangerZoneCount} / 障碍 {bridge.NavObstacleCount} / 边界 {(bridge.NavBoundaryActive ? "有" : "无")}");
+        if (bridge.SpecialModeHint is { } specialMode)
+            ImGui.TextColored(WarningColor, $"特殊模式：{specialMode}");
+        if (bridge.PredictedDamageText is { } predicted)
+            HintInline($"预计伤害：{predicted}");
         if (bridge.CaptureErrorCount != 0)
             ImGui.TextColored(WarningColor, $"绘制捕获错误累计 {bridge.CaptureErrorCount} 起（{bridge.DrawCaptureError ?? "详见日志"}）");
         if (bridge.LastError is { } error)

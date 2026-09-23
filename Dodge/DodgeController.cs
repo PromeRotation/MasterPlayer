@@ -56,6 +56,12 @@ public sealed class DodgeController : IDisposable
             return;
         }
 
+        // BMR 模块已激活时其 ForbiddenZones 经导航桥注册，通用躲避推断让位（对齐 BMR AIHintsBuilder：有激活模块即停用自动推断）
+        if (MasterPlayerPlugin.Instance?.BmrBridge?.HasActiveModule == true)
+        {
+            return;
+        }
+
         if (!IsHostileCaster(e, out var casterHitboxRadius))
         {
             return;

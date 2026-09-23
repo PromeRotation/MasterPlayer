@@ -56,7 +56,9 @@ MasterPlayer/
 │   ├── BmrActionEffectCapture.cs  # ActionEffectHandler.Receive 纯观察 hook（只入队不拦截）→ 效果包 DTO
 │   ├── BmrLiveSampler.cs          # 对象表/队伍/标点 → BmrWorldFrame 采样（FFCS 读法对齐 ReplayWorldCapture）
 │   ├── BmrDrawBridge.cs           # 绘制桥（M4）：激活模块 DrawArenaCaptured 捕获 → 双视图预览注册 + 文字提示/extras
-│   └── BmrDrawConvert.cs          # BmrDrawCommand → MP 几何/线段/extras 纯逻辑转换（tests 可链接）
+│   ├── BmrDrawConvert.cs          # BmrDrawCommand → MP 几何/线段/extras 纯逻辑转换（tests 可链接）
+│   ├── BmrNavigationBridge.cs     # 导航桥（M5）：AIHintsBuilder 聚合 → 危险区/障碍/边界 diff 注册 + 面向控制 + 诊断
+│   └── BmrHintsConvert.cs         # ShapeDistance/ArenaBounds → GeometryTemplate 识别与采样 + 帧差集注册器（tests 可链接）
 ├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
 │                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
 │                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
@@ -259,6 +261,7 @@ public sealed class DodgeController : IDisposable
 - 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；雷达悬浮窗、真实世界绘制、智能躲避任一开启即识别读条，避免只开启绘制时没有危险区数据。注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
 - **施法者敌我过滤**（对齐 BMR `AIHintsBuilder.OnCastStarted`）：只响应 `ObjectKind.BattleNpc` 且游戏原生 `ActionManager.ClassifyTarget(Character*) == TargetCategory.Enemy` 的读条——玩家/宠物/坐骑/事件 NPC/友方战斗 NPC（剧情、Trust 等同盟单位）一律跳过；对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。命中时把施法者 `HitboxRadius` 传给形状推断。
 - **脚本压制去重**：`ScriptManager.IsGenericDodgeSuppressed(actionId)` 为 true（运行中脚本已用 `SuppressGenericDodge` 声明接管该技能）时跳过，避免通用躲避与脚本重复注册同一危险区。
+- **BMR 模块压制去重**：`MasterPlayerPlugin.Instance.BmrBridge?.HasActiveModule == true`（BMR 模块已激活、ForbiddenZones 经导航桥注册）时跳过，对齐 BMR AIHintsBuilder「有激活模块即停用自动 AOE 推断」的语义，避免通用推断与模块危险区重复。
 - **错峰判定转场**：由插件内 `MasterPlayer.Spatial.SafeZoneReborn.Solver.SafeZoneSolver` 的安全时间区间搜索处理，允许先在后判定区提前站位、等待，再进入已结束判定的区域；只向 GreenMove 下发首次等待前的路段，周期重解接续。修复只需构建并重载 MasterPlayer；回归入口为 `dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。
 
 高一 B31 四连放毒与预备点使用 R0.2、Center 目标圈；插件 Reborn 会细化小目标网格并按目标内部余量收紧移动容差。修改解算后须重新构建并加载 MasterPlayer，仅刷新脚本无法更新解算器。
@@ -327,7 +330,7 @@ public interface IMechanicHandler : IDisposable
 }
 ```
 
-**BmrBridge.BmrBridgeController**（`BmrBridge\BmrBridgeController.cs`）——BMR 输入桥（M3）+ 绘制桥宿主（M4），逐字契约：
+**BmrBridge.BmrBridgeController**（`BmrBridge\BmrBridgeController.cs`）——BMR 输入桥（M3）+ 绘制桥（M4）+ 导航桥（M5）宿主，逐字契约：
 
 ```csharp
 public sealed class BmrBridgeController : IDisposable
@@ -349,17 +352,26 @@ public sealed class BmrBridgeController : IDisposable
     public string? DrawModuleName { get; }                                   // 当前绘制来源模块名
     public int CaptureErrorCount { get; }                                    // 绘制捕获异常累计
     public string? DrawCaptureError { get; }
+    public bool HasActiveModule { get; }     // BossModules.ActiveModule?.StateMachine.ActivePhase != null（DodgeController 压制用）
+    public bool NavigationActive { get; }    // 导航桥正在注册（模块激活 && EnableAutoDodge && 非回放）
+    public int NavDangerZoneCount { get; }
+    public int NavObstacleCount { get; }
+    public bool NavBoundaryActive { get; }
+    public string? SpecialModeHint { get; }  // ImminentSpecialMode 文本（Pyretic/NoMovement/Freezing/Misdirection）
+    public string? PredictedDamageText { get; }
 }
 ```
 
 - 构造：`BmrRuntimeEnvironment.Initialize(Svc.Data.GameData, Svc.Log)`（IDataManager.GameData 属性拿 Lumina.GameData）→ 内存覆盖 `BossModuleManager.Config.MinMaturity`（int 直接转 `BossModuleInfo.Maturity`，Dummy=0/WIP=1/Contributed=2/Verified=3/AISupport=4，`>=` 语义；**不触发 `Modified.Fire`，BMR 配置不落盘**）→ `new BmrSession(gameVersion)`（版本串取 Lumina `Repositories["ffxiv"].Version`，回退 `"live"`）→ `new BmrWorldFeed(session)` → `new BmrActionEffectCapture()` → PromeEventBus 订阅（owner=this，逐个 IDisposable 退订）。初始化异常 → IsAvailable=false + LastError，其余组件照常。
 - 事件→DTO：Tether/TetherCancel/TargetIcon（IconId=MarkerId 原值，Feed 内减 IDScramble.Delta）/TargetVfx（TargetId 恒 0，PR 事件无此字段）/Marker（MarkerId=param1+1，减 1 得 Sign；TargetId=0xE0000000 为清除）/MapEffect（State=Param1|Param2<<16）/EObjAnimation/EObjSetState/DirectorUpdate/NpcYell/SystemLog（Args 恒空）/PlayActionTimeline；Waymark 无总线方法，走 `OnLogEvent<LogSystemWaymarkEvent>`，只更新控制器内 8 槽状态随帧下发。回调在主线程直接 `feed.Enqueue`；门控（总开关/压制/回放）关闭时回调直接丢弃，队列不积压。
-- `Update()` 门控：IsAvailable && EnableBmrBridge && !IsSuppressed && !ReplayModeActive 才执行；跳过帧清空 capture 队列并 `BmrDrawBridge.Sleep()`。执行序：`BmrLiveSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update` → `_drawBridge.Update()`。
+- `Update()` 门控：IsAvailable && EnableBmrBridge && !IsSuppressed && !ReplayModeActive 才执行；跳过帧清空 capture 队列并 `BmrNavigationBridge.Sleep()` + `BmrDrawBridge.Sleep()`。执行序：`BmrLiveSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update` → `_navBridge.Update()` → `_drawBridge.Update()`。
 - `BmrLiveSampler`（internal static）：全对象表遍历（SpawnIndex=表下标；EntityId 0/0xE0000000 回退 GameObjectId，0xFF 高字节丢弃）；IsAlly 用原生 `ActionManager.ClassifyTarget != Enemy`（非 Character 恒 true，对齐 BMR）；Cast 取 CastInfo（ActionType==1 为 Spell，Rotation 用 Character.CastRotation 弧度）；Statuses 逐槽带下标；队伍槽 0=本人（ContentId 先 Svc.Party 按 EntityId 匹配、回退 Svc.PlayerState），1-7 取 `PartyHelper.GetParty()` 顺序（含本人，跳过 [0]）；CFC 由 Lumina TerritoryType.ContentFinderCondition 解析并按区域缓存。
 - `BmrActionEffectCapture`：`Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(Addresses.Receive.Value, Detour)`；detour 只读包（NumTargets 截到 32，逐目标 8×ulong 原始效果）入 `ConcurrentQueue` 后必须原样调 `Original`，绝不改动画锁/不拦截动作；hook 失败一次性警告并降级（OnEventCast 不受影响）。
 - **绘制桥（M4，`BmrDrawBridge`）**：`EnableRadarOverlay || EnableRadar` 且 `BossModules.ActiveModule` 与队伍槽 0 存在时，每帧 `BmrModuleDrawCapture.Capture(module, 0, Angle(相机方位角 DirH+π))` 捕获绘制命令，经 `BmrDrawConvert` 转换后按稳定槽位 id `bmr/{moduleTypeName}/{i}` 注册进 `AoeVisibilityRegistry`（填充/描边→`AddPreview` 500ms 自过期，线→`AddLine`，帧末差集移除未刷新 id）；双视图全关、无激活模块、压制或回放时 `Sleep()` 清注册（`RemovePreviews("bmr/")`）并清空 extras/提示。捕获异常按模块 5 秒限频记 `LastCaptureError` 与计数。文字提示聚合 `CalculateGlobalHints()` + `CalculateHintsForRaidMember(0, pc)`，经控制器 `CurrentHints` 暴露给诊断页。
 - **`BmrDrawConvert`**（internal static 纯逻辑，不引用 Dalamud/PR，tests 直接链接）：Circle/Donut/Fan 直转 MP 几何；Cone(inner>0)/Capsule/ArcCapsule/ComplexPoly（只取外轮廓，洞忽略）/ZoneTriangles（逐三角形）→ `WorldPolygonGeometry`；Cross → 双 `RectangleGeometry`（臂长 2×Range、宽 2×HalfWidth）；Rect 换算中心 `Origin + dir×(LenFront−LenBack)/2`、宽 2×HalfWidth、长 LenFront+LenBack；BMR `Angle.Rad`/`WDir.ToAngle().Rad` 与 MP 弧度约定一致（0=+Z，π/2=+X）。安全色判定用 ColorConfig 默认 ABGR 硬编码对照表（SafeFromAOE 0x80008000 / Safe 0xff00ff00 → safe，其余默认危险）；场地边框 ComplexPoly（Border 白 0xffffffff）跳过，由 MP 边界层绘制。IconWorld/ActorMarker/CardinalNames 跳过（MP 雷达已有角色/罗盘）；Eye/TextWorld/SignMarker 转 `BmrRadarExtra`（记录 Kind/世界坐标/文本/危险标志/原色 ABGR）。Y 高度取队伍槽 0 玩家 `PosRot.Y`。
-- **雷达 extras 图层**：`RadarView.DrawBmrExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用 BMR 原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `bmr/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。导航桥（M5）不在本组件范围。
+- **雷达 extras 图层**：`RadarView.DrawBmrExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用 BMR 原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `bmr/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。
+- **导航桥（M5，`BmrNavigationBridge`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时 BMR 自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `BmrHintsConvert` 转模板后由 `BmrNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。TemporaryObstacles → `AddObstacle` 同 diff；PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `bmr-nav/{moduleTypeName}` 供「按机制显示」关闭。
+- **`BmrHintsConvert`**（internal static 纯逻辑，tests 直接链接）：ShapeDistance 运行时识别——SDCircle/SDDonut 直转、SDCone/SDDonutSector 由存储法线还原朝向与半角（coneFactor<0 时分角线反向）、SDRect/SDCross/SDTri/SDConvexPolygon/SDCapsule/SDArcCapsule 字段反射直转或多边形近似、SDPolygonWithHoles/SDComplexPolygonInvertedContains 取外轮廓（洞忽略）、SDUnion 全成员可识别才拆分；Inverted 族/SDPrecisePosition/SDOutsideOfUnion 等补集语义跳过（不误画）；其余（击退二值场、Intersection、DeepDungeonLOS 等）0.5 码网格采样（范围取模块边界半径、60 码封顶，填充率 >65% 判为补集丢弃）→ 连通域 → 角点网格 marching-squares 边链接外轮廓（对角捏合 cross=+1 拆环，孔洞环随最大环丢弃）→ WorldPolygonTemplate。`MapActivation`：default/已过→持续，未来→延迟秒数。`ConvertBounds`：Circle/ABRect(Rect/Square)/Custom（最大 part 外轮廓）→ MP 边界几何。`BmrNavAreaDiffer` 离线可测（SafeZoneRegistry/Manager 可脱机构造；快照在 `SafeZoneSetting.EnableSafeZone=false` 时过滤危险区）。GoalZones/敌人优先级/ActionsToExecute/OpEffectResult 不消费（缺口记录）。
 
 **Windows.MainWindow**（`Windows\MainWindow.cs`）
 

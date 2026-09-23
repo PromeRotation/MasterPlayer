@@ -362,6 +362,7 @@ ReplayRecordingRegression.Run(Run);
 ReplayWorldRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);
 BmrDrawConvertRegression.Run(Run);
+BmrHintsConvertRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");
 
