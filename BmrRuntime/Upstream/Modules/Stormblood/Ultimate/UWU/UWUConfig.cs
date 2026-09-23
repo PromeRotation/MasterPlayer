@@ -1,0 +1,12 @@
+namespace BossMod.Stormblood.Ultimate.UWU;
+
+[ConfigDisplay(Order = 0x210, Parent = typeof(StormbloodConfig))]
+public class UWUConfig() : ConfigNode()
+{
+    [PropertyDisplay("Titan gaols priorities (close < far)")]
+    [GroupDetails(["0", "1", "2", "3", "4", "5", "6", "7"])]
+    public GroupAssignmentUnique P3GaolPriorities = GroupAssignmentUnique.Default();
+
+    [PropertyDisplay("Show fixed location for Mistral Song 2")]
+    public bool P1MistralSongFixedLocation = true;
+}

@@ -1,0 +1,61 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
+using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+
+namespace BossMod;
+
+public sealed class Service
+{
+    internal static void BindRuntimeData(Lumina.GameData gameData, IPluginLog logger)
+    {
+        LuminaGameData = gameData;
+        Logger = logger;
+    }
+
+#pragma warning disable CS8618
+    [PluginService] public static IPluginLog Logger { get; private set; }
+    [PluginService] public static IDataManager DataManager { get; private set; }
+    [PluginService] public static IChatGui ChatGui { get; private set; }
+    [PluginService] public static IGameGui GameGui { get; private set; }
+    [PluginService] public static IGameConfig GameConfig { get; private set; }
+    [PluginService] public static IGameInteropProvider Hook { get; private set; }
+    [PluginService] public static ISigScanner SigScanner { get; private set; }
+    [PluginService] public static ICondition Condition { get; private set; }
+    [PluginService] public static IFramework Framework { get; private set; }
+    [PluginService] public static ITextureProvider Texture { get; private set; }
+    [PluginService] public static ICommandManager CommandManager { get; private set; }
+    [PluginService] public static IDtrBar DtrBar { get; private set; }
+    [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; }
+    // TODO: get rid of stuff below in favour of CS
+    [PluginService] public static IClientState ClientState { get; private set; }
+    [PluginService] public static IObjectTable ObjectTable { get; private set; }
+    [PluginService] public static IPlayerState PlayerState { get; private set; }
+    [PluginService] public static ITargetManager TargetManager { get; private set; }
+    [PluginService] public static IKeyState KeyState { get; private set; }
+    [PluginService] public static INotificationManager Notifications { get; private set; }
+#pragma warning restore CS8618
+
+#pragma warning disable CA2211
+    public static Action<string>? LogHandlerDebug;
+    public static Action<string>? LogHandlerVerbose;
+    public static void Log(string msg) => LogHandlerDebug?.Invoke(msg);
+    public static void LogVerbose(string msg) => LogHandlerVerbose?.Invoke(msg);
+
+    public static Lumina.GameData LuminaGameData = null!;
+    public static Lumina.Excel.ExcelSheet<T>? LuminaSheet<T>() where T : struct, Lumina.Excel.IExcelRow<T> => LuminaGameData.GetExcelSheet<T>(Lumina.Data.Language.English);
+    public static T? LuminaRow<T>(uint row) where T : struct, Lumina.Excel.IExcelRow<T> => LuminaSheet<T>()?.GetRowOrDefault(row);
+    public static ConcurrentDictionary<Lumina.Text.ReadOnly.ReadOnlySeString, Lumina.Text.ReadOnly.ReadOnlySeString> LuminaRSV = []; // TODO: reconsider
+
+    public static WindowSystem? WindowSystem;
+
+    public static ImFontPtr IconFont => UiBuilder.IconFont;
+
+#pragma warning restore CA2211
+
+    public static readonly ConfigRoot Config = new();
+
+    public static BossModuleMainWindow? BossModWindow;
+}

@@ -8,7 +8,7 @@
 - MP 起始提交：`e6cf0351b380069798165d04f05bdd7b29e64bf9`。
 - [完整模块清单 CSV](reference/BMRModuleInventory.csv)：每个完整类型名一行，包含模块类型、资料片、分类、成熟度、分组、源码位置、SHA-256、迁移状态与注册核验说明。支持用电子表格筛选；GroupID/CFCID 不等于 TerritoryType。
 - 清单使用 Roslyn 语法树和基类链解析，包含间接继承、同文件多个模块、using 导入的基类、没有 ModuleInfo 的类型；不把注释里的类声明算成活跃源码。它是**源码候选清单**，不是成功加载数量，仍需逐批核验 States 构造、主 OID、注册冲突与条件。
-- 2,841 个 Modules 下 C# 文件，**1,060 个非斗兽棋 BossModule 候选 + 57 个 ZoneModule**。另将 45 个斗兽棋模块保留为“排除”行，总计 1,162 行。野外狩猎、任务、金碟等独立分类保留，避免“所有副本”边界导致资料遗漏。
+- 2,841 个 Modules 下 C# 文件。扩展扫描整个工程后，范围为 **1,060 个非斗兽棋 BossModule + 154 个 ZoneModule**：此前只限定 Modules 目录，漏掉 QuestBattle 目录中的97个任务区域模块，现已补齐。另将45个斗兽棋模块保留为“排除”行，总计1,259行，纳入目标1,214个模块。
 - 初始文本扫描曾得到 1,070；语法复核确认多出的 10 项完全处于注释中：A11CommandModel、A12Hobbes、A14WalkingFortress、A12Hashmal、A13Rofocale、A14Argath、Hydatos 的 Barong、Frostmane、KingGoldemar、Leuke。它们没有可运行模块可移植；不计入完成率。
 
 | 资料片 | 非斗兽棋首领候选 |
@@ -37,13 +37,14 @@
 
 来源成熟度为 Verified 713、Contributed 187、AISupport 102、WIP 58。成熟度只代表 BMR 的声明，不能替代 MP 验证。
 
-57 个区域模块包含四种深层迷宫共50个、优雷卡4个、博兹雅／扎杜诺尔2个、沙斯塔夏1个。ForkedTowerMagic Extreme 的 TwoHeadedAevis、SwordDancer、Necrophobia、Index 没有显式 ModuleInfo，源码注释说 CN 不注册；实际注册器仍扫描这些类型，但缺少名为 `OID.Boss` 的默认成员会推断出主 OID 0，不能自动匹配真实首领。见 U04，不将注释当作编译排除证据。
+Modules 目录中的57个区域模块包含四种深层迷宫共50个、优雷卡4个、博兹雅／扎杜诺尔2个、沙斯塔夏1个；另有97个 QuestBattle 任务区域模块。ForkedTowerMagic Extreme 四个类型在上游没有显式 ModuleInfo，默认主 OID 为0；新运行库已用原枚举中的真实 OID 修复注册，仍保持 WIP。见 U04。
 
 ## 批次与当前结果
 
 | 批次 | 范围 | 当前状态 |
 |---|---|---|
 | 01 | 沙斯塔夏、塔姆塔拉墓园、铜铃铜山普通版 | 7个首领模块、18个组件、1个区域模块已接入；存在下表明确差异，待实机 |
+| 02：原源码运行库 | 全部1,214个范围内模块、原组件、状态机、地图资源 | 已独立编译并通过全清单构造／初始更新检查；专项行为已验，尚未对接MP实时输入输出，不计作全部机制可用 |
 | 后续 ARR 地城 | 从 D04 起，含困难版 | 待逐组件核验与移植 |
 | 其余资料片地城 | Heavensward 至 Dawntrail | 待移植 |
 | 讨伐／极／幻／团队／零式／联盟／绝境 | 按完整类型分别记账 | 待移植 |
@@ -51,7 +52,7 @@
 | 野外与其他分类 | Hunt／FATE／Quest 等 | 已盘点，待逐项确定实际模块覆盖 |
 | 斗兽棋 | 45个模块 | 按用户要求排除，本轮未改其机制 |
 
-未在批次01范围内的 **1,053 个首领候选和56个区域模块尚未移植**。通用读条识别能够画圈，不计作对应副本机制已经移植。
+未在批次01范围内的 **1,053 个首领模块和153个区域模块尚未完成MP实时接入及完整机制验收**。它们的原源码已进入批次02运行库；复制源码、编译成功、启动成功或通用读条能画圈，都不计作对应副本已经完成移植。
 
 首批规格、逐组件参数、常量、场地和验收条件见 [ARRDungeons01.spec.md](reference/ARRDungeons01.spec.md)。代码入口是 `Scripts/Dungeons/`，实现位于 `Mechanics/Dungeons/`；通过已有脚本目录规则随 DLL 内置发现，保留同名/GUID外部覆盖。
 
@@ -69,7 +70,7 @@
 | U01 | 待确认 | 当前客户端区域ID与场地高度 | 新区域ID已查询XIVAPI正反表，尚未在用户正在运行的客户端中实测 |
 | U02 | 已解释，实机时序待验 | 水纹EAnim与EventState不是同一字段 | 完整EAnim来自两个ushort。录制缓存插件加载后收到的历史动画；插件加载之前的动画未知，不从EventState字节推测 |
 | U03 | 已补新格式 | v2对象快照、变化、包朝向与录制时钟 | 首批地城／可视化脚本／雷达读取录制世界，支持暂停与Seek；旧v1文件缺失的信息不可补回，详见录制格式说明 |
-| U04 | 已解释，保留来源限制 | Sastasha 两模块为Contributed、四个FTM Extreme模块的注册条件 | Contributed不等于错误；四个FTM类型的默认主OID为0，不能自动匹配真实首领，不能称为完全未被扫描 |
+| U04 | 已解释并修复运行库注册 | Sastasha 两模块为Contributed、四个FTM Extreme模块的注册条件 | Contributed不等于错误；新运行库补全四个FTM主OID，仍为WIP，实时与完整机制待验 |
 | U05 | 待实机 | 所有首批机制的网络时序和游戏内实际显示 | 离线通过不等于实机通过；需要各副本录像／游戏内验收 |
 
 复杂场地不是外接圆替代。首批7套多边形由当前BMR模块源码重新编译并执行其场地定义导出；使用本地BMR几何运行库 SHA-256 `f011ccab502087aa1581c2bbb5f1374da613a3ec8de064d9e720deda06ff3678`。导出不启动BMR插件、不成为MP运行时依赖。库的构建提交未嵌入来源元信息，保留该散列；离线已检查铜铃的差集缺口与三套墓园边界，最终视觉仍按U05实测。
@@ -116,11 +117,19 @@ BMR 的 `TrashSpawning` 也只记组件存活期间收到的动画，没有从 E
 
 `Contributed` 在 BMR 表示第三方贡献、尚未被插件作者验证，不能理解为“已知有错”。沙斯塔夏的 Chopper／Denn 是 Contributed；染血纸条所在 ZoneModule 是 Verified。Verified 只描述上游模块，不证明 MP 移植已实测。
 
-FTM Extreme 四个类型仍会被注册器扫描；它们没有显式 ModuleInfo，OID 枚举也没有名为 `Boss` 的成员，于是默认推断主 OID 为0，不能自动匹配 TwoHeadedAevis `0x4C18`、SwordDancer `0x4D7E`、Necrophobia `0x4BE7`、Index `0x4B67`。没有发现按 CN 编译排除的对应分支，因此记录为“默认注册身份异常，待修正与验证”，不写成“类根本不存在于注册表”。
+FTM Extreme 四个类型在上游仍被扫描，但没有显式 ModuleInfo，OID 枚举也没有 `Boss` 成员，默认主 OID 为0。新运行库已显式补入 TwoHeadedAevis `0x4C18`、SwordDancer `0x4D7E`、Necrophobia `0x4BE7`、Index `0x4B67`，消除注册冲突并保留 WIP；全类型构造和初始更新已通过，完整机制与实时表现仍待验。原BMR仓库未修改。
+
+## 原源码运行库进展
+
+`BmrRuntime/` 导入3,316份C#源码、416份障碍位图和1份地图数据库，排除原插件入口及斗兽棋。库独立编译，不修改PR，也尚未加入已部署插件的引用。保留上游状态机和组件，可复用全部模块的原机制逻辑；完整宿主适配要求见 [BMRRuntime.spec.md](reference/BMRRuntime.spec.md)。
+
+已验证全清单类型与编译结果一致，1,060个首领／154个区域模块均可注册、构造和进行初始更新。行为测试涵盖 Chopper 原 AOE 形状／0.3秒补正／效果计数与施法结束、P1S 的事件驱动状态转换／原时长／伤害标记／未决分支与超时预测、Calcabrina 与 CLL 伴随对象迟加载、Calcabrina 来源死亡／销毁后的扇形清理、Enuo 塔名单跨世界隔离、冰面镜头输入及会话正常／异常清理。14个源码适配文件逐一固定修改前后的哈希，测试拒绝未登记的后续改动。逐类型结果见 [BMRRuntimeCoverage.csv](reference/BMRRuntimeCoverage.csv)；这些测试不证明所有战斗阶段已经完成验收。
+
+当前关键未完成项是完整世界与效果包输入、原始绘制命令、连续导航评分、AI执行接口和MP时间轴显示。尤其PR逐目标效果摘要缺少原主目标／效果数组等字段，不能用摘要猜回完整包；任务模块的旧IPC／原生控制边界也必须替换后才能启用。运行库的18条构建警告已在规格中列明，未屏蔽。
 
 ## 验证与再生成
 
-验证构建使用 `-p:CI=true`，输出到仓库 `bin/Debug/`。2026-09-22 在当前提交 `cde2b27` 基础上重新验证后，按用户要求使用 `-p:CI=false` 部署至 `C:/Users/xiaos/AppData/Roaming/XIVLauncherCN/pluginConfigs/PromeRotation/Plugins/MasterPlayer`。DLL／PDB、PR 脚本依赖与两份许可文件均与验证产物或来源文件逐一核对 SHA-256；DLL 为 `7737efb7fb57c87a3a7aab379aa9a6d5808bab0ce2fd3a7a2a38765e2c4029d8`。没有代替用户执行游戏内热重载。最新验证结果：
+验证构建使用 `-p:CI=true`，输出到仓库 `bin/Debug/`。2026-09-22 首批迁移提交 `8d1d87b` 后，已在当前工作区重新验证，并按用户要求使用 `-p:CI=false` 再次部署至 `C:/Users/xiaos/AppData/Roaming/XIVLauncherCN/pluginConfigs/PromeRotation/Plugins/MasterPlayer`。DLL／PDB、PR 脚本依赖与两份许可文件均与验证产物或来源文件逐一核对 SHA-256；最新 DLL 为 `0ebf22d2bbfb9d1ef5e5164bb5bb01ee122886890f46ec1ddbdaf1022891ae2c`。没有代替用户执行游戏内热重载。全量原源码运行库仍独立，未包含在此部署中。最新验证结果：
 
 | 检查 | 结果 |
 |---|---|
@@ -131,7 +140,7 @@ FTM Extreme 四个类型仍会被注册器扫描；它们没有显式 ModuleInfo
 | 全量回归 | 676／676 通过，包含当前基线新增的移动回归 |
 | 独立脚本编译与实际 DLL 目录检查 | 8个入口编译通过；内置发现、外部源文件／DLL／可视化覆盖、失败回退及生产门面清理通过 |
 | 实际 DLL 回放 | 地城脚本注册、暂停、变速、前后跳转、最终帧、限时区域过期、实时生命周期隔离、刷新、退出清理和旧文件隔离通过；禁止访问实时对象和GreenMove |
-| 清单与文件检查 | 清单沿用1,162行、无重复类型；47个变更文件UTF-8无BOM；`git diff --check` 通过 |
+| 首批清单与文件检查 | 首批交付时1,162行、无重复类型；47个变更文件UTF-8无BOM；扩展到整个工程后更新为1,259行 |
 
 关键原始输出：
 

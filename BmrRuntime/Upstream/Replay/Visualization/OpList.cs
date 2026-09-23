@@ -1,0 +1,494 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using System.IO;
+
+namespace BossMod.ReplayVisualization;
+
+sealed class OpList(Replay replay, Replay.Encounter? enc, BossModuleRegistry.Info? moduleInfo, IEnumerable<WorldState.Operation> ops, Action<DateTime> scrollTo)
+{
+    public readonly Replay.Encounter? Encounter = enc;
+    public readonly BossModuleRegistry.Info? ModuleInfo = moduleInfo;
+    private DateTime _relativeTS;
+    private readonly List<(int Index, DateTime Timestamp, string Text, Action<UITree>? Children, Action? ContextMenu)> _nodes = [];
+    private readonly HashSet<uint> _filteredOIDs = [];
+    public static readonly HashSet<uint> BoringOIDs = [0x3E1A, 0x3E1B, 0x3E1C, 0x447E, 0x447D, 0x4480, 0x4583, 0x447F, 0x4584, 0x4570, 0x4256, 0x260E, 0x260B,
+    0x2630, 0x2611, 0x2610, 0x2617, 0x2608, 0x2613, 0x2618, 0x2609, 0x261A, 0x262F, 0x2609, 0x2614, 0x2664, 0x2668, 0x2619, 0x2631, 0x2632, 0x260A, 0x2616, 0x2667,
+    0x2E7F, 0x2F33, 0x2F32, 0x2F38, 0x2E80, 0x2E82, 0x2E81, 0x2F36, 0x2E7D, 0x2F35, 0x2EB0, 0x2F31, 0x2F37, 0x2E7C, 0x2E7B, 0x2EAE, 0x2F3A, 0x2F30, 0x2E7E, 0x2EAF,
+    0x428B, 0x44B8, 0x43D2, 0x43D1, 0x41FD, 0x42A4, 0x41C5, 0x30B7, 0x4021, 0x4019, 0x401C, 0x401B, 0x401F, 0x40FB, 0x4105, 0x401D, 0x4102, 0x4629, 0x4628, 0x4631,
+    0x4630, 0x46D6, 0xF5B, 0xF5C, 0x2E20, 0x2E21, 0x318A, 0x2E1E, 0x3346, 0x3353, 0x31D4, 0x3345, 0x3355, 0x3326, 0x3344, 0x31B1, 0x3343, 0x1EB165, 0x1EB166,
+    0x1EB167, 0x1EB168, 0x4339, 0x4144, 0x4146, 0x4348, 0x4339, 0x4337, 0x35F5, 0x3226, 0x35FA, 0x35F6, 0x35F9, 0x35F7, 0x361A, 0x35F5, 0x34A4, 0x35F4, 0x3605, 0x35F2,
+    0x375C, 0x375A, 0x3759, 0x375B, 0x35E0, 0x35E1, 0x35F1, 0x35F3, 0x3604, 0x39BF, 0x39BD, 0x39C0, 0x39C1, 0x39BE, 0x402D, 0x402E, 0x40B1, 0x3D7F, 0x3D80, 0x3D7E, 0x465C, 0x465D, 0x465E,
+    0x466D, 0x466E, 0x466F, 0x466B, 0x466C, 0x2ED7, 0x2EDB, 0x2EDA, 0x2EF2, 0x2EDC, 0x2EF5, 0x2EF6, 0x2EF4, 0x2EDD, 0x2EF1, 0x2EDC, 0x2EF3, 0x2EEE, 0x2EED, 0x2EF0,
+    0x2EEF, 0x2FCC, 0x2FCB, 0x195D, 0x195B, 0x195C, 0x338F, 0x326A, 0x3269, 0x334B, 0x3267, 0x3268, 0x3266, 0x31A8, 0x488E, 0x49B3, 0x49B4, 0x49B5,
+    0x4A60, 0x4A59, 0x4ACE, 0x4A5A, 0x4A57, 0x5CA, 0x603];
+    public static readonly HashSet<uint> BoringSIDs = [43, 44, 418, 364, 902, 414, 1050, 368, 362, 1086, 1461, 1463, 365, 1778, 1755, 360, 1411, 2625, 2626, 2627, 2415, 2449, 361, 367, 2355, 413,
+    4233, 4244, 4227, 4239, 4226, 4229, 4209, 4265, 2932, 4266, 4267, 4268, 4262, 4228];
+    private readonly HashSet<ActionID> _filteredActions = [];
+    private readonly HashSet<uint> _filteredStatuses = [];
+    private readonly HashSet<uint> _filteredDirectorUpdateTypes = [];
+    private bool _nodesUpToDate;
+
+    public bool ShowActorSizeEvents
+    {
+        get;
+        set
+        {
+            field = value;
+            _nodesUpToDate = false;
+        }
+    } = false;
+
+    public bool ShowCLMVEvents
+    {
+        get;
+        set
+        {
+            field = value;
+            _nodesUpToDate = false;
+        }
+    } = false;
+
+    Task _filterTask = Task.CompletedTask;
+
+    void RebuildNodes()
+    {
+        if (!_filterTask.IsCompleted)
+            return;
+
+        _filterTask = Task.Run(() =>
+        {
+            _nodes.Clear();
+            var i = 0;
+            foreach (var op in ops)
+            {
+                if (FilterOp(op))
+                {
+                    _nodes.Add((i, op.Timestamp, OpName(op), OpChildren(op), OpContextMenu(op)));
+                }
+                ++i;
+            }
+            _nodesUpToDate = true;
+        });
+    }
+
+    public void Draw(UITree tree, DateTime reference)
+    {
+        //foreach (var n in _tree.Node("Settings"))
+        //{
+        //    DrawSettings();
+        //}
+
+        if (!_nodesUpToDate)
+        {
+            RebuildNodes();
+            ImGui.Text($"Filtering...");
+            return;
+        }
+
+        var timeRef = ImGui.GetIO().KeyShift && _relativeTS != default ? _relativeTS : reference;
+
+        var c = new ImGuiListClipper();
+        c.Begin(_nodes.Count, ImGui.GetFrameHeight() - 2);
+
+        while (c.Step())
+        {
+            for (var i = c.DisplayStart; i < c.DisplayEnd; ++i)
+            {
+                var node = _nodes[i];
+                foreach (var n in tree.Node($"{(node.Timestamp - timeRef).TotalSeconds:f3}: {node.Text}###{node.Index}", node.Children == null, Colors.TextColor1, node.ContextMenu, () => scrollTo(node.Timestamp), () => _relativeTS = node.Timestamp))
+                {
+                    node.Children?.Invoke(tree);
+                }
+            }
+        }
+
+        c.End();
+    }
+
+    public void ClearFilters()
+    {
+        _filteredOIDs.Clear();
+        _filteredActions.Clear();
+        _filteredStatuses.Clear();
+        _filteredDirectorUpdateTypes.Clear();
+        _nodesUpToDate = false;
+    }
+
+    private bool FilterInterestingActor(ulong instanceID, DateTime timestamp, bool allowPlayers)
+    {
+        var p = replay.FindParticipant(instanceID, timestamp)!;
+        if ((p.OwnerID & 0xFF000000) == 0x10000000ul && p.Type != ActorType.Buddy)
+        {
+            return false; // player's pet/area
+        }
+
+        return (p.Type is not ActorType.Player and not ActorType.Buddy and not ActorType.Pet || allowPlayers) && !_filteredOIDs.Contains(p.OID) && !BoringOIDs.Contains(p.OID);
+    }
+
+    private bool FilterInterestingStatus(Replay.Status s)
+    {
+        if (s.Source?.Type is ActorType.Player or ActorType.Pet or ActorType.Chocobo or ActorType.Buddy)
+        {
+            return false; // don't care about statuses applied by players
+        }
+
+        if (s.Target.Type is ActorType.Pet)
+        {
+            return false; // don't care about statuses applied to pets
+        }
+
+        if (BoringSIDs.Contains(s.ID))
+        {
+            return false; // don't care about resurrect-related and other trivial statuses
+        }
+
+        if (_filteredOIDs.Contains(s.Target.OID))
+        {
+            return false; // don't care about filtered out targets
+        }
+
+        if (_filteredStatuses.Contains(s.ID))
+        {
+            return false; // don't care about filtered out statuses
+        }
+
+        return true;
+    }
+
+    private bool FilterInterestingStatuses(ulong instanceID, int index, DateTime timestamp)
+    {
+        foreach (var s in FindStatuses(instanceID, index, timestamp))
+        {
+            if (FilterInterestingStatus(s))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool FilterOp(WorldState.Operation o) => o switch
+    {
+        WorldState.OpFrameStart => false,
+        WorldState.OpDirectorUpdate op => !_filteredDirectorUpdateTypes.Contains(op.UpdateID),
+        ActorState.OpForayInfo => false,
+        ActorState.OpCreate op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpDestroy op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpMove => false,
+        ActorState.OpSizeChange op => ShowActorSizeEvents && FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpHPMP => false,
+        ActorState.OpTargetable op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpDead op => FilterInterestingActor(op.InstanceID, op.Timestamp, true),
+        ActorState.OpCombat => false,
+        ActorState.OpAggroPlayer => false,
+        ActorState.OpEventState op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpTarget => false,
+        ActorState.OpCastInfo op => FilterInterestingActor(op.InstanceID, op.Timestamp, false) && !_filteredActions.Contains(FindCast(replay.FindParticipant(op.InstanceID, op.Timestamp), op.Timestamp, op.Value != null)?.ID ?? new()),
+        ActorState.OpCastEvent op => FilterInterestingActor(op.InstanceID, op.Timestamp, false) && !_filteredActions.Contains(op.Value.Action),
+        ActorState.OpEffectResult => false,
+        ActorState.OpStatus op => FilterInterestingStatuses(op.InstanceID, op.Index, op.Timestamp) && FilterInterestingActor(op.InstanceID, op.Timestamp, true),
+        ActorState.OpPlayActionTimelineEvent op => FilterInterestingActor(op.InstanceID, op.Timestamp, true),
+        ActorState.OpIncomingEffect => false,
+        PartyState.OpLimitBreakChange => false,
+        PartyState.OpModify => false,
+        ActorState.OpModelState op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpEventNpcYell op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpEventObjectStateChange op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpEventObjectAnimation op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpRename op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpIcon op => FilterInterestingActor(op.InstanceID, op.Timestamp, true),
+        ActorState.OpTether op => FilterInterestingActor(op.InstanceID, op.Timestamp, true),
+        ActorState.OpRenderflags op => FilterInterestingActor(op.InstanceID, op.Timestamp, false),
+        ActorState.OpVisibility => false,
+        ClientState.OpActionRequest => false,
+        ClientState.OpHateChange => false,
+        ClientState.OpActiveCompanionChange => false,
+        ClientState.OpActionReject => false,
+        ClientState.OpProcTimersChange => false,
+        ClientState.OpAnimationLockChange => false,
+        ClientState.OpComboChange => false,
+        ClientState.OpCooldown => false,
+        ClientState.OpForcedMovementDirectionChange => false,
+        WorldState.OpRSVData => false,
+        ClientState.OpMoveSpeedChange => ShowCLMVEvents,
+        NetworkState.OpServerIPC => false,
+        _ => true
+    };
+
+    private string DumpOp(WorldState.Operation op)
+    {
+        using var stream = new MemoryStream(1024);
+        var writer = new ReplayRecorder.TextOutput(stream, null);
+        op.Write(writer);
+        writer.Flush();
+        stream.Position = 0;
+        var bytes = new byte[stream.Length];
+        stream.Read(bytes, 0, bytes.Length);
+        var start = Array.IndexOf(bytes, (byte)'|') + 1;
+        return Encoding.UTF8.GetString(bytes, start, bytes.Length - start);
+    }
+
+    private string OpName(WorldState.Operation o) => o switch
+    {
+        ActorState.OpCreate op => $"Actor create: {ActorString(op.InstanceID, op.Timestamp)} #{op.SpawnIndex}",
+        ActorState.OpDestroy op => $"Actor destroy: {ActorString(op.InstanceID, op.Timestamp)}",
+        ActorState.OpRename op => $"Actor rename: {ActorString(op.InstanceID, op.Timestamp)} -> {op.Name}",
+        ActorState.OpClassChange op => $"Actor class change: {ActorString(op.InstanceID, op.Timestamp)} -> {op.Class} L{op.Level}",
+        ActorState.OpTargetable op => $"{(op.Value ? "Targetable" : "Untargetable")}: {ActorString(op.InstanceID, op.Timestamp)}",
+        ActorState.OpDead op => $"{(op.Value ? "Die" : "Resurrect")}: {ActorString(op.InstanceID, op.Timestamp)}",
+        ActorState.OpAggroPlayer op => $"Aggro player: {ActorString(op.InstanceID, op.Timestamp)} = {op.Has}",
+        ActorState.OpEventState op => $"Event state: {ActorString(op.InstanceID, op.Timestamp)} -> {op.Value}",
+        ActorState.OpTarget op => $"Target: {ActorString(op.InstanceID, op.Timestamp)} -> {ActorString(op.Value, op.Timestamp)}",
+        ActorState.OpMount op => $"Mount: {ActorString(op.InstanceID, op.Timestamp)} = {Service.LuminaRow<Lumina.Excel.Sheets.Mount>(op.Value)?.Singular ?? "<unknown>"}",
+        ActorState.OpTether op => $"Tether: {ActorString(op.InstanceID, op.Timestamp)} {op.Value.ID} ({ModuleInfo?.TetherIDType?.GetEnumName(op.Value.ID)}) @ {ActorString(op.Value.Target, op.Timestamp)}",
+        ActorState.OpCastInfo op => $"Cast {(op.Value != null ? "started" : "ended")}: {CastString(op.InstanceID, op.Timestamp, op.Value != null)}",
+        ActorState.OpCastEvent op => $"Cast event: {ActorString(op.InstanceID, op.Timestamp)}: {op.Value.Action} ({ModuleInfo?.ActionIDType?.GetEnumName(op.Value.Action.ID)}) @ {CastEventTargetString(op.Value, op.Timestamp)} ({op.Value.Targets.Count} targets affected) #{op.Value.GlobalSequence}",
+        ActorState.OpStatus op => $"Status change: {ActorString(op.InstanceID, op.Timestamp)} #{op.Index}: {StatusesString(op.InstanceID, op.Index, op.Timestamp)}",
+        ActorState.OpIcon op => $"Icon: {ActorString(op.InstanceID, op.Timestamp)} -> {ActorString(op.TargetID, op.Timestamp)}: {op.IconID} ({ModuleInfo?.IconIDType?.GetEnumName(op.IconID)})",
+        ActorState.OpVFX op => $"VFX: {ActorString(op.InstanceID, op.Timestamp)} -> {ActorString(op.TargetID, op.Timestamp)}: {op.VfxID}",
+        ActorState.OpEventObjectStateChange op => $"EObjState: {ActorString(op.InstanceID, op.Timestamp)} = {op.State:X4}",
+        ActorState.OpEventObjectAnimation op => $"EObjAnim: {ActorString(op.InstanceID, op.Timestamp)} = {((uint)op.Param1 << 16) | op.Param2:X8}",
+        ActorState.OpPlayActionTimelineEvent op => $"Play action timeline: {ActorString(op.InstanceID, op.Timestamp)} = {op.ActionTimelineID:X4}",
+        ActorState.OpPlayActionTimelineSync op => $"Play action timeline multi: {ActorString(op.InstanceID, op.Timestamp)}",
+        ActorState.OpEventNpcYell op => $"Yell: {ActorString(op.InstanceID, op.Timestamp)} = {op.Message} '{Service.LuminaRow<Lumina.Excel.Sheets.NpcYell>(op.Message)?.Text}'",
+        ActorState.OpRenderflags op => $"Renderflag: {ActorString(op.InstanceID, op.Timestamp)} -> {op.Value}",
+        ActorState.OpModelState op => $"Model state: {ActorString(op.InstanceID, op.Timestamp)} -> {op.Value}",
+        ClientState.OpDutyActionsChange op => $"Player duty actions change: {string.Join(", ", op.Slots)}",
+        ClientState.OpBozjaHolsterChange op => $"Player bozja holster change: {GetOpBozjaHolsterChangeString(op.Contents)}",
+        ClientState.OpPlayerStatsChange op => $"Player stats: sks={op.Value.SkillSpeed}, sps={op.Value.SpellSpeed}, haste={op.Value.Haste}",
+        ClientState.OpBlueMageSpellsChange op => $"Player BLU spellbook: {GetOpBlueMageSpellsChangeString(op.Values)}",
+        ClientState.OpClassJobLevelsChange op => $"Player levels: {string.Join(", ", op.Values)}",
+        ClientState.OpActiveFateChange op => $"FATE: {op.Value.ID} '{Service.LuminaRow<Lumina.Excel.Sheets.Fate>(op.Value.ID)?.Name}' {op.Value.Progress}%",
+        ClientState.OpActivePetChange op => $"Player pet: {ActorString(op.Value.InstanceID, op.Timestamp)}",
+        ClientState.OpInventoryChange op => ItemString(op),
+        PartyState.OpModify op => $"Party slot {op.Slot}: {op.Member.InstanceId:X8} {op.Member.Name}",
+        WorldState.OpDirectorUpdate op => $"DirectorUpdate: DirectorID: {op.DirectorID:X8}, UpdateID: {op.UpdateID:X8}, Params: {op.Param1:X8}|{op.Param2:X8}|{op.Param3:X8}|{op.Param4:X8}",
+        WorldState.OpMapEffect op => $"MapEffect: {op.Index:X2} {op.State:X8}",
+        WorldState.OpLegacyMapEffect op => $"MapEffect (legacy): seq={op.Sequence} param={op.Param} data={GetOpLegacyMapEffectString(op.Data)}",
+        WorldState.OpSystemLogMessage op => $"LogMessage {op.MessageID}: '{Service.LuminaRow<Lumina.Excel.Sheets.LogMessage>(op.MessageID)?.Text}' [{string.Join(", ", op.Args)}]",
+        WorldState.OpZoneChange op => $"Zone change: {op.Zone} ({Service.LuminaRow<Lumina.Excel.Sheets.TerritoryType>(op.Zone)?.PlaceName.Value.Name}) / {op.CFCID} ({(op.CFCID > 0 ? Service.LuminaRow<Lumina.Excel.Sheets.ContentFinderCondition>(op.CFCID)?.Name : "n/a")})",
+        WaymarkState.OpSignChange op => op.Target == 0 ? $"Sign: {op.ID} cleared" : $"Sign: {op.ID} on {ActorString(op.Target, op.Timestamp)}",
+        _ => DumpOp(o)
+    };
+
+    private static string GetOpBlueMageSpellsChangeString(uint[] contents)
+    {
+        var count = contents.Length;
+        var str = new string[count];
+        for (var i = 0; i < count; ++i)
+        {
+            var c = contents[i];
+            str[i] = $"{new ActionID(ActionType.Spell, c)}";
+        }
+        return string.Join(", ", str);
+    }
+
+    private static string GetOpBozjaHolsterChangeString(List<(BozjaHolsterID entry, byte count)> contents)
+    {
+        var count = contents.Count;
+        var str = new string[count];
+        for (var i = 0; i < count; ++i)
+        {
+            var c = contents[i];
+            str[i] = $"{c.count}x {c.entry}";
+        }
+        return string.Join(", ", str);
+    }
+
+    private static string GetOpLegacyMapEffectString(byte[] data)
+    {
+        var len = data.Length;
+        var str = new string[len];
+        for (var i = 0; i < len; ++i)
+        {
+            str[i] = data[i].ToString("X2");
+        }
+        return string.Join(" ", str);
+    }
+
+    private Action<UITree>? OpChildren(WorldState.Operation o) => o switch
+    {
+        ActorState.OpCastEvent op => op.Value.Targets.Count != 0 ? tree => DrawEventCast(tree, op) : null,
+        ActorState.OpPlayActionTimelineSync op => tree => DrawActionTimelineSync(tree, op),
+        _ => null
+    };
+
+    private void DrawEventCast(UITree tree, ActorState.OpCastEvent op)
+    {
+        var action = replay.Actions.Find(a => a.GlobalSequence == op.Value.GlobalSequence);
+        if (action != null && action.Timestamp == op.Timestamp && action.Source.InstanceID == op.InstanceID)
+        {
+            foreach (var t in tree.Nodes(action.Targets, t => new(ReplayUtils.ActionTargetString(t, op.Timestamp))))
+            {
+                tree.LeafNodes(t.Effects.ValidEffects(), ReplayUtils.ActionEffectString);
+            }
+        }
+        else
+        {
+            foreach (var t in tree.Nodes(op.Value.Targets, t => new(ActorString(t.ID, op.Timestamp))))
+            {
+                tree.LeafNodes(t.Effects.ValidEffects(), ReplayUtils.ActionEffectString);
+            }
+        }
+    }
+
+    private void DrawActionTimelineSync(UITree tree, ActorState.OpPlayActionTimelineSync op) => tree.LeafNodes(op.Actions, iii => $"{ActorString(iii.Item1, op.Timestamp)}: {iii.Item2:X4}");
+
+    private Action? OpContextMenu(WorldState.Operation o)
+    {
+        Action? opSpecific = o switch
+        {
+            WorldState.OpDirectorUpdate op => () => ContextMenuDirectorUpdate(op),
+            ActorState.OpStatus op => () => ContextMenuActorStatus(op),
+            ActorState.OpCastInfo op => () => ContextMenuActorCast(op),
+            ActorState.OpCastEvent op => () => ContextMenuEventCast(op),
+            ActorState.Operation op => () => ContextMenuActor(op),
+            _ => null,
+        };
+
+        return () =>
+        {
+            if (opSpecific != null)
+            {
+                opSpecific.Invoke();
+                ImGui.Separator();
+            }
+
+            if (ImGui.MenuItem("Jump to timestamp", "double click"))
+                scrollTo(o.Timestamp);
+        };
+    }
+
+    private void ContextMenuDirectorUpdate(WorldState.OpDirectorUpdate op)
+    {
+        if (ImGui.MenuItem($"Filter out type {op.UpdateID:X8}"))
+        {
+            _filteredDirectorUpdateTypes.Add(op.UpdateID);
+            _nodesUpToDate = false;
+        }
+    }
+
+    private void ContextMenuActor(ActorState.Operation op)
+    {
+        var oid = replay.FindParticipant(op.InstanceID, op.Timestamp)!.OID;
+        if (ImGui.MenuItem($"Filter out OID {oid:X}"))
+        {
+            _filteredOIDs.Add(oid);
+            _nodesUpToDate = false;
+        }
+    }
+
+    private void ContextMenuActorStatus(ActorState.OpStatus op)
+    {
+        ContextMenuActor(op);
+        foreach (var s in FindStatuses(op.InstanceID, op.Index, op.Timestamp))
+        {
+            if (ImGui.MenuItem($"Filter out {Utils.StatusString(s.ID)}"))
+            {
+                _filteredStatuses.Add(s.ID);
+                _nodesUpToDate = false;
+            }
+        }
+    }
+
+    private void ContextMenuActorCast(ActorState.OpCastInfo op)
+    {
+        ContextMenuActor(op);
+        var cast = FindCast(replay.FindParticipant(op.InstanceID, op.Timestamp), op.Timestamp, op.Value != null);
+        if (cast != null && ImGui.MenuItem($"Filter out {cast.ID}"))
+        {
+            _filteredActions.Add(cast.ID);
+            _nodesUpToDate = false;
+        }
+    }
+
+    private void ContextMenuEventCast(ActorState.OpCastEvent op)
+    {
+        ContextMenuActor(op);
+        if (ImGui.MenuItem($"Filter out {op.Value.Action}"))
+        {
+            _filteredActions.Add(op.Value.Action);
+            _nodesUpToDate = false;
+        }
+    }
+
+    private IEnumerable<Replay.Status> FindStatuses(ulong instanceID, int index, DateTime timestamp)
+    {
+        var statuses = replay.Statuses;
+        for (var i = 0; i < statuses.Count; ++i)
+        {
+            var s = statuses[i];
+            if (s.Target.InstanceID == instanceID && s.Index == index && (s.Time.Start == timestamp || s.Time.End == timestamp))
+            {
+                yield return s;
+            }
+        }
+    }
+    private Replay.Cast? FindCast(Replay.Participant? participant, DateTime timestamp, bool start) => participant?.Casts.Find(c => (start ? c.Time.Start : c.Time.End) == timestamp);
+
+    private string ActorString(Replay.Participant? p, DateTime timestamp)
+        => p != null ? $"{ReplayUtils.ParticipantString(p, timestamp)} ({ModuleInfo?.ObjectIDType?.GetEnumName(p.OID)}) {Utils.PosRotString(p.PosRotAt(timestamp))}" : "<none>";
+
+    private string ActorString(ulong instanceID, DateTime timestamp)
+    {
+        var p = replay.FindParticipant(instanceID, timestamp);
+        return p != null || instanceID == default ? ActorString(p, timestamp) : $"<unknown> {instanceID:X}";
+    }
+
+    private string CastEventTargetString(ActorCastEvent ev, DateTime timestamp) => $"{ActorString(ev.MainTargetID, timestamp)} / {Utils.Vec3String(ev.TargetPos)} / {ev.Rotation}";
+
+    private string CastString(ulong instanceID, DateTime timestamp, bool start)
+    {
+        var p = replay.FindParticipant(instanceID, timestamp);
+        var c = FindCast(p, timestamp, start);
+        if (c == null)
+        {
+            return $"{ActorString(p, timestamp)}: <unknown cast>";
+        }
+
+        return $"{ActorString(p, timestamp)}: {c.ID} ({ModuleInfo?.ActionIDType?.GetEnumName(c.ID.ID)}), {c.ExpectedCastTime:f2}s ({c.Time} actual){(c.Interruptible ? " (interruptible)" : "")} @ {ReplayUtils.ParticipantPosRotString(c.Target, timestamp)} / {Utils.Vec3String(c.Location)} / {c.Rotation}";
+    }
+
+    private string StatusesString(ulong instanceID, int index, DateTime timestamp)
+    {
+        string Classify(Replay.Status s)
+        {
+            var parts = new List<string>(2);
+            if (s.Time.Start == timestamp)
+            {
+                parts.Add("gain");
+            }
+
+            if (s.Time.End == timestamp)
+            {
+                parts.Add("lose");
+            }
+
+            return string.Join("/", parts);
+        }
+        var sb = new StringBuilder();
+        var first = true;
+        foreach (var s in FindStatuses(instanceID, index, timestamp))
+        {
+            if (!first)
+            {
+                sb.Append("; ");
+            }
+
+            first = false;
+            sb.Append($"{Classify(s)} {Utils.StatusString(s.ID)} ({ModuleInfo?.StatusIDType?.GetEnumName(s.ID)}) ({s.StartingExtra:X}), {s.InitialDuration:f2}s / {s.Time}, from {ActorString(s.Source, timestamp)}");
+        }
+        return sb.ToString();
+    }
+
+    private string ItemString(ClientState.OpInventoryChange op)
+    {
+        if (op.ItemId > 2000000)
+        {
+            return $"Item quantity: {op.ItemId} '{Service.LuminaRow<Lumina.Excel.Sheets.EventItem>(op.ItemId)?.Name}' x{op.Quantity}";
+        }
+
+        return $"Item quantity: {op.ItemId % 500000} '{Service.LuminaRow<Lumina.Excel.Sheets.Item>(op.ItemId % 500000)?.Name}' (hq={op.ItemId > 1000000}) x{op.Quantity}";
+    }
+}

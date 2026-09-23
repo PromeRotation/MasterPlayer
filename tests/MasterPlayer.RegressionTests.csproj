@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;BmrRuntime\**</DefaultItemExcludes>
     <PromeRotationRoot Condition="'$(PromeRotationRoot)' == ''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>

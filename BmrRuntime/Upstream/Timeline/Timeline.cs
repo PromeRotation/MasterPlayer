@@ -1,0 +1,313 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+
+namespace BossMod;
+
+// utility for drawing time-related data
+public sealed class Timeline
+{
+    // definition of a timeline column
+    public class Column(Timeline timeline)
+    {
+        public float Width;
+        public string Name = "";
+        public Timeline Timeline { get; private init; } = timeline;
+
+        // called before layouting and drawing, good chance to update e.g. width
+        public virtual void Update() { }
+
+        public virtual void DrawHeader(Vector2 topLeft)
+        {
+            ImGui.SetCursorPos(topLeft - ImGui.GetWindowPos() + new Vector2(Width * 0.5f, ImGui.GetFrameHeight() * -0.5f));
+            UIMisc.TextRotated(Name, MathF.PI / 3);
+        }
+
+        public virtual void Draw() { }
+
+        // this version is used by column group to advance cursor
+        public virtual void DrawAdvance(ref float x)
+        {
+            Draw();
+            x += Width;
+        }
+
+        public virtual IEnumerable<string> GetSupportedFilters() => [];
+    }
+
+    // a number of consecutive columns grouped together
+    // if a column has a name, it won't draw subcolumn names
+    public class ColumnGroup(Timeline timeline) : Column(timeline)
+    {
+        public List<Column> Columns = [];
+
+        public override void Update()
+        {
+            Width = 0;
+            foreach (var c in Columns)
+            {
+                c.Update();
+                Width += c.Width;
+            }
+        }
+
+        public override void DrawHeader(Vector2 topLeft)
+        {
+            if (Name.Length > 0)
+            {
+                base.DrawHeader(topLeft);
+            }
+            else
+            {
+                for (var ci = 0; ci < Columns.Count; ++ci)
+                {
+                    var c = Columns[ci];
+                    if (c.Width > 0)
+                    {
+                        c.DrawHeader(topLeft);
+                        topLeft.X += c.Width;
+                    }
+                }
+            }
+        }
+
+        public override void DrawAdvance(ref float x)
+        {
+            Draw(); // in case someone overrides this...
+            for (var ci = 0; ci < Columns.Count; ++ci)
+            {
+                var c = Columns[ci];
+                if (c.Width > 0)
+                {
+                    c.DrawAdvance(ref x);
+                }
+            }
+        }
+
+        public T Add<T>(T col) where T : Column
+        {
+            Columns.Add(col);
+            Timeline.UpdateFilters();
+            return col;
+        }
+
+        public T AddBefore<T>(T col, Column next) where T : Column
+        {
+            Columns.Insert(Columns.IndexOf(next), col);
+            Timeline.UpdateFilters();
+            return col;
+        }
+
+        public Column AddDummy()
+        {
+            Columns.Add(new(Timeline));
+            return Columns[^1];
+        }
+
+        public override IEnumerable<string> GetSupportedFilters() => Columns.SelectMany(c => c.GetSupportedFilters());
+    }
+
+    public readonly ColorConfig Colors = Service.Config.Get<ColorConfig>();
+    public float MinTime;
+    public float MaxTime;
+    public float? CurrentTime;
+    public float PixelsPerSecond = 10f * ImGuiHelpers.GlobalScale;
+    public static float TopMargin => 80f * ImGuiHelpers.GlobalScale;
+    public static float BottomMargin => 5f * ImGuiHelpers.GlobalScale;
+    public ColumnGroup Columns;
+
+    private float _tickFrequency = 5;
+    private readonly float _timeAxisWidth = 35 * ImGuiHelpers.GlobalScale;
+
+    // these fields are transient and reinitialized on each draw
+    private float _curColumnOffset;
+    private Vector2 _screenClientTL;
+    private readonly List<List<string>> _tooltip = [];
+    private readonly List<(float t, uint color)> _highlightTime = [];
+    public float MinVisibleTime;
+    public float MaxVisibleTime => MinVisibleTime + Height / PixelsPerSecond;
+
+    public float Height;
+    public Vector2 ScreenClientTL => _screenClientTL;
+
+    public Timeline()
+    {
+        Columns = new(this);
+        UpdateFilters();
+    }
+
+    public void Draw()
+    {
+        Columns.Update();
+
+        if (_allFilters.Count > 0)
+        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text("Condition filters:");
+        }
+        for (var i = 0; i < _allFilters.Count; i++)
+        {
+            ImGui.SameLine();
+            var k = _allFilters[i];
+            var isHidden = _hiddenFilters.Contains(k);
+            using (ImRaii.PushColor(ImGuiCol.Button, 0xff000080, isHidden))
+            {
+                if (ImGui.Button(k))
+                {
+                    if (isHidden)
+                        _hiddenFilters.Remove(k);
+                    else
+                        _hiddenFilters.Add(k);
+                    UpdateFilters();
+                }
+            }
+        }
+
+        _screenClientTL = ImGui.GetCursorScreenPos();
+        _screenClientTL.Y += TopMargin;
+        Columns.DrawHeader(_screenClientTL + new Vector2(_timeAxisWidth, 0));
+
+        ImGui.SetCursorScreenPos(_screenClientTL);
+        _screenClientTL.X += _timeAxisWidth;
+
+        Height = Math.Max(10f, ImGui.GetWindowPos().Y + ImGui.GetWindowHeight() - _screenClientTL.Y - BottomMargin - 8f);
+        ImGui.InvisibleButton("canvas", new(_timeAxisWidth + Columns.Width, Height), ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight);
+        HandleScrollZoom();
+        DrawTimeAxis();
+        ImGui.PushClipRect(_screenClientTL, _screenClientTL + new Vector2(Columns.Width, Height), true);
+
+        _curColumnOffset = 0;
+        Columns.DrawAdvance(ref _curColumnOffset);
+
+        // cursor lines
+        foreach (var h in _highlightTime)
+        {
+            ImGui.GetWindowDrawList().AddLine(CanvasCoordsToScreenCoords(0, h.t), CanvasCoordsToScreenCoords(Columns.Width, h.t), h.color);
+        }
+
+        _highlightTime.Clear();
+
+        ImGui.PopClipRect();
+
+        if (_tooltip.Count > 0)
+        {
+            ImGui.BeginTooltip();
+            var first = true;
+            foreach (var strings in _tooltip)
+            {
+                if (!first)
+                {
+                    ImGui.Separator();
+                }
+
+                first = false;
+                foreach (var s in strings)
+                {
+                    ImGui.TextUnformatted(s);
+                }
+            }
+            ImGui.EndTooltip();
+            _tooltip.Clear();
+        }
+    }
+
+    private List<string> _allFilters = [];
+    private readonly List<string> _hiddenFilters = [];
+
+    public ImmutableSortedSet<string> ActiveFilters { get; private set; } = [];
+
+    public void UpdateFilters()
+    {
+        _allFilters = [.. Columns.GetSupportedFilters().Distinct()];
+        ActiveFilters = [.. _allFilters.Except(_hiddenFilters)];
+    }
+
+    // API below is supposed to be called during column's Draw() function
+    public void AddTooltip(List<string> strings) => _tooltip.Add(strings);
+    public void HighlightTime(float t, uint color = 0) => _highlightTime.Add((t, color == 0 ? BossMod.Colors.TextColor1 : color));
+
+    public float TimeDeltaToScreenDelta(float dt) => dt * PixelsPerSecond;
+    public float ScreenDeltaToTimeDelta(float dy) => dy / PixelsPerSecond;
+    public float TimeToScreenCoord(float t) => _screenClientTL.Y + TimeDeltaToScreenDelta(t - MinVisibleTime);
+    public float ScreenCoordToTime(float y) => MinVisibleTime + ScreenDeltaToTimeDelta(y - _screenClientTL.Y);
+    public float ColumnOffsetToScreenCoord(float o) => _screenClientTL.X + _curColumnOffset + o;
+    public float ScreenCoordToColumnOffset(float x) => x - _screenClientTL.X - _curColumnOffset;
+    public float CanvasOffsetToScreenCoord(float o) => _screenClientTL.X + o;
+    public float ScreenCoordToCanvasOffset(float x) => x - _screenClientTL.X;
+    public Vector2 ColumnCoordsToScreenCoords(float offset, float t) => new(ColumnOffsetToScreenCoord(offset), TimeToScreenCoord(t));
+    public Vector2 CanvasCoordsToScreenCoords(float offset, float t) => new(CanvasOffsetToScreenCoord(offset), TimeToScreenCoord(t));
+
+    private void HandleScrollZoom()
+    {
+        // scroll by wheel, zoom by shift+wheel
+        if (ImGui.IsItemHovered() && ImGui.GetIO().MouseWheel != 0)
+        {
+            if (ImGui.GetIO().KeyShift)
+            {
+                var cursorT = ScreenCoordToTime(ImGui.GetMousePos().Y);
+                PixelsPerSecond *= MathF.Pow(1.05f, ImGui.GetIO().MouseWheel);
+                MinVisibleTime += cursorT - ScreenCoordToTime(ImGui.GetMousePos().Y);
+
+                _tickFrequency = 5;
+                while (_tickFrequency < 60 && PixelsPerSecond * _tickFrequency < 30)
+                {
+                    _tickFrequency *= 2;
+                }
+
+                while (_tickFrequency > 1 && PixelsPerSecond * _tickFrequency > 55)
+                {
+                    _tickFrequency = MathF.Floor(_tickFrequency * 0.5f);
+                }
+
+                while (_tickFrequency > 0.1f && PixelsPerSecond * _tickFrequency > 55)
+                {
+                    _tickFrequency = MathF.Floor(_tickFrequency * 5) * 0.1f;
+                }
+            }
+            else
+            {
+                MinVisibleTime -= ScreenDeltaToTimeDelta(70 * ImGui.GetIO().MouseWheel);
+            }
+        }
+
+        // clamp to data range
+        MinVisibleTime = Math.Min(MinVisibleTime, MaxTime - Height / PixelsPerSecond);
+        MinVisibleTime = Math.Max(MinVisibleTime, MinTime);
+    }
+
+    private void DrawTimeAxis()
+    {
+        var maxT = Math.Min(MaxTime, MinVisibleTime + Height / PixelsPerSecond);
+        var drawlist = ImGui.GetWindowDrawList();
+        drawlist.AddLine(_screenClientTL, CanvasCoordsToScreenCoords(0, maxT), BossMod.Colors.TextColor1);
+        for (var t = MathF.Ceiling(MinVisibleTime / _tickFrequency) * _tickFrequency; t <= maxT; t += _tickFrequency)
+        {
+            var tickText = $"{t:f1}";
+            var tickTextSize = ImGui.CalcTextSize(tickText);
+
+            var p = CanvasCoordsToScreenCoords(0, t);
+            drawlist.AddLine(p, p - new Vector2(3, 0), BossMod.Colors.TextColor1);
+            drawlist.AddText(p - new Vector2(tickTextSize.X + 5, tickTextSize.Y / 2), BossMod.Colors.TextColor1, tickText);
+        }
+
+        if (CurrentTime != null)
+        {
+            var p = CanvasCoordsToScreenCoords(0, CurrentTime.Value);
+            if (CurrentTime.Value >= MinVisibleTime && CurrentTime.Value <= maxT)
+            {
+                // draw timeline mark
+                drawlist.AddTriangleFilled(p, p - new Vector2(4, 2), p - new Vector2(4, -2), BossMod.Colors.TextColor1);
+            }
+
+            if (ImGui.IsWindowFocused() && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            {
+                // change current time, so that listeners could react
+                var pos = ImGui.GetMousePos();
+                if (Math.Abs(pos.X - p.X) <= 3 && pos.Y >= _screenClientTL.Y && pos.Y <= _screenClientTL.Y + Height)
+                {
+                    CurrentTime = ScreenCoordToTime(pos.Y);
+                }
+            }
+        }
+    }
+}

@@ -11,7 +11,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AssemblyName>MasterPlayer</AssemblyName>
     <RootNamespace>MasterPlayer</RootNamespace>
-    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;BmrRuntime\**</DefaultItemExcludes>
     <Version>0.1.0</Version>
   </PropertyGroup>
 

@@ -2,6 +2,8 @@
 
 本文沉淀斗兽棋·高一（`tests/Legacy/CrucibleHigh1.cs`，规格 `docs/reference/CrucibleHigh1.spec.md`）迁移过程中逐行核对过的语义对照、映射模式与踩坑记录。迁移任何 BMR 模块前请读完本文，并配合 `bmr-mechanic-migration` 技能的流程执行。
 
+全量迁移现在采用保留原模块／组件／状态机的运行库，规格见 [BMRRuntime.spec.md](reference/BMRRuntime.spec.md)。本文的轻量 handler、额外0.35米余量、提前0.25秒和降级为文字等，是既有斗兽棋适配的选择，不能作为所有模块的一比一语义。全量接入应保留原始状态、绘制及AI输出，再由宿主适配；不得因为本文曾列为降级就默认省略。
+
 - BMR 源码：`C:\Users\xiaos\Documents\GitHub\BossModReborn-7.56`（斗兽棋模块在 `BossMod/Modules/Dawntrail/Foray/Crucible/`）
 - PR 本体源码：`C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\PromeRotation\`（API 签名的唯一权威来源）
 - 目标脚本基建与铁律：`AGENTS.md` §3.1 / §5 / §6；脚本开发门面用法：`docs/脚本开发指南.md`
@@ -32,7 +34,7 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 | 组件 `Update()` | handler 的 `Update(deltaTime)`（脚本 `OnUpdate` 每帧驱动） |
 | `AddHints`（文字提示） | `Log` 节流提示（按 key 10s 节流，受「文字提示」机制开关控制） |
 | `AddAIHints`（禁区/目标/优先级） | 危险区注册 / `AddTimedSafeArea` 引导 / 降级为提示（见 §6） |
-| `DrawArenaBackground/Foreground` | 不需要——SafeZone 注册的区域由雷达悬浮窗与真实世界绘制自动渲染；额外辅助线用 `Draw` 门面 |
+| `DrawArenaBackground/Foreground` | 需要保留全部调用；原模块可能有专门的颜色、文字、图元、DrawEnemies以及绘制时更新的状态，不能只枚举ActiveAOEs或SafeZone区域 |
 | `SimpleKnockbacks`（击退） | 降级：提示 + 画源点（PR 无击退落点校验 API） |
 | `Components.Voidzone`（常驻池） | `VoidzoneWatcher`（EObj 周期扫描） |
 | `Components.CastHints` | `OnCastStart` 里 `Hint(...)` |
@@ -58,10 +60,10 @@ BMR 模块 = `BossModule`（场地/主 Actor/重置判定）+ States（`StateMac
 | `OnActorEState(actor, 7)` | `OnEObjState(e)` | `State == 7` = 物件休眠/消失 |
 | `OnMapEffect(index, state)` | `OnMapEffect(e)` | state = `e.Param1 \| ((uint)e.Param2 << 16)`；`0x00020001` 开 / `0x00080004` 关 |
 | `Update()` | `OnUpdate(dt)` | 周期扫描（对象表/EObj）按 0.3~1s 节流，不要每帧扫 |
-| `actor.Tether` 每帧读取 | **无对应 API** | Dalamud 对象表不暴露 tether 状态——只能事件 + 存活扫描兜底；热重载恢复缺口写进 spec 已知限制 |
+| `actor.Tether` 每帧读取 | 原生对象快照 + 连线事件 | Dalamud 门面没有该字段，但现有 ReplayWorldCapture 已按FFCS源码读取原生Vfx.Tethers；新桥应复用快照并正确处理事件顺序 |
 | 读条在途扫描（迟到/热重载恢复） | `IBattleChara.IsCasting / CastActionId / CastTargetObjectId / TotalCastTime / CurrentCastTime` | 每秒扫一次补开机制（B31 连线放毒即用此法） |
 
-**事件字段对照（效果包）**：`spell.MainTargetID` → `e.TargetIndex == 0` 的目标（或 `e.TargetId`）；`spell.TargetXZ` → `e.EffectPosition`；`spell.Rotation` → `e.SourceRotation`；`caster.Position` → `e.SourcePosition`；`caster.OID` → `e.SourceDataId`。
+**效果包的数据限制**：PR LogSystem `TargetId` 是逐目标受击摘要，`TargetIndex == 0` 不能证明它是 BMR `MainTargetID`；`SourceRotation` 是对象朝向，也不能等同于包朝向。BMR 的主目标可以完全不同于受击目标。完整迁移需捕获主目标、包朝向、效果数组与序号；仅有现有摘要时必须记录缺失，不能猜测。位置／OID等字段仍需按PR事件定义逐项核对。
 
 ---
 
@@ -132,7 +134,7 @@ BMR 的 `AddAIHints` 是导航约束语言，本插件用 SafeZone 目标区/危
 | 自身圆/近战范围（读条期间 Boss 不动） | `FollowEntityPositionAndRotation` 或静态均可，按机制选 | — |
 | 常驻跟随（树精本体圈/移动爆弹/毒气团） | `FollowEntityPosition` + `MissingEntityPolicy.RemoveArea` | — |
 
-判断依据：BMR 组件里 `origin = spell.LocXZ`（静态落点）还是 `caster.Position`（ caster 快照）——**BMR 从不跟随实体**，全部是读包时刻快照。本插件的 `Follow*` 绑定是规格 §0 对「施法者位」机制的有意选择，读条期间 Boss 可动的机制用它更准，但落点型机制必须静态。
+判断依据是具体组件何时读取位置：`OnCastStarted` 保存 `spell.LocXZ` 表示静态施法落点；`Update`／`ActiveAOEs`／绘制时重新读取 `actor.Position` 则可能跟随实体。不能把“BMR从不跟随实体”推广到所有组件。`SimpleAOEs` 当前保存读条位置与包朝向；宿主不得自行改为跟随。
 
 ---
 
@@ -185,7 +187,7 @@ BMR 的 `AddAIHints` 是导航约束语言，本插件用 SafeZone 目标区/危
 6. **预备引导坑**：B31 连线放毒在空降中心命中后有 8s 预备窗（下一轮连线读条在命中 ~4.8s 后才来），光靠 tether 触发再跑位太晚——BMR 的 `_prepareUntil` 阶段不能省。
 7. **多目标展开坑**：PR 把同一动作按目标展开成多个效果事件，`GlobalSequence` 不去重则二连斩会画出第三刀、放毒快照会重复记录。
 8. **MapEffect 别名坑**：同图第三盘反转电网 0/1 索引且其 17+ 段是道具控制——石墙 MapEffect 的"开"必须以本组岩墙读条已开始为门槛。
-9. **tether 状态坑**：Dalamud 对象表不暴露 `actor.Tether`，BMR 每帧重扫布防地雷的写法不可移植；只能事件驱动 + 已知限制记录。
+9. **tether 状态坑**：Dalamud 门面不暴露 `actor.Tether`，但可通过已核对的FFCS字段读取原生连线；现有录制快照已经采样。仅靠事件会漏掉热重载前的连线，迁移应同时处理初始快照和后续事件。
 10. **余量断言坑**：测试桩门面无余量但脚本层 +0.35 仍在，断言半径漏算余量会全挂。
 11. **安全区残留坑**：引导切点时必须先 `Remove` 上一点的安全区再注册新点，旧圈残留到超时会让解算停在旧点。
 12. **提示文本对齐**：BMR `CastHints`/`AddHints` 的文本是实战打磨过的（如章节魔法三档原文），迁移时逐条对齐原文而非自行改写。

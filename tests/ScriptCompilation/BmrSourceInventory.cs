@@ -56,7 +56,7 @@ internal static class BmrSourceInventory
         foreach (var (name, item) in declarations.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             var relative = Path.GetRelativePath(bmrRoot, item.File).Replace('\\', '/');
-            if (!relative.StartsWith("BossMod/Modules/", StringComparison.Ordinal) || item.Node.Modifiers.Any(SyntaxKind.AbstractKeyword)
+            if (item.Node.Modifiers.Any(SyntaxKind.AbstractKeyword)
                 || item.Node.Identifier.ValueText == "DemoModule" || Kind(name) is not { } kind) continue;
             var attr = item.Node.AttributeLists.SelectMany(a => a.Attributes).FirstOrDefault(a => a.Name.ToString() == (kind == "BossModule" ? "ModuleInfo" : "ZoneModuleInfo"));
             string Argument(string field) => attr?.ArgumentList?.Arguments.FirstOrDefault(a => a.NameEquals?.Name.Identifier.ValueText == field)?.Expression.ToString() ?? "";
@@ -66,6 +66,11 @@ internal static class BmrSourceInventory
             if (expansion.Length == 0) expansion = parts.ElementAtOrDefault(1) ?? "Global";
             var category = Argument("Category").Split('.').Last();
             if (category.Length == 0) category = parts.ElementAtOrDefault(2) ?? "Uncategorized";
+            if (relative.StartsWith("BossMod/QuestBattle/", StringComparison.Ordinal))
+            {
+                expansion = parts.ElementAtOrDefault(2) ?? "Global";
+                category = "Quest";
+            }
             var excluded = relative.Contains("/Dawntrail/Foray/Crucible/");
             var batch = relative.Contains("/D01Sastasha/") || relative.Contains("/D02TamTaraDeepcroft/") || relative.Contains("/D03Copperbell/");
             var group = kind == "ZoneModule" ? attr?.ArgumentList?.Arguments.ElementAtOrDefault(1)?.Expression.ToString() ?? "" : Argument("GroupID");

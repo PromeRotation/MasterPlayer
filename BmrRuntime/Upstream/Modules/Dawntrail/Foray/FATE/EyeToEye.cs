@@ -1,0 +1,60 @@
+namespace BossMod.Dawntrail.Foray.FATE.EyeToEye;
+
+public enum OID : uint {
+    EvilSeer = 0x4BA7,
+    Helper = 0x233C,
+    EvilSeerHelper = 0x4BAA, // R0.500, x0 (spawn during fight)
+    AccursedOrb = 0x4BA8, // R2.000, x0 (spawn during fight)
+}
+
+public enum AID : uint {
+    AutoAttack = 47146, // EvilSeer->player, no cast, single-target
+    Ability = 45338, // EvilSeer->player, no cast, single-target
+    AllEyes = 47147, // EvilSeer->self, 3.0+0.5s cast, range 30 circle
+    JettaturaCast = 47150, // EvilSeer->self, 3.0s cast, single-target
+    Jettatura = 47151, // 4BAA->location, 4.0s cast, range 8 circle
+    ColdStare = 47149, // EvilSeer->self, 4.0s cast, range 40 90.000-degree cone
+    SeeNoEvil = 47148, // EvilSeer->self, 5.0s cast, range 30 circle
+    SinisterSight = 47152, // 4BA8->location, 5.0s cast, range 50 circle
+}
+
+sealed class AllEyes(BossModule module) : Components.RaidwideCast(module, (uint)AID.AllEyes);
+sealed class Jettatura(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Jettatura, 8f);
+sealed class ColdStare(BossModule module) : Components.SimpleAOEs(module, (uint)AID.ColdStare, new AOEShapeCone(40.0f, 45.0f.Degrees()));
+// ARR confirms both are gaze casts: SeeNoEvil is a 30y boss-centered gaze, SinisterSight is the
+// accursed orb's 50y petrifying gaze. Players inside the range must look away from the eye; the
+// orb cast targets every player in the arena, which matches an un-avoided gaze hit.
+sealed class SeeNoEvil(BossModule module) : Components.CastGaze(module, (uint)AID.SeeNoEvil, range: 30f);
+sealed class SinisterSight(BossModule module) : Components.CastGaze(module, (uint)AID.SinisterSight, range: 50f);
+
+[SkipLocalsInit]
+sealed class EyeToEyeStates : StateMachineBuilder {
+    public EyeToEyeStates(BossModule module) : base(module) {
+        TrivialPhase()
+            .ActivateOnEnter<AllEyes>()
+            .ActivateOnEnter<SeeNoEvil>()
+            .ActivateOnEnter<Jettatura>()
+            .ActivateOnEnter<ColdStare>()
+            .ActivateOnEnter<SinisterSight>();
+    }
+}
+
+[ModuleInfo(BossModuleInfo.Maturity.Contributed,
+    StatesType = typeof(EyeToEyeStates),
+    ConfigType = null, // replace null with typeof(EvilSeerConfig) if applicable
+    ObjectIDType = typeof(OID),
+    ActionIDType = typeof(AID),
+    StatusIDType = null, // replace null with typeof(SID) if applicable
+    TetherIDType = null, // replace null with typeof(TetherID) if applicable
+    IconIDType = null, // replace null with typeof(IconID) if applicable
+    PrimaryActorOID = (uint)OID.EvilSeer,
+    Contributors = "KanoNoUta",
+    Expansion = BossModuleInfo.Expansion.Dawntrail,
+    Category = BossModuleInfo.Category.Foray,
+    GroupType = BossModuleInfo.GroupType.ForayFATE,
+    GroupID = 1093u,
+    NameID = 2075u,
+    SortOrder = 1,
+    PlanLevel = 0)]
+[SkipLocalsInit]
+public sealed class EyeToEye(WorldState ws, Actor primary) : OpenWorldFate(ws, primary);
