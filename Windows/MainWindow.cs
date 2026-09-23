@@ -93,6 +93,7 @@ public sealed class MainWindow : IDisposable
         changed |= ModuleRow("智能躲避", "根据机制判定时间自动前往安全位置。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
         changed |= ModuleRow("接近目标", "跟随队友或当前目标，避险优先。", settings.EnableFollow, v => settings.EnableFollow = v);
         changed |= ModuleRow("机制脚本", "进入对应区域自动运行已启用的脚本。", settings.EnableScripts, v => settings.EnableScripts = v);
+        changed |= ModuleRow("BMR 机制模块", "在没有 MP 专属脚本的区域加载 BossModReborn 原版机制模块。", settings.EnableBmrBridge, v => settings.EnableBmrBridge = v);
 
         if (changed)
             settings.Save();
@@ -406,6 +407,9 @@ public sealed class MainWindow : IDisposable
         SectionHeader("插件安全区状态");
         DrawSafeZoneStatus(settings);
 
+        SectionHeader("BMR 机制桥");
+        DrawBmrBridge(settings);
+
         SectionHeader("机制处理器");
         DrawMechanicHandlers();
     }
@@ -438,6 +442,44 @@ public sealed class MainWindow : IDisposable
             MasterPlayerSettings.Instance.AutoRecordOnBattleStart = autoRecord;
             MasterPlayerSettings.Instance.Save();
         }
+    }
+
+    private static void DrawBmrBridge(MasterPlayerSettings settings)
+    {
+        var bridge = MasterPlayerPlugin.Instance?.BmrBridge;
+        var enable = settings.EnableBmrBridge;
+        if (ImGui.Checkbox("启用 BMR 机制桥", ref enable))
+        {
+            settings.EnableBmrBridge = enable;
+            settings.Save();
+        }
+        HintInline("实时世界输入 BossModReborn 运行库，驱动原版机制模块");
+        if (bridge == null)
+        {
+            ImGui.TextDisabled("（BMR 机制桥未初始化）");
+            return;
+        }
+        if (!bridge.IsAvailable)
+        {
+            ImGui.TextColored(ErrorColor, $"BMR 运行库不可用：{bridge.LastError ?? "初始化失败"}");
+            return;
+        }
+
+        var maturity = Math.Clamp(settings.BmrMinMaturity, 1, 4) - 1;
+        if (ImGui.Combo("模块成熟度门槛", ref maturity, "开发中 (WIP)\0第三方贡献 (Contributed)\0已验证 (Verified)\0支持 AI (AISupport)\0"))
+        {
+            settings.BmrMinMaturity = maturity + 1;
+            settings.Save();
+        }
+
+        ImGui.Text($"状态：{(!settings.EnableBmrBridge ? "已停用" : bridge.IsSuppressed ? "已压制（当前区域由 MP 专属脚本接管）" : "运行中")}");
+        HintInline($"效果包捕获：{(bridge.CaptureActive ? "正常" : "不可用（效果数组组件降级）")}");
+        ImGui.Text($"已加载模块 {bridge.LoadedModuleCount} / 待激活 {bridge.PendingModuleCount}");
+        ImGui.Text($"激活模块：{bridge.ActiveModuleName ?? "无"}");
+        if (bridge.ActiveZoneModuleName is { } zoneModule)
+            HintInline($"区域模块：{zoneModule}");
+        if (bridge.LastError is { } error)
+            ImGui.TextColored(WarningColor, $"最近错误：{error}");
     }
 
     private static void DrawSafeZoneStatus(MasterPlayerSettings settings)

@@ -60,6 +60,10 @@ public sealed class MasterPlayerSettings
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();
 
+    // BMR 机制桥（BmrBridge）
+    public bool EnableBmrBridge = true;
+    public int BmrMinMaturity = 3;  // BossMod.BossModuleInfo.Maturity：0=Dummy 1=WIP 2=Contributed 3=Verified 4=AISupport
+
     // 录制回放
     public bool AutoRecordOnBattleStart = false;    // 战斗开始自动录制、战斗结束自动停止
 

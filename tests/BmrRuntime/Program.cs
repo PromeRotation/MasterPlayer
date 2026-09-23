@@ -64,6 +64,21 @@ void Tick(WorldState world, BossModule module, double seconds)
     module.Update();
 }
 
+BmrActorSnapshot FeedActor(ulong id, uint oid, int spawn, string name, Vector3 pos, bool ally, float radius,
+    uint classJob = 0, bool combat = false, BmrCastSnapshot? cast = null, BmrStatusDto[]? statuses = null,
+    uint tetherId = 0, ulong tetherTarget = 0, bool targetable = true) =>
+    new(id, oid, spawn, 0, name, 0, ally ? (byte)1 : (byte)2, ally ? (byte)4 : (byte)5, classJob, 100, pos, 0, radius,
+        100000, 100000, 0, 10000, 10000, targetable, ally, false, combat, 0, 0, 0, 0, 0, 0, 0, 0,
+        tetherId, tetherTarget, cast, statuses ?? []);
+BmrWorldFrame FeedFrame(ushort territory, ushort cfc, ulong playerId, params BmrActorSnapshot[] actors) =>
+    new(territory, cfc, playerId, 0,
+        [.. actors.Where(a => a.EntityId == playerId).Select(a => new BmrPartySlotDto(0, a.EntityId, a.EntityId, a.Name))],
+        [], actors);
+BmrActorSnapshot FeedPlayer() => FeedActor(100, 0, 0, "Player", new(80, 0, -45), true, .5f, 1);
+BmrActorSnapshot FeedChopper(bool combat = true, BmrCastSnapshot? cast = null, BmrStatusDto[]? statuses = null,
+    uint tetherId = 0, ulong tetherTarget = 0) =>
+    FeedActor(1, 0x19B, 2, "Chopper", new(80, 0, -45), false, 2, 0, combat, cast, statuses, tetherId, tetherTarget);
+
 Scenario("source library excludes the plugin entry and all Crucible modules", () =>
 {
     var types = typeof(WorldState).Assembly.GetTypes();
@@ -419,6 +434,163 @@ Scenario("host session releases all managers and subscriptions after cleanup fai
     }
     session.Dispose();
     Check(session.BossModules.PendingModules.Count == 0, "A second disposal changed the cleaned session");
+});
+
+Scenario("feed drives zone, module activation and combat from synthetic frames", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    session.BeginFrame(start);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer()));
+    Check(session.World.CurrentZone == 1036 && session.World.CurrentCFCID == 4, "Feed did not apply the zone change");
+    Check(session.ZoneModules.ActiveModule is BossMod.RealmReborn.Dungeon.D01Sastasha.D01Sastasha, "Feed zone frame did not select Sastasha's zone module");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    session.Update();
+    var module = session.BossModules.ActiveModule;
+    Check(session.BossModules.LoadedModules.Count != 0 && module?.Info.PrimaryActorOID == 0x19B, "Feed frames did not load the Chopper module");
+    Check(module!.StateMachine.ActivePhaseIndex == 0, "Feed combat flag did not activate the encounter");
+});
+
+Scenario("feed cast frames reach module components once per cast", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    var castStarted = 0;
+    var castFinished = 0;
+    using var subStarted = session.World.Actors.CastStarted.Subscribe(_ => ++castStarted);
+    using var subFinished = session.World.Actors.CastFinished.Subscribe(_ => ++castFinished);
+    session.BeginFrame(start);
+    var cast = new BmrCastSnapshot(351, true, 0, 0, new(100, 0, 100), 3, false);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
+    session.Update();
+    var module = session.BossModules.ActiveModule!;
+    var aoes = module.Components.OfType<SimpleAOEs>().Single();
+    Check(castStarted == 1 && castFinished == 0, "Cast frame did not raise exactly one cast start");
+    Check(aoes.ActiveAOEs(0, session.World.Party[0]!).Length == 1, "Module component did not see the fed cast");
+    session.BeginFrame(start.AddSeconds(1));
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
+    session.Update();
+    Check(castStarted == 1, "A repeated identical cast frame re-fired cast start");
+    Check(session.World.Actors.Find(1)!.CastInfo!.ElapsedTime > 0, "World clock did not advance the fed cast");
+    session.BeginFrame(start.AddSeconds(2));
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    session.Update();
+    Check(castFinished == 1, "Cast removal did not raise cast finished");
+    Check(aoes.ActiveAOEs(0, session.World.Party[0]!).IsEmpty, "Module component kept a finished cast");
+});
+
+Scenario("feed action effect events reach module components", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    var castEvents = 0;
+    ActorCastEvent? last = null;
+    using var sub = session.World.Actors.CastEvent.Subscribe((_, ev) => { ++castEvents; last = ev; });
+    session.BeginFrame(start);
+    var cast = new BmrCastSnapshot(351, true, 0, 0, new(100, 0, 100), 3, false);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
+    feed.Enqueue(new BmrEventActionEffect(1, (byte)ActionType.Spell, 351, 100, .1f, new(100, 0, 100), 7, 0, 0x8000,
+        [new(100, new ulong[8]), new(101, new ulong[8])]));
+    Check(feed.Flush() == 1, "Feed did not dispatch the queued action effect");
+    session.Update();
+    Check(castEvents == 1 && last?.Action == new ActionID(ActionType.Spell, 351), "Action effect did not reach the world event");
+    Check(last!.Targets.Count == 2 && last.Targets[0].ID == 100 && last.Targets[1].ID == 101, "Action effect targets were lost");
+    Check(last.Rotation == BossMod.Network.PacketDecoder.IntToFloatAngle(0x8000), "Action effect rotation conversion differs from the packet decoder");
+    Check(session.World.Actors.Find(1)!.CastInfo!.EventHappened, "Action effect did not mark the matching cast");
+});
+
+Scenario("feed tethers arrive via events and via frame fallback", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    var tethered = 0;
+    var untethered = 0;
+    using var subTether = session.World.Actors.Tethered.Subscribe(_ => ++tethered);
+    using var subUntether = session.World.Actors.Untethered.Subscribe(_ => ++untethered);
+    session.BeginFrame(start);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    feed.Enqueue(new BmrEventTether(1, 0x54, 100));
+    feed.Flush();
+    Check(session.World.Actors.Find(1)!.Tether is { ID: 0x54, Target: 100 } && tethered == 1, "Tether event was not applied");
+    feed.Enqueue(new BmrEventTetherCancel(1));
+    feed.Flush();
+    Check(session.World.Actors.Find(1)!.Tether.ID == 0 && untethered == 1, "Tether cancel event was not applied");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(tetherId: 0x21, tetherTarget: 100)));
+    Check(session.World.Actors.Find(1)!.Tether.ID == 0x21, "Frame-scan tether fallback did not fire");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer()));
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(tetherId: 0x22, tetherTarget: 100)));
+    Check(session.World.Actors.Find(1)!.Tether.ID == 0x22, "Create-time tether was not applied");
+});
+
+Scenario("feed zone frames switch zone modules", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    session.BeginFrame(start);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer()));
+    Check(session.ZoneModules.ActiveModule is BossMod.RealmReborn.Dungeon.D01Sastasha.D01Sastasha, "CFC frame did not select Sastasha's zone module");
+    feed.ApplyFrame(FeedFrame(0, 0, 100, FeedPlayer()));
+    Check(session.ZoneModules.ActiveModule == null, "Zone module survived a zone change");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer()));
+    Check(session.ZoneModules.ActiveModule is BossMod.RealmReborn.Dungeon.D01Sastasha.D01Sastasha, "Zone module did not reload on return");
+});
+
+Scenario("feed actor removal cleans modules without exceptions", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    var castFinished = 0;
+    using var sub = session.World.Actors.CastFinished.Subscribe(_ => ++castFinished);
+    session.BeginFrame(start);
+    var cast = new BmrCastSnapshot(351, true, 0, 0, new(100, 0, 100), 3, false);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
+    session.Update();
+    Check(session.BossModules.ActiveModule != null, "Module did not activate before the destroy");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer()));
+    Check(session.World.Actors.Find(1) == null, "Destroyed actor stayed in the world");
+    Check(castFinished == 1, "Destroy did not auto-finish the active cast");
+    session.Update();
+    Check(session.BossModules.LoadedModules.Count == 0 && session.BossModules.ActiveModule == null, "Module survived the fed destroy");
+});
+
+Scenario("repeating an identical frame emits no extra operations", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    session.BeginFrame(start);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    var ops = 0;
+    using var sub = session.World.Modified.Subscribe(_ => ++ops);
+    session.BeginFrame(start.AddSeconds(.1));
+    var afterFrameStart = ops;
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    Check(feed.Flush() == 0, "An empty event queue produced events");
+    Check(ops == afterFrameStart, "An identical repeated frame emitted operations");
+    Check(session.World.Actors.Find(1)!.InCombat, "Repeated frame corrupted actor state");
+});
+
+Scenario("feed statuses, waymarks and head markers follow snapshots and events", () =>
+{
+    using var session = new BmrSession("feed regression");
+    var feed = new BmrWorldFeed(session);
+    session.BeginFrame(start);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(statuses: [new(0, 42, 1, 1, 30)])));
+    var actor = session.World.Actors.Find(1)!;
+    Check(actor.Statuses[0].ID == 42 && actor.Statuses[0].SourceID == 1 && actor.Statuses[0].Extra == 1, "Status snapshot was not applied");
+    Check(actor.Statuses[0].ExpireAt == start.AddSeconds(30), "Status expiry was not converted to world time");
+    var ops = 0;
+    using var sub = session.World.Modified.Subscribe(_ => ++ops);
+    session.BeginFrame(start.AddSeconds(1));
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(statuses: [new(0, 42, 1, 1, 29)])));
+    Check(ops == 1, "A status renewal within tolerance emitted an extra operation");
+    Check(actor.Statuses[0].ExpireAt == start.AddSeconds(30), "Status expiry was not refreshed in place");
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    Check(actor.Statuses[0].ID == 0, "Status removal was not applied");
+    feed.ApplyFrame(new(1036, 4, 100, 0, [new BmrPartySlotDto(0, 100, 100, "Player")], [(0, new Vector3(1, 2, 3))], [FeedPlayer(), FeedChopper()]));
+    Check(session.World.Waymarks[Waymark.A] == new Vector3(1, 2, 3), "Waymark frame was not applied");
+    feed.Enqueue(new BmrEventHeadMarker((byte)Sign.Attack1, 1));
+    feed.Flush();
+    Check(session.World.Waymarks[Sign.Attack1] == 1, "Head marker event was not applied");
 });
 
 if (args.Length > 2)

@@ -51,6 +51,10 @@ MasterPlayer/
 ├── Mechanics/
 │   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
 │   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
+├── BmrBridge/                     # BMR 宿主桥（输入桥 M3，规格见 docs/reference/BMRBridge.spec.md）：实时世界 → BmrRuntime Feed DTO
+│   ├── BmrBridgeController.cs     # 会话编排：BmrRuntimeEnvironment 初始化 + BmrSession + 事件订阅 + 区域脚本压制 + 诊断属性
+│   ├── BmrActionEffectCapture.cs  # ActionEffectHandler.Receive 纯观察 hook（只入队不拦截）→ 效果包 DTO
+│   └── BmrLiveSampler.cs          # 对象表/队伍/标点 → BmrWorldFrame 采样（FFCS 读法对齐 ReplayWorldCapture）
 ├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
 │                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
 │                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
@@ -99,6 +103,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     public static MasterPlayerPlugin? Instance { get; private set; }
     public Spatial.SafeZoneRuntime SafeZone { get; }
     internal Mechanics.MechanicDispatcher? Mechanics { get; }   // 仅供 MainWindow 读取机制处理器列表
+    internal BmrBridge.BmrBridgeController? BmrBridge { get; }  // 仅供 MainWindow 读取 BMR 机制桥诊断
     internal Scripting.ScriptManager? Scripts { get; }          // 仅供 MainWindow 读取脚本管理器
     public void Initialize();
     public void DrawConfigUI();
@@ -107,10 +112,10 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 }
 ```
 
-- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 创建 `_safeZone` 与切区/死亡/战斗结束订阅 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_replayRecorder = new Replay.ReplayRecorder()`、`_replayController = new Replay.ReplayController(_scripts, _replayRecorder)`、`_replayWindow = new Windows.ReplayWindow()`、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `+= _radarOverlay.Draw` → `+= _replayWindow.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，无参开关设置面板，`/prmp rec` 或 `/prmp record` 开始/停止录制，`/prmp replay` 开关录制回放窗口）。
-- `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒），由 `SafeZoneActivation.Update` 应用开关，再按 `_dodge` → `_mechanics` → `_replayRecorder` → `_replayController` → `_scripts` → `_follow` → `_safeZone` → `AoeVisibility` → `_radar` 更新。回放控制器先还原对象帧和事件，并用录制时钟更新回放脚本；普通脚本更新不再重复推进回放。解算在实时脚本与跟随注册区域之后，绘制读取本地结果。`SafeZoneRuntime.Update` 接收 PR 移速倍率和回放移动门控，回放禁止移动但按录制时钟回收限时区域。**EnableScripts 总开关门控在 ScriptManager 内部**。另有 internal 属性 `Recorder` / `Replay` / `ReplayWindow` 供 UI 使用。
+- `Initialize()`：设 `Instance` → 触发 `Settings.MasterPlayerSettings.Instance` 加载 → 创建 `_safeZone` 与切区/死亡/战斗结束订阅 → 构造 `SafeZoneActivation` 并应用持久化的功能开关 → 依次构造 `_radar = new Radar.RadarRenderer()`、`_dodge = new Dodge.DodgeController()`、`_mechanics = new Mechanics.MechanicDispatcher(this)`、`_bmrBridge = new BmrBridge.BmrBridgeController()`、`_scripts = new Scripting.ScriptManager()`（随即 `RefreshCatalog()`）、`_replayRecorder = new Replay.ReplayRecorder()`、`_replayController = new Replay.ReplayController(_scripts, _replayRecorder)`、`_replayWindow = new Windows.ReplayWindow()`、`_radarOverlay = new Radar.RadarOverlayWindow()`、`_follow = new Follow.FollowController()`、`_mainWindow = new Windows.MainWindow()` → `Svc.Framework.Update += OnFrameworkUpdate` → `Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw` → `+= _radarOverlay.Draw` → `+= _replayWindow.Draw` → 注册聊天指令 `/prmp`（`Svc.Commands.AddHandler`，无参开关设置面板，`/prmp rec` 或 `/prmp record` 开始/停止录制，`/prmp replay` 开关录制回放窗口）。
+- `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒），由 `SafeZoneActivation.Update` 应用开关，再按 `_bmrBridge` → `_dodge` → `_mechanics` → `_replayRecorder` → `_replayController` → `_scripts` → `_follow` → `_safeZone` → `AoeVisibility` → `_radar` 更新。`_bmrBridge` 在 `_dodge` 之前（BMR 模块当帧输出供后续组件消费）；回放激活或当前区域有 MP 区域专属脚本运行时桥自身跳过。回放控制器先还原对象帧和事件，并用录制时钟更新回放脚本；普通脚本更新不再重复推进回放。解算在实时脚本与跟随注册区域之后，绘制读取本地结果。`SafeZoneRuntime.Update` 接收 PR 移速倍率和回放移动门控，回放禁止移动但按录制时钟回收限时区域。**EnableScripts 总开关门控在 ScriptManager 内部**。另有 internal 属性 `Recorder` / `Replay` / `ReplayWindow` / `BmrBridge` 供 UI 使用。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
-- `Dispose()`：退订上述事件（Framework.Update、UiBuilder.Draw 三处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 十一个组件，顺序 `_replayWindow` → `_mainWindow` → `_follow` → `_radarOverlay` → `_replayController`（其 Dispose 先停回放会话）→ `_replayRecorder`（其 Dispose 先停录制）→ `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → 安全区事件订阅 → `_safeZone` → `Instance = null`。
+- `Dispose()`：退订上述事件（Framework.Update、UiBuilder.Draw 三处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 十二个组件，顺序 `_replayWindow` → `_mainWindow` → `_follow` → `_radarOverlay` → `_replayController`（其 Dispose 先停回放会话）→ `_replayRecorder`（其 Dispose 先停录制）→ `_scripts`（其 Dispose 内部先 `StopAll`）→ `_bmrBridge`（退订事件 → capture.Dispose → session.Dispose，逐项 try/catch）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → 安全区事件订阅 → `_safeZone` → `Instance = null`。
 - `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解，这三个实时回调在回放期间跳过，保护录制场景。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
 - `SafeZoneActivation` 注入本地 `SafeZone.Setting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`；仅智能躲避请求 `EnableAutoMovement`。关闭/卸载仅撤销自己开启的本地开关，手动关闭不每帧覆写，可在诊断页恢复。功能联动不修改 PR 本体安全区。
 
@@ -158,6 +163,10 @@ public sealed class MasterPlayerSettings
     public Dictionary<string, bool> ScriptEnabled = new();                                  // 脚本 guid → 是否启用
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();    // 脚本 guid → [UserSetting] 值
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();                    // 脚本 guid → 关闭/开启的机制集合
+
+    // BMR 机制桥（BmrBridge）
+    public bool EnableBmrBridge = true;
+    public int BmrMinMaturity = 3;  // BossMod.BossModuleInfo.Maturity 枚举值：0=Dummy 1=WIP 2=Contributed 3=Verified 4=AISupport（>= 语义）
 
     // 录制回放（Replay）
     public bool AutoRecordOnBattleStart = false;    // 战斗开始自动录制、战斗结束自动停止（仅自动开启的录制被自动停止）
@@ -316,6 +325,31 @@ public interface IMechanicHandler : IDisposable
 }
 ```
 
+**BmrBridge.BmrBridgeController**（`BmrBridge\BmrBridgeController.cs`）——BMR 输入桥（M3），逐字契约：
+
+```csharp
+public sealed class BmrBridgeController : IDisposable
+{
+    public BmrBridgeController();
+    public void Update();      // 主线程，OnFrameworkUpdate 中排在 _dodge 之前
+    public void Dispose();
+    public bool IsAvailable { get; }        // BmrRuntimeEnvironment + 会话就绪
+    public bool IsSuppressed { get; }       // 当前区域有 MP 区域专属脚本运行 → 桥暂停（不采样不更新模块）
+    public bool CaptureActive { get; }      // 效果包 hook 可用
+    public string? LastError { get; }
+    public int LoadedModuleCount { get; }
+    public int PendingModuleCount { get; }
+    public string? ActiveModuleName { get; }
+    public string? ActiveZoneModuleName { get; }
+}
+```
+
+- 构造：`BmrRuntimeEnvironment.Initialize(Svc.Data.GameData, Svc.Log)`（IDataManager.GameData 属性拿 Lumina.GameData）→ 内存覆盖 `BossModuleManager.Config.MinMaturity`（int 直接转 `BossModuleInfo.Maturity`，Dummy=0/WIP=1/Contributed=2/Verified=3/AISupport=4，`>=` 语义；**不触发 `Modified.Fire`，BMR 配置不落盘**）→ `new BmrSession(gameVersion)`（版本串取 Lumina `Repositories["ffxiv"].Version`，回退 `"live"`）→ `new BmrWorldFeed(session)` → `new BmrActionEffectCapture()` → PromeEventBus 订阅（owner=this，逐个 IDisposable 退订）。初始化异常 → IsAvailable=false + LastError，其余组件照常。
+- 事件→DTO：Tether/TetherCancel/TargetIcon（IconId=MarkerId 原值，Feed 内减 IDScramble.Delta）/TargetVfx（TargetId 恒 0，PR 事件无此字段）/Marker（MarkerId=param1+1，减 1 得 Sign；TargetId=0xE0000000 为清除）/MapEffect（State=Param1|Param2<<16）/EObjAnimation/EObjSetState/DirectorUpdate/NpcYell/SystemLog（Args 恒空）/PlayActionTimeline；Waymark 无总线方法，走 `OnLogEvent<LogSystemWaymarkEvent>`，只更新控制器内 8 槽状态随帧下发。回调在主线程直接 `feed.Enqueue`；门控（总开关/压制/回放）关闭时回调直接丢弃，队列不积压。
+- `Update()` 门控：IsAvailable && EnableBmrBridge && !IsSuppressed && !ReplayModeActive 才执行；跳过帧只清空 capture 队列。执行序：`BmrLiveSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update`。
+- `BmrLiveSampler`（internal static）：全对象表遍历（SpawnIndex=表下标；EntityId 0/0xE0000000 回退 GameObjectId，0xFF 高字节丢弃）；IsAlly 用原生 `ActionManager.ClassifyTarget != Enemy`（非 Character 恒 true，对齐 BMR）；Cast 取 CastInfo（ActionType==1 为 Spell，Rotation 用 Character.CastRotation 弧度）；Statuses 逐槽带下标；队伍槽 0=本人（ContentId 先 Svc.Party 按 EntityId 匹配、回退 Svc.PlayerState），1-7 取 `PartyHelper.GetParty()` 顺序（含本人，跳过 [0]）；CFC 由 Lumina TerritoryType.ContentFinderCondition 解析并按区域缓存。
+- `BmrActionEffectCapture`：`Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(Addresses.Receive.Value, Detour)`；detour 只读包（NumTargets 截到 32，逐目标 8×ulong 原始效果）入 `ConcurrentQueue` 后必须原样调 `Original`，绝不改动画锁/不拦截动作；hook 失败一次性警告并降级（OnEventCast 不受影响）。绘制桥/导航桥（M4/M5）不在本组件范围。
+
 **Windows.MainWindow**（`Windows\MainWindow.cs`）
 
 ```csharp
@@ -327,7 +361,7 @@ public sealed class MainWindow : IDisposable
 }
 ```
 
-- 面板为分页签布局：总览（五个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、录制回放（精简入口：录制/回放状态行 + 打开独立窗口按钮 + 自动录制开关）、诊断（调试模式、本体状态、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突），`/prmp rec` 开停录制，`/prmp replay` 开关录制回放窗口。
+- 面板为分页签布局：总览（六个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、录制回放（精简入口：录制/回放状态行 + 打开独立窗口按钮 + 自动录制开关）、诊断（调试模式、本体状态、BMR 机制桥、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突），`/prmp rec` 开停录制，`/prmp replay` 开关录制回放窗口。
 
 **Scripting 脚本框架**（`Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
 
@@ -572,7 +606,7 @@ public readonly record struct GreenMovePoint(
 
 > **注意**：`Microsoft.CodeAnalysis` 两项是 2025-09 月为支持子插件 Roslyn 热编译新加入白名单的（本体 fork `PromeExAssemblyLoader.cs` 本地修改），**依赖重新构建并部署后的本体 DLL 才生效**（部署前该版本本体仍按旧白名单运行）。
 
-例外：**仅 `PromeRotation.Scripting.dll` 需要随包拷贝到插件目录**（PR 加载器在该目录解析子插件依赖，本体版本一致无冲突），由 csproj 里 `AfterTargets="Build"` 的拷贝目标自动完成（照抄 PromePainter.csproj 的 `CopyPromeRotationScripting` target）。
+例外：**仅 `PromeRotation.Scripting.dll` 需要随包拷贝到插件目录**（PR 加载器在该目录解析子插件依赖，本体版本一致无冲突），由 csproj 里 `AfterTargets="Build"` 的拷贝目标自动完成（照抄 PromePainter.csproj 的 `CopyPromeRotationScripting` target）。**`MasterPlayer.BmrRuntime.dll` 同样随包输出**（csproj `ProjectReference` 默认 Private=true；BmrRuntime 自身的 Dalamud/FFCS/Lumina 等引用全是 Private=false 白名单共享程序集，不拷包）。
 
 **白名单之外的依赖不进包**（csproj 保持 `Private=false`）：PR 加载器只解析白名单到宿主，其余依赖 miss 后由 `Scripting/HostDependencyProbe.cs` 的 ALC `Resolving` 兜底——按「插件自身目录 → 宿主 PR 安装目录」顺序探测同名 DLL 并流式加载（宿主目录里的依赖版本天然与运行中本体一致）。该探针现在作为白名单方案的额外兜底保留。新增非白名单依赖无需改 csproj；仅当两处目录都没有该 DLL 时才会加载失败（报原始 `FileNotFoundException`）。
 
