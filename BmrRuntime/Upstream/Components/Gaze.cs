@@ -74,8 +74,10 @@ public abstract class GenericGaze(BossModule module, uint aid = default) : CastC
         {
             ref readonly var eye = ref eyes[i];
             var danger = HitByEye(ref pc, eye) != eye.Inverted;
-            var eyeCenter = IndicatorScreenPos(eye.Position);
-            DrawEye(eyeCenter, danger);
+            if (MasterPlayer.BmrRuntime.BmrDrawSink.Current is { } sink)
+                sink.Add(new MasterPlayer.BmrRuntime.BmrDrawEye(eye.Position, danger, danger ? Colors.Enemy : Colors.PC));
+            else
+                DrawEye(IndicatorScreenPos(eye.Position), danger);
 
             if (pc.Position.InCircle(eye.Position, eye.Range))
             {

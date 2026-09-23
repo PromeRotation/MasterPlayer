@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using BossMod;
 using BossMod.Components;
@@ -447,7 +448,7 @@ Scenario("feed drives zone, module activation and combat from synthetic frames",
     feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
     session.Update();
     var module = session.BossModules.ActiveModule;
-    Check(session.BossModules.LoadedModules.Count != 0 && module?.Info.PrimaryActorOID == 0x19B, "Feed frames did not load the Chopper module");
+    Check(session.BossModules.LoadedModules.Count != 0 && module?.Info?.PrimaryActorOID == 0x19B, "Feed frames did not load the Chopper module");
     Check(module!.StateMachine.ActivePhaseIndex == 0, "Feed combat flag did not activate the encounter");
 });
 
@@ -593,6 +594,84 @@ Scenario("feed statuses, waymarks and head markers follow snapshots and events",
     Check(session.World.Waymarks[Sign.Attack1] == 1, "Head marker event was not applied");
 });
 
+Scenario("draw capture collects Chopper AOE shapes without a window", () =>
+{
+    var world = NewWorld();
+    var boss = AddBoss(world, 0x19B);
+    using var module = BossModuleRegistry.CreateModuleForActor(world, boss, BossModuleInfo.Maturity.WIP)!;
+    boss.InCombat = true;
+    module.Update();
+    world.Execute(new ActorState.OpCastInfo(1, new() { Action = new(ActionType.Spell, 351u), TotalTime = 3, Location = new(100, 0, 100) }));
+    module.Update();
+    var result = BmrModuleDrawCapture.Capture(module, 0, default);
+    Check(BmrDrawSink.Current == null, "Capture left a sink installed");
+    Check(result.Errors.Count == 0, $"Capture reported errors: {string.Join(";", result.Errors.Select(e => e.Exception.Message))}");
+    var zone = result.Commands.OfType<BmrDrawZoneCircle>().Single();
+    Check(zone.Radius == 6.15f, "Captured circle radius differs from the original AOE");
+    Check(zone.Center == new WPos(100, 100), "Captured circle center differs from the cast location");
+    Check(zone.Color != 0 && !zone.Outline, "Captured circle lost its fill color");
+    Check(result.Commands.OfType<BmrDrawComplexPoly>().Any(p => p.Outline), "Arena border outline was not captured");
+    Check(result.Commands.OfType<BmrDrawActorMarker>().Count() >= 2, "Player and boss actor markers were not captured");
+});
+
+Scenario("draw capture isolates component failures", () =>
+{
+    var world = NewWorld();
+    using var module = BossModuleRegistry.CreateModuleForActor(world, AddBoss(world, 0x19B), BossModuleInfo.Maturity.WIP)!;
+    var throwing = new TestThrowingDraw(module);
+    module.Components.Add(throwing);
+    var result = BmrModuleDrawCapture.Capture(module, 0, default);
+    Check(result.Errors.Any(e => e.Component == throwing && e.Stage == "background"), "Component draw failure was not recorded");
+    Check(result.Commands.OfType<BmrDrawLine>().Any(l => l.Color == 0xFF00FF00u), "Later draw stages were skipped after a component failure");
+    Check(result.Commands.OfType<BmrDrawActorMarker>().Any(), "Module-level drawing was skipped after a component failure");
+});
+
+Scenario("draw capture forwards gaze eyes and player safe arcs", () =>
+{
+    var world = NewWorld();
+    using var module = BossModuleRegistry.CreateModuleForActor(world, AddBoss(world, 0x19B), BossModuleInfo.Maturity.WIP)!;
+    var gaze = new TestGaze(module);
+    gaze.EyesToShow.Add(new(new WPos(105, 100)));
+    module.Components.Add(gaze);
+    var result = BmrModuleDrawCapture.Capture(module, 0, default);
+    Check(result.Errors.Count == 0, "Gaze capture reported errors");
+    var eye = result.Commands.OfType<BmrDrawEye>().Single();
+    Check(eye.Position == new WPos(105, 100), "Gaze eye lost its world position");
+    Check(eye.Color != 0, "Gaze eye lost its resolved color");
+    Check(result.Commands.OfType<BmrDrawPolyline>().Any(p => !p.Closed && p.Color == Colors.Enemy), "Player safe arc was not captured");
+});
+
+Scenario("draw capture forwards head markers without touching the texture service", () =>
+{
+    var world = NewWorld();
+    var boss = AddBoss(world, 0x19B);
+    using var module = BossModuleRegistry.CreateModuleForActor(world, boss, BossModuleInfo.Maturity.WIP)!;
+    world.Execute(new WaymarkState.OpSignChange(Sign.Attack1, boss.InstanceID));
+    Check(Service.Texture == null, "Test environment unexpectedly provides a texture provider");
+    var previous = BossModule.WindowConfig.ShowSigns;
+    try
+    {
+        BossModule.WindowConfig.ShowSigns = true;
+        var result = BmrModuleDrawCapture.Capture(module, 0, default);
+        var marker = result.Commands.OfType<BmrDrawSignMarker>().Single();
+        Check(marker.Sign == Sign.Attack1 && marker.IconId == Sign.Attack1.IconId(), "Sign marker payload was lost");
+        Check(marker.Position == boss.Position, "Sign marker lost its world position");
+    }
+    finally { BossModule.WindowConfig.ShowSigns = previous; }
+});
+
+Scenario("draw capture forwards raw triangle soups with world coordinates", () =>
+{
+    var world = NewWorld();
+    using var module = BossModuleRegistry.CreateModuleForActor(world, AddBoss(world, 0x19B), BossModuleInfo.Maturity.WIP)!;
+    module.Components.Add(new TestTriangleZone(module));
+    var result = BmrModuleDrawCapture.Capture(module, 0, default);
+    var soup = result.Commands.OfType<BmrDrawZoneTriangles>().Single();
+    var center = module.Center;
+    Check(soup.Vertices.Length == 3 && soup.Vertices[0] == center && soup.Vertices[1] == center + new WDir(5, 0) && soup.Vertices[2] == center + new WDir(0, 5), "Triangle soup vertices were not converted to world coordinates");
+    Check(soup.Color == 0x80808080u, "Triangle soup color was lost");
+});
+
 if (args.Length > 2)
     File.WriteAllLines(args[2], coverage, new UTF8Encoding(false));
 foreach (var log in logs.Where(l => l.Contains("ModuleRegistry") || l.Contains("ZoneModuleRegistry")))
@@ -612,6 +691,24 @@ public class RecordingLog : DispatchProxy
 }
 
 public sealed class TestThinIce(BossModule module) : ThinIce(module, 10);
+
+public sealed class TestThrowingDraw(BossModule module) : BossComponent(module)
+{
+    public override void DrawArenaBackground(int pcSlot, Actor pc) => throw new InvalidOperationException("draw failure");
+    public override void DrawArenaForeground(int pcSlot, Actor pc) => Arena.AddLine(pc.Position, pc.Position + new WDir(1, 0), 0xFF00FF00);
+}
+
+public sealed class TestGaze(BossModule module) : GenericGaze(module)
+{
+    public readonly List<Eye> EyesToShow = [];
+    public override ReadOnlySpan<Eye> ActiveEyes(int slot, Actor actor) => CollectionsMarshal.AsSpan(EyesToShow);
+}
+
+public sealed class TestTriangleZone(BossModule module) : BossComponent(module)
+{
+    public override void DrawArenaBackground(int pcSlot, Actor pc) =>
+        Arena.Zone([new RelTriangle(default, new WDir(5, 0), new WDir(0, 5))], 0x80808080);
+}
 
 public sealed class ThrowingZone(WorldState world) : ZoneModule(world)
 {

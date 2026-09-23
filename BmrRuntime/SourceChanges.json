@@ -5,9 +5,19 @@
     "importedSha256": "96da0ec6207685f272e4d249a1aaf4040705ea14a2fe378bea17abb483714786"
   },
   "BossModule/BossModule.cs": {
-    "reason": "优先按实际模块类型选择状态机，避免 OID 冲突把另一模块的 States 传给构造器。 状态退出失败时仍清理组件、世界事件和障碍资源。",
+    "reason": "优先按实际模块类型选择状态机，避免 OID 冲突把另一模块的 States 传给构造器。 状态退出失败时仍清理组件、世界事件和障碍资源。 新增 DrawArenaCaptured 捕获驱动（逐环节异常隔离），DrawSigns 在捕获汇下转发世界坐标标记且 Service.Texture 为空时不取贴图。",
     "originalSha256": "4e26de1a1119b7c6364924aeac2c883046d5652d87a8a171fb31dc42a99cc4c5",
-    "importedSha256": "6cb037ef1ee21a8ca91ffb7c022f44b879d473f2b288ef01ecc974aefc50ae61"
+    "importedSha256": "af749b7ec9a53747643eeb42e9f22072e8db960610be1a4ae5cad954f8712ad1"
+  },
+  "BossModule/MiniArena.cs": {
+    "reason": "全部绘制方法在世界坐标层转发到可选的 BmrDrawSink 捕获汇（形状参数层，含 Zone 三角化兜底与 Path 折线）；Begin/End 在捕获时只保留纯数学字段更新，跳过 ImGui 窗口调用与背景盘填充。无捕获汇时行为与原文一致。",
+    "originalSha256": "2c468610327988c680761944a4838ad1307e4ffc499ed0adc50873e92d43d8fd",
+    "importedSha256": "d4358d4cc1851c069527a015c57cfce2c509d0c8493e73a45db12cadb5953efa"
+  },
+  "Components/Gaze.cs": {
+    "reason": "视线眼睛指示在捕获汇下转发世界坐标 Eye 命令，不再计算屏幕位置；玩家安全弧仍经 Path API 自然捕获。",
+    "originalSha256": "aba5f0c9daa92ab8f37195879e7e97b1d77dd45db59b97565b83f3a57f9dbebb",
+    "importedSha256": "98b2351211f2be1e6437c352fbc52e6d0e7e04a4cf5068b8e3655ab1d595fb93"
   },
   "Data/ClientState.cs": {
     "reason": "增加每个世界独立的 LegacyMovement 输入，供宿主或回放提供。",

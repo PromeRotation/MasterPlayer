@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using MasterPlayer.BmrRuntime;
 
 namespace BossMod;
 
@@ -359,6 +360,68 @@ public abstract class BossModule : IDisposable
         Arena.Actor(pc, Colors.PC, true);
     }
 
+    public void DrawArenaCaptured(Angle cameraAzimuth, int pcSlot, Actor pc, bool haveRisks, Action<BossComponent?, string, Exception> onError)
+    {
+        try { Arena.Begin(cameraAzimuth); }
+        catch (Exception ex) { onError(null, "begin", ex); return; }
+        try { DrawArenaBackground(pcSlot, pc); }
+        catch (Exception ex) { onError(null, "background", ex); }
+        var count = Components.Count;
+        for (var i = 0; i < count; ++i)
+        {
+            var component = Components[i];
+            try { component.DrawArenaBackground(pcSlot, pc); }
+            catch (Exception ex) { onError(component, "background", ex); }
+        }
+        if (WindowConfig.ShowBorder)
+        {
+            try { Arena.AddComplexPolygon(Bounds.ShapeSimplified, haveRisks && WindowConfig.ShowBorderRisk ? Colors.Enemy : Colors.Border, 2f, false); }
+            catch (Exception ex) { onError(null, "border", ex); }
+        }
+        if (WindowConfig.ShowCardinals)
+        {
+            try { Arena.CardinalNames(); }
+            catch (Exception ex) { onError(null, "cardinals", ex); }
+        }
+        if (WindowConfig.ShowWaymarks && WorldState.Waymarks.AnyWaymarks)
+        {
+            try { DrawWaymarks(); }
+            catch (Exception ex) { onError(null, "waymarks", ex); }
+        }
+        if (WindowConfig.ShowSigns)
+        {
+            try { DrawSigns(); }
+            catch (Exception ex) { onError(null, "signs", ex); }
+        }
+        try { DrawPartyMembers(pcSlot, pc); }
+        catch (Exception ex) { onError(null, "party", ex); }
+        try { DrawArenaForeground(pcSlot, pc); }
+        catch (Exception ex) { onError(null, "foreground", ex); }
+        for (var i = 0; i < count; ++i)
+        {
+            var component = Components[i];
+            try { component.DrawArenaForeground(pcSlot, pc); }
+            catch (Exception ex) { onError(component, "foreground", ex); }
+        }
+        if (WindowConfig.ShowMeleeRangeIndicator)
+        {
+            try
+            {
+                var t = WorldState.Actors.Find(pc.TargetID);
+                var actor = t != null && !t.IsAlly && !t.IsDead && t.InCombat ? t : !PrimaryActor.IsDead && PrimaryActor.IsTargetable ? PrimaryActor : null;
+                if (actor != null)
+                    Arena.ZoneDonut(actor.Position, actor.HitboxRadius + 2.6f, actor.HitboxRadius + 2.9f, Colors.MeleeRangeIndicator);
+            }
+            catch (Exception ex) { onError(null, "melee-range", ex); }
+        }
+        try { DrawEnemies(pcSlot, pc); }
+        catch (Exception ex) { onError(null, "enemies", ex); }
+        try { Arena.Actor(pc, Colors.PC, true); }
+        catch (Exception ex) { onError(null, "player", ex); }
+        try { MiniArena.End(); }
+        catch (Exception ex) { onError(null, "end", ex); }
+    }
+
     public BossComponent.TextHints CalculateHintsForRaidMember(int slot, Actor actor)
     {
         BossComponent.TextHints hints = [];
@@ -638,7 +701,13 @@ public abstract class BossModule : IDisposable
             }
 
             var iconId = i.IconId();
-            if (Service.Texture.TryGetFromGameIcon(iconId, out var tex))
+            if (BmrDrawSink.Current is { } sink)
+            {
+                if (sink.Options.SignMarkers)
+                    sink.Add(new BmrDrawSignMarker(actor.Position, iconId, i));
+                continue;
+            }
+            if (Service.Texture != null && Service.Texture.TryGetFromGameIcon(iconId, out var tex))
             {
                 var wrap = tex.GetWrapOrEmpty();
                 var pos = Arena.WorldPositionToScreenPosition(actor.Position);

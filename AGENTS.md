@@ -51,10 +51,12 @@ MasterPlayer/
 ├── Mechanics/
 │   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
 │   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
-├── BmrBridge/                     # BMR 宿主桥（输入桥 M3，规格见 docs/reference/BMRBridge.spec.md）：实时世界 → BmrRuntime Feed DTO
+├── BmrBridge/                     # BMR 宿主桥（M3 输入桥 + M4 绘制桥，规格见 docs/reference/BMRBridge.spec.md）
 │   ├── BmrBridgeController.cs     # 会话编排：BmrRuntimeEnvironment 初始化 + BmrSession + 事件订阅 + 区域脚本压制 + 诊断属性
 │   ├── BmrActionEffectCapture.cs  # ActionEffectHandler.Receive 纯观察 hook（只入队不拦截）→ 效果包 DTO
-│   └── BmrLiveSampler.cs          # 对象表/队伍/标点 → BmrWorldFrame 采样（FFCS 读法对齐 ReplayWorldCapture）
+│   ├── BmrLiveSampler.cs          # 对象表/队伍/标点 → BmrWorldFrame 采样（FFCS 读法对齐 ReplayWorldCapture）
+│   ├── BmrDrawBridge.cs           # 绘制桥（M4）：激活模块 DrawArenaCaptured 捕获 → 双视图预览注册 + 文字提示/extras
+│   └── BmrDrawConvert.cs          # BmrDrawCommand → MP 几何/线段/extras 纯逻辑转换（tests 可链接）
 ├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
 │                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
 │                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
@@ -325,7 +327,7 @@ public interface IMechanicHandler : IDisposable
 }
 ```
 
-**BmrBridge.BmrBridgeController**（`BmrBridge\BmrBridgeController.cs`）——BMR 输入桥（M3），逐字契约：
+**BmrBridge.BmrBridgeController**（`BmrBridge\BmrBridgeController.cs`）——BMR 输入桥（M3）+ 绘制桥宿主（M4），逐字契约：
 
 ```csharp
 public sealed class BmrBridgeController : IDisposable
@@ -341,14 +343,23 @@ public sealed class BmrBridgeController : IDisposable
     public int PendingModuleCount { get; }
     public string? ActiveModuleName { get; }
     public string? ActiveZoneModuleName { get; }
+    public IReadOnlyList<(string Text, bool IsRisk)> CurrentHints { get; }   // 激活模块 GlobalHints(false) + 玩家 TextHints
+    public IReadOnlyList<BmrRadarExtra> DrawExtras { get; }                  // 雷达 extras（Eye/Text/Sign），门控关闭时为空
+    public string? DrawExtrasKey { get; }                                    // extras 来源键 `bmr/{moduleTypeName}`
+    public string? DrawModuleName { get; }                                   // 当前绘制来源模块名
+    public int CaptureErrorCount { get; }                                    // 绘制捕获异常累计
+    public string? DrawCaptureError { get; }
 }
 ```
 
 - 构造：`BmrRuntimeEnvironment.Initialize(Svc.Data.GameData, Svc.Log)`（IDataManager.GameData 属性拿 Lumina.GameData）→ 内存覆盖 `BossModuleManager.Config.MinMaturity`（int 直接转 `BossModuleInfo.Maturity`，Dummy=0/WIP=1/Contributed=2/Verified=3/AISupport=4，`>=` 语义；**不触发 `Modified.Fire`，BMR 配置不落盘**）→ `new BmrSession(gameVersion)`（版本串取 Lumina `Repositories["ffxiv"].Version`，回退 `"live"`）→ `new BmrWorldFeed(session)` → `new BmrActionEffectCapture()` → PromeEventBus 订阅（owner=this，逐个 IDisposable 退订）。初始化异常 → IsAvailable=false + LastError，其余组件照常。
 - 事件→DTO：Tether/TetherCancel/TargetIcon（IconId=MarkerId 原值，Feed 内减 IDScramble.Delta）/TargetVfx（TargetId 恒 0，PR 事件无此字段）/Marker（MarkerId=param1+1，减 1 得 Sign；TargetId=0xE0000000 为清除）/MapEffect（State=Param1|Param2<<16）/EObjAnimation/EObjSetState/DirectorUpdate/NpcYell/SystemLog（Args 恒空）/PlayActionTimeline；Waymark 无总线方法，走 `OnLogEvent<LogSystemWaymarkEvent>`，只更新控制器内 8 槽状态随帧下发。回调在主线程直接 `feed.Enqueue`；门控（总开关/压制/回放）关闭时回调直接丢弃，队列不积压。
-- `Update()` 门控：IsAvailable && EnableBmrBridge && !IsSuppressed && !ReplayModeActive 才执行；跳过帧只清空 capture 队列。执行序：`BmrLiveSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update`。
+- `Update()` 门控：IsAvailable && EnableBmrBridge && !IsSuppressed && !ReplayModeActive 才执行；跳过帧清空 capture 队列并 `BmrDrawBridge.Sleep()`。执行序：`BmrLiveSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update` → `_drawBridge.Update()`。
 - `BmrLiveSampler`（internal static）：全对象表遍历（SpawnIndex=表下标；EntityId 0/0xE0000000 回退 GameObjectId，0xFF 高字节丢弃）；IsAlly 用原生 `ActionManager.ClassifyTarget != Enemy`（非 Character 恒 true，对齐 BMR）；Cast 取 CastInfo（ActionType==1 为 Spell，Rotation 用 Character.CastRotation 弧度）；Statuses 逐槽带下标；队伍槽 0=本人（ContentId 先 Svc.Party 按 EntityId 匹配、回退 Svc.PlayerState），1-7 取 `PartyHelper.GetParty()` 顺序（含本人，跳过 [0]）；CFC 由 Lumina TerritoryType.ContentFinderCondition 解析并按区域缓存。
-- `BmrActionEffectCapture`：`Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(Addresses.Receive.Value, Detour)`；detour 只读包（NumTargets 截到 32，逐目标 8×ulong 原始效果）入 `ConcurrentQueue` 后必须原样调 `Original`，绝不改动画锁/不拦截动作；hook 失败一次性警告并降级（OnEventCast 不受影响）。绘制桥/导航桥（M4/M5）不在本组件范围。
+- `BmrActionEffectCapture`：`Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(Addresses.Receive.Value, Detour)`；detour 只读包（NumTargets 截到 32，逐目标 8×ulong 原始效果）入 `ConcurrentQueue` 后必须原样调 `Original`，绝不改动画锁/不拦截动作；hook 失败一次性警告并降级（OnEventCast 不受影响）。
+- **绘制桥（M4，`BmrDrawBridge`）**：`EnableRadarOverlay || EnableRadar` 且 `BossModules.ActiveModule` 与队伍槽 0 存在时，每帧 `BmrModuleDrawCapture.Capture(module, 0, Angle(相机方位角 DirH+π))` 捕获绘制命令，经 `BmrDrawConvert` 转换后按稳定槽位 id `bmr/{moduleTypeName}/{i}` 注册进 `AoeVisibilityRegistry`（填充/描边→`AddPreview` 500ms 自过期，线→`AddLine`，帧末差集移除未刷新 id）；双视图全关、无激活模块、压制或回放时 `Sleep()` 清注册（`RemovePreviews("bmr/")`）并清空 extras/提示。捕获异常按模块 5 秒限频记 `LastCaptureError` 与计数。文字提示聚合 `CalculateGlobalHints()` + `CalculateHintsForRaidMember(0, pc)`，经控制器 `CurrentHints` 暴露给诊断页。
+- **`BmrDrawConvert`**（internal static 纯逻辑，不引用 Dalamud/PR，tests 直接链接）：Circle/Donut/Fan 直转 MP 几何；Cone(inner>0)/Capsule/ArcCapsule/ComplexPoly（只取外轮廓，洞忽略）/ZoneTriangles（逐三角形）→ `WorldPolygonGeometry`；Cross → 双 `RectangleGeometry`（臂长 2×Range、宽 2×HalfWidth）；Rect 换算中心 `Origin + dir×(LenFront−LenBack)/2`、宽 2×HalfWidth、长 LenFront+LenBack；BMR `Angle.Rad`/`WDir.ToAngle().Rad` 与 MP 弧度约定一致（0=+Z，π/2=+X）。安全色判定用 ColorConfig 默认 ABGR 硬编码对照表（SafeFromAOE 0x80008000 / Safe 0xff00ff00 → safe，其余默认危险）；场地边框 ComplexPoly（Border 白 0xffffffff）跳过，由 MP 边界层绘制。IconWorld/ActorMarker/CardinalNames 跳过（MP 雷达已有角色/罗盘）；Eye/TextWorld/SignMarker 转 `BmrRadarExtra`（记录 Kind/世界坐标/文本/危险标志/原色 ABGR）。Y 高度取队伍槽 0 玩家 `PosRot.Y`。
+- **雷达 extras 图层**：`RadarView.DrawBmrExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用 BMR 原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `bmr/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。导航桥（M5）不在本组件范围。
 
 **Windows.MainWindow**（`Windows\MainWindow.cs`）
 

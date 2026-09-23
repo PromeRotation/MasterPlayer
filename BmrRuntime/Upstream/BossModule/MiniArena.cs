@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using MasterPlayer.BmrRuntime;
 
 namespace BossMod;
 
@@ -58,16 +59,48 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     public WPos ClampToBounds(WPos position) => _center + _bounds.ClampToBounds(position - _center);
     public float IntersectRayBounds(WPos rayOrigin, WDir rayDir) => _bounds.IntersectRay(rayOrigin - _center, rayDir);
 
+    private static uint ZoneColor(uint color) => color != default ? color : Colors.AOE;
+    private static uint StrokeColor(uint color) => color != default ? color : Colors.Danger;
+
+    private BmrDrawPolygonPart[] CaptureParts(RelSimplifiedComplexPolygon poly)
+    {
+        var parts = CollectionsMarshal.AsSpan(poly.Parts);
+        var result = new BmrDrawPolygonPart[parts.Length];
+        for (var i = 0; i < parts.Length; ++i)
+        {
+            var exteriorSpan = parts[i].Exterior;
+            var exterior = new WPos[exteriorSpan.Length];
+            for (var j = 0; j < exterior.Length; ++j)
+                exterior[j] = _center + exteriorSpan[j];
+            var holes = new WPos[parts[i].HoleStarts.Count][];
+            for (var h = 0; h < holes.Length; ++h)
+            {
+                var holeSpan = parts[i].Interior(h);
+                var hole = new WPos[holeSpan.Length];
+                for (var j = 0; j < hole.Length; ++j)
+                    hole[j] = _center + holeSpan[j];
+                holes[h] = hole;
+            }
+            result[i] = new(exterior, holes);
+        }
+        return result;
+    }
+
     // prepare for drawing - set up internal state, clip rect etc.
     public void Begin(Angle cameraAzimuth)
     {
+        var sink = BmrDrawSink.Current;
         var centerOffset = new Vector2(ScreenMarginSize + Config.SlackForRotations * ScreenHalfSize);
         var fullSize = 2f * centerOffset;
-        var currentWindowSize = ImGui.GetWindowSize();
-        var requiredWindowSize = Vector2.Max(fullSize, currentWindowSize);
-        ImGui.SetWindowSize(requiredWindowSize);
-        var cursor = ImGui.GetCursorScreenPos();
-        ImGui.Dummy(fullSize);
+        var cursor = Vector2.Zero;
+        if (sink == null)
+        {
+            var currentWindowSize = ImGui.GetWindowSize();
+            var requiredWindowSize = Vector2.Max(fullSize, currentWindowSize);
+            ImGui.SetWindowSize(requiredWindowSize);
+            cursor = ImGui.GetCursorScreenPos();
+            ImGui.Dummy(fullSize);
+        }
 
         if (_bounds.ScreenHalfSize != ScreenHalfSize)
         {
@@ -84,6 +117,8 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
         _cameraAzimuth = cameraAzimuth;
         (_cameraSinAzimuth, _cameraCosAzimuth) = MathF.SinCos(cameraAzimuth.Rad);
+        if (sink != null)
+            return;
         var wmin = ImGui.GetWindowPos();
         var wmax = wmin + ImGui.GetWindowSize();
         ImGui.GetWindowDrawList().PushClipRect(Vector2.Max(cursor, wmin), Vector2.Min(cursor + fullSize, wmax));
@@ -116,6 +151,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     // unclipped primitive rendering that accept world-space positions; thin convenience wrappers around drawlist api
     public void AddLine(WPos a, WPos b, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawLine(a, b, StrokeColor(color), thickness));
+            return;
+        }
         thickness *= Config.ThicknessScale;
         if (Config.ShowOutlinesAndShadows)
         {
@@ -127,20 +167,43 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void AddTriangle(WPos p1, WPos p2, WPos p3, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawTriangle(p1, p2, p3, StrokeColor(color), false, thickness));
+            return;
+        }
         thickness *= Config.ThicknessScale;
         ImGui.GetWindowDrawList().AddTriangle(WorldPositionToScreenPosition(p1), WorldPositionToScreenPosition(p2), WorldPositionToScreenPosition(p3), color != default ? color : Colors.Danger, thickness);
     }
 
-    public void AddTriangleFilled(WPos p1, WPos p2, WPos p3, uint color = default) => ImGui.GetWindowDrawList().AddTriangleFilled(WorldPositionToScreenPosition(p1), WorldPositionToScreenPosition(p2), WorldPositionToScreenPosition(p3), color != default ? color : Colors.Danger);
+    public void AddTriangleFilled(WPos p1, WPos p2, WPos p3, uint color = default)
+    {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawTriangle(p1, p2, p3, StrokeColor(color), true));
+            return;
+        }
+        ImGui.GetWindowDrawList().AddTriangleFilled(WorldPositionToScreenPosition(p1), WorldPositionToScreenPosition(p2), WorldPositionToScreenPosition(p3), color != default ? color : Colors.Danger);
+    }
 
     public void AddQuad(WPos p1, WPos p2, WPos p3, WPos p4, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawQuad(p1, p2, p3, p4, StrokeColor(color), thickness));
+            return;
+        }
         thickness *= Config.ThicknessScale;
         ImGui.GetWindowDrawList().AddQuad(WorldPositionToScreenPosition(p1), WorldPositionToScreenPosition(p2), WorldPositionToScreenPosition(p3), WorldPositionToScreenPosition(p4), color != default ? color : Colors.Danger, thickness);
     }
 
     public void AddRect(WPos origin, WDir direction, float lenFront, float lenBack, float halfWidth, uint color, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneRect(origin, direction, lenFront, lenBack, halfWidth, StrokeColor(color), true, thickness));
+            return;
+        }
         thickness *= Config.ThicknessScale;
         var side = halfWidth * direction.OrthoR();
         var front = origin + lenFront * direction;
@@ -150,6 +213,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void AddPolygon(ReadOnlySpan<WPos> vertices, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawPolyline(vertices.ToArray(), true, StrokeColor(color), thickness));
+            return;
+        }
         thickness *= Config.ThicknessScale;
         var len = vertices.Length;
         for (var i = 0; i < len; ++i)
@@ -162,6 +230,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void AddComplexPolygon(RelSimplifiedComplexPolygon poly, uint color = default, float thickness = 1f, bool addShadows = true)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawComplexPoly(0, CaptureParts(poly), StrokeColor(color), true, thickness));
+            return;
+        }
         var colors = color != default ? color : Colors.Danger;
 
         var dl = ImGui.GetWindowDrawList();
@@ -215,14 +288,35 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     // path api: add new point to path; this adds new edge from last added point, or defines first vertex if path is empty
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void PathLineTo(WPos p) => ImGui.GetWindowDrawList().PathLineToMergeDuplicate(WorldPositionToScreenPosition(p));
+    public void PathLineTo(WPos p)
+    {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.PathPoint(p);
+            return;
+        }
+        ImGui.GetWindowDrawList().PathLineToMergeDuplicate(WorldPositionToScreenPosition(p));
+    }
 
     // adds a bunch of points corresponding to arc - if path is non empty, this adds an edge from last point to first arc point
-    public void PathArcTo(WPos center, float radius, float amin, float amax) => ImGui.GetWindowDrawList().PathArcTo(WorldPositionToScreenPosition(center), radius * _bounds.InvRadius * ScreenHalfSize, Angle.HalfPi - amin + _cameraAzimuth.Rad, Angle.HalfPi - amax + _cameraAzimuth.Rad);
+    public void PathArcTo(WPos center, float radius, float amin, float amax)
+    {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.PathArc(center, radius, amin, amax);
+            return;
+        }
+        ImGui.GetWindowDrawList().PathArcTo(WorldPositionToScreenPosition(center), radius * _bounds.InvRadius * ScreenHalfSize, Angle.HalfPi - amin + _cameraAzimuth.Rad, Angle.HalfPi - amax + _cameraAzimuth.Rad);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void PathStroke(bool closed, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.StrokePath(closed, color != default ? color : Colors.Danger, thickness);
+            return;
+        }
         thickness *= Config.ThicknessScale;
         ImGui.GetWindowDrawList().PathStroke(color != default ? color : Colors.Danger, closed ? ImDrawFlags.Closed : ImDrawFlags.None, thickness);
     }
@@ -230,6 +324,19 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     // draw clipped & triangulated zone
     public void Zone(RelTriangle[] triangulation, uint color = default)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            var vertices = new WPos[triangulation.Length * 3];
+            for (var i = 0; i < triangulation.Length; ++i)
+            {
+                ref readonly var tri = ref triangulation[i];
+                vertices[i * 3] = _center + tri.A;
+                vertices[i * 3 + 1] = _center + tri.B;
+                vertices[i * 3 + 2] = _center + tri.C;
+            }
+            sink.Add(new BmrDrawZoneTriangles(vertices, ZoneColor(color)));
+            return;
+        }
         var drawlist = ImGui.GetWindowDrawList();
         var restoreFlags = drawlist.Flags;
         drawlist.Flags &= ~ImDrawListFlags.AntiAliasedFill;
@@ -267,6 +374,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     // draw zones - these are filled primitives clipped to arena border; note that triangulation is cached
     public void ZoneCone(WPos center, float innerRadius, float outerRadius, Angle centerDirection, Angle halfAngle, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCone(center, innerRadius, outerRadius, centerDirection, halfAngle, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(1, center, innerRadius, outerRadius, centerDirection, halfAngle);
 
         tri ??= _bounds.ClipAndTriangulateCone(center - _center, innerRadius, outerRadius, centerDirection, halfAngle);
@@ -275,6 +387,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCircle(WPos center, float radius, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCircle(center, radius, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(2, center, radius);
         if (tri == null)
         {
@@ -292,6 +409,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneDonut(WPos center, float innerRadius, float outerRadius, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneDonut(center, innerRadius, outerRadius, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(3, center, innerRadius, outerRadius);
         if (tri == null)
         {
@@ -309,6 +431,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneTri(WPos a, WPos b, WPos c, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneTriangles([a, b, c], ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(4, a, b, c);
         tri ??= _bounds.ClipAndTriangulateTri(a - _center, b - _center, c - _center);
         Zone(tri, color);
@@ -316,6 +443,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneIsoscelesTri(WPos apex, WDir height, WDir halfBase, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneTriangles([apex, apex + height + halfBase, apex + height - halfBase], ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(5, apex, height, halfBase);
         tri ??= _bounds.ClipAndTriangulateIsoscelesTri(apex - _center, height, halfBase);
         Zone(tri, color);
@@ -323,6 +455,14 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneIsoscelesTri(WPos apex, Angle direction, Angle halfAngle, float height, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            var dir = direction.ToDirection();
+            var halfBase = height * halfAngle.Tan() * dir.OrthoL();
+            var heightDir = height * dir;
+            sink.Add(new BmrDrawZoneTriangles([apex, apex + heightDir + halfBase, apex + heightDir - halfBase], ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(6, apex, direction, halfAngle, height);
         tri ??= _bounds.ClipAndTriangulateIsoscelesTri(apex - _center, direction, halfAngle, height);
         Zone(tri, color);
@@ -330,6 +470,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRect(WPos origin, WDir direction, float lenFront, float lenBack, float halfWidth, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneRect(origin, direction, lenFront, lenBack, halfWidth, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(7, origin, direction, lenFront, lenBack, halfWidth);
         if (tri == null)
         {
@@ -346,15 +491,20 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRect(WPos origin, Angle direction, float lenFront, float lenBack, float halfWidth, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneRect(origin, direction.ToDirection(), lenFront, lenBack, halfWidth, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(8, origin, direction, lenFront, lenBack, halfWidth);
         if (tri == null)
         {
             var offset = origin - _center;
             tri = _bounds.ShapeSimplified.PolygonDirectionalRectIntersection(offset, direction.ToDirection(), lenFront, lenBack, halfWidth) switch
             {
-                PolygonShapeRelation.Inside => _bounds.TriangulateRect(offset, direction, lenFront, lenBack, halfWidth),
+                PolygonShapeRelation.Inside => _bounds.TriangulateRect(offset, direction.ToDirection(), lenFront, lenBack, halfWidth),
                 PolygonShapeRelation.Outside => [],
-                _ => _bounds.ClipAndTriangulateRect(offset, direction, lenFront, lenBack, halfWidth)
+                _ => _bounds.ClipAndTriangulateRect(offset, direction.ToDirection(), lenFront, lenBack, halfWidth)
             };
         }
         Zone(tri, color);
@@ -362,6 +512,13 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRect(WPos start, WPos end, float halfWidth, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            var dir = end - start;
+            var len = dir.Length();
+            sink.Add(new BmrDrawZoneRect(start, len > 0 ? dir / len : default, len, 0, halfWidth, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(9, start, end, halfWidth);
         if (tri == null)
         {
@@ -380,6 +537,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCross(WPos origin, Angle rotation, float range, float halfWidth, WPos[] contour, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCross(origin, rotation, range, halfWidth, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(10, origin, rotation, range, halfWidth);
         if (tri == null)
         {
@@ -396,6 +558,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRelPoly(int key, RelSimplifiedComplexPolygon poly, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawComplexPoly(key, CaptureParts(poly), ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.GetByHash(key);
         tri ??= _bounds.ClipAndTriangulate(poly);
         Zone(tri, color);
@@ -403,6 +570,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCapsule(WPos start, WDir direction, float radius, float length, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCapsule(start, direction, radius, length, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(11, start, direction, radius, length);
         if (tri == null)
         {
@@ -419,6 +591,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneArcCapsule(WPos start, WPos orbitCenter, Angle angularLength, float radius, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneArcCapsule(start, orbitCenter, angularLength, radius, ZoneColor(color)));
+            return;
+        }
         ref var tri = ref _triCache.Get(13, start, orbitCenter, angularLength, radius);
         // startOffset: local translation; toOrbitCenter: vector from start to orbit center
         var startOffset = start - _center;
@@ -430,6 +607,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     // draw zone outlines - these are filled primitives clipped to arena border; note that clipped polygons are cached
     public void ZoneConeOutline(WPos center, float innerRadius, float outerRadius, Angle centerDirection, Angle halfAngle, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCone(center, innerRadius, outerRadius, centerDirection, halfAngle, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(1, center, innerRadius, outerRadius, centerDirection, halfAngle);
         poly ??= _bounds.ClipCone(center - _center, innerRadius, outerRadius, centerDirection, halfAngle);
         AddComplexPolygon(poly, color, thickness);
@@ -437,6 +619,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCircleOutline(WPos center, float radius, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCircle(center, radius, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(2, center, radius);
         if (poly == null)
         {
@@ -453,6 +640,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCircleOutlineUnclipped(WPos center, float radius, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCircle(center, radius, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(14, center, radius);
         poly ??= _bounds.CirclePolygon(center - _center, radius);
         AddComplexPolygon(poly, color, thickness);
@@ -460,6 +652,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneDonutOutline(WPos center, float innerRadius, float outerRadius, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneDonut(center, innerRadius, outerRadius, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(3, center, innerRadius, outerRadius);
         if (poly == null)
         {
@@ -477,6 +674,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneTriOutline(WPos a, WPos b, WPos c, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawPolyline([a, b, c], true, StrokeColor(color), thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(4, a, b, c);
         poly ??= _bounds.ClipTri(a - _center, b - _center, c - _center);
         AddComplexPolygon(poly, color, thickness);
@@ -484,6 +686,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneIsoscelesTriOutline(WPos apex, WDir height, WDir halfBase, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawPolyline([apex, apex + height + halfBase, apex + height - halfBase], true, StrokeColor(color), thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(5, apex, height, halfBase);
         poly ??= _bounds.ClipIsoscelesTri(apex - _center, height, halfBase);
         AddComplexPolygon(poly, color, thickness);
@@ -491,6 +698,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRectOutline(WPos origin, WDir direction, float lenFront, float lenBack, float halfWidth, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneRect(origin, direction, lenFront, lenBack, halfWidth, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(7, origin, direction, lenFront, lenBack, halfWidth);
         if (poly == null)
         {
@@ -507,6 +719,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRectOutline(WPos origin, Angle direction, float lenFront, float lenBack, float halfWidth, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneRect(origin, direction.ToDirection(), lenFront, lenBack, halfWidth, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(8, origin, direction, lenFront, lenBack, halfWidth);
         if (poly == null)
         {
@@ -524,6 +741,13 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRectOutline(WPos start, WPos end, float halfWidth, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            var dir = end - start;
+            var len = dir.Length();
+            sink.Add(new BmrDrawZoneRect(start, len > 0 ? dir / len : default, len, 0, halfWidth, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(9, start, end, halfWidth);
         if (poly == null)
         {
@@ -542,6 +766,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCrossOutline(WPos origin, Angle rotation, float range, float halfWidth, WPos[] contour, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCross(origin, rotation, range, halfWidth, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(10, origin, rotation, range, halfWidth);
         if (poly == null)
         {
@@ -558,6 +787,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneRelPolyOutline(int key, RelSimplifiedComplexPolygon poly, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawComplexPoly(key, CaptureParts(poly), StrokeColor(color), true, thickness));
+            return;
+        }
         ref var polygon = ref _polyCache.GetByHash(key);
         polygon ??= _bounds.Clip(poly);
         AddComplexPolygon(polygon, color, thickness);
@@ -565,6 +799,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneCapsuleOutline(WPos start, WDir direction, float radius, float length, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneCapsule(start, direction, radius, length, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(11, start, direction, radius, length);
         poly ??= _bounds.ClipCapsule(start - _center, direction, radius, length);
         AddComplexPolygon(poly, color, thickness);
@@ -572,6 +811,11 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ZoneArcCapsuleOutline(WPos start, WPos orbitCenter, Angle angularLength, float radius, uint color = default, float thickness = 1f)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawZoneArcCapsule(start, orbitCenter, angularLength, radius, StrokeColor(color), true, thickness));
+            return;
+        }
         ref var poly = ref _polyCache.Get(13, start, orbitCenter, angularLength, radius);
         // startOffset: local translation; toOrbitCenter: vector from start to orbit center
         var startOffset = start - _center;
@@ -583,24 +827,50 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void TextScreen(Vector2 center, string text, uint color, float fontSize = 17f)
     {
+        if (BmrDrawSink.Current != null)
+            return;
         var size = ImGui.CalcTextSize(text) * Config.ArenaScale;
         ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), fontSize * Config.ArenaScale, center - size * 0.5f, color, text);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void TextWorld(WPos center, string text, uint color, float fontSize = 17f) => TextScreen(WorldPositionToScreenPosition(center), text, color, fontSize);
+    public void TextWorld(WPos center, string text, uint color, float fontSize = 17f)
+    {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawTextWorld(center, text, color, fontSize));
+            return;
+        }
+        TextScreen(WorldPositionToScreenPosition(center), text, color, fontSize);
+    }
 
     public void IconScreen(Vector2 center, FontAwesomeIcon icon, uint color, float fontSize = 17)
     {
+        if (BmrDrawSink.Current != null)
+            return;
         var size = ImGui.CalcTextSizeA(Service.IconFont, fontSize, float.MaxValue, float.MaxValue, icon.ToIconString(), out var i);
         size.X -= i * 0.5f;
         ImGui.GetWindowDrawList().AddText(Service.IconFont, fontSize, center - size / 2, color, icon.ToIconString());
     }
 
-    public void IconWorld(WPos center, FontAwesomeIcon icon, uint color, float fontSize = 17) => IconScreen(WorldPositionToScreenPosition(center), icon, color, fontSize);
+    public void IconWorld(WPos center, FontAwesomeIcon icon, uint color, float fontSize = 17)
+    {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            sink.Add(new BmrDrawIconWorld(center, (int)icon, color, fontSize));
+            return;
+        }
+        IconScreen(WorldPositionToScreenPosition(center), icon, color, fontSize);
+    }
 
     public void CardinalNames()
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            if (sink.Options.CardinalNames)
+                sink.Add(new BmrDrawCardinalNames(Colors.CardinalN, Colors.CardinalE, Colors.CardinalS, Colors.CardinalW, Config.CardinalsFontSize));
+            return;
+        }
         var center = ScreenCenter;
         var fontSetting = Config.CardinalsFontSize;
         var offCenterSizeOffset = (ScreenHalfSize + ScreenMarginSize * 0.5f) * _bounds.ScaleFactor + fontSetting - 17f;
@@ -614,6 +884,12 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ActorInsideBounds(WPos position, Angle rotation, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            if (sink.Options.ActorMarkers)
+                sink.Add(new BmrDrawActorMarker(position, rotation, color, true));
+            return;
+        }
         var scale = Config.ActorScale * Config.ThicknessScale;
         var dir = rotation.ToDirection();
         var scale07 = scale * 0.7f * dir;
@@ -633,6 +909,12 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
 
     public void ActorOutsideBounds(WPos position, Angle rotation, uint color)
     {
+        if (BmrDrawSink.Current is { } sink)
+        {
+            if (sink.Options.ActorMarkers)
+                sink.Add(new BmrDrawActorMarker(position, rotation, color, false));
+            return;
+        }
         var scale = Config.ActorScale;
         var dir = rotation.ToDirection();
         var scale07 = scale * 0.7f * dir;
@@ -746,5 +1028,10 @@ public sealed class MiniArena(WPos center, ArenaBounds bounds)
         }
     }
 
-    public static void End() => ImGui.GetWindowDrawList().PopClipRect();
+    public static void End()
+    {
+        if (BmrDrawSink.Current != null)
+            return;
+        ImGui.GetWindowDrawList().PopClipRect();
+    }
 }

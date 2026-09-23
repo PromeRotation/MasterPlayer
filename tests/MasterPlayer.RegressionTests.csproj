@@ -10,6 +10,9 @@
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\BmrRuntime\MasterPlayer.BmrRuntime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="..\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
@@ -24,6 +27,7 @@
     <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
     <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
+    <Compile Include="..\BmrBridge\BmrDrawConvert.cs" Link="BmrBridge\BmrDrawConvert.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />

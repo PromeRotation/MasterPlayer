@@ -57,8 +57,11 @@
 
 ## 绘制桥（M4）
 
+状态：2026-09-23 已实现（MP 侧 `BmrBridge/BmrDrawBridge.cs` + `BmrDrawConvert.cs` + `RadarView.DrawBmrExtras` + 诊断页提示区；离线回归 `tests/BmrDrawConvertRegression.cs` 8 场景）。
+
 - 适配点：`BmrRuntime/Upstream/BossModule/MiniArena.cs` 单文件适配（登记 SourceChanges.json）：每个绘制原语在世界坐标层（RotatedCoords 之前）转发到可选静态汇 `BmrDrawSink`。Zone 族 13 方法在**形状参数层**捕获（不取三角化结果），描边/线/多边形/文字/角色标记同样在世界层捕获。`Begin/End` 的 ImGui 窗口管理在无汇时可空转。直画旁路（Gaze 眼睛、头顶标记贴图）一并转发。无汇时保持原行为（不影响离线测试与既有用例）。
 - MP 侧 `BmrBridge/BmrDrawBridge.cs`：每帧 DrawArena 驱动改为「无 ImGui 捕获驱动」——调用 `module.DrawArena` 等效序列（背景→组件背景→前景→组件前景）但由捕获汇收集命令；命令按来源模块分组进 `AoeVisibilityRegistry`（键 `bmr/{moduleTypeName}`，名称取 ModuleInfo 显示名），双视图复用现有 `AddPreview/AddLine` 与配色/开关；文字提示进诊断/提示区。危险/安全配色默认映射 BMR Risky 语义，用户配色仍生效。
+- 落地差异（相对上一段设计）：模块显示名取 `module.GetType().Name`（BossModuleRegistry.Info 无 DisplayName 字段，BMR 自身窗口亦用类型名）；`BmrDrawComplexPoly` 只取外轮廓（洞忽略），场地边框（Border 白）跳过由 MP 边界层绘制；ZoneTriangles 逐三角形转 `WorldPolygonGeometry`（不合并连通域）；extras（Eye/Text/Sign）经 `RadarView` 专用图层按模块键过可见性，Eye 用用户危险/安全色、Text 用 BMR 原色；安全色判定硬编码 ColorConfig 默认 ABGR（MP 不加载 BMR 配置文件）。已知缺口：ShowBorderRisk 时边框以 Enemy 色 ComplexPoly 出现，会短暂显示为用户危险描边；IconWorld（FontAwesome 图标）/ActorMarker/CardinalNames 跳过不画。
 
 ## 导航桥（M5）
 

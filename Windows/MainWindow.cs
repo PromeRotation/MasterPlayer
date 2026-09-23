@@ -478,8 +478,20 @@ public sealed class MainWindow : IDisposable
         ImGui.Text($"激活模块：{bridge.ActiveModuleName ?? "无"}");
         if (bridge.ActiveZoneModuleName is { } zoneModule)
             HintInline($"区域模块：{zoneModule}");
+        if (bridge.DrawModuleName is { } drawModule)
+            HintInline($"绘制来源：{drawModule}");
+        if (bridge.CaptureErrorCount != 0)
+            ImGui.TextColored(WarningColor, $"绘制捕获错误累计 {bridge.CaptureErrorCount} 起（{bridge.DrawCaptureError ?? "详见日志"}）");
         if (bridge.LastError is { } error)
             ImGui.TextColored(WarningColor, $"最近错误：{error}");
+
+        var hints = bridge.CurrentHints;
+        if (hints.Count != 0)
+        {
+            SectionHeader("BMR 机制提示");
+            foreach (var (text, risk) in hints)
+                ImGui.TextColored(risk ? ErrorColor : OnColor, text);
+        }
     }
 
     private static void DrawSafeZoneStatus(MasterPlayerSettings settings)

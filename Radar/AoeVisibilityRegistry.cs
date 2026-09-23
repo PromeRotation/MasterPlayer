@@ -47,6 +47,10 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 
     public bool RemovePreview(string id) => _previews.Remove(id) | _lines.Remove(id);
 
+    public AoeVisibility VisibilityForKey(string key, string name) => GetRule(key, name);
+
+    public AoeVisibility? FindRule(string key) => rules.GetValueOrDefault(key);
+
     public void RemovePreviews(string idPrefix)
     {
         foreach (var id in _previews.Keys.Where(id => id.StartsWith(idPrefix, StringComparison.Ordinal)).ToArray())
