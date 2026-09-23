@@ -83,6 +83,8 @@ MasterPlayer/
 ├── docs/
 │   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
 │   ├── BMR机制迁移指南.md         # BMR→MasterPlayer 机制迁移的语义对照/流程/踩坑（配合 .agents/skills/bmr-mechanic-migration 技能）
+│   ├── BMR全量迁移记录.md         # 迁移过程记录（批次/差异/验证命令）
+│   ├── BMR移植报告.md             # 移植结论性报告：已实现/未实现/整体进度（2026-09-23）
 │   └── reference/
 │       └── CrucibleHigh1.spec.md  # 斗兽棋·高一迁移规格（该脚本内容的唯一事实来源）
 └── Windows/
@@ -648,7 +650,7 @@ public readonly record struct GreenMovePoint(
 ### 5.6 脚本系统（`Scripting\`，模式照抄 PromePainter `Scripting\`）
 
 - **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
-- **非斗兽棋 BMR 移植**：逐模块状态与能力缺口见 `docs/BMR全量迁移记录.md`；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
+- **非斗兽棋 BMR 移植**：结论性进度与缺口见 `docs/BMR移植报告.md`；逐模块状态见 `docs/BMR全量迁移记录.md` 与清单 CSV；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。运行库（MechanicRuntime/）承载全部 1,214 个目标模块，宿主桥（MechanicHost/）负责实时/回放输入、双视图绘制、安全区导航与时间轴；规格见 `docs/reference/MechanicRuntime.spec.md`、`docs/reference/MechanicHost.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
 - **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
 - **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。

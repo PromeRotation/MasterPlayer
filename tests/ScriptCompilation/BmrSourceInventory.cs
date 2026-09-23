@@ -77,8 +77,10 @@ internal static class BmrSourceInventory
             rows.Add([name, kind, expansion, category, maturity, group, Argument("NameID"), Argument("PrimaryActorOID"),
                 Argument("StatesType"), relative, (item.Node.GetLocation().GetLineSpan().StartLinePosition.Line + 1).ToString(CultureInfo.InvariantCulture),
                 Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(item.File))),
-                excluded ? "排除：用户指定斗兽棋不移植" : batch ? "首批已接入；差异及实机待验见ARRDungeons01.spec.md" : "待移植；组件未逐项核验",
-                attr == null ? "无显式元信息；须核验注册条件和主OID" : "源码候选；未验证运行时注册"]);
+                excluded ? "排除：用户指定斗兽棋不移植" : batch ? "首批已接入；差异及实机待验见ARRDungeons01.spec.md" : "运行库已接入；启动已验；完整机制未逐项验收",
+                excluded ? "斗兽棋已由内置脚本承载（Scripts/Crucible）；不在运行库范围"
+                    : attr == null ? "无显式元信息；运行库注册/构造/初始更新已验（MechanicRuntimeCoverage.csv）"
+                    : "运行库注册/构造/初始更新已验（MechanicRuntimeCoverage.csv）"]);
         }
         var text = new StringBuilder("module,kind,expansion,category,maturity,group_id,name_id,explicit_primary_oid,explicit_states_type,source,line,sha256,status,registration_note\n");
         foreach (var row in rows) text.AppendLine(string.Join(',', row.Select(v => "\"" + v.Replace("\"", "\"\"") + "\"")));

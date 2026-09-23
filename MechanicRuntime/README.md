@@ -19,9 +19,9 @@ rtk dotnet build MechanicRuntime/MasterPlayer.MechanicRuntime.csproj
 真实数据验收（第二个位置参数也可用 `FFXIV_SQPACK` 环境变量提供；第四个参数开启原文及资源完整性检查）：
 
 ```powershell
-rtk dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.csproj -- "C:/Users/xiaos/Documents/GitHub/MasterPlayer" "C:/Games/最终幻想XIV/game/sqpack" "C:/Users/xiaos/Documents/GitHub/MasterPlayer/docs/reference/BMRRuntimeCoverage.csv" "C:/Users/xiaos/Documents/GitHub/BossModReborn-7.56"
+rtk dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.csproj -- "C:/Users/xiaos/Documents/GitHub/MasterPlayer" "C:/Games/最终幻想XIV/game/sqpack" "C:/Users/xiaos/Documents/GitHub/MasterPlayer/docs/reference/MechanicRuntimeCoverage.csv" "C:/Users/xiaos/Documents/GitHub/BossModReborn-7.56"
 ```
 
-测试以真实客户端数据表和原源码类型执行。全清单只覆盖发现、构造、初始更新及异常，完整战斗机制需更多事件序列；每个类型的结果见 [BMRRuntimeCoverage.csv](../docs/reference/BMRRuntimeCoverage.csv)。`active_phase=-1` 表示合成的初始场景未满足该模块的开战条件，不能计为该场战斗机制通过。专项用例另验普通读条结束、P1S 时间轴、伴随对象迟加载、Enuo 会话隔离、冰面方向及宿主会话清理。
+测试以真实客户端数据表和原源码类型执行。全清单只覆盖发现、构造、初始更新及异常，完整战斗机制需更多事件序列；每个类型的结果见 [MechanicRuntimeCoverage.csv](../docs/reference/MechanicRuntimeCoverage.csv)。`active_phase=-1` 表示合成的初始场景未满足该模块的开战条件，不能计为该场战斗机制通过。专项用例另验普通读条结束、P1S 时间轴、伴随对象迟加载、Enuo 会话隔离、冰面方向及宿主会话清理。
 
 仍需完成的适配与验收见 [MechanicRuntime.spec.md](../docs/reference/MechanicRuntime.spec.md) 和 [迁移报告](../docs/BMR全量迁移记录.md)。主项目暂时排除本目录，部署产物仍是已验证的首批地城实现。

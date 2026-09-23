@@ -48,7 +48,7 @@
 
 ## 当前内部验收边界
 
-真实本机 sqpack 已通过校验和检查读取 Action／Item／Trait／CFC／Territory 等表。使用新编译的运行库执行全清单构造和初始更新，禁止把原已编译 BMR DLL 的成功当成新库验证结果。输出文件 [BMRRuntimeCoverage.csv](BMRRuntimeCoverage.csv) 包含每个类型的注册、构造、初始更新、阶段数量和激活阶段。
+真实本机 sqpack 已通过校验和检查读取 Action／Item／Trait／CFC／Territory 等表。使用新编译的运行库执行全清单构造和初始更新，禁止把原已编译 BMR DLL 的成功当成新库验证结果。输出文件 [MechanicRuntimeCoverage.csv](MechanicRuntimeCoverage.csv) 包含每个类型的注册、构造、初始更新、阶段数量和激活阶段。
 
 2026-09-22 内部测试原始摘要：
 
