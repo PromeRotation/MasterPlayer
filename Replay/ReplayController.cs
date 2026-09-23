@@ -13,15 +13,17 @@ public sealed class ReplayController : IDisposable
 {
     private readonly ScriptManager _scripts;
     private readonly ReplayRecorder _recorder;
+    private readonly MechanicHost.MechanicHostController? _mechanicHost;
     private readonly List<(string ScriptId, ReplayScriptEventRouter Router)> _routers = [];
     private ReplayRecording? _recording;
     private ReplayPlayback? _playback;
     private bool _disposed;
 
-    internal ReplayController(ScriptManager scripts, ReplayRecorder recorder)
+    internal ReplayController(ScriptManager scripts, ReplayRecorder recorder, MechanicHost.MechanicHostController? mechanicHost = null)
     {
         _scripts = scripts;
         _recorder = recorder;
+        _mechanicHost = mechanicHost;
     }
 
     public bool SessionActive { get; private set; }
@@ -130,6 +132,7 @@ public sealed class ReplayController : IDisposable
         var runtime = MasterPlayerPlugin.Instance!.SafeZone;
         runtime.ReplayClock = null;
         runtime.Manager.EntityPoseOverride = null;
+        _mechanicHost?.ExitReplaySession();
         SessionActive = false;
         Playing = false;
         Clock = 0;
@@ -183,6 +186,7 @@ public sealed class ReplayController : IDisposable
         runtime.ReplayClock = () => World!.CurrentTime;
         runtime.Manager.EntityPoseOverride = id => World!.Actors.TryGetValue(id, out var actor) ? (actor.Position, actor.Rotation) : null;
         Clock = 0;
+        _mechanicHost?.EnterReplaySession(_recording.Header.Territory);
         StartSessionScripts();
         Playing = false;
         if (!DispatchUpTo(0)) return false;
@@ -201,6 +205,7 @@ public sealed class ReplayController : IDisposable
         _routers.Clear();
         _scripts.EnterReplayMode();
         _playback = new(_recording!);
+        _mechanicHost?.RestartReplaySession();
         Clock = 0;
         StartSessionScripts();
     }
@@ -233,9 +238,15 @@ public sealed class ReplayController : IDisposable
         {
             _playback!.AdvanceTo(clock, ev =>
             {
+                _mechanicHost?.OnReplayEvent(ev);
                 foreach (var (_, router) in _routers)
                     router.Raise(ev);
-            }, _scripts.UpdateReplayScripts);
+            }, dt =>
+            {
+                if (_playback != null)
+                    _mechanicHost?.OnReplayTick(_playback.World);
+                _scripts.UpdateReplayScripts(dt);
+            });
             Clock = _playback.Clock;
             return true;
         }

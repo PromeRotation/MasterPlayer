@@ -10,7 +10,7 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
     private const float SelfExpireMs = 500f;
     private const double ErrorThrottleSeconds = 5.0;
 
-    private readonly MechanicSession _session = session;
+    private MechanicSession _session = session;
     private readonly List<MechanicPreviewShape> _shapes = [];
     private readonly List<MechanicPreviewLine> _lines = [];
     private readonly List<MechanicRadarExtra> _extras = [];
@@ -26,6 +26,12 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
     public string? ActiveDrawModuleName { get; private set; }
     public int CaptureErrorCount { get; private set; }
     public string? LastCaptureError { get; private set; }
+
+    public void SwitchSession(MechanicSession session)
+    {
+        Sleep();
+        _session = session;
+    }
 
     public void Update()
     {

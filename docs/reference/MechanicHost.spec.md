@@ -55,6 +55,15 @@
 - 门控：`MasterPlayerSettings.EnableMechanicModules`（默认 true）总开关 + `MechanicModuleMinMaturity`（默认 Verified，可降 Contributed/AISupport/WIP）。当前区域有 MP 区域专属脚本运行时（ScriptManager 已有查询），该区域暂停桥的模块激活与输出，避免与已移植脚本（斗兽棋、首批地城）双重接管。
 - 回放：ReplayController 进入回放时桥切换为回放会话（输入来自 ReplayPlayback 帧/事件转换），退出恢复实时；回放中禁止任何移动输出（铁律 3）。
 
+## 回放接入（M7）
+
+状态：2026-09-23 已实现（控制器回放会话生命周期 + `MechanicHost/ReplayFeedAdapter.cs` + `MechanicEventFactory.cs` + ReplayWindow 预测条；离线回归 `tests/MechanicReplayAdapterRegression.cs` 4 场景）。
+
+- 挂接点：`ReplayController` 构造注入 `MechanicHostController?`（桥在插件 Initialize 顺序中先于回放控制器构造）；StartSession→`EnterReplaySession(录制区域)`、Seek 的 RestartSessionScripts→`RestartReplaySession()`、StopSession→`ExitReplaySession()`；`AdvanceTo` 的 dispatch 回调先 `OnReplayEvent` 再发脚本路由器，update 回调先 `OnReplayTick(World)` 再 `UpdateReplayScripts`（每步先喂桥再更新脚本）。
+- 会话：实时会话与回放会话并存，输出侧（模块计数/时间轴/两座桥）读 ActiveSession 指针；`MechanicNavigationHost`/`MechanicDrawHost` 经 `SwitchSession` 切换（导航桥的 AIHintsBuilder 订阅 WorldState，切换时销毁重建）。回放中导航注册禁用（ReplayModeActive 判定），绘制/时间轴照常；回放区域有运行中的 MP 区域脚本时不激活模块（与实时压制一致）。
+- 适配器取舍：CastStart/Cancel/Interrupt、状态增删、对象增删/瞬移/可选中、击退由帧通道覆盖返回 null；Tether/Icon/Marker/MapEffect/EObj/DirectorUpdate/NpcYell/PlayActionTimeline/TargetVfx 转 MechanicEvent*；ActionEffect 摘要按 GlobalSequence 合并为降级包（RawEffects 空，RotationInt 反量化编码，计 DegradedEffectCount）；Waymark 事件更新适配器 8 槽随帧下发；EventAnimation 变化补发 EObjAnimation 事件；Territory/Weather/Battle/Countdown/ChangeMap 由帧头/时钟覆盖或忽略（无对应 Op）。SpawnIndex 用帧内序号、LayoutID/FateId/Renderflags/ContentId 回放无存填 0；Cast.IsSpell 恒 true（回放不存 ActionType）、TotalTime=FinishAt−StartedAt、Rotation 缺省回退当前朝向；IsAlly 按 Kind/Hostile 推导（Pc 或 BattleNpc 非 Hostile 为盟友）。
+- ReplayWindow 时间轴页顶部显示机制预测条（相对当前回放时刻的倒计时文本行，不随横向缩放，空数据不占行；M6 遗留在此落地）。
+
 ## 绘制桥（M4）
 
 状态：2026-09-23 已实现（MP 侧 `MechanicHost/MechanicDrawHost.cs` + `MechanicDrawConvert.cs` + `RadarView.DrawMechanicExtras` + 诊断页提示区；离线回归 `tests/MechanicDrawConvertRegression.cs` 8 场景）。
@@ -80,7 +89,7 @@
 
 ## 时间轴（M6）
 
-状态：2026-09-23 已实现实时侧（雷达悬浮窗时间轴条 + 诊断页摘要 + 纯逻辑行模型 `MechanicHost/MechanicTimelineView.cs`，离线回归 `tests/MechanicTimelineViewRegression.cs` 3 场景）；ReplayWindow「机制预测」泳道未做——其数据源依赖回放会话接入（M7），回放激活时控制器整体跳过、`CurrentTimeline` 恒 null，先写死数据源的泳道会是死代码，留待 M7 一并接线。
+状态：2026-09-23 已实现实时侧（雷达悬浮窗时间轴条 + 诊断页摘要 + 纯逻辑行模型 `MechanicHost/MechanicTimelineView.cs`，离线回归 `tests/MechanicTimelineViewRegression.cs` 3 场景）；ReplayWindow 预测条已在 M7 接线（回放会话激活且快照非空时显示于泳道区顶部）。
 
 - 数据源：`MechanicTimeline.Capture(module)`（保留分支未定与伤害标记）。控制器每帧在 `session.Update` 后捕获（异常限频隔离），经 `MechanicHostController.CurrentTimeline` / `MechanicClockUtc` 暴露。
 - 呈现：雷达悬浮窗雷达内容下方追加时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，伤害类型着色 Tankbuster/Raidwide/Knockback，右键菜单与 `ShowModuleTimeline` 设置开关）；MainWindow 诊断页显示激活模块/阶段/状态摘要。ReplayWindow 泳道留待 M7；条目点击不 Seek（预测不是录制内容）。

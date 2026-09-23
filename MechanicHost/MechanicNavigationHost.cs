@@ -10,8 +10,8 @@ public sealed class MechanicNavigationHost : IDisposable
 {
     private const float FacingLeadSeconds = 0.75f;
 
-    private readonly MechanicSession _session;
-    private readonly AIHintsBuilder _builder;
+    private MechanicSession _session;
+    private AIHintsBuilder _builder;
     private readonly AIHints _hints = new();
     private readonly MechanicNavAreaDiffer _differ = new();
     private readonly MechanicFacingControl _facing = new();
@@ -197,6 +197,14 @@ public sealed class MechanicNavigationHost : IDisposable
         _facing.Clear();
         SampledZoneCount = 0;
         SkippedZoneCount = 0;
+    }
+
+    public void SwitchSession(MechanicSession session)
+    {
+        Sleep();
+        try { _builder.Dispose(); } catch { }
+        _session = session;
+        _builder = new AIHintsBuilder(session.World, session.BossModules, session.ZoneModules, null);
     }
 
     public void Sleep()

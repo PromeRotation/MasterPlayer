@@ -1,6 +1,7 @@
 using System.Numerics;
 using ECommons.DalamudServices;
 using MasterPlayer.MechanicRuntime;
+using MasterPlayer.Replay;
 using MasterPlayer.Settings;
 using PromeRotation.Hosting;
 using PromeRotation.LogSystem;
@@ -18,24 +19,30 @@ public sealed class MechanicHostController : IDisposable
     private ActionEffectCapture? _capture;
     private MechanicDrawHost? _drawBridge;
     private MechanicNavigationHost? _navBridge;
+    private MechanicSession? _replaySession;
+    private MechanicWorldFeed? _replayFeed;
+    private ReplayFeedAdapter? _replayAdapter;
+    private ushort _replayTerritory;
     private bool _disposed;
     private string? _lastLoggedError;
+
+    private MechanicSession? ActiveSession => _replaySession ?? _session;
 
     public bool IsAvailable { get; private set; }
     public bool IsSuppressed { get; private set; }
     public bool CaptureActive => _capture?.IsActive == true;
     public string? LastError { get; private set; }
-    public int LoadedModuleCount => _session?.BossModules.LoadedModules.Count ?? 0;
-    public int PendingModuleCount => _session?.BossModules.PendingModules.Count ?? 0;
-    public string? ActiveModuleName => _session?.BossModules.ActiveModule?.GetType().Name;
-    public string? ActiveZoneModuleName => _session?.ZoneModules.ActiveModule?.GetType().Name;
+    public int LoadedModuleCount => ActiveSession?.BossModules.LoadedModules.Count ?? 0;
+    public int PendingModuleCount => ActiveSession?.BossModules.PendingModules.Count ?? 0;
+    public string? ActiveModuleName => ActiveSession?.BossModules.ActiveModule?.GetType().Name;
+    public string? ActiveZoneModuleName => ActiveSession?.ZoneModules.ActiveModule?.GetType().Name;
     public IReadOnlyList<(string Text, bool IsRisk)> CurrentHints => _drawBridge?.CurrentHints ?? [];
     public IReadOnlyList<MechanicRadarExtra> DrawExtras => _drawBridge?.Extras ?? [];
     public string? DrawExtrasKey => _drawBridge?.ExtrasKey;
     public string? DrawModuleName => _drawBridge?.ActiveDrawModuleName;
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
-    public bool HasActiveModule => _session?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
+    public bool HasActiveModule => ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
     public bool NavigationActive => _navBridge?.NavigationActive == true;
     public int NavDangerZoneCount => _navBridge?.DangerZoneCount ?? 0;
     public int NavObstacleCount => _navBridge?.ObstacleZoneCount ?? 0;
@@ -47,7 +54,7 @@ public sealed class MechanicHostController : IDisposable
     {
         get
         {
-            var time = _session?.World.CurrentTime ?? default;
+            var time = ActiveSession?.World.CurrentTime ?? default;
             return time == default ? DateTime.UtcNow : time;
         }
     }
@@ -96,27 +103,25 @@ public sealed class MechanicHostController : IDisposable
 
     private void SubscribeEvents()
     {
-        _subscriptions.Add(PromeEventBus.OnTether(this, e => Enqueue(new MechanicEventTether(e.SourceId, e.TetherId, e.TargetId))));
-        _subscriptions.Add(PromeEventBus.OnTetherCancel(this, e => Enqueue(new MechanicEventTetherCancel(e.SourceId))));
-        _subscriptions.Add(PromeEventBus.OnTargetIcon(this, e => Enqueue(new MechanicEventIcon(e.MarkerId, e.TargetId, e.SourceId))));
-        _subscriptions.Add(PromeEventBus.OnTargetVfx(this, e => Enqueue(new MechanicEventVfx(e.VfxId, 0, e.SourceId))));
+        _subscriptions.Add(PromeEventBus.OnTether(this, e => Enqueue(MechanicEventFactory.FromTether(e))));
+        _subscriptions.Add(PromeEventBus.OnTetherCancel(this, e => Enqueue(MechanicEventFactory.FromTetherCancel(e))));
+        _subscriptions.Add(PromeEventBus.OnTargetIcon(this, e => Enqueue(MechanicEventFactory.FromTargetIcon(e))));
+        _subscriptions.Add(PromeEventBus.OnTargetVfx(this, e => Enqueue(MechanicEventFactory.FromTargetVfx(e))));
         _subscriptions.Add(PromeEventBus.OnMarker(this, e =>
         {
-            if (e.MarkerId is >= 1 and <= (uint)BossMod.Sign.Count)
-                Enqueue(new MechanicEventHeadMarker((byte)(e.MarkerId - 1), e.TargetId));
+            if (MechanicEventFactory.FromMarker(e) is { } marker)
+                Enqueue(marker);
         }));
-        _subscriptions.Add(PromeEventBus.OnMapEffect(this, e =>
-            Enqueue(new MechanicEventMapEffect((byte)e.Position, e.Param1 | ((uint)e.Param2 << 16)))));
-        _subscriptions.Add(PromeEventBus.OnEObjAnimation(this, e => Enqueue(new MechanicEventEObjAnimation(e.SourceId, e.Param1, e.Param2))));
-        _subscriptions.Add(PromeEventBus.OnEObjSetState(this, e => Enqueue(new MechanicEventEObjSetState(e.SourceId, e.State))));
-        _subscriptions.Add(PromeEventBus.OnDirectorUpdate(this, e =>
-            Enqueue(new MechanicEventDirectorUpdate(e.Instance, e.Command, e.Param1, e.Param2, e.Param3, e.Param4))));
-        _subscriptions.Add(PromeEventBus.OnNpcYell(this, e => Enqueue(new MechanicEventNpcYell(e.SourceId, e.NpcYellId))));
-        _subscriptions.Add(PromeEventBus.OnSystemLog(this, id => Enqueue(new MechanicEventSystemLog(id, []))));
+        _subscriptions.Add(PromeEventBus.OnMapEffect(this, e => Enqueue(MechanicEventFactory.FromMapEffect(e))));
+        _subscriptions.Add(PromeEventBus.OnEObjAnimation(this, e => Enqueue(MechanicEventFactory.FromEObjAnimation(e))));
+        _subscriptions.Add(PromeEventBus.OnEObjSetState(this, e => Enqueue(MechanicEventFactory.FromEObjSetState(e))));
+        _subscriptions.Add(PromeEventBus.OnDirectorUpdate(this, e => Enqueue(MechanicEventFactory.FromDirectorUpdate(e))));
+        _subscriptions.Add(PromeEventBus.OnNpcYell(this, e => Enqueue(MechanicEventFactory.FromNpcYell(e))));
+        _subscriptions.Add(PromeEventBus.OnSystemLog(this, id => Enqueue(MechanicEventFactory.FromSystemLog(id))));
         _subscriptions.Add(PromeEventBus.OnPlayActionTimeline(this, e =>
         {
-            if (e.TimelineId <= ushort.MaxValue)
-                Enqueue(new MechanicEventPlayActionTimeline(e.SourceId, (ushort)e.TimelineId));
+            if (MechanicEventFactory.FromPlayActionTimeline(e) is { } timeline)
+                Enqueue(timeline);
         }));
         _subscriptions.Add(PromeEventBus.OnLogEvent<LogSystemWaymarkEvent>(this, e =>
         {
@@ -141,15 +146,19 @@ public sealed class MechanicHostController : IDisposable
             return;
         var settings = MasterPlayerSettings.Instance;
         IsSuppressed = ComputeSuppressed();
-        if (!IsAvailable || _session == null || _feed == null || !settings.EnableMechanicModules || IsSuppressed
-            || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        if (!IsAvailable || _session == null || _feed == null || !settings.EnableMechanicModules || IsSuppressed)
         {
-            _capture?.Drain(null);
-            _navBridge?.Sleep();
-            _drawBridge?.Sleep();
-            CurrentTimeline = null;
+            if (_replaySession == null)
+            {
+                _capture?.Drain(null);
+                _navBridge?.Sleep();
+                _drawBridge?.Sleep();
+                CurrentTimeline = null;
+            }
             return;
         }
+        if (MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+            return;
 
         try
         {
@@ -176,9 +185,139 @@ public sealed class MechanicHostController : IDisposable
         }
     }
 
+    internal void EnterReplaySession(ushort territory)
+    {
+        if (!IsAvailable || _session == null || _disposed)
+            return;
+        ExitReplaySession();
+        try
+        {
+            _replayTerritory = territory;
+            _replaySession = new MechanicSession(ResolveGameVersion());
+            _replayFeed = new MechanicWorldFeed(_replaySession);
+            _replayAdapter = new ReplayFeedAdapter(territory, LiveWorldSampler.ResolveCfc);
+            _navBridge?.SwitchSession(_replaySession);
+            _drawBridge?.SwitchSession(_replaySession);
+        }
+        catch (Exception ex)
+        {
+            ExitReplaySession();
+            LastError = ex.Message;
+            Svc.Log.Error(ex, "[MasterPlayer] 机制模块回放会话创建失败");
+        }
+    }
+
+    internal void RestartReplaySession()
+    {
+        if (_replaySession == null)
+            return;
+        DisposeReplayCore();
+        _replaySession = new MechanicSession(ResolveGameVersion());
+        _replayFeed = new MechanicWorldFeed(_replaySession);
+        _replayAdapter = new ReplayFeedAdapter(_replayTerritory, LiveWorldSampler.ResolveCfc);
+        _navBridge?.SwitchSession(_replaySession);
+        _drawBridge?.SwitchSession(_replaySession);
+    }
+
+    internal void ExitReplaySession()
+    {
+        if (_replaySession == null)
+            return;
+        DisposeReplayCore();
+        _replaySession = null;
+        _replayFeed = null;
+        _replayAdapter = null;
+        if (_session != null)
+        {
+            _navBridge?.SwitchSession(_session);
+            _drawBridge?.SwitchSession(_session);
+        }
+        CurrentTimeline = null;
+    }
+
+    private void DisposeReplayCore()
+    {
+        try { _replaySession?.Dispose(); }
+        catch (Exception ex)
+        {
+            try { Svc.Log.Warning($"[MasterPlayer] 机制模块回放会话释放失败：{ex.Message}"); }
+            catch { }
+        }
+    }
+
+    internal void OnReplayEvent(LogSystemEvent ev)
+    {
+        if (_replayFeed == null || _replayAdapter == null || IsReplaySuppressed())
+            return;
+        try
+        {
+            if (_replayAdapter.TryConvertEvent(ev) is { } feedEvent)
+                _replayFeed.Enqueue(feedEvent);
+        }
+        catch (Exception ex)
+        {
+            LogReplayError("event", ex);
+        }
+    }
+
+    internal void OnReplayTick(ReplayWorldState world)
+    {
+        if (_replaySession == null || _replayFeed == null || _replayAdapter == null)
+            return;
+        if (IsReplaySuppressed())
+        {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
+            return;
+        }
+        try
+        {
+            _replaySession.BeginFrame(world.CurrentTime);
+            _replayFeed.ApplyFrame(_replayAdapter.ConvertFrame(world));
+            foreach (var frameEvent in _replayAdapter.DrainFrameEvents())
+                _replayFeed.Enqueue(frameEvent);
+            if (_replayAdapter.FlushPendingEffect() is { } effect)
+                _replayFeed.Enqueue(effect);
+            _replayFeed.Flush();
+            _replaySession.Update();
+            _navBridge?.Update();
+            _drawBridge?.Update();
+            UpdateTimeline();
+        }
+        catch (Exception ex)
+        {
+            LogReplayError("frame", ex);
+        }
+    }
+
+    private bool IsReplaySuppressed()
+    {
+        var scripts = MasterPlayerPlugin.Instance?.Scripts;
+        if (scripts == null)
+            return false;
+        foreach (var running in scripts.Running.Values)
+        {
+            if (running.Descriptor.Metadata.Territorys.Length != 0)
+                return true;
+        }
+        return false;
+    }
+
+    private void LogReplayError(string stage, Exception ex)
+    {
+        LastError = ex.Message;
+        var message = $"replay-{stage}:{ex.Message}";
+        if (_lastLoggedError != message)
+        {
+            _lastLoggedError = message;
+            Svc.Log.Warning($"[MasterPlayer] 机制模块回放驱动失败（{stage}）：{ex.Message}");
+        }
+    }
+
     private void UpdateTimeline()
     {
-        var module = _session?.BossModules.ActiveModule;
+        var module = ActiveSession?.BossModules.ActiveModule;
         if (module?.StateMachine.ActivePhase == null)
         {
             CurrentTimeline = null;
@@ -233,6 +372,7 @@ public sealed class MechanicHostController : IDisposable
             }
         }
         _subscriptions.Clear();
+        ExitReplaySession();
         CurrentTimeline = null;
         try
         {

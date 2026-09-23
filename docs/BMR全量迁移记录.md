@@ -127,6 +127,8 @@ FTM Extreme 四个类型在上游仍被扫描，但没有显式 ModuleInfo，OID
 
 当前关键未完成项是完整世界与效果包输入、原始绘制命令、连续导航评分、AI执行接口和MP时间轴显示。尤其PR逐目标效果摘要缺少原主目标／效果数组等字段，不能用摘要猜回完整包；任务模块的旧IPC／原生控制边界也必须替换后才能启用。运行库的18条构建警告已在规格中列明，未屏蔽。
 
+2026-09-23 宿主接入完成（M3–M7，`MechanicHost/`）：实时世界喂入、效果包 hook 捕获、绘制命令双视图呈现、导航区/障碍/边界/背对注册、机制时间轴条与回放会话驱动均已落地（规格与验收见 [MechanicHost.spec.md](reference/MechanicHost.spec.md)）；GoalZones/ActionsToExecute/OpEffectResult 与补集语义区域仍为已知缺口。
+
 ## 验证与再生成
 
 验证构建使用 `-p:CI=true`，输出到仓库 `bin/Debug/`。2026-09-22 首批迁移提交 `8d1d87b` 后，已在当前工作区重新验证，并按用户要求使用 `-p:CI=false` 再次部署至 `C:/Users/xiaos/AppData/Roaming/XIVLauncherCN/pluginConfigs/PromeRotation/Plugins/MasterPlayer`。DLL／PDB、PR 脚本依赖与两份许可文件均与验证产物或来源文件逐一核对 SHA-256；最新 DLL 为 `0ebf22d2bbfb9d1ef5e5164bb5bb01ee122886890f46ec1ddbdaf1022891ae2c`。没有代替用户执行游戏内热重载。全量原源码运行库仍独立，未包含在此部署中。最新验证结果：

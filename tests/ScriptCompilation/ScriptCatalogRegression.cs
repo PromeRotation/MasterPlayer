@@ -239,7 +239,7 @@ internal static class ScriptCatalogRegression
             plugin.GetType().GetProperty("AoeVisibility", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, visibility);
             var recorder = RuntimeHelpers.GetUninitializedObject(assembly.GetType("MasterPlayer.Replay.ReplayRecorder")!);
             controller = Activator.CreateInstance(assembly.GetType("MasterPlayer.Replay.ReplayController")!,
-                BindingFlags.Instance | BindingFlags.NonPublic, null, [(object)manager, recorder], null)!;
+                BindingFlags.Instance | BindingFlags.NonPublic, null, [(object)manager, recorder, null!], null)!;
             plugin.GetType().GetField("_replayController", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, (object)controller);
             settings.EnableScripts = true;
             manager.SetScriptEnabled("masterplayer.dungeon.copperbell", true);

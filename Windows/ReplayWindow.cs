@@ -327,9 +327,15 @@ public sealed class ReplayWindow : IDisposable
             // gutter fixed and apply horizontal scrolling exactly once below.
             var origin = ImGui.GetCursorScreenPos() + new Vector2(ImGui.GetScrollX(), 0);
             var viewSize = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetContentRegionAvail().Y);
+            var host = MasterPlayerPlugin.Instance?.MechanicHost;
+            var predictionRows = replay.SessionActive && host?.CurrentTimeline is { } prediction
+                ? MechanicHost.MechanicTimelineView.BuildRows(prediction, host.MechanicClockUtc)
+                : [];
+            var predictionRowHeight = ImGui.GetFontSize() + 2f;
+            var predictionHeight = predictionRows.Count == 0 ? 0f : predictionRows.Count * predictionRowHeight + 4f;
             var contentWidth = gutter + (float)(duration * _pxPerSec) + 40f;
             var visibleLanes = Enumerable.Range(0, LaneDefs.Length).Where(i => _laneVisible[i]).ToArray();
-            viewSize.Y = Math.Max(viewSize.Y, 14 + 24 * Math.Max(1, visibleLanes.Length));
+            viewSize.Y = Math.Max(viewSize.Y, 14 + 24 * Math.Max(1, visibleLanes.Length) + predictionHeight);
             ImGui.InvisibleButton("##timeline_hit", new Vector2(MathF.Max(contentWidth, viewSize.X), viewSize.Y));
 
             var scrollX = ImGui.GetScrollX();
@@ -355,8 +361,8 @@ public sealed class ReplayWindow : IDisposable
             var drawList = ImGui.GetWindowDrawList();
             _hoverTips.Clear();
 
-            var laneHeight = Math.Max(24, (viewSize.Y - 14f) / Math.Max(1, visibleLanes.Length));
-            var laneTop = origin.Y + 14f;
+            var laneHeight = Math.Max(24, (viewSize.Y - 14f - predictionHeight) / Math.Max(1, visibleLanes.Length));
+            var laneTop = origin.Y + 14f + predictionHeight;
 
             drawList.PushClipRect(new Vector2(trackMinX, origin.Y), new Vector2(trackMaxX, origin.Y + viewSize.Y), true);
 
@@ -369,6 +375,28 @@ public sealed class ReplayWindow : IDisposable
                     continue;
                 drawList.AddLine(new Vector2(x, origin.Y + 10f), new Vector2(x, origin.Y + viewSize.Y), ImGui.GetColorU32(GridColor));
                 drawList.AddText(new Vector2(x + 2f, origin.Y), ImGui.GetColorU32(GridTextColor), FormatTime(t));
+            }
+
+            // 机制预测条（回放会话激活且有模块时间轴时；预测相对当前回放时刻，不随泳道缩放）
+            if (predictionHeight > 0f)
+            {
+                var py = origin.Y + 14f;
+                var muted = ImGui.GetColorU32(PromeRotation.UI.Components.PromeUiTheme.TextMuted);
+                drawList.AddText(new Vector2(origin.X + 2f, py + 1f), muted, "机制预测");
+                foreach (var row in predictionRows)
+                {
+                    var toneColor = row.IsBranch ? PromeRotation.UI.Components.PromeUiTheme.TextMuted : row.Tone switch
+                    {
+                        MechanicHost.MechanicTimelineTone.Tankbuster => PromeRotation.UI.Components.PromeUiTheme.Warning,
+                        MechanicHost.MechanicTimelineTone.Raidwide => PromeRotation.UI.Components.PromeUiTheme.Danger,
+                        MechanicHost.MechanicTimelineTone.Knockback => PromeRotation.UI.Components.PromeUiTheme.Accent,
+                        MechanicHost.MechanicTimelineTone.Attention => PromeRotation.UI.Components.PromeUiTheme.Warning,
+                        _ => new Vector4(1f, 1f, 1f, row.IsCurrent ? 1f : 0.85f),
+                    };
+                    var rowText = row.IsBranch ? row.Name : $"{(row.IsCurrent ? "▶ " : "")}{row.Name}  {row.Seconds:F1}s";
+                    drawList.AddText(new Vector2(trackMinX + 4f, py + 1f), ImGui.GetColorU32(toneColor), rowText);
+                    py += predictionRowHeight;
+                }
             }
 
             // 泳道内容

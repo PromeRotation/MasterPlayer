@@ -71,7 +71,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _scripts = new Scripting.ScriptManager();
         _scripts.RefreshCatalog();
         _replayRecorder = new Replay.ReplayRecorder();
-        _replayController = new Replay.ReplayController(_scripts, _replayRecorder);
+        _replayController = new Replay.ReplayController(_scripts, _replayRecorder, _mechanicHost);
         _replayWindow = new Windows.ReplayWindow();
         _radarOverlay = new Radar.RadarOverlayWindow();
         _follow = new Follow.FollowController();

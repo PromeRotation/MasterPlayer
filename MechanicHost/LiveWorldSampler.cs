@@ -181,7 +181,7 @@ internal static class LiveWorldSampler
         return 0;
     }
 
-    private static ushort ResolveCfc(ushort territory)
+    internal static ushort ResolveCfc(ushort territory)
     {
         if (_cachedTerritory == territory)
             return _cachedCfc;
