@@ -21,7 +21,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Radar.RadarRenderer? _radar;
     private Dodge.DodgeController? _dodge;
     private Mechanics.MechanicDispatcher? _mechanics;
-    private BmrBridge.BmrBridgeController? _bmrBridge;
+    private MechanicHost.MechanicHostController? _mechanicHost;
     private Scripting.ScriptManager? _scripts;
     private Replay.ReplayRecorder? _replayRecorder;
     private Replay.ReplayController? _replayController;
@@ -40,7 +40,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     internal Mechanics.MechanicDispatcher? Mechanics => _mechanics;
 
-    internal BmrBridge.BmrBridgeController? BmrBridge => _bmrBridge;
+    internal MechanicHost.MechanicHostController? MechanicHost => _mechanicHost;
 
     internal Scripting.ScriptManager? Scripts => _scripts;
 
@@ -67,7 +67,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _radar = new Radar.RadarRenderer();
         _dodge = new Dodge.DodgeController();
         _mechanics = new Mechanics.MechanicDispatcher(this);
-        _bmrBridge = new BmrBridge.BmrBridgeController();
+        _mechanicHost = new MechanicHost.MechanicHostController();
         _scripts = new Scripting.ScriptManager();
         _scripts.RefreshCatalog();
         _replayRecorder = new Replay.ReplayRecorder();
@@ -125,7 +125,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var settings = MasterPlayerSettings.Instance;
         var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
-        _bmrBridge?.Update();
+        _mechanicHost?.Update();
         _dodge?.Update();
         _mechanics?.Update();
         _replayRecorder?.Update();
@@ -179,7 +179,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _replayController);
         SafeDispose(ref _replayRecorder);
         SafeDispose(ref _scripts);
-        SafeDispose(ref _bmrBridge);
+        SafeDispose(ref _mechanicHost);
         SafeDispose(ref _mechanics);
         SafeDispose(ref _dodge);
         SafeDispose(ref _radar);

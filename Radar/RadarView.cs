@@ -113,7 +113,7 @@ public sealed class RadarView
         DrawRangeRings(canvas, settings, _projection.Scale);
         DrawRimTicks(canvas);
         DrawAreas(canvas, snapshot, settings, now, animT);
-        DrawBmrExtras(drawList, canvas, settings);
+        DrawMechanicExtras(drawList, canvas, settings);
         DrawSolutionPath(canvas, plugin, animT);
         if (world != null) DrawReplayActors(canvas, world, visibleRadius, animT);
         else DrawActors(canvas, player, visibleRadius, animT);
@@ -243,9 +243,9 @@ public sealed class RadarView
         DrawBoundary(canvas, snapshot);
     }
 
-    private void DrawBmrExtras(ImDrawListPtr drawList, RadarCanvas canvas, MasterPlayerSettings settings)
+    private void DrawMechanicExtras(ImDrawListPtr drawList, RadarCanvas canvas, MasterPlayerSettings settings)
     {
-        var bridge = MasterPlayerPlugin.Instance?.BmrBridge;
+        var bridge = MasterPlayerPlugin.Instance?.MechanicHost;
         var extras = bridge?.DrawExtras;
         if (extras == null || extras.Count == 0 || bridge!.DrawExtrasKey is not { } key)
             return;
@@ -260,17 +260,17 @@ public sealed class RadarView
             var pos = _projection.Project(extra.Position);
             switch (extra.Kind)
             {
-                case BmrBridge.BmrRadarExtraKind.Eye:
+                case MechanicHost.MechanicRadarExtraKind.Eye:
                     DrawEyeMarker(drawList, pos, extra.Danger ? dangerColor : safeColor);
                     break;
-                case BmrBridge.BmrRadarExtraKind.Text when extra.Text is { Length: > 0 } text:
+                case MechanicHost.MechanicRadarExtraKind.Text when extra.Text is { Length: > 0 } text:
                     var color = extra.Color != 0 ? extra.Color : ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f));
                     var size = ImGui.CalcTextSize(text);
                     var topLeft = pos - size * 0.5f;
                     drawList.AddText(topLeft + new Vector2(1f, 1f), shadow, text);
                     drawList.AddText(topLeft, color, text);
                     break;
-                case BmrBridge.BmrRadarExtraKind.Sign when extra.Text is { Length: > 0 } label:
+                case MechanicHost.MechanicRadarExtraKind.Sign when extra.Text is { Length: > 0 } label:
                     var labelSize = ImGui.CalcTextSize(label);
                     var labelPos = pos - labelSize * 0.5f;
                     drawList.AddText(labelPos + new Vector2(1f, 1f), shadow, label);

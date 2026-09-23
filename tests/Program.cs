@@ -15,10 +15,10 @@ if (args.Contains("--local-safezone"))
     Console.WriteLine($"PASS: {passed} local safe-zone scenarios");
     return;
 }
-if (args.Contains("--bmr-local-sync"))
+if (args.Contains("--upstream-sync"))
 {
-    BmrLocalSyncRegression.Run(Run);
-    Console.WriteLine($"PASS: {passed} BMR local sync scenarios");
+    UpstreamSyncRegression.Run(Run);
+    Console.WriteLine($"PASS: {passed} upstream sync scenarios");
     return;
 }
 
@@ -334,7 +334,7 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 
 CrucibleMechanicRegression.Run(Run);
 ArrDungeonRegression.Run(Run);
-BmrLocalSyncRegression.Run(Run);
+UpstreamSyncRegression.Run(Run);
 CrucibleAllRegression.Run(Run);
 CrucibleTimingRegression.Run(Run);
 CrucibleArrRegression.Run(Run);
@@ -361,8 +361,8 @@ VisualScriptRegression.Run(Run);
 ReplayRecordingRegression.Run(Run);
 ReplayWorldRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);
-BmrDrawConvertRegression.Run(Run);
-BmrHintsConvertRegression.Run(Run);
+MechanicDrawConvertRegression.Run(Run);
+MechanicHintsConvertRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");
 

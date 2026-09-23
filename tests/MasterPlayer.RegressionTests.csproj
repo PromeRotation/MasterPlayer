@@ -5,12 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;BmrRuntime\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**</DefaultItemExcludes>
     <PromeRotationRoot Condition="'$(PromeRotationRoot)' == ''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
     <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\BmrRuntime\MasterPlayer.BmrRuntime.csproj" />
+    <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
@@ -27,8 +27,8 @@
     <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
     <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
-    <Compile Include="..\BmrBridge\BmrDrawConvert.cs" Link="BmrBridge\BmrDrawConvert.cs" />
-    <Compile Include="..\BmrBridge\BmrHintsConvert.cs" Link="BmrBridge\BmrHintsConvert.cs" />
+    <Compile Include="..\MechanicHost\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />
+    <Compile Include="..\MechanicHost\MechanicHintsConvert.cs" Link="MechanicHost\MechanicHintsConvert.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />

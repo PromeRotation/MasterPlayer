@@ -11,7 +11,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AssemblyName>MasterPlayer</AssemblyName>
     <RootNamespace>MasterPlayer</RootNamespace>
-    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;BmrRuntime\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;MechanicRuntime\**</DefaultItemExcludes>
     <Version>0.1.0</Version>
   </PropertyGroup>
 
@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="BmrRuntime\MasterPlayer.BmrRuntime.csproj" />
+    <ProjectReference Include="MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
     <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\PromeRotation.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <Reference Include="Dalamud">

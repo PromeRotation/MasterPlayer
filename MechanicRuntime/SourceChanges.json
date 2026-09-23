@@ -1,0 +1,82 @@
+{
+  "BossModule/BossModuleManager.cs": {
+    "reason": "移除明确排除的斗兽棋 OID 映射和分组模块特例。 释放某个模块失败时继续清理其他模块及共享配置订阅，汇总报告异常。",
+    "originalSha256": "5656ab1c63f8b01327d8f32966748083254858bd6dff510eab7eb1f58dab05d9",
+    "importedSha256": "96da0ec6207685f272e4d249a1aaf4040705ea14a2fe378bea17abb483714786"
+  },
+  "BossModule/BossModule.cs": {
+    "reason": "优先按实际模块类型选择状态机，避免 OID 冲突把另一模块的 States 传给构造器。 状态退出失败时仍清理组件、世界事件和障碍资源。 新增 DrawArenaCaptured 捕获驱动（逐环节异常隔离），DrawSigns 在捕获汇下转发世界坐标标记且 Service.Texture 为空时不取贴图。",
+    "originalSha256": "4e26de1a1119b7c6364924aeac2c883046d5652d87a8a171fb31dc42a99cc4c5",
+    "importedSha256": "02087c0b970f06a9347ffcb62ced860b2ff1a1570016e6baa77ef2d265edfe95"
+  },
+  "BossModule/MiniArena.cs": {
+    "reason": "全部绘制方法在世界坐标层转发到可选的 BmrDrawSink 捕获汇（形状参数层，含 Zone 三角化兜底与 Path 折线）；Begin/End 在捕获时只保留纯数学字段更新，跳过 ImGui 窗口调用与背景盘填充。无捕获汇时行为与原文一致。",
+    "originalSha256": "2c468610327988c680761944a4838ad1307e4ffc499ed0adc50873e92d43d8fd",
+    "importedSha256": "ecf859a6d8be6197563d3210d7610fec1cf5ec12d161cb6bf968edf70c171d42"
+  },
+  "Components/Gaze.cs": {
+    "reason": "视线眼睛指示在捕获汇下转发世界坐标 Eye 命令，不再计算屏幕位置；玩家安全弧仍经 Path API 自然捕获。",
+    "originalSha256": "aba5f0c9daa92ab8f37195879e7e97b1d77dd45db59b97565b83f3a57f9dbebb",
+    "importedSha256": "c287a08c62abd366b5e6b8b52c931a4c372b26a9172258f1ca0864904a06efad"
+  },
+  "Data/ClientState.cs": {
+    "reason": "增加每个世界独立的 LegacyMovement 输入，供宿主或回放提供。",
+    "originalSha256": "0fcc797f3b2b890ddba4f8c3124a36d5d82ab5dfabf1e18a4d0717646700d8e2",
+    "importedSha256": "456b56267ff6af61c61ea5c595b890559451268228d8c3533cf1031ebedccc02"
+  },
+  "Components/ThinIce.cs": {
+    "reason": "从世界读取镜头和移动模式，避免触发原生 MovementOverride 静态扫描。",
+    "originalSha256": "c672d3dd403b855df37f4138b1741d61f5a194dd01b46337dadde3835a6a3a85",
+    "importedSha256": "d12626dc489c43382044aa5c95a466f4a9a6b8629efc26c4f48a63464488d597"
+  },
+  "Framework/Service.cs": {
+    "reason": "提供显式数据及日志绑定入口，不依赖 Dalamud 插件入口自动注入。",
+    "originalSha256": "9a2db123d330c90c4204aa63ab263a143a9f6e0df8bbd6679c71f51f23d4b30a",
+    "importedSha256": "064c75215bd9b7392307a6cc215429b946c7adf4b288f48b8b59b239e5f7fc0e"
+  },
+  "Replay/ReplayManager.cs": {
+    "reason": "将两处 Plugin.GarbageCollection 改为同样的 GC 调用，移除对原插件入口类型的依赖。",
+    "originalSha256": "50672c4905e98f9c7549349520b3a5287f35b66c9667d25caf551677bfb2592e",
+    "importedSha256": "617a21ed983e2121491bfcd2c8fb7bb53ca476c0cd2e04cb4fb011ba1362cd4f"
+  },
+  "Modules/Dawntrail/Extreme/Ex8Enuo/AddsPhase.cs": {
+    "reason": "将塔禁入名单从静态字段改为组件实例字段，避免新战斗及回放继承旧名单。",
+    "originalSha256": "4cd2d0737ce56c48afbcf2dcb67504f0ed22f1343da1fce75e603591f155a82d",
+    "importedSha256": "2a88c6fdce0247c28454bf9e938929b66152c2daf11846f525bfad1fe1f3a4c6"
+  },
+  "Modules/Dawntrail/Foray/ForkedTowerMagic/Extreme/FTME1TwoHeadedAevis/FTME1TwoHeadedAevis.cs": {
+    "reason": "补上源码 OID 枚举中的真实主 OID，保留 WIP 成熟度。",
+    "originalSha256": "f706b251db84f6fc8f726723587c506e422709de14a4005f37002c79024a6d5e",
+    "importedSha256": "e131cb9fee023fb02d27be03d3c7b93b0cc4f056afa2e180670cbd3635cb559a"
+  },
+  "Modules/Dawntrail/Foray/ForkedTowerMagic/Extreme/FTME2SwordDancer/FTME2SwordDancer.cs": {
+    "reason": "补上源码 OID 枚举中的真实主 OID，保留 WIP 成熟度。",
+    "originalSha256": "98337d66a6792262cec1d762d4c2671541e50907ef3a6a2e8854b860265f035b",
+    "importedSha256": "3c058d8e747a228a89975cf66c894524fdf79cfbba5fceee94f49ba3d4c32303"
+  },
+  "Modules/Dawntrail/Foray/ForkedTowerMagic/Extreme/FTME3Necrophobia/FTME3Necrophobia.cs": {
+    "reason": "补上源码 OID 枚举中的真实主 OID，保留 WIP 成熟度。",
+    "originalSha256": "c8eb1e116c0ec1f92b95ddedc28b2a3beefedf64d511f0d193148c8cc8424493",
+    "importedSha256": "874fca5e16f63d3e0a3d2dd0c85fb158f0b8cffe21a1e88404d4bcc86622d439"
+  },
+  "Modules/Dawntrail/Foray/ForkedTowerMagic/Extreme/FTME4Index/FTME4Index.cs": {
+    "reason": "补上源码 OID 枚举中的真实主 OID，保留 WIP 成熟度。",
+    "originalSha256": "c6b72f1c9d45618f7a84866a4b0e7f314417e1caec94780eac85239698fe720e",
+    "importedSha256": "d461ae634c4193b34ae6a67de61c49374738d2834e55a67d407cd260c7113d9c"
+  },
+  "Modules/Heavensward/Dungeon/D11Antitower/D113Calcabrina.cs": {
+    "reason": "按当前对象解析合体首领；缺失或销毁时不索引空列表，也不拿小人偶替代视线来源。 来源或目标死亡、销毁时清除引导扇形，迟到图标不复活已死来源。视线使用引导的实际来源，避免旧尸体抢占原点；每帧补清玩家目标销毁。",
+    "originalSha256": "df1b98e4c8e1ee92138b35dc33c33f7d0d80781b792c1cd50ee7d78fb53a5c29",
+    "importedSha256": "93a71c086f1b7cd3b1637cc2ebf062af908569629b0532609bde1e46624fc9c7"
+  },
+  "Modules/Shadowbringers/Foray/CastrumLacusLitore/CLL1Brionac4thLegionHelldiver/CLL1Brionac4thLegionHelldiver.cs": {
+    "reason": "第二个首领缺失时显示未知；出现后从动态敌人列表读取其真实 HP。",
+    "originalSha256": "36457b5f3b5fed47ee543de5f1cd404ebc1962b5cfb911c24ff8116570ee8ad9",
+    "importedSha256": "6a14eb0ed0950ef97de2df2051878df34adf7fa285a8dea222e267550fd43b7c"
+  },
+  "Modules/Shadowbringers/Foray/CastrumLacusLitore/CLL1Brionac4thLegionHelldiver/InfraredBlast.cs": {
+    "reason": "动态解析穿山甲，缺失时不构造虚假的连线接取位置。",
+    "originalSha256": "98c04d8161d04797dd557faa4056855cfbda4c33ffb7610547aead29d106f2eb",
+    "importedSha256": "55933f1518be13becc3d25d14c667ffcf98f3afd7f41c76c3a75a539f89ad7a9"
+  }
+}

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" />
+    <Reference Include="Dalamud.Common" HintPath="$(DalamudRoot)Dalamud.Common.dll" />
+    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)Dalamud.Bindings.ImGui.dll" />
+    <Reference Include="Dalamud.Bindings.ImPlot" HintPath="$(DalamudRoot)Dalamud.Bindings.ImPlot.dll" />
+    <Reference Include="ImGuiScene" HintPath="$(DalamudRoot)ImGuiScene.dll" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)InteropGenerator.Runtime.dll" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)Lumina.dll" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)Lumina.Excel.dll" />
+  </ItemGroup>
+</Project>

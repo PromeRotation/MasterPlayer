@@ -121,7 +121,7 @@ FTM Extreme 四个类型在上游仍被扫描，但没有显式 ModuleInfo，OID
 
 ## 原源码运行库进展
 
-`BmrRuntime/` 导入3,316份C#源码、416份障碍位图和1份地图数据库，排除原插件入口及斗兽棋。库独立编译，不修改PR，也尚未加入已部署插件的引用。保留上游状态机和组件，可复用全部模块的原机制逻辑；完整宿主适配要求见 [BMRRuntime.spec.md](reference/BMRRuntime.spec.md)。
+`MechanicRuntime/` 导入3,316份C#源码、416份障碍位图和1份地图数据库，排除原插件入口及斗兽棋。库独立编译，不修改PR，也尚未加入已部署插件的引用。保留上游状态机和组件，可复用全部模块的原机制逻辑；完整宿主适配要求见 [MechanicRuntime.spec.md](reference/MechanicRuntime.spec.md)。
 
 已验证全清单类型与编译结果一致，1,060个首领／154个区域模块均可注册、构造和进行初始更新。行为测试涵盖 Chopper 原 AOE 形状／0.3秒补正／效果计数与施法结束、P1S 的事件驱动状态转换／原时长／伤害标记／未决分支与超时预测、Calcabrina 与 CLL 伴随对象迟加载、Calcabrina 来源死亡／销毁后的扇形清理、Enuo 塔名单跨世界隔离、冰面镜头输入及会话正常／异常清理。14个源码适配文件逐一固定修改前后的哈希，测试拒绝未登记的后续改动。逐类型结果见 [BMRRuntimeCoverage.csv](reference/BMRRuntimeCoverage.csv)；这些测试不证明所有战斗阶段已经完成验收。
 

@@ -2,7 +2,7 @@
 
 本文沉淀斗兽棋·高一（`tests/Legacy/CrucibleHigh1.cs`，规格 `docs/reference/CrucibleHigh1.spec.md`）迁移过程中逐行核对过的语义对照、映射模式与踩坑记录。迁移任何 BMR 模块前请读完本文，并配合 `bmr-mechanic-migration` 技能的流程执行。
 
-全量迁移现在采用保留原模块／组件／状态机的运行库，规格见 [BMRRuntime.spec.md](reference/BMRRuntime.spec.md)。本文的轻量 handler、额外0.35米余量、提前0.25秒和降级为文字等，是既有斗兽棋适配的选择，不能作为所有模块的一比一语义。全量接入应保留原始状态、绘制及AI输出，再由宿主适配；不得因为本文曾列为降级就默认省略。
+全量迁移现在采用保留原模块／组件／状态机的运行库，规格见 [MechanicRuntime.spec.md](reference/MechanicRuntime.spec.md)。本文的轻量 handler、额外0.35米余量、提前0.25秒和降级为文字等，是既有斗兽棋适配的选择，不能作为所有模块的一比一语义。全量接入应保留原始状态、绘制及AI输出，再由宿主适配；不得因为本文曾列为降级就默认省略。
 
 - BMR 源码：`C:\Users\xiaos\Documents\GitHub\BossModReborn-7.56`（斗兽棋模块在 `BossMod/Modules/Dawntrail/Foray/Crucible/`）
 - PR 本体源码：`C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\PromeRotation\`（API 签名的唯一权威来源）
