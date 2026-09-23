@@ -74,7 +74,13 @@ public sealed class RadarOverlayWindow : IDisposable
 
         var viewport = RadarViewportLayout.Create(settings.RadarScale, ImGui.GetFontSize(), ImGui.GetIO().DisplaySize);
         var fullSize = viewport.FullSize;
-        ImGui.SetNextWindowSize(new Vector2(fullSize), ImGuiCond.Always);
+        var bridge = MasterPlayerPlugin.Instance?.MechanicHost;
+        var timelineRows = settings.ShowModuleTimeline && bridge?.CurrentTimeline is { } timeline
+            ? MechanicHost.MechanicTimelineView.BuildRows(timeline, bridge.MechanicClockUtc)
+            : [];
+        var rowHeight = ImGui.GetFontSize() + 4f;
+        var stripHeight = timelineRows.Count == 0 ? 0f : timelineRows.Count * rowHeight + 6f;
+        ImGui.SetNextWindowSize(new Vector2(fullSize, fullSize + stripHeight), ImGuiCond.Always);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
         if (!ImGui.Begin("MasterPlayer 雷达", flags))
@@ -89,9 +95,11 @@ public sealed class RadarOverlayWindow : IDisposable
             var drawList = ImGui.GetWindowDrawList();
             var cursor = ImGui.GetCursorScreenPos();
             var screenCenter = cursor + new Vector2(fullSize / 2);
-            ImGui.InvisibleButton("##radar_hit", new Vector2(fullSize));
+            ImGui.InvisibleButton("##radar_hit", new Vector2(fullSize, fullSize + stripHeight));
             HandleInteraction(settings, !settings.RadarOverlayLock);
             _view.Draw(drawList, screenCenter, viewport.Radius, _hovered);
+            if (stripHeight > 0f)
+                DrawTimelineStrip(drawList, cursor, fullSize, timelineRows, rowHeight, settings);
         }
         finally
         {
@@ -174,6 +182,13 @@ public sealed class RadarOverlayWindow : IDisposable
                 changed = true;
             }
 
+            var showTimeline = settings.ShowModuleTimeline;
+            if (ImGui.Checkbox("显示机制时间轴", ref showTimeline))
+            {
+                settings.ShowModuleTimeline = showTimeline;
+                changed = true;
+            }
+
             ImGui.Separator();
             if (ImGui.MenuItem("隐藏雷达悬浮窗"))
             {
@@ -188,6 +203,51 @@ public sealed class RadarOverlayWindow : IDisposable
 
             ImGui.EndPopup();
         }
+    }
+
+    private static void DrawTimelineStrip(ImDrawListPtr drawList, Vector2 origin, float radarSize,
+        IReadOnlyList<MechanicHost.MechanicTimelineRow> rows, float rowHeight, MasterPlayerSettings settings)
+    {
+        var top = origin.Y + radarSize;
+        var background = new Vector4(0.045f, 0.065f, 0.115f, Math.Clamp(settings.RadarBackgroundOpacity, 0f, 1f));
+        drawList.AddRectFilled(new Vector2(origin.X, top), new Vector2(origin.X + radarSize, top + rows.Count * rowHeight + 6f),
+            ImGui.GetColorU32(background), 6f, ImDrawFlags.RoundCornersBottom);
+        var shadow = ImGui.GetColorU32(new Vector4(0f, 0f, 0f, 0.6f));
+        var y = top + 3f;
+        foreach (var row in rows)
+        {
+            var color = ImGui.GetColorU32(ToneColor(row.Tone, row.IsCurrent, row.IsBranch));
+            var name = row.IsCurrent ? $"▶ {row.Name}" : row.Name;
+            var textPos = new Vector2(origin.X + 8f, y + 1f);
+            drawList.AddText(textPos + new Vector2(1f, 1f), shadow, name);
+            drawList.AddText(textPos, color, name);
+            if (!row.IsBranch)
+            {
+                var seconds = $"{row.Seconds:F1}";
+                var size = ImGui.CalcTextSize(seconds);
+                var timePos = new Vector2(origin.X + radarSize - 8f - size.X, y + 1f);
+                drawList.AddText(timePos + new Vector2(1f, 1f), shadow, seconds);
+                drawList.AddText(timePos, color, seconds);
+            }
+            y += rowHeight;
+        }
+    }
+
+    private static Vector4 ToneColor(MechanicHost.MechanicTimelineTone tone, bool isCurrent, bool isBranch)
+    {
+        if (isBranch)
+            return PromeRotation.UI.Components.PromeUiTheme.TextMuted;
+        var color = tone switch
+        {
+            MechanicHost.MechanicTimelineTone.Tankbuster => PromeRotation.UI.Components.PromeUiTheme.Warning,
+            MechanicHost.MechanicTimelineTone.Raidwide => PromeRotation.UI.Components.PromeUiTheme.Danger,
+            MechanicHost.MechanicTimelineTone.Knockback => PromeRotation.UI.Components.PromeUiTheme.Accent,
+            MechanicHost.MechanicTimelineTone.Attention => PromeRotation.UI.Components.PromeUiTheme.Warning,
+            _ => new Vector4(1f, 1f, 1f, 0.92f),
+        };
+        if (!isCurrent)
+            color.W *= 0.85f;
+        return color;
     }
 
     private static bool HasZoneScript()

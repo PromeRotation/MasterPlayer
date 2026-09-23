@@ -29,6 +29,7 @@
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\MechanicHost\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />
     <Compile Include="..\MechanicHost\MechanicHintsConvert.cs" Link="MechanicHost\MechanicHintsConvert.cs" />
+    <Compile Include="..\MechanicHost\MechanicTimelineView.cs" Link="MechanicHost\MechanicTimelineView.cs" />
     <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />

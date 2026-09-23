@@ -42,6 +42,15 @@ public sealed class MechanicHostController : IDisposable
     public bool NavBoundaryActive => _navBridge?.BoundaryActive == true;
     public string? SpecialModeHint => _navBridge?.SpecialModeHint;
     public string? PredictedDamageText => _navBridge?.PredictedDamageText;
+    public MechanicTimelineSnapshot? CurrentTimeline { get; private set; }
+    public DateTime MechanicClockUtc
+    {
+        get
+        {
+            var time = _session?.World.CurrentTime ?? default;
+            return time == default ? DateTime.UtcNow : time;
+        }
+    }
 
     public MechanicHostController()
     {
@@ -138,6 +147,7 @@ public sealed class MechanicHostController : IDisposable
             _capture?.Drain(null);
             _navBridge?.Sleep();
             _drawBridge?.Sleep();
+            CurrentTimeline = null;
             return;
         }
 
@@ -153,6 +163,7 @@ public sealed class MechanicHostController : IDisposable
             _session.Update();
             _navBridge?.Update();
             _drawBridge?.Update();
+            UpdateTimeline();
         }
         catch (Exception ex)
         {
@@ -161,6 +172,30 @@ public sealed class MechanicHostController : IDisposable
             {
                 _lastLoggedError = ex.Message;
                 Svc.Log.Error(ex, "[MasterPlayer] 机制模块宿主帧更新失败");
+            }
+        }
+    }
+
+    private void UpdateTimeline()
+    {
+        var module = _session?.BossModules.ActiveModule;
+        if (module?.StateMachine.ActivePhase == null)
+        {
+            CurrentTimeline = null;
+            return;
+        }
+        try
+        {
+            CurrentTimeline = MechanicTimeline.Capture(module);
+        }
+        catch (Exception ex)
+        {
+            CurrentTimeline = null;
+            var message = $"timeline:{ex.Message}";
+            if (_lastLoggedError != message)
+            {
+                _lastLoggedError = message;
+                Svc.Log.Warning($"[MasterPlayer] 机制模块 {module.GetType().Name} 时间轴捕获失败：{ex.Message}");
             }
         }
     }
@@ -198,6 +233,7 @@ public sealed class MechanicHostController : IDisposable
             }
         }
         _subscriptions.Clear();
+        CurrentTimeline = null;
         try
         {
             _capture?.Dispose();

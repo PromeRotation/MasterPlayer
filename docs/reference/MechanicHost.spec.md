@@ -80,8 +80,10 @@
 
 ## 时间轴（M6）
 
-- 数据源：`MechanicTimeline.Capture(module)`（保留分支未定与伤害标记）。
-- 呈现：ReplayWindow「时间轴回放」页新增「机制预测」泳道（实时会话同样可显示当前激活模块预测）；MainWindow 诊断页显示激活模块/阶段/状态摘要。条目点击不 Seek（预测不是录制内容）。
+状态：2026-09-23 已实现实时侧（雷达悬浮窗时间轴条 + 诊断页摘要 + 纯逻辑行模型 `MechanicHost/MechanicTimelineView.cs`，离线回归 `tests/MechanicTimelineViewRegression.cs` 3 场景）；ReplayWindow「机制预测」泳道未做——其数据源依赖回放会话接入（M7），回放激活时控制器整体跳过、`CurrentTimeline` 恒 null，先写死数据源的泳道会是死代码，留待 M7 一并接线。
+
+- 数据源：`MechanicTimeline.Capture(module)`（保留分支未定与伤害标记）。控制器每帧在 `session.Update` 后捕获（异常限频隔离），经 `MechanicHostController.CurrentTimeline` / `MechanicClockUtc` 暴露。
+- 呈现：雷达悬浮窗雷达内容下方追加时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，伤害类型着色 Tankbuster/Raidwide/Knockback，右键菜单与 `ShowModuleTimeline` 设置开关）；MainWindow 诊断页显示激活模块/阶段/状态摘要。ReplayWindow 泳道留待 M7；条目点击不 Seek（预测不是录制内容）。
 
 ## 验收（贯穿）
 

@@ -486,6 +486,15 @@ public sealed class MainWindow : IDisposable
             ImGui.TextColored(WarningColor, $"特殊模式：{specialMode}");
         if (bridge.PredictedDamageText is { } predicted)
             HintInline($"预计伤害：{predicted}");
+        if (bridge.CurrentTimeline is { } timeline)
+        {
+            var rows = MechanicHost.MechanicTimelineView.BuildRows(timeline, bridge.MechanicClockUtc);
+            var current = rows.FirstOrDefault(r => r.IsCurrent);
+            HintInline($"阶段：{(timeline.PhaseName.Length != 0 ? timeline.PhaseName : "—")}｜当前：{(current != null ? $"{current.Name}（剩 {current.Seconds:F1}s）" : "—")}");
+            var next = rows.Where(r => !r.IsCurrent).Take(3).Select(r => r.IsBranch ? "分支?" : $"{r.Name} {r.Seconds:F1}s").ToArray();
+            if (next.Length != 0)
+                HintInline($"后续：{string.Join(" → ", next)}");
+        }
         if (bridge.CaptureErrorCount != 0)
             ImGui.TextColored(WarningColor, $"绘制捕获错误累计 {bridge.CaptureErrorCount} 起（{bridge.DrawCaptureError ?? "详见日志"}）");
         if (bridge.LastError is { } error)

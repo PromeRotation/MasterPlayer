@@ -363,6 +363,7 @@ ReplayWorldRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);
 MechanicDrawConvertRegression.Run(Run);
 MechanicHintsConvertRegression.Run(Run);
+MechanicTimelineViewRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");
 

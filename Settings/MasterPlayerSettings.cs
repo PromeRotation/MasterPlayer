@@ -39,6 +39,7 @@ public sealed class MasterPlayerSettings
     public bool RadarShowRangeRings = true;         // 距离参考环
     public bool RadarPulseDanger = true;            // 危险区即将判定时描边脉冲
     public bool RadarOnlyWithScript = true;         // 仅在有机制脚本的区域显示
+    public bool ShowModuleTimeline = true;          // 悬浮窗下方显示机制模块预测时间轴
 
     public AoeViewSettings WorldAoe = new();
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();

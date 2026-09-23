@@ -58,6 +58,7 @@ MasterPlayer/
 │   ├── MechanicDrawHost.cs           # 绘制桥（M4）：激活模块 DrawArenaCaptured 捕获 → 双视图预览注册 + 文字提示/extras
 │   ├── MechanicDrawConvert.cs          # MechanicDrawCommand → MP 几何/线段/extras 纯逻辑转换（tests 可链接）
 │   ├── MechanicNavigationHost.cs     # 导航桥（M5）：AIHintsBuilder 聚合 → 危险区/障碍/边界 diff 注册 + 面向控制 + 诊断
+│   ├── MechanicTimelineView.cs       # 时间轴条行模型纯逻辑（剩余钳制/伤害着色/分支占位，tests 可链接）
 │   └── MechanicHintsConvert.cs         # ShapeDistance/ArenaBounds → GeometryTemplate 识别与采样 + 帧差集注册器（tests 可链接）
 ├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
 │                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
@@ -145,6 +146,7 @@ public sealed class MasterPlayerSettings
     public bool RadarShowRangeRings = true;         // 距离参考环
     public bool RadarPulseDanger = true;            // 危险区即将判定时描边脉冲
     public bool RadarOnlyWithScript = true;         // 仅在有机制脚本的区域显示
+    public bool ShowModuleTimeline = true;          // 悬浮窗下方显示机制模块预测时间轴条
 
     public AoeViewSettings WorldAoe = new();
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
@@ -202,7 +204,7 @@ public sealed class RadarOverlayWindow : IDisposable
 }
 ```
 
-- 窗口壳只管显示门槛（EnableRadarOverlay/RadarOnlyWithScript）、拖拽/滚轮/右键菜单交互与防抖保存；内容渲染委托 `RadarView`（悬浮窗与回放窗口共用同一组件）。
+- 窗口壳只管显示门槛（EnableRadarOverlay/RadarOnlyWithScript）、拖拽/滚轮/右键菜单交互与防抖保存；内容渲染委托 `RadarView`（悬浮窗与回放窗口共用同一组件）。机制模块激活且 `ShowModuleTimeline` 开启时，窗口向下扩展一条预测时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，数据来自 `MechanicHostController.CurrentTimeline`/`MechanicClockUtc`，行模型由纯逻辑 `MechanicHost/MechanicTimelineView.cs` 生成，伤害类型着色 Tankbuster/Raidwide/Knockback），条区随窗口一起拖拽，右键菜单有开关。
 
 **Radar.RadarView**（`Radar\RadarView.cs`）——可嵌入雷达视图
 
@@ -359,6 +361,8 @@ public sealed class MechanicHostController : IDisposable
     public bool NavBoundaryActive { get; }
     public string? SpecialModeHint { get; }  // ImminentSpecialMode 文本（Pyretic/NoMovement/Freezing/Misdirection）
     public string? PredictedDamageText { get; }
+    public MechanicTimelineSnapshot? CurrentTimeline { get; }  // 激活模块状态机预测（每帧 MechanicTimeline.Capture，门控关闭/无模块为 null）
+    public DateTime MechanicClockUtc { get; }                  // 会话世界时钟（默认回退 DateTime.UtcNow）
 }
 ```
 
@@ -371,6 +375,7 @@ public sealed class MechanicHostController : IDisposable
 - **`MechanicDrawConvert`**（internal static 纯逻辑，不引用 Dalamud/PR，tests 直接链接）：Circle/Donut/Fan 直转 MP 几何；Cone(inner>0)/Capsule/ArcCapsule/ComplexPoly（只取外轮廓，洞忽略）/ZoneTriangles（逐三角形）→ `WorldPolygonGeometry`；Cross → 双 `RectangleGeometry`（臂长 2×Range、宽 2×HalfWidth）；Rect 换算中心 `Origin + dir×(LenFront−LenBack)/2`、宽 2×HalfWidth、长 LenFront+LenBack；BMR `Angle.Rad`/`WDir.ToAngle().Rad` 与 MP 弧度约定一致（0=+Z，π/2=+X）。安全色判定用 ColorConfig 默认 ABGR 硬编码对照表（SafeFromAOE 0x80008000 / Safe 0xff00ff00 → safe，其余默认危险）；场地边框 ComplexPoly（Border 白 0xffffffff）跳过，由 MP 边界层绘制。IconWorld/ActorMarker/CardinalNames 跳过（MP 雷达已有角色/罗盘）；Eye/TextWorld/SignMarker 转 `MechanicRadarExtra`（记录 Kind/世界坐标/文本/危险标志/原色 ABGR）。Y 高度取队伍槽 0 玩家 `PosRot.Y`。
 - **雷达 extras 图层**：`RadarView.DrawMechanicExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用 BMR 原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `module/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。
 - **导航桥（M5，`MechanicNavigationHost`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时 BMR 自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `MechanicHintsConvert` 转模板后由 `MechanicNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。TemporaryObstacles → `AddObstacle` 同 diff；PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `module-nav/{moduleTypeName}` 供「按机制显示」关闭。
+- **时间轴（M6）**：控制器每帧（`session.Update()` 后、模块激活且 `StateMachine.ActivePhase` 非空时）`MechanicTimeline.Capture(module)` 产出 `CurrentTimeline` 快照（条目含名称/ExpectedEnd/StateHint 伤害标记，未决分支只有分支 ID 不猜选），异常限频隔离；门控关闭/无模块/Dispose 置 null。消费侧为纯读：雷达悬浮窗时间轴条（`RadarOverlayWindow` 壳层、RadarView 之后追加，窗口高度计入条高，右键菜单开关 `ShowModuleTimeline`）与诊断页摘要共用纯逻辑 `MechanicHost/MechanicTimelineView.cs`（空名状态隐藏、剩余秒钳制非负、伤害着色优先级 Tankbuster>Raidwide>Knockback>Cast>Attention>Neutral、后续至多 3 条、分支行「分支?」）。回放会话的数据接入属 M7（回放激活时控制器整体跳过，快照为 null；ReplayWindow 预测泳道未做，记入 spec）。
 - **`MechanicHintsConvert`**（internal static 纯逻辑，tests 直接链接）：ShapeDistance 运行时识别——SDCircle/SDDonut 直转、SDCone/SDDonutSector 由存储法线还原朝向与半角（coneFactor<0 时分角线反向）、SDRect/SDCross/SDTri/SDConvexPolygon/SDCapsule/SDArcCapsule 字段反射直转或多边形近似、SDPolygonWithHoles/SDComplexPolygonInvertedContains 取外轮廓（洞忽略）、SDUnion 全成员可识别才拆分；Inverted 族/SDPrecisePosition/SDOutsideOfUnion 等补集语义跳过（不误画）；其余（击退二值场、Intersection、DeepDungeonLOS 等）0.5 码网格采样（范围取模块边界半径、60 码封顶，填充率 >65% 判为补集丢弃）→ 连通域 → 角点网格 marching-squares 边链接外轮廓（对角捏合 cross=+1 拆环，孔洞环随最大环丢弃）→ WorldPolygonTemplate。`MapActivation`：default/已过→持续，未来→延迟秒数。`ConvertBounds`：Circle/ABRect(Rect/Square)/Custom（最大 part 外轮廓）→ MP 边界几何。`MechanicNavAreaDiffer` 离线可测（SafeZoneRegistry/Manager 可脱机构造；快照在 `SafeZoneSetting.EnableSafeZone=false` 时过滤危险区）。GoalZones/敌人优先级/ActionsToExecute/OpEffectResult 不消费（缺口记录）。
 
 **Windows.MainWindow**（`Windows\MainWindow.cs`）
