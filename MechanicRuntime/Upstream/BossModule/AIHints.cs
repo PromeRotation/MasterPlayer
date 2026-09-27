@@ -90,7 +90,6 @@ public sealed class AIHints
     public WPos PathfindMapCenter;
     public ArenaBounds PathfindMapBounds = DefaultBounds;
     public Bitmap.Region PathfindMapObstacles;
-    private static readonly AI.AIConfig _config = Service.Config.Get<AI.AIConfig>();
 
     // list of potential targets
     public const int NumEnemies = 100;
@@ -132,7 +131,7 @@ public sealed class AIHints
     public List<ShapeDistance> TemporaryObstacles = [];
 
     // AI will treat the pixels inside these shapes as unreachable and not try to pathfind through them (unlike imminent forbidden zones)
-    public readonly List<Pathfinding.Teleporter> Teleporters = [];
+    public readonly List<Teleporter> Teleporters = [];
 
     // positioning: next positional hint (TODO: reconsider, maybe it should be a list prioritized by in-gcds, and imminent should be in-gcds instead? or maybe it should be property of an enemy? do we need correct?)
     public (Actor? Target, Positional Pos, bool Imminent, bool Correct) RecommendedPositional;
@@ -339,48 +338,6 @@ public sealed class AIHints
         SortHelpers.SortForbiddenZonesByActivation(ForbiddenZones);
         SortHelpers.SortForbiddenDirectionsByActivation(ForbiddenDirections);
         PredictedDamage.Sort(static (a, b) => a.Activation.CompareTo(b.Activation));
-    }
-
-    public void InitPathfindMap(Pathfinding.Map map)
-    {
-        PathfindMapBounds.PathfindMap(map, PathfindMapCenter);
-        if (PathfindMapObstacles.Bitmap != null && !_config.DisableObstacleMaps)
-        {
-            var offX = -PathfindMapObstacles.Rect.Left;
-            var offY = -PathfindMapObstacles.Rect.Top;
-            var r = PathfindMapObstacles.Rect.Clamped(PathfindMapObstacles.Bitmap.FullRect);
-            var height = map.Height;
-            var width = map.Width;
-            var rTop = r.Top;
-            var rBottom = r.Bottom;
-            var rLeft = r.Left;
-            var rRight = r.Right;
-
-            for (var y = rTop; y < rBottom; ++y)
-            {
-                var my = y + offY;
-                if (my < 0 || my >= height)
-                {
-                    continue;
-                }
-                for (var x = rLeft; x < rRight; ++x)
-                {
-                    if (!PathfindMapObstacles.Bitmap[x, y])
-                    {
-                        continue;
-                    }
-
-                    var mx = x + offX;
-                    if (mx < 0 || mx >= width)
-                    {
-                        continue;
-                    }
-                    var index = map.GridToIndex(mx, my);
-                    map.PixelMaxG[index] = -1000f;
-                    map.PixelPriority[index] = float.MinValue;
-                }
-            }
-        }
     }
 
     // query utilities
@@ -672,4 +629,15 @@ public sealed class AIHints
             return Math.Abs(localX) <= halfHeight && Math.Abs(localY) <= halfWidth ? weight : default;
         };
     }
+}
+
+// 从 Pathfinding/ThetaStar.cs 迁入（寻路引擎已删除，结构体为 AIHints.Teleporters 公共数据面保留原字段）
+public readonly struct Teleporter(WPos entrance, WPos exit, float radius, bool bidirectional, float useTime = 0f, float notBeforeG = 0f)
+{
+    public readonly WPos Entrance = entrance;
+    public readonly WPos Exit = exit;
+    public readonly float Radius = radius;
+    public readonly bool Bidirectional = bidirectional;
+    public readonly float UseTime = useTime;
+    public readonly float NotBeforeG = notBeforeG;
 }

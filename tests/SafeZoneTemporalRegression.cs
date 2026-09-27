@@ -151,6 +151,33 @@ internal static class SafeZoneTemporalRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("solver teleporter edge crosses a wall to reach the goal", () =>
+        {
+            var boundary = new RectangleTemplate(40f, 40f).Resolve(Vector3.Zero, 0f, null);
+            var wall = new ObstacleSnapshot(default, new RectangleTemplate(2f, 40f).Resolve(Vector3.Zero, 0f, null));
+            var goal = new GoalAreaSnapshot(default, new CircleTemplate(2f).Resolve(new Vector3(15f, 0f, 0f), 0f, null),
+                [new GoalWindow(Epoch, null, 1, PositionPreference.Center)]);
+            var snapshot = new SafeZoneSnapshot(1, Epoch, boundary, [wall], [], [goal]);
+            var start = new Vector3(-15f, 0f, 0f);
+
+            var blocked = new SafeZoneSolver().Solve(snapshot, Player(start), Capability, Options, Epoch);
+            var blockedEnd = blocked.ExecutablePath.Count >= 2 ? blocked.ExecutablePath[^1].Position : start;
+            Check(Vector3.Distance(blockedEnd, new Vector3(15f, 0f, 0f)) > 6f,
+                $"without a teleporter the wall must keep the goal unreachable (end={blockedEnd})");
+
+            var withEdge = Options with
+            {
+                Teleporters = [new SolverTeleporter(new Vector3(-2.2f, 0f, 0f), new Vector3(2.2f, 0f, 0f), 1.5f, false, 0.5f)],
+            };
+            var solved = new SafeZoneSolver().Solve(snapshot, Player(start), Capability, withEdge, Epoch);
+            Check(solved.IsSuccess && solved.ExecutablePath.Count >= 2, "teleporter edge must produce a route");
+            var end = solved.ExecutablePath[^1].Position;
+            Check(Vector3.Distance(end, new Vector3(15f, 0f, 0f)) <= 2.5f,
+                $"teleporter route must reach the goal across the wall (end={end})");
+            Check(solved.ExecutablePath.Skip(1).Any(w => w.Position.X > 1f),
+                "route never crossed the wall despite the teleporter edge");
+        });
+
         foreach (var hard in new[] { true, false })
         {
             foreach (var offset in new[] { 0f, 4.49f })

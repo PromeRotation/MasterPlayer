@@ -116,6 +116,9 @@ public sealed class RasterizedMap
     public bool HasSingleNearestGoal { get; private set; }
     public Vector3? GoalHeuristicPosition { get; private set; }
 
+    /// <summary>解算传送边（由 <see cref="SolveOptions.Teleporters"/> 经 <see cref="Build"/> 注入）。</summary>
+    public IReadOnlyList<SolverTeleporter> Teleporters { get; private set; } = [];
+
     /// <summary>列行是否在网格范围内。</summary>
     public bool InBounds(int col, int row) => col >= 0 && col < Columns && row >= 0 && row < Rows;
 
@@ -264,6 +267,8 @@ public sealed class RasterizedMap
 
         // 目标区几何 → PixelPriority（保守：完整在内才记目标 + 仅激活窗口计入）。
         map.RasterizeGoalAreas(snapshot, solveTimeUtc, playerPosition);
+
+        map.Teleporters = options.Teleporters;
 
         return map;
     }

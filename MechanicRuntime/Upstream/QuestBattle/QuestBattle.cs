@@ -353,9 +353,12 @@ public abstract class QuestBattle : ZoneModule
         }
     }
 
+    // MP 适配：运行库不含 AI 执行器（原 AIManager/NormalMovement 恒 null）。属性非常量，避免编译器不可达代码警告。
+    private static bool HostAiExecutionAvailable => false;
+
     public override void CalculateAIHints(int playerSlot, Actor player, AIHints hints)
     {
-        if (AI.AIManager.Instance?.Beh == null && Autorotation.MiscAI.NormalMovement.Instance == null || !_config.EnableQuestBattles)
+        if (!HostAiExecutionAvailable || !_config.EnableQuestBattles)
         {
             return;
         }

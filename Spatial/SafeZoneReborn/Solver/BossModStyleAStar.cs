@@ -368,6 +368,82 @@ public static class BossModStyleAStar
                     open.Enqueue(nIndex, alt.GScore + hScore);
                 }
             }
+
+            // 传送边：当前格位于入口圈内时，出口格作为直接后继；传送耗时按移速折算进 g，落点不可站立则跳过。
+            var teleporters = map.Teleporters;
+            if (teleporters.Count != 0)
+            {
+                var curWorld = map.CellCenter(curX, curY);
+                var curGT = current.GScore;
+                var curLeewayT = current.PathLeeway;
+                var curMinGT = current.PathMinG;
+                for (var tp = 0; tp < teleporters.Count; ++tp)
+                {
+                    var edge = teleporters[tp];
+                    TryTeleport(edge, edge.Entrance, edge.Exit);
+                    if (edge.Bidirectional)
+                        TryTeleport(edge, edge.Exit, edge.Entrance);
+                }
+
+                void TryTeleport(SolverTeleporter edge, Vector3 anchor, Vector3 dest)
+                {
+                    var dx = curWorld.X - anchor.X;
+                    var dz = curWorld.Z - anchor.Z;
+                    if (dx * dx + dz * dz > edge.Radius * edge.Radius)
+                        return;
+                    var (tx, ty) = map.WorldToCell(dest);
+                    if (!map.InBounds(tx, ty))
+                        return;
+                    var tIndex = (ty * map.Columns) + tx;
+                    var tReal = map.PixelMaxGAt(tx, ty);
+                    if (tReal < 0f)
+                        return;
+                    var stepG = MathF.Sqrt(dx * dx + dz * dz) + edge.UseTimeSeconds * safeSpeed;
+                    var newGT = curGT + stepG;
+                    if (newGT > maxG)
+                        return;
+                    var tExempt = !curEscaped && !map.IsDangerCoreAt(tx, ty);
+                    var tEff = tExempt ? float.MaxValue : tReal;
+                    var stepLeewayT = MathF.Min(tEff, curEff) - newGT;
+                    var pathLeewayT = MathF.Min(curLeewayT, stepLeewayT);
+                    var pathMinGT = MathF.Min(curMinGT, tReal);
+                    var tPrio = map.PixelPriorityAt(tx, ty);
+                    var newScoreT = CalculateScore(tReal, pathMinGT, pathLeewayT, tPrio, startPrio, startMaxG);
+                    var hScoreT = CalculateHScore(map, tx, ty);
+                    var tEscaped = curEscaped || tReal >= float.MaxValue;
+                    if (requireSafePath && pathLeewayT < 0f)
+                        return;
+
+                    ref var target = ref nodes[tIndex];
+                    var altT = new Node
+                    {
+                        GScore = newGT,
+                        HScore = hScoreT,
+                        ParentIndex = currentIndex,
+                        InOpen = target.InOpen,
+                        Visited = true,
+                        PathLeeway = pathLeewayT,
+                        PathMinG = pathMinGT,
+                        Score = newScoreT,
+                        GoalPriority = tPrio,
+                        GoalPreference = map.PixelGoalPreferenceAt(tx, ty),
+                        GoalPreferenceScore = map.PixelGoalPreferenceScoreAt(tx, ty),
+                        HasEscaped = tEscaped,
+                    };
+                    if (!target.Visited)
+                    {
+                        target = altT;
+                        target.InOpen = true;
+                        open.Enqueue(tIndex, altT.GScore + hScoreT);
+                    }
+                    else if (CompareForRelaxation(ref altT, ref target, options.AllowBestEffort) < 0)
+                    {
+                        target = altT;
+                        target.InOpen = true;
+                        open.Enqueue(tIndex, altT.GScore + hScoreT);
+                    }
+                }
+            }
         }
 
         var resolved = ResolveBestIndex(nodes, startIndex, bestIndex, fallbackIndex, options.AllowBestEffort);

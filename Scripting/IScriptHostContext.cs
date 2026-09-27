@@ -16,6 +16,7 @@ public interface IScriptHostContext
     ScriptSafeZoneApi SafeZone { get; }
     ScriptMoveApi Move { get; }
     ScriptDrawApi Draw { get; }
+    ScriptHintsApi Hints { get; }
 
     // ── 设置 ──────────────────────────────────────────
     ScriptSettingStore Settings { get; }

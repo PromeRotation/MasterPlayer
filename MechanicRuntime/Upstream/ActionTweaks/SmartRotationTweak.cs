@@ -45,7 +45,7 @@ public sealed class SmartRotationTweak(WorldState ws, AIHints hints)
 
     public Angle? GetSafeRotation(Angle currentDirection, Angle? preferredDirection, Angle preferredHalfWidth)
     {
-        var aiEnabled = AI.AIManager.Instance?.Beh != null;
+        var aiEnabled = false; // MP 适配：运行库不含 AI 执行器（原 AI.AIManager.Instance?.Beh 恒 null）
         if (!_config.Enabled && !aiEnabled)
         {
             return null;

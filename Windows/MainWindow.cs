@@ -481,7 +481,7 @@ public sealed class MainWindow : IDisposable
         if (bridge.DrawModuleName is { } drawModule)
             HintInline($"绘制来源：{drawModule}");
         if (bridge.NavigationActive)
-            HintInline($"导航区：危险 {bridge.NavDangerZoneCount} / 障碍 {bridge.NavObstacleCount} / 边界 {(bridge.NavBoundaryActive ? "有" : "无")}");
+            HintInline($"导航区：危险 {bridge.NavDangerZoneCount} / 目标 {bridge.NavGoalZoneCount} / 障碍 {bridge.NavObstacleCount} / 边界 {(bridge.NavBoundaryActive ? "有" : "无")}");
         if (bridge.SpecialModeHint is { } specialMode)
             ImGui.TextColored(WarningColor, $"特殊模式：{specialMode}");
         if (bridge.PredictedDamageText is { } predicted)

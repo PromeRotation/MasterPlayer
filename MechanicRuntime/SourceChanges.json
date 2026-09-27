@@ -5,9 +5,54 @@
     "importedSha256": "96da0ec6207685f272e4d249a1aaf4040705ea14a2fe378bea17abb483714786"
   },
   "BossModule/BossModule.cs": {
-    "reason": "优先按实际模块类型选择状态机，避免 OID 冲突把另一模块的 States 传给构造器。 状态退出失败时仍清理组件、世界事件和障碍资源。 新增 DrawArenaCaptured 捕获驱动（逐环节异常隔离），DrawSigns 在捕获汇下转发世界坐标标记且 Service.Texture 为空时不取贴图。",
+    "reason": "优先按实际模块类型选择状态机，避免 OID 冲突把另一模块的 States 传给构造器。 状态退出失败时仍清理组件、世界事件和障碍资源。 新增 DrawArenaCaptured 捕获驱动（逐环节异常隔离），DrawSigns 在捕获汇下转发世界坐标标记且 Service.Texture 为空时不取贴图。 AI 执行器移除后 CalculateAIHints 门控删除恒 null 的 AIManager/NormalMovement 静态判定，真值表与上游一致。",
     "originalSha256": "4e26de1a1119b7c6364924aeac2c883046d5652d87a8a171fb31dc42a99cc4c5",
-    "importedSha256": "02087c0b970f06a9347ffcb62ced860b2ff1a1570016e6baa77ef2d265edfe95"
+    "importedSha256": "f29e286d8722bb88228fb4108fd7cc55c90af4f4c4c8a474724b4ef3e4e66322"
+  },
+  "BossModule/AIHints.cs": {
+    "reason": "寻路引擎与 AI 执行器已移除：删除 InitPathfindMap 及 AIConfig 静态引用；Teleporter 结构体自 Pathfinding/ThetaStar.cs 迁入本文件（BossMod 命名空间，字段原样），Teleporters 列表与 PathfindMapObstacles 数据面保留。",
+    "originalSha256": "fb0937a1c69e43acc54eac99fae844e52839e54d222b626bb6ea0a6f4ba1cce7",
+    "importedSha256": "93e8276007902be9694f33e259e709b9efb76d0a59a87b93ead1ac443da3ea11"
+  },
+  "BossModule/ArenaBounds.cs": {
+    "reason": "寻路引擎已移除：删除 PathfindMap 抽象方法与 Circle/ABRect/Custom 三处实现及各自 BuildMap/_cachedMap；allowObstacleMap 构造参数与字段保留，模块构造签名不变。",
+    "originalSha256": "30fcba48cead81468eca9b29cbb47eb0c6e80b47f99252181d957275e836ac7e",
+    "importedSha256": "2b5c74fe1fc03c2b0d5492ca294716be76d956e49670db05cc44cf41ec2a5439"
+  },
+  "QuestBattle/QuestBattle.cs": {
+    "reason": "AI 执行器已移除：CalculateAIHints 门控改为 HostAiExecutionAvailable 常量属性（原 AIManager/NormalMovement 在宿主环境恒 null，原条件恒成立），真值表与上游一致；属性非常量以避免不可达代码警告。",
+    "originalSha256": "22e8bb5df6d71609a4cf24ac7bf8c3b5c8edaec782c27c614555f2f725443bed",
+    "importedSha256": "129113616439abe903c1d5fe3b0373faaa08f972e918342780d454fa8cc58c48"
+  },
+  "QuestBattle/UnmanagedRotation.cs": {
+    "reason": "AI 执行器已移除：Execute 门控删除恒 null 的 AIManager/NormalMovement 静态判定，仅保留 EnableQuestBattles，真值表与上游一致。",
+    "originalSha256": "228ca866926294ff5e7000ca0b170945c895b41510291881c13405e99a01f632",
+    "importedSha256": "c957f38a45196e5c73dd6fa4ede10b27df6b377c7a18754cfc404ce8aa90c1b4"
+  },
+  "Modules/Shadowbringers/Dungeon/D09GrandCosmos/D092LeannanSith.cs": {
+    "reason": "AI 执行器已移除：自动放种子分支的 AI 门控常量化为 false（原 AIManager/NormalMovement 恒 null，分支恒不触发），分支保留供源对照。",
+    "originalSha256": "1d4b8b766215781c09746d85103f39d722f50fdb626a615dc2d1a776de3a57a5",
+    "importedSha256": "fceec7ae27d67937a3d45c41a21164c551d8fd4f3df3ee6b668d0ad936f22965"
+  },
+  "ActionTweaks/SmartRotationTweak.cs": {
+    "reason": "AI 执行器已移除：GetSafeRotation 的 aiEnabled 常量化（原 AIManager.Instance?.Beh 恒 null），真值表与上游一致。",
+    "originalSha256": "27d92c5687c0e4d59390854e9860ef585d494cbea2b30ff302ac763ba43ef692",
+    "importedSha256": "c82c5aec2456a200b10225279543091333b6ff5454d46076b97f6f665440359f"
+  },
+  "Modules/Dawntrail/Savage/M08SHowlingBlade/ArenaChanges.cs": {
+    "reason": "Teleporter 结构体已迁入 BossMod 命名空间（AIHints.cs）：字段声明去 Pathfinding 限定；传送圈绘制与状态逻辑不变。",
+    "originalSha256": "8c4b3d6a002f5105b05d92db69ebdf79fa52a2918e16e7689748ad9479010865",
+    "importedSha256": "964b4156846c7df390796f9b1b7a743ae772f757b495bc00de7880dd3dbf959d"
+  },
+  "Modules/RealmReborn/Extreme/Ex3Titan/Ex3TitanAI.cs": {
+    "reason": "删除 AIRotationModule 子类 Ex3TitanAIRotation（寻路与 AI 执行器已移除）；保留同名 BossComponent（Ex3TitanStates 以 ActivateOnEnter/ExecOnExit 使用），组件逻辑不变。",
+    "originalSha256": "c4f3d28f32221dfc85752bc11e8cc730bddc49b255826bd1d60dcd7f43f1e635",
+    "importedSha256": "ac7c522dbb7eff7cb2452591bfb61a07755551524bc4ea2d9edbee80857a2987"
+  },
+  "Replay/Visualization/ReplayDetailsWindow.cs": {
+    "reason": "寻路可视化与自动循环窗口已移除：删除 AIHintsVisualizer 字段与绘制、UIRotationWindow.DrawRotationSelector 调用；ResetPF 保留为空操作（本窗口无构造者）。",
+    "originalSha256": "433dc3e0926f0732651958c6a5dcc4292f765ae42f56b7ce548f7d30c90b8dad",
+    "importedSha256": "d72430495e00e63a3784586cf5f7d2cc4aefca3bf6480bde9c2e74f5ca58f184"
   },
   "BossModule/MiniArena.cs": {
     "reason": "全部绘制方法在世界坐标层转发到可选的 BmrDrawSink 捕获汇（形状参数层，含 Zone 三角化兜底与 Path 折线）；Begin/End 在捕获时只保留纯数学字段更新，跳过 ImGui 窗口调用与背景盘填充。无捕获汇时行为与原文一致。",

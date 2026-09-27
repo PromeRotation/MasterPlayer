@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using ECommons.DalamudServices;
 using BossMod;
 using MasterPlayer.MechanicRuntime;
@@ -17,10 +18,16 @@ public sealed class MechanicNavigationHost : IDisposable
     private readonly MechanicFacingControl _facing = new();
     private bool _boundaryApplied;
     private string? _boundarySignature;
+    private Bitmap? _terrainBitmap;
+    private int _terrainLeft, _terrainTop, _terrainRight, _terrainBottom;
+    private IReadOnlyList<MechanicNavPrimitive>? _terrainPrims;
+    private DateTime _goalZonesNextEval = DateTime.MinValue;
+    private IReadOnlyList<MechanicNavPrimitive> _goalZonesPrims = [];
 
     public bool ModuleActive { get; private set; }
     public bool NavigationActive { get; private set; }
     public int DangerZoneCount => _differ.ZoneCount;
+    public int GoalZoneCount => _differ.GoalCount;
     public int ObstacleZoneCount => _differ.ObstacleCount;
     public bool BoundaryActive => _boundaryApplied;
     public string? SpecialModeHint { get; private set; }
@@ -88,19 +95,43 @@ public sealed class MechanicNavigationHost : IDisposable
         {
             var (sd, activation, source) = _hints.ForbiddenZones[i];
             var prims = MechanicHintsConvert.ConvertForbiddenZone(sd, y, sampleCenter, sampleRadius, out var kind);
+            var isGoal = false;
             switch (kind)
             {
                 case MechanicNavZoneKind.Sampled: ++sampled; break;
-                case MechanicNavZoneKind.ComplementSkipped or MechanicNavZoneKind.Failed: ++skipped; break;
+                case MechanicNavZoneKind.ComplementSkipped:
+                    if (MechanicHintsConvert.TryConvertComplement(sd, y, out var goals))
+                    {
+                        prims = goals;
+                        isGoal = true;
+                    }
+                    else
+                    {
+                        ++skipped;
+                    }
+                    break;
+                case MechanicNavZoneKind.Failed: ++skipped; break;
             }
             if (prims.Count == 0)
                 continue;
             var (delay, persistent) = MechanicHintsConvert.MapActivation(activation, now);
             dangers.Add(new($"{key}/{source:X16}/{activation.Ticks}/{i}", prims, delay, persistent,
-                MechanicHintsConvert.SignatureOf(sd) + "|" + activation.Ticks));
+                MechanicHintsConvert.SignatureOf(sd) + "|" + activation.Ticks) { IsGoal = isGoal });
         }
         SampledZoneCount = sampled;
         SkippedZoneCount = skipped;
+
+        // 机制级强 GoalZones（软覆盖站位）：500ms 节流评估，与补集目标共用目标通道
+        if (now >= _goalZonesNextEval)
+        {
+            _goalZonesNextEval = now.AddSeconds(0.5);
+            _goalZonesPrims = MechanicHintsConvert.ConvertGoalZones(_hints.GoalZones, module.Center, sampleRadius, y);
+        }
+        for (var i = 0; i < _goalZonesPrims.Count; ++i)
+        {
+            var prim = _goalZonesPrims[i];
+            dangers.Add(new($"{key}/goalzone/{i}", [prim], 0f, true, prim.Signature) { IsGoal = true });
+        }
 
         var obstacles = new List<(string Key, MechanicNavPrimitive Prim)>(_hints.TemporaryObstacles.Count);
         for (var i = 0; i < _hints.TemporaryObstacles.Count; ++i)
@@ -111,11 +142,58 @@ public sealed class MechanicNavigationHost : IDisposable
                 obstacles.Add(($"{key}/obstacle/{i}/{j}", prims[j]));
         }
 
+        // 场地障碍位图（SimpleBossModule 族开启 AllowObstacleMap）：静态数据，位图引用+矩形未变时复用转换结果。
+        // 注意：Bitmap.Region 是 MechanicRuntime 值类型，只存引用与坐标基元，值类型字段会把程序集布局依赖引入本类。
+        var terrain = _hints.PathfindMapObstacles;
+        if (terrain.Bitmap != null)
+        {
+            var rect = terrain.Rect;
+            if (_terrainPrims == null || !ReferenceEquals(_terrainBitmap, terrain.Bitmap)
+                || _terrainLeft != rect.Left || _terrainTop != rect.Top || _terrainRight != rect.Right || _terrainBottom != rect.Bottom)
+            {
+                _terrainBitmap = terrain.Bitmap;
+                (_terrainLeft, _terrainTop, _terrainRight, _terrainBottom) = (rect.Left, rect.Top, rect.Right, rect.Bottom);
+                _terrainPrims = MechanicHintsConvert.ConvertObstacleBitmap(terrain, module.Center, y);
+            }
+            for (var i = 0; i < _terrainPrims.Count; ++i)
+                obstacles.Add(($"{key}/terrain/{i}", _terrainPrims[i]));
+        }
+        else
+        {
+            _terrainBitmap = null;
+            _terrainPrims = null;
+        }
+
         _differ.Sync(registry, manager, dangers, obstacles, settings.DodgeDangerMargin,
             visibility != null ? h => visibility.Track(h, key, typeName) : null);
 
         ApplyBoundary(module, y);
         ApplyFacing(now);
+        PublishTeleporters(y);
+    }
+
+    private string? _teleporterSignature;
+
+    // AIHints.Teleporters → 解算传送边发布（内容签名去重；失活/睡眠时 ClearRegistrations 清空）
+    private void PublishTeleporters(float y)
+    {
+        var list = _hints.Teleporters;
+        var sb = new StringBuilder(list.Count * 32);
+        foreach (var t in list)
+        {
+            sb.Append(t.Entrance.X.ToString("F1")).Append(',').Append(t.Entrance.Z.ToString("F1")).Append(';')
+                .Append(t.Exit.X.ToString("F1")).Append(',').Append(t.Exit.Z.ToString("F1")).Append(';')
+                .Append(t.Radius.ToString("F2")).Append(';').Append(t.UseTime.ToString("F2")).Append(';')
+                .Append(t.Bidirectional ? '1' : '0');
+        }
+        var signature = sb.ToString();
+        if (signature == _teleporterSignature)
+            return;
+        _teleporterSignature = signature;
+        var converted = new List<Spatial.SafeZoneReborn.Solver.SolverTeleporter>(list.Count);
+        foreach (var t in list)
+            converted.Add(new(new(t.Entrance.X, y, t.Entrance.Z), new(t.Exit.X, y, t.Exit.Z), t.Radius, t.Bidirectional, t.UseTime));
+        MasterPlayerPlugin.Instance?.SafeZone.SetTeleporters(converted);
     }
 
     private void ApplyBoundary(BossModule module, float y)
@@ -180,7 +258,7 @@ public sealed class MechanicNavigationHost : IDisposable
 
     private void ClearRegistrations()
     {
-        if (_differ.ZoneCount != 0 || _differ.ObstacleCount != 0 || _boundaryApplied)
+        if (_differ.ZoneCount != 0 || _differ.GoalCount != 0 || _differ.ObstacleCount != 0 || _boundaryApplied)
         {
             var registry = MasterPlayerPlugin.Instance?.SafeZone.Registry;
             if (registry != null)
@@ -194,6 +272,15 @@ public sealed class MechanicNavigationHost : IDisposable
             _boundaryApplied = false;
             _boundarySignature = null;
         }
+        _terrainBitmap = null;
+        _terrainPrims = null;
+        _goalZonesNextEval = DateTime.MinValue;
+        _goalZonesPrims = [];
+        if (_teleporterSignature != null)
+        {
+            _teleporterSignature = null;
+            MasterPlayerPlugin.Instance?.SafeZone.SetTeleporters([]);
+        }
         _facing.Clear();
         SampledZoneCount = 0;
         SkippedZoneCount = 0;
@@ -202,6 +289,10 @@ public sealed class MechanicNavigationHost : IDisposable
     public void SwitchSession(MechanicSession session)
     {
         Sleep();
+        _terrainBitmap = null;
+        _terrainPrims = null;
+        _goalZonesNextEval = DateTime.MinValue;
+        _goalZonesPrims = [];
         try { _builder.Dispose(); } catch { }
         _session = session;
         _builder = new AIHintsBuilder(session.World, session.BossModules, session.ZoneModules, null);
@@ -221,65 +312,5 @@ public sealed class MechanicNavigationHost : IDisposable
         Sleep();
         try { _facing.Dispose(); } catch { }
         try { _builder.Dispose(); } catch { }
-    }
-
-    private sealed class MechanicFacingControl : IDisposable
-    {
-        private delegate void UpdateRequest(string owner, ulong target, ulong clearTarget, ulong[] forbiddenTargets,
-            float? heading, bool holdActions, bool blockCasts, bool cancelCast);
-
-        private readonly string _owner = "MasterPlayer/MechanicNav/" + Guid.NewGuid().ToString("N");
-        private UpdateRequest? _update;
-        private Action<string>? _clear;
-        private bool _resolved;
-        private float? _appliedHeading;
-        private bool _warned;
-
-        public void Apply(float? heading)
-        {
-            Resolve();
-            if (_update == null)
-            {
-                if (!_warned && heading != null)
-                {
-                    _warned = true;
-                    Svc.Log.Warning("[MasterPlayer] 当前 PR 本体未提供机制控制接口：机制背对引导不可用；走位与绘制继续工作。");
-                }
-                return;
-            }
-            if (heading == _appliedHeading)
-                return;
-            if (heading == null)
-            {
-                _clear?.Invoke(_owner);
-            }
-            else
-            {
-                _update(_owner, 0, 0, [], heading, false, false, false);
-            }
-            _appliedHeading = heading;
-        }
-
-        public void Clear() => Apply(null);
-
-        public void Dispose() => Clear();
-
-        private void Resolve()
-        {
-            if (_resolved)
-                return;
-            _resolved = true;
-            var type = typeof(PromeRotation.Plugin).Assembly.GetType("PromeRotation.Hosting.MechanicControl");
-            MethodInfo? Find(string name, Type[] parameters) => type?.GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .FirstOrDefault(m => m.Name == name && m.ReturnType == typeof(void) && !m.ContainsGenericParameters
-                    && m.GetParameters().Select(p => p.ParameterType).SequenceEqual(parameters));
-            var update = Find("Update", [typeof(string), typeof(ulong), typeof(ulong), typeof(ulong[]), typeof(float?), typeof(bool), typeof(bool), typeof(bool)]);
-            var clear = Find("Clear", [typeof(string)]);
-            if (update != null && clear != null)
-            {
-                _update = update.CreateDelegate<UpdateRequest>();
-                _clear = clear.CreateDelegate<Action<string>>();
-            }
-        }
     }
 }

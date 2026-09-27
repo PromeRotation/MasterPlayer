@@ -45,7 +45,7 @@
 
 `MechanicHost/ActionEffectCapture.cs`：用 `Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(ActionEffectHandler.Addresses.Receive.Value, detour)` 复制 BMR ActionManagerEx.cs:753-776 的纯观察部分——构造 `ActorCastEvent`（Action/MainTargetID/AnimationLock/NumTargets/TargetPos/GlobalSequence/SourceSequence/包朝向 `IntToFloatAngle(RotationInt)` + 逐目标 8×ulong 原始效果）→ 主线程队列 → `OpCastEvent(casterID, info)`。detour 只读取入参并调用 Original，不修改动画锁、不拦截动作。hook 安装失败时降级：聚合 PR ActionEffect 摘要（同 GlobalSequence 窗口合并）构造无 Effects 的包，并记录一次性警告；降级只影响依赖效果数组的组件（击退距离、特定效果判定），OnEventCast 计数不受影响。
 
-`OpEffectResult`（PendingHP/Status 确认）由对象差分兜底（HP/Status 每帧扫描），EffectResult 包暂不接，记录缺口。
+`OpEffectResult`（PendingHP/Status 确认）：2026-09-27 已接入——`LiveWorldSampler` 逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽（对齐 BMR WorldStateGameSync 的槽位语义，帧级稀疏上报非零槽），`MechanicWorldFeed` 按槽差分发 `OpIncomingEffect`（击退类效果即时武装 `PendingKnockbacks`，槽清空移除）；`TargetConfirmed` 翻转补发 `OpEffectResult` 加速待定 HP/MP/状态确认（不重发 OpIncomingEffect，避免重复武装）。回放录制未存槽位数据，回放帧该通道为空（保持降级口径）。
 
 ### 会话生命周期
 
@@ -80,12 +80,15 @@
   - `ForbiddenZones` → SD* 具体类型识别（SDCircle/SDRect/SDCone/SDDonut/SDCross 及组合）→ MP GeometryTemplate；无法识别回退 0.5 码网格采样连通域 → LocalPolygonTemplate。activation → 绝对时间（注册 AddDelayedHit/AddDelayedDanger；default=立即 → AddPersistentDanger + 帧 diff 续命）。键：`module/{sourceInstanceID}/{activationTick}/{序}`，帧 diff 移除未刷新句柄。
   - `TemporaryObstacles` → AddObstacle（同样 diff 生命周期）。
   - `PathfindMapBounds`（激活模块）→ SetArenaBoundary（Custom 多边形顶点直转；圆形/矩形边界转对应模板；模块卸载清空）。
-  - `GoalZones`：仅当能识别为几何硬目标（GoalDonut/GoalRectangle 等工厂不可还原参数，故初版不映射权重型目标；记录缺口）。
+  - `GoalZones`：2026-09-27 起消费机制级强目标——权重峰值 ≥100（BMR「软覆盖」语义）才采样映射（0.5m 网格总和峰值 50% 以上区域轮廓，覆盖率 >65% 判噪声丢弃），注册为优先级 1 目标区，500ms 节流评估；uptime/身位等弱偏好（≤3）不拖拽走位。
   - `ForbiddenDirections` → 面向控制（经宿主 MechanicControl 可选接口，对齐斗兽棋先例；接口缺失时一次提示并跳过）。
   - `ImminentSpecialMode`（Pyretic/NoMovement/Misdirection）：映射为移动门控提示（初版仅记录+文字提示，不解算）。
   - `PredictedDamage/敌人优先级/ActionsToExecute`：不执行动作/减伤/转火调度（缺口记录；文字提示保留）。
+  - 补集语义（2026-09-27）：SDInverted 族/SDOutsideOfUnion/SDPrecisePosition 不再丢弃——`TryConvertComplement` 取内侧安全形状（OutsideOfUnion 取「进入任一成员」主语义、Offset 变体仍跳过），经同一差集注册为优先级 1、Nearest 偏好的目标安全区（不外扩，与 SafeArea 纪律一致）；分摊/集合/数字格类机制从此获得导航约束。
+  - 场地障碍位图（2026-09-27）：`PathfindMapObstacles`（SimpleBossModule 族开启 AllowObstacleMap）按角点网格连通域外轮廓转多边形注册为障碍；位图引用+矩形未变时复用转换结果，数据面随 9-27 执行层移除保留（ObstacleMapManager/417 资源）。
+  - `Teleporters`（2026-09-27）：转 `SolverTeleporter` 经 `SafeZoneRuntime.SetTeleporters` 发布（内容签名去重，失活清空）；`BossModStyleAStar` 把入口圈内节点扩展出出口后继（耗时按移速折算进 g，落点不可站立跳过，leeway/Score 语义与步行一致）。FRU/M08S/末日列车的传送机制参与解算。
 - 注册仅当 `EnableAutoDodge`（智能躲避）开启时生效；绘制不受该开关限制（与 DodgeController 同纪律：绘制/雷达/躲避任一开启即识别）。两套余量体系不叠加：BMR activation 原样传入，MP 侧余量照常吃（结果更保守，可接受）。
-- 落地差异（相对上一段设计）：ShapeDistance 具体类的参数全部存在私有字段（Cone/DonutSector/ArcCapsule 只存派生法线），直转经反射配方读取（Cone/DonutSector 由边法线还原朝向与半角，coneFactor<0 分角线反向）；采样产物为 WorldPolygonTemplate（外轮廓用角点网格 marching-squares 边链接，对角捏合拆环、孔洞环随最大环丢弃）；Inverted 族/补集语义不注册（采样填充率 >65% 也判补集丢弃），避免把「禁止在 X 外」误画成全场危险。危险区注册仍吃 MP 侧 `DodgeDangerMargin` 外扩（与脚本门面一致），障碍/边界不外扩；实体不绑定（StaticTransform 快照 + 签名变化才 UpdateArea/重建）。DodgeController 在桥有激活模块时压制通用躲避推断。
+- 落地差异（相对上一段设计）：ShapeDistance 具体类的参数全部存在私有字段（Cone/DonutSector/ArcCapsule 只存派生法线），直转经反射配方读取（Cone/DonutSector 由边法线还原朝向与半角，coneFactor<0 分角线反向）；采样产物为 WorldPolygonTemplate（外轮廓用角点网格 marching-squares 边链接，对角捏合拆环、孔洞环随最大环丢弃）；Inverted 族/补集语义自 2026-09-27 起转目标安全区注册（见上），仅 SDInvertedUnionOffset 与采样填充率 >65% 的禁入区仍丢弃。危险区注册仍吃 MP 侧 `DodgeDangerMargin` 外扩（与脚本门面一致），障碍/边界/目标区不外扩；实体不绑定（StaticTransform 快照 + 签名变化才 UpdateArea/重建）。DodgeController 在桥有激活模块时压制通用躲避推断。
 
 ## 时间轴（M6）
 

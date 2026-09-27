@@ -363,6 +363,8 @@ ReplayWorldRegression.Run(Run);
 ReplayTimelineRegression.Run(Run);
 MechanicDrawConvertRegression.Run(Run);
 MechanicHintsConvertRegression.Run(Run);
+ScriptHintsApiRegression.Run(Run);
+CrucibleGeometryRegression.Run(Run);
 MechanicTimelineViewRegression.Run(Run);
 MechanicReplayAdapterRegression.Run(Run);
 

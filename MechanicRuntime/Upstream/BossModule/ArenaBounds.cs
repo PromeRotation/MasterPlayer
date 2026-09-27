@@ -41,7 +41,6 @@ public abstract class ArenaBounds(float radius, float mapResolution, float scale
     }
 
     protected abstract PolygonClipper.Operand BuildClipPoly();
-    public abstract void PathfindMap(Pathfinding.Map map, WPos center);
     public abstract bool Contains(in WDir offset);
     public abstract float IntersectRay(in WDir originOffset, in WDir dir);
     public abstract WDir ClampToBounds(in WDir offset);
@@ -311,10 +310,7 @@ public abstract class ArenaBounds(float radius, float mapResolution, float scale
 [SkipLocalsInit]
 public sealed class ArenaBoundsCircle(float Radius, float MapResolution = 0.5f, bool AllowObstacleMap = false) : ArenaBounds(Radius, MapResolution, allowObstacleMap: AllowObstacleMap)
 {
-    private Pathfinding.Map? _cachedMap;
-
     protected override PolygonClipper.Operand BuildClipPoly() => new(CurveApprox.Circle(Radius, MaxApproxError));
-    public override void PathfindMap(Pathfinding.Map map, WPos center) => map.Init(_cachedMap ??= BuildMap(), center);
     public override bool Contains(in WDir offset)
     {
         var radius = Radius;
@@ -326,42 +322,6 @@ public sealed class ArenaBoundsCircle(float Radius, float MapResolution = 0.5f, 
     {
         var radius = Radius;
         return offset.LengthSq() > radius * radius ? offset * radius / offset.Length() : offset;
-    }
-
-    private Pathfinding.Map BuildMap()
-    {
-        var radius = Radius;
-        var map = new Pathfinding.Map(MapResolution, default, radius, radius);
-        var iCell = 0;
-
-        var width = map.Width;
-        var height = map.Height;
-        var resolution = map.Resolution;
-
-        var pixelMaxG = map.PixelMaxG;
-        var pixelPriority = map.PixelPriority;
-
-        var threshold = radius * radius / (resolution * resolution); // square of bounds radius, in grid coordinates
-        var dy = -height / 2 + 0.5f;
-        var dx = -width / 2 + 0.5f;
-
-        for (var y = 0; y < height; ++y, ++dy)
-        {
-            var cy = Math.Abs(dy) + 0.5f; // farthest corner
-            var cySq = cy * cy;
-            var dx2 = dx;
-            for (var x = 0; x < width; ++x, ++dx2)
-            {
-                var cx = Math.Abs(dx2) + 0.5f;
-                if (cx * cx + cySq > threshold)
-                {
-                    pixelMaxG[iCell] = -1000f;
-                    pixelPriority[iCell] = float.MinValue;
-                }
-                ++iCell;
-            }
-        }
-        return map;
     }
 
     public override string ToString() => $"{nameof(ArenaBoundsCircle)}, Radius {Radius}, MapResolution: {MapResolution}";
@@ -381,7 +341,6 @@ public abstract class ABRect : ArenaBounds
     public readonly float HalfWidth;
     public readonly float HalfHeight;
     public readonly Angle Rotation;
-    private Pathfinding.Map? _cachedMap;
     public readonly WDir Orientation;
 
     private static float CalculateScaleFactor(Angle Rotation)
@@ -391,54 +350,6 @@ public abstract class ABRect : ArenaBounds
     }
 
     protected override PolygonClipper.Operand BuildClipPoly() => new(CurveApprox.Rect(Orientation, HalfWidth, HalfHeight));
-    public override void PathfindMap(Pathfinding.Map map, WPos center) => map.Init(_cachedMap ??= BuildMap(), center);
-
-    private Pathfinding.Map BuildMap()
-    {
-        var halfWidth = HalfWidth;
-        var halfHeight = HalfHeight;
-        var map = new Pathfinding.Map(MapResolution, default, halfWidth, halfHeight, Rotation);
-        // pixels can be partially covered by the rectangle, so we need to rasterize it carefully
-        var width = map.Width;
-        var height = map.Height;
-        var resolution = map.Resolution;
-        var pixelMaxG = map.PixelMaxG;
-        var pixelPriority = map.PixelPriority;
-
-        var dir = Rotation.ToDirection();
-        var dirX = dir.X;
-        var dirZ = dir.Z;
-        var normal = dir.OrthoL();
-        var normalX = normal.X;
-        var normalZ = normal.Z;
-
-        var dx = normal * resolution;
-        var dy = dir * resolution;
-        var startPos = map.Center - ((width >> 1) - 0.5f) * dx - ((height >> 1) - 0.5f) * dy;
-        var halfPixel = 0.5f * resolution;
-
-        for (var y = 0; y < height; ++y)
-        {
-            var posY = startPos + y * dy;
-            var rowBase = y * width;
-            for (var x = 0; x < width; ++x)
-            {
-                var pos = posY + x * dx;
-                var pX = pos.X;
-                var pZ = pos.Z;
-
-                var distParr = pX * dirX + pZ * dirZ;
-                var distOrtho = pX * normalX + pZ * normalZ;
-
-                if (!((distParr - halfPixel) >= -halfHeight && (distParr + halfPixel) <= halfHeight) || !((distOrtho - halfPixel) >= -halfWidth && (distOrtho + halfPixel) <= halfWidth))
-                {
-                    pixelMaxG[rowBase + x] = -1000f;
-                    pixelPriority[rowBase + x] = float.MinValue;
-                }
-            }
-        }
-        return map;
-    }
 
     public override bool Contains(in WDir offset) => offset.InRect(Orientation, HalfHeight, HalfHeight, HalfWidth);
     public override float IntersectRay(in WDir originOffset, in WDir dir) => Intersect.RayRect(originOffset, dir, Orientation, HalfWidth, HalfHeight);
@@ -482,7 +393,6 @@ public sealed class ArenaBoundsSquare(float halfWidth, Angle rotation = default,
 [SkipLocalsInit]
 public sealed class ArenaBoundsCustom : ArenaBounds
 {
-    private Pathfinding.Map? _cachedMap;
     public readonly RelSimplifiedComplexPolygon Polygon;
     public readonly float HalfWidth, HalfHeight;
     private readonly float offset;
@@ -634,7 +544,6 @@ public sealed class ArenaBoundsCustom : ArenaBounds
     }
 
     protected override PolygonClipper.Operand BuildClipPoly() => new(Polygon);
-    public override void PathfindMap(Pathfinding.Map map, WPos center) => map.Init(_cachedMap ??= BuildMap(), center);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override bool Contains(in WDir offset) => Polygon.Contains(offset);
@@ -654,69 +563,6 @@ public sealed class ArenaBoundsCustom : ArenaBounds
             return offset;
         }
         return Polygon.ClosestPointOnBoundary(offset);
-    }
-
-    private Pathfinding.Map BuildMap()
-    {
-        var polygon = offset != default ? Polygon.Offset(offset) : Polygon;
-        var map = new Pathfinding.Map(MapResolution, default, HalfWidth, HalfHeight);
-
-        var pixelMaxG = map.PixelMaxG;
-        var pixelPriority = map.PixelPriority;
-        var width = map.Width;
-        var height = map.Height;
-        var resolution = map.Resolution;
-
-        var shape = new SDInvertedPolygonWithHoles(new(default, Polygon));
-        // now check the corners
-        var halfSample = resolution * 0.49999f; // tiny offset to account for floating point inaccuracies
-
-        WDir[] sampleOffsets =
-        [
-            new(-halfSample, -halfSample),
-            new(-halfSample,  halfSample),
-            new(halfSample, -halfSample),
-            new(halfSample, halfSample)
-        ];
-
-        var dx = new WDir(resolution, default);
-        var dy = new WDir(default, resolution);
-        var startPos = map.Center - ((width >> 1) - 0.5f) * dx - ((height >> 1) - 0.5f) * dy;
-        var partitioner = Partitioner.Create(0, height);
-
-        Parallel.ForEach(partitioner, range =>
-        {
-            var ys = range.Item1;
-            var ye = range.Item2;
-            for (var y = ys; y < ye; ++y)
-            {
-                var rowOffset = y * width;
-                var posY = startPos + y * dy;
-                for (var x = 0; x < width; ++x)
-                {
-                    var offset = rowOffset + x;
-                    var pos = posY + x * dx;
-                    if (shape.Distance(pos) <= halfSample) // inner circle of the pixel
-                    {
-                        pixelMaxG[offset] = -1000f; // no reason to check more points of the cell
-                        pixelPriority[offset] = float.MinValue;
-                        continue;
-                    }
-                    var relativeCenter = new WDir(pos.X, pos.Z);
-
-                    for (var i = 0; i < 4; ++i)
-                    {
-                        if (!polygon.Contains(relativeCenter + sampleOffsets[i]))
-                        {
-                            pixelMaxG[offset] = -1000f;
-                            pixelPriority[offset] = float.MinValue;
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-        return map;
     }
 
     private static RelSimplifiedComplexPolygon CombinePolygons(RelSimplifiedComplexPolygon[] unionPolygons, RelSimplifiedComplexPolygon[] differencePolygons, RelSimplifiedComplexPolygon[] secondUnionPolygons, float offset)

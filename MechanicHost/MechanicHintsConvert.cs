@@ -314,6 +314,240 @@ internal static class MechanicHintsConvert
             or SDInvertedRect or SDInvertedCapsule or SDInvertedCross or SDInvertedArcCapsule
             or SDInvertedUnion or SDInvertedUnionOffset or SDOutsideOfUnion or SDPrecisePosition;
 
+    // 补集语义（「禁止在 X 之外」）转换为 MP 目标安全区：取出内侧安全形状。
+    // 识别的类型产出目标几何；SDInvertedUnionOffset 等不识别返回 false，维持跳过口径。
+    public static bool TryConvertComplement(ShapeDistance sd, float y, out List<MechanicNavPrimitive> goals)
+    {
+        goals = [];
+        List<MechanicNavPrimitive>? prims;
+        try
+        {
+            prims = TryComplementInner(sd, y);
+        }
+        catch
+        {
+            prims = null;
+        }
+        if (prims == null || prims.Count == 0)
+            return false;
+        goals = prims;
+        return true;
+    }
+
+    private static List<MechanicNavPrimitive>? TryComplementInner(ShapeDistance sd, float y)
+    {
+        switch (sd)
+        {
+            case SDInvertedCircle circle:
+            {
+                var origin = new Vector3(F(circle, "originX"), y, F(circle, "originZ"));
+                var radius = F(circle, "radius");
+                return radius > 0f ? [Prim(new CircleTemplate(radius), origin, 0f)] : null;
+            }
+            case SDInvertedDonut donut:
+            {
+                var origin = new Vector3(F(donut, "originX"), y, F(donut, "originZ"));
+                var inner = F(donut, "innerRadius");
+                var outer = F(donut, "outerRadius");
+                return outer > 0f && outer > inner ? [Prim(new DonutTemplate(inner, outer), origin, 0f)] : null;
+            }
+            case SDInvertedCone cone:
+            {
+                var origin = new Vector3(F(cone, "originX"), y, F(cone, "originZ"));
+                var radius = F(cone, "radius");
+                if (!RecoverWedge(F(cone, "coneFactor"), F(cone, "nlX"), F(cone, "nlZ"), F(cone, "nrX"), F(cone, "nrZ"),
+                        out var centerDir, out var halfAngle) || radius <= 0f || halfAngle <= 0f)
+                    return null;
+                return [Prim(new FanTemplate(radius, MathF.Min(2f * halfAngle, 2f * MathF.PI)), origin, centerDir)];
+            }
+            case SDInvertedDonutSector sector:
+            {
+                var origin = new Vector3(F(sector, "originX"), y, F(sector, "originZ"));
+                var inner = F(sector, "innerRadius");
+                var outer = F(sector, "outerRadius");
+                if (!RecoverWedge(F(sector, "coneFactor"), F(sector, "nlX"), F(sector, "nlZ"), F(sector, "nrX"), F(sector, "nrZ"),
+                        out var centerDir, out var halfAngle) || outer <= 0f || outer <= inner || halfAngle <= 0f)
+                    return null;
+                var polygon = TryPolygon(RingFanPoints(origin, inner, outer, centerDir, halfAngle));
+                return polygon != null ? [Prim(new WorldPolygonTemplate(polygon.WorldPoints), polygon.Position, 0f)] : null;
+            }
+            case SDInvertedRect rect:
+            {
+                var dirX = F(rect, "dirX");
+                var dirZ = F(rect, "dirZ");
+                var dirLength = MathF.Sqrt(dirX * dirX + dirZ * dirZ);
+                var lenFront = F(rect, "lenFront");
+                var lenBack = F(rect, "lenBack");
+                var halfWidth = F(rect, "halfWidth");
+                if (dirLength <= 1e-6f || lenFront + lenBack <= 0f || halfWidth <= 0f)
+                    return null;
+                dirX /= dirLength;
+                dirZ /= dirLength;
+                var rotation = MathF.Atan2(dirX, dirZ);
+                var origin = new Vector3(F(rect, "originX") + dirX * (lenFront - lenBack) * 0.5f, y,
+                    F(rect, "originZ") + dirZ * (lenFront - lenBack) * 0.5f);
+                return [Prim(new RectangleTemplate(2f * halfWidth, lenFront + lenBack), origin, rotation)];
+            }
+            case SDInvertedCross cross:
+            {
+                var originV = Field<WPos>(cross, "origin");
+                var direction = Field<WDir>(cross, "direction");
+                var length = F(cross, "length");
+                var halfWidth = F(cross, "halfWidth");
+                if (length <= 0f || halfWidth <= 0f || direction.LengthSq() <= 1e-12f)
+                    return null;
+                var origin = new Vector3(originV.X, y, originV.Z);
+                var rotation = direction.ToAngle().Rad;
+                return
+                [
+                    Prim(new RectangleTemplate(2f * halfWidth, 2f * length), origin, rotation),
+                    Prim(new RectangleTemplate(2f * halfWidth, 2f * length), origin, rotation + MathF.PI / 2f),
+                ];
+            }
+            case SDInvertedTri tri:
+            {
+                var polygon = TryPolygon([
+                    new Vector3(F(tri, "aX"), y, F(tri, "aZ")),
+                    new Vector3(F(tri, "bX"), y, F(tri, "bZ")),
+                    new Vector3(F(tri, "cX"), y, F(tri, "cZ")),
+                ]);
+                return polygon != null ? [Prim(new WorldPolygonTemplate(polygon.WorldPoints), polygon.Position, 0f)] : null;
+            }
+            case SDInvertedCapsule capsule:
+            {
+                var dir = new WDir(F(capsule, "dirX"), F(capsule, "dirZ"));
+                var length = F(capsule, "length");
+                var radius = F(capsule, "radius");
+                if (radius <= 0f || length < 0f || dir.LengthSq() <= 1e-12f)
+                    return null;
+                var origin = new Vector3(F(capsule, "originX"), y, F(capsule, "originZ"));
+                var polygon = TryPolygon(CapsulePoints(origin, dir.Normalized(), radius, length));
+                return polygon != null ? [Prim(new WorldPolygonTemplate(polygon.WorldPoints), polygon.Position, 0f)] : null;
+            }
+            case SDInvertedArcCapsule arc:
+            {
+                var core = FieldRef<ShapeDistance>(arc, "_core");
+                return core != null ? TryDirect(core, y) : null;
+            }
+            case SDInvertedPolygonWithHoles withHoles:
+            {
+                var core = FieldRef<object>(withHoles, "_core");
+                if (core == null)
+                    return null;
+                var polygon = FieldRef<RelSimplifiedComplexPolygon>(core, "_polygon");
+                if (polygon == null)
+                    return null;
+                var origin = new WPos(F(core, "_originX"), F(core, "_originZ"));
+                return ComplexPolygonPrims(polygon, origin, y);
+            }
+            case SDInvertedUnion union:
+            {
+                var zones = FieldRef<ShapeDistance[]>(union, "zones");
+                if (zones == null || zones.Length == 0)
+                    return null;
+                var result = new List<MechanicNavPrimitive>();
+                foreach (var zone in zones)
+                {
+                    var inner = TryDirect(zone, y);
+                    if (inner == null)
+                        return null;
+                    result.AddRange(inner);
+                }
+                return result;
+            }
+            case SDOutsideOfUnion outside:
+            {
+                // 「恰好在一个成员内」取导航主语义「进入任一成员」；成员为补集时取其内侧形状
+                var zones = FieldRef<ShapeDistance[]>(outside, "zones");
+                if (zones == null || zones.Length == 0)
+                    return null;
+                var result = new List<MechanicNavPrimitive>();
+                foreach (var zone in zones)
+                {
+                    var inner = IsComplement(zone) ? TryComplementInner(zone, y) : TryDirect(zone, y);
+                    if (inner == null)
+                        return null;
+                    result.AddRange(inner);
+                }
+                return result;
+            }
+            case SDPrecisePosition precise:
+            {
+                var cell = F(precise, "cellSize");
+                var dirX = F(precise, "dirX");
+                var dirZ = F(precise, "dirZ");
+                if (cell <= 0f || dirX * dirX + dirZ * dirZ <= 1e-12f)
+                    return null;
+                var origin = new Vector3(F(precise, "originX"), y, F(precise, "originZ"));
+                return [Prim(new RectangleTemplate(2f * cell, 2f * cell), origin, MathF.Atan2(dirX, dirZ))];
+            }
+            default:
+                return null;
+        }
+    }
+
+    // BMR GoalZones 评分函数 → MP 目标区：只消费机制级强目标（权重 >= StrongGoalThreshold 的「软覆盖」语义），
+    // uptime/身位等弱偏好（≤3）不拖拽玩家走位。按 0.5m 网格评估总和，取峰值 50% 以上的区域轮廓。
+    public const float StrongGoalThreshold = 100f;
+
+    public static IReadOnlyList<MechanicNavPrimitive> ConvertGoalZones(IReadOnlyList<Func<WPos, float>> goals,
+        WPos center, float radius, float y)
+    {
+        if (goals.Count == 0)
+            return [];
+        radius = Math.Clamp(radius, 5f, MaxSampleRadius);
+        var half = (int)MathF.Ceiling(radius / SampleStep);
+        var width = 2 * half + 1;
+        var scores = new float[width * width];
+        var radiusSq = radius * radius;
+        var max = 0f;
+        for (var gz = 0; gz < width; ++gz)
+        {
+            for (var gx = 0; gx < width; ++gx)
+            {
+                var dx = (gx - half) * SampleStep;
+                var dz = (gz - half) * SampleStep;
+                if (dx * dx + dz * dz > radiusSq)
+                    continue;
+                var point = new WPos(center.X + dx, center.Z + dz);
+                var sum = 0f;
+                for (var i = 0; i < goals.Count; ++i)
+                {
+                    var value = goals[i](point);
+                    if (value > 0f)
+                        sum += value;
+                }
+                scores[gz * width + gx] = sum;
+                if (sum > max)
+                    max = sum;
+            }
+        }
+        if (max < StrongGoalThreshold)
+            return [];
+        var cutoff = max * 0.5f;
+        var filled = new bool[width * width];
+        var filledCount = 0;
+        var cells = 0;
+        for (var i = 0; i < scores.Length; ++i)
+        {
+            if (scores[i] <= 0f)
+                continue;
+            ++cells;
+            if (scores[i] >= cutoff)
+            {
+                filled[i] = true;
+                ++filledCount;
+            }
+        }
+        if (filledCount == 0 || filledCount > ComplementFillRatio * cells)
+            return [];
+        // BossMod 值类型（WPos）不进闭包：显示类布局会把 MechanicRuntime 程序集依赖引入本程序集
+        var centerX = center.X;
+        var centerZ = center.Z;
+        return GridPrims(filled, width, 2, 2,
+            (cx, cz) => new Vector3(centerX + (cx - half - 0.5f) * SampleStep, y, centerZ + (cz - half - 0.5f) * SampleStep));
+    }
+
     private static List<MechanicNavPrimitive> Sample(ShapeDistance sd, float y, Vector3 center, float radius)
     {
         radius = Math.Clamp(radius, 5f, MaxSampleRadius);
@@ -345,8 +579,53 @@ internal static class MechanicHintsConvert
         }
         if (filledCount == 0 || filledCount > ComplementFillRatio * MathF.PI * radiusSq / (SampleStep * SampleStep))
             return [];
+        return GridPrims(filled, width, MaxSampleComponents, 2,
+            (cx, cz) => new Vector3(center.X + (cx - half - 0.5f) * SampleStep, y, center.Z + (cz - half - 0.5f) * SampleStep));
+    }
 
-        var visited = new bool[width * width];
+    // 障碍位图区域（true = 阻挡）→ 连通域外轮廓多边形。rect 中心即场地中心所在像素（BossModule 按 originCell 居中构造），
+    // 角点 (cx,cz)（0..width）映射回世界坐标；读取侧按 FullRect 裁剪，锚点不受裁剪影响。
+    public static IReadOnlyList<MechanicNavPrimitive> ConvertObstacleBitmap(Bitmap.Region region, WPos arenaCenter, float y)
+    {
+        var bitmap = region.Bitmap;
+        var clamped = region.Rect.Clamped(bitmap.FullRect);
+        var width = clamped.Width;
+        var height = clamped.Height;
+        if (width < 2 || height < 2)
+            return [];
+        var pixelSize = bitmap.PixelSize;
+        var anchorCellX = (region.Rect.Left + region.Rect.Right) * 0.5f;
+        var anchorCellZ = (region.Rect.Top + region.Rect.Bottom) * 0.5f;
+        // BossMod 值类型（Rect/WPos）不进闭包：显示类布局会把 MechanicRuntime 程序集依赖引入本程序集
+        var cellLeft = clamped.Left;
+        var cellTop = clamped.Top;
+        var arenaX = arenaCenter.X;
+        var arenaZ = arenaCenter.Z;
+        var filled = new bool[width * height];
+        var filledCount = 0;
+        for (var gz = 0; gz < height; ++gz)
+        {
+            for (var gx = 0; gx < width; ++gx)
+            {
+                if (bitmap[clamped.Left + gx, clamped.Top + gz])
+                {
+                    filled[gz * width + gx] = true;
+                    ++filledCount;
+                }
+            }
+        }
+        if (filledCount == 0)
+            return [];
+        return GridPrims(filled, width, 8, 4,
+            (cx, cz) => new Vector3(
+                arenaX + (cellLeft + cx - anchorCellX) * pixelSize, y,
+                arenaZ + (cellTop + cz - anchorCellZ) * pixelSize));
+    }
+
+    private static List<MechanicNavPrimitive> GridPrims(bool[] filled, int width, int maxComponents, int minCells,
+        Func<int, int, Vector3> cornerToWorld)
+    {
+        var visited = new bool[filled.Length];
         var components = new List<List<int>>();
         for (var i = 0; i < filled.Length; ++i)
         {
@@ -376,15 +655,14 @@ internal static class MechanicHintsConvert
         components.Sort(static (a, b) => b.Count.CompareTo(a.Count));
 
         var result = new List<MechanicNavPrimitive>();
-        foreach (var component in components.Take(MaxSampleComponents))
+        foreach (var component in components.Take(maxComponents))
         {
-            if (component.Count < 2)
+            if (component.Count < minCells)
                 continue;
             var outline = TraceOutline(filled, width, component);
             if (outline.Count < 3)
                 continue;
-            var points = outline.Select(corner => new Vector3(
-                center.X + (corner.X - half - 0.5f) * SampleStep, y, center.Z + (corner.Z - half - 0.5f) * SampleStep)).ToList();
+            var points = outline.Select(corner => cornerToWorld(corner.X, corner.Z)).ToList();
             var polygon = TryPolygon(points);
             if (polygon != null)
                 result.Add(Prim(new WorldPolygonTemplate(polygon.WorldPoints), polygon.Position, 0f));
@@ -691,7 +969,11 @@ internal static class MechanicHintsConvert
 }
 
 internal sealed record MechanicNavZoneRequest(string Key, IReadOnlyList<MechanicNavPrimitive> Primitives,
-    float DelaySeconds, bool Persistent, string Signature);
+    float DelaySeconds, bool Persistent, string Signature)
+{
+    // true = 补集语义转换出的目标安全区（注册 SafeArea 而非危险区，不外扩）
+    public bool IsGoal { get; init; }
+}
 
 internal sealed class MechanicNavAreaDiffer
 {
@@ -701,10 +983,15 @@ internal sealed class MechanicNavAreaDiffer
         public List<SafeZoneAreaHandle> Handles = [];
     }
 
+    // 补集目标区的解算优先级：机制强制站位，高于跟随的可选目标（-1）与脚本默认目标（0）
+    internal const int ComplementGoalPriority = 1;
+
     private readonly Dictionary<string, Entry> _zones = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Entry> _goals = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (SafeZoneAreaHandle Handle, string Signature)> _obstacles = new(StringComparer.Ordinal);
 
     public int ZoneCount => _zones.Count;
+    public int GoalCount => _goals.Count;
     public int ObstacleCount => _obstacles.Count;
 
     public void Sync(SafeZoneRegistry registry, SafeZoneManager manager,
@@ -715,13 +1002,16 @@ internal sealed class MechanicNavAreaDiffer
     {
         var marginSuffix = dangerMargin.ToString("F2");
         var seenZones = new HashSet<string>(StringComparer.Ordinal);
+        var seenGoals = new HashSet<string>(StringComparer.Ordinal);
         foreach (var request in dangers)
         {
             if (request.Primitives.Count == 0)
                 continue;
-            var signature = request.Signature + "|m" + marginSuffix;
-            seenZones.Add(request.Key);
-            if (_zones.TryGetValue(request.Key, out var entry))
+            var signature = request.IsGoal ? request.Signature : request.Signature + "|m" + marginSuffix;
+            var book = request.IsGoal ? _goals : _zones;
+            var seen = request.IsGoal ? seenGoals : seenZones;
+            seen.Add(request.Key);
+            if (book.TryGetValue(request.Key, out var entry))
             {
                 if (entry.Signature == signature)
                     continue;
@@ -732,7 +1022,7 @@ internal sealed class MechanicNavAreaDiffer
                     {
                         var prim = request.Primitives[i];
                         updated &= manager.UpdateArea(entry.Handles[i],
-                            Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin),
+                            request.IsGoal ? prim.Template : Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin),
                             new StaticTransform(prim.Position, prim.Rotation), incrementVersion: false);
                     }
                     if (updated)
@@ -750,13 +1040,19 @@ internal sealed class MechanicNavAreaDiffer
             var created = new Entry();
             RegisterZone(registry, request, dangerMargin, marginSuffix, created, track);
             if (created.Handles.Count != 0)
-                _zones[request.Key] = created;
+                book[request.Key] = created;
         }
         foreach (var stale in _zones.Keys.Where(k => !seenZones.Contains(k)).ToArray())
         {
             foreach (var handle in _zones[stale].Handles)
                 registry.Remove(handle);
             _zones.Remove(stale);
+        }
+        foreach (var stale in _goals.Keys.Where(k => !seenGoals.Contains(k)).ToArray())
+        {
+            foreach (var handle in _goals[stale].Handles)
+                registry.Remove(handle);
+            _goals.Remove(stale);
         }
 
         var seenObstacles = new HashSet<string>(StringComparer.Ordinal);
@@ -790,6 +1086,10 @@ internal sealed class MechanicNavAreaDiffer
             foreach (var handle in entry.Handles)
                 registry.Remove(handle);
         _zones.Clear();
+        foreach (var entry in _goals.Values)
+            foreach (var handle in entry.Handles)
+                registry.Remove(handle);
+        _goals.Clear();
         foreach (var obstacle in _obstacles.Values)
             registry.Remove(obstacle.Handle);
         _obstacles.Clear();
@@ -800,17 +1100,27 @@ internal sealed class MechanicNavAreaDiffer
     {
         foreach (var prim in request.Primitives)
         {
-            var template = Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin);
             var binding = new StaticTransform(prim.Position, prim.Rotation);
-            var handle = request.Persistent
-                ? registry.AddPersistentDanger(template, binding)
-                : registry.AddDelayedHit(template, binding, request.DelaySeconds, SafeZoneRegistry.DefaultHitDurationSeconds);
+            SafeZoneAreaHandle handle;
+            if (request.IsGoal)
+            {
+                handle = request.Persistent
+                    ? registry.AddPersistentSafeArea(prim.Template, binding, ComplementGoalPriority, PositionPreference.Nearest)
+                    : registry.AddDelayedSafeArea(prim.Template, binding, request.DelaySeconds, 0f, ComplementGoalPriority, PositionPreference.Nearest);
+            }
+            else
+            {
+                var template = Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin);
+                handle = request.Persistent
+                    ? registry.AddPersistentDanger(template, binding)
+                    : registry.AddDelayedHit(template, binding, request.DelaySeconds, SafeZoneRegistry.DefaultHitDurationSeconds);
+            }
             if (handle.IsValid)
             {
                 entry.Handles.Add(handle);
                 track?.Invoke(handle);
             }
         }
-        entry.Signature = request.Signature + "|m" + marginSuffix;
+        entry.Signature = request.IsGoal ? request.Signature : request.Signature + "|m" + marginSuffix;
     }
 }

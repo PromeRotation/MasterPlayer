@@ -12,8 +12,15 @@ public sealed record MechanicActorSnapshot(ulong EntityId, uint OID, int SpawnIn
     byte ModelState, byte AnimState1, byte AnimState2,
     uint TetherId, ulong TetherTargetId, MechanicCastSnapshot? Cast, MechanicStatusDto[] Statuses);
 public sealed record MechanicPartySlotDto(int Slot, ulong ContentId, ulong InstanceId, string Name);
+public sealed record MechanicIncomingEffectSlot(int Slot, uint GlobalSequence, int TargetIndex, byte ActionType, uint ActionId,
+    ulong SourceId, bool TargetConfirmed, ulong[] RawEffects);
+public sealed record MechanicActorIncomingEffects(ulong EntityId, MechanicIncomingEffectSlot[] Slots);
 public sealed record MechanicWorldFrame(ushort Territory, ushort ContentFinderConditionId, ulong LocalPlayerId, ulong TargetId,
-    MechanicPartySlotDto[] Party, (byte Id, Vector3? Pos)[] Waymarks, MechanicActorSnapshot[] Actors);
+    MechanicPartySlotDto[] Party, (byte Id, Vector3? Pos)[] Waymarks, MechanicActorSnapshot[] Actors)
+{
+    // 逐目标原生 IncomingEffects 槽位（仅实时采样提供；回放录制未存该数据，保持为空）
+    public MechanicActorIncomingEffects[] IncomingEffects { get; init; } = [];
+}
 
 public abstract record MechanicFeedEvent;
 public sealed record MechanicEventTether(ulong SourceId, uint TetherId, ulong TargetId) : MechanicFeedEvent;
@@ -44,6 +51,7 @@ public sealed class MechanicWorldFeed
     {
         public MechanicActorSnapshot Snapshot = snapshot;
         public readonly ActorStatus[] Statuses = new ActorStatus[Actor.NumStatuses];
+        public readonly (uint Seq, int TargetIndex, bool Confirmed)[] Incoming = new (uint, int, bool)[Actor.NumIncomingEffects];
     }
 
     private readonly Dictionary<ulong, TrackedActor> _tracked = [];
@@ -86,7 +94,18 @@ public sealed class MechanicWorldFeed
         }
 
         foreach (var actor in frame.Actors)
-            ApplyActor(actor);
+        {
+            MechanicIncomingEffectSlot[]? incoming = null;
+            foreach (var entry in frame.IncomingEffects)
+            {
+                if (entry.EntityId == actor.EntityId)
+                {
+                    incoming = entry.Slots;
+                    break;
+                }
+            }
+            ApplyActor(actor, incoming);
+        }
 
         for (var slot = 0; slot < PartyState.MaxPartySize; ++slot)
         {
@@ -171,7 +190,7 @@ public sealed class MechanicWorldFeed
         _session.Execute(new ActorState.OpCastEvent(e.CasterId, info));
     }
 
-    private void ApplyActor(MechanicActorSnapshot cur)
+    private void ApplyActor(MechanicActorSnapshot cur, MechanicIncomingEffectSlot[]? incoming)
     {
         if (!_tracked.TryGetValue(cur.EntityId, out var tracked))
         {
@@ -184,6 +203,7 @@ public sealed class MechanicWorldFeed
             if (cur.TetherId != 0)
                 _session.Execute(new ActorState.OpTether(cur.EntityId, new(cur.TetherId, Sanitize(cur.TetherTargetId))));
             ApplySharedDiffs(tracked, cur, null);
+            ApplyIncomingEffects(tracked, cur.EntityId, incoming);
             return;
         }
 
@@ -216,6 +236,55 @@ public sealed class MechanicWorldFeed
             _session.Execute(new ActorState.OpTether(id, tether));
 
         tracked.Snapshot = cur;
+        ApplyIncomingEffects(tracked, id, incoming);
+    }
+
+    // 逐目标原生 IncomingEffects 槽位差分（对齐 BMR WorldStateGameSync 的槽位语义）：
+    // 槽位值变化 → OpIncomingEffect；TargetConfirmed 翻转为已确认 → OpEffectResult（加速待定 HP/状态确认）；
+    // 本帧消失的非零槽位 → 写入空值（游戏侧已清除，触发待击退等清理）。
+    private void ApplyIncomingEffects(TrackedActor tracked, ulong id, MechanicIncomingEffectSlot[]? incoming)
+    {
+        var trackedSlots = tracked.Incoming;
+        Span<bool> present = stackalloc bool[trackedSlots.Length];
+        if (incoming != null)
+        {
+            foreach (var slot in incoming)
+            {
+                var i = slot.Slot;
+                if ((uint)i >= (uint)trackedSlots.Length)
+                    continue;
+                present[i] = true;
+                var prev = trackedSlots[i];
+                var cur = (slot.GlobalSequence, slot.TargetIndex, slot.TargetConfirmed);
+                if (prev == cur)
+                    continue;
+                if (prev.Seq == slot.GlobalSequence && prev.TargetIndex == slot.TargetIndex)
+                {
+                    // 同一效果的确认翻转：只补 OpEffectResult，重发 OpIncomingEffect 会重复武装待击退
+                    if (!prev.Confirmed && slot.TargetConfirmed && slot.GlobalSequence != 0)
+                        _session.Execute(new ActorState.OpEffectResult(id, slot.GlobalSequence, slot.TargetIndex));
+                    trackedSlots[i] = cur;
+                    continue;
+                }
+                var effects = new ActionEffects();
+                var raw = slot.RawEffects;
+                var count = Math.Min(raw.Length, ActionEffects.MaxCount);
+                for (var j = 0; j < count; ++j)
+                    effects[j] = raw[j];
+                _session.Execute(new ActorState.OpIncomingEffect(id, i,
+                    new(slot.GlobalSequence, slot.TargetIndex, Sanitize(slot.SourceId), new((ActionType)slot.ActionType, slot.ActionId), effects)));
+                if (!prev.Confirmed && slot.TargetConfirmed && slot.GlobalSequence != 0)
+                    _session.Execute(new ActorState.OpEffectResult(id, slot.GlobalSequence, slot.TargetIndex));
+                trackedSlots[i] = cur;
+            }
+        }
+        for (var i = 0; i < trackedSlots.Length; ++i)
+        {
+            if (trackedSlots[i].Seq == 0 || present[i])
+                continue;
+            _session.Execute(new ActorState.OpIncomingEffect(id, i, default));
+            trackedSlots[i] = default;
+        }
     }
 
     private void ApplySharedDiffs(TrackedActor tracked, MechanicActorSnapshot cur, MechanicActorSnapshot? prev)

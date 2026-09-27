@@ -50,6 +50,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private readonly SafeZoneSolver _solver = new();
     private readonly SolveOptions _options = CreateMovementOptions();
 
+    /// <summary>注入解算传送边（机制导航桥发布，仅主线程）。</summary>
+    public void SetTeleporters(System.Collections.Generic.IReadOnlyList<Solver.SolverTeleporter> teleporters)
+        => _options.Teleporters = teleporters;
+
     private IGreenMoveSystem? _greenMove;
     private SafeZoneSolution? _latestSolution;
     private Task<AsyncSolveResult>? _pendingSolveTask;

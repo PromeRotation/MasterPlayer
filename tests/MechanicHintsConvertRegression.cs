@@ -111,6 +111,109 @@ internal static class MechanicHintsConvertRegression
             Check(!future.Persistent && Math.Abs(future.DelaySeconds - 3f) < 0.05f, "future activation must become a delayed hit");
         });
 
+        run("mechanic hints convert maps complement zones to goal shapes", () =>
+        {
+            var circle = MechanicHintsConvert.TryConvertComplement(new SDInvertedCircle(new WPos(10, 20), 5f), 7f, out var circleGoals);
+            Check(circle && circleGoals.Count == 1 && circleGoals[0].Template is CircleTemplate { Radius: 5f }, "inverted circle not mapped to goal circle");
+            Check(circleGoals[0].Position == new Vector3(10, 7, 20), "inverted circle origin lost");
+
+            var cone = MechanicHintsConvert.TryConvertComplement(
+                new SDInvertedCone(new WPos(0, 0), 10f, new Angle(0f), new Angle(30f * Angle.DegToRad)), 0f, out var coneGoals);
+            Check(cone && coneGoals.Count == 1 && coneGoals[0].Template is FanTemplate fan && MathF.Abs(fan.AngleRadians - 60f * Angle.DegToRad) < 1e-3f,
+                "inverted cone not mapped to goal fan");
+
+            var rect = MechanicHintsConvert.TryConvertComplement(
+                new SDInvertedRect(new WPos(0, 100), new Angle(0f), 10f, 4f, 3f), 0f, out var rectGoals);
+            Check(rect && rectGoals.Count == 1 && rectGoals[0].Template is RectangleTemplate { Width: 6f, Length: 14f }, "inverted rect not mapped to goal rect");
+
+            var precise = MechanicHintsConvert.TryConvertComplement(
+                new SDPrecisePosition(new WPos(5, 5), new WDir(0, 1), 0.5f, new WPos(5, 5)), 0f, out var preciseGoals);
+            Check(precise && preciseGoals.Count == 1 && preciseGoals[0].Template is RectangleTemplate { Width: 1f, Length: 1f }, "precise position not mapped to goal cell");
+
+            var invertedUnion = MechanicHintsConvert.TryConvertComplement(
+                new SDInvertedUnion([new SDCircle(new WPos(0, 0), 5f), new SDCircle(new WPos(20, 0), 5f)]), 0f, out var unionGoals);
+            Check(invertedUnion && unionGoals.Count == 2, "inverted union not mapped to member goals");
+
+            var outside = MechanicHintsConvert.TryConvertComplement(
+                new SDOutsideOfUnion([new SDInvertedCircle(new WPos(0, 0), 4f), new SDInvertedCircle(new WPos(10, 0), 4f)]), 0f, out var outsideGoals);
+            Check(outside && outsideGoals.Count == 2 && outsideGoals.All(g => g.Template is CircleTemplate { Radius: 4f }),
+                "outside-of-union not mapped to member safe shapes");
+
+            var offsetUnion = MechanicHintsConvert.TryConvertComplement(
+                new SDInvertedUnionOffset([new SDCircle(new WPos(0, 0), 5f)], 1f), 0f, out _);
+            Check(!offsetUnion, "offset union must stay skipped");
+
+            var forbidden = MechanicHintsConvert.ConvertForbiddenZone(new SDInvertedCircle(new WPos(0, 0), 5f), 0f, Vector3.Zero, 25f, out var forbiddenKind);
+            Check(forbiddenKind == MechanicNavZoneKind.ComplementSkipped && forbidden.Count == 0, "complement zones must not register as dangers");
+        });
+
+        run("mechanic nav differ registers complement goals without margin and tracks their lifecycle", () =>
+        {
+            var setting = new SafeZoneSetting { EnableSafeZone = true };
+            using var manager = new SafeZoneManager(setting);
+            var registry = new SafeZoneRegistry(manager);
+            var differ = new MechanicNavAreaDiffer();
+            var now = DateTime.UtcNow;
+
+            var goalPrim = new MechanicNavPrimitive(new CircleTemplate(5f), Vector3.Zero, 0f, "sigG");
+            var goalRequest = new MechanicNavZoneRequest("g1", [goalPrim], 0f, true, "sigG") { IsGoal = true };
+            differ.Sync(registry, manager, [goalRequest], [], 0.5f, null);
+            var snapshot = manager.BuildSnapshot(now);
+            Check(snapshot.GoalAreas.Count == 1 && snapshot.DangerAreas.Count == 0, "complement goal not registered as goal area");
+            Check(snapshot.GoalAreas[0].Geometry is CircleGeometry { Radius: 5f }, "goal area must not be inflated by danger margin");
+
+            differ.Sync(registry, manager, [goalRequest], [], 0.5f, null);
+            Check(manager.BuildSnapshot(now).GoalAreas.Count == 1 && differ.GoalCount == 1, "identical frame rebuilt the goal");
+
+            var moved = goalRequest with { Primitives = [new MechanicNavPrimitive(new CircleTemplate(5f), new Vector3(4, 0, 0), 0f, "sigG2")], Signature = "sigG2" };
+            differ.Sync(registry, manager, [moved], [], 0.5f, null);
+            Check(manager.BuildSnapshot(now).GoalAreas.Count == 1 && differ.GoalCount == 1, "moved goal not updated in place");
+
+            var dangerPrim = new MechanicNavPrimitive(new CircleTemplate(8f), new Vector3(20, 0, 0), 0f, "sigD");
+            var dangerRequest = new MechanicNavZoneRequest("d1", [dangerPrim], 0f, true, "sigD");
+            differ.Sync(registry, manager, [moved, dangerRequest], [], 0.5f, null);
+            var mixed = manager.BuildSnapshot(now);
+            Check(mixed.GoalAreas.Count == 1 && mixed.DangerAreas.Count == 1, "goal and danger channels interfere");
+
+            differ.Sync(registry, manager, [], [], 0.5f, null);
+            Check(manager.BuildSnapshot(now).GoalAreas.Count == 0 && differ.GoalCount == 0, "clear left stale goals");
+        });
+
+        run("mechanic hints convert maps obstacle bitmap region to world polygons", () =>
+        {
+            var bitmap = new Bitmap(40, 40, default, default); // 0.5m/px
+            for (var z = 14; z < 18; ++z)
+                for (var x = 12; x < 16; ++x)
+                    bitmap[x, z] = true;
+            var region = new Bitmap.Region(bitmap, new Bitmap.Rect(10, 12, 30, 32)); // 锚点像素 (20,22) ↔ 场心 (100,200)
+            var prims = MechanicHintsConvert.ConvertObstacleBitmap(region, new WPos(100, 200), 5f);
+            Check(prims.Count == 1, $"obstacle block not converted (count={prims.Count})");
+            var shape = prims[0].Template.Resolve(prims[0].Position, prims[0].Rotation, null);
+            Check(shape.Contains(new Vector3(97, 5, 197)), "obstacle polygon misses block center");
+            Check(!shape.Contains(new Vector3(100, 5, 200)) && !shape.Contains(new Vector3(90, 5, 190)), "obstacle polygon leaks");
+
+            var empty = MechanicHintsConvert.ConvertObstacleBitmap(new Bitmap.Region(new Bitmap(10, 10, default, default), new Bitmap.Rect(0, 0, 10, 10)), new WPos(0, 0), 0f);
+            Check(empty.Count == 0, "empty bitmap produced obstacles");
+        });
+
+        run("mechanic hints convert maps strong goal zones and ignores weak preferences", () =>
+        {
+            var target = new WPos(103, 205);
+            Func<WPos, float> strong = AIHints.GoalProximity(target, 8f, 1000f);
+            var prims = MechanicHintsConvert.ConvertGoalZones([strong], new WPos(100, 200), 25f, 4f);
+            Check(prims.Count >= 1, "strong goal zone not converted");
+            var shape = Resolve(prims[0]);
+            Check(shape.Contains(new Vector3(103, 4, 205)), "goal zone misses the peak point");
+            Check(!shape.Contains(new Vector3(120, 4, 200)), "goal zone leaks far point");
+
+            Func<WPos, float> weak = AIHints.GoalProximity(target, 8f, 3f);
+            Check(MechanicHintsConvert.ConvertGoalZones([weak], new WPos(100, 200), 25f, 0f).Count == 0,
+                "weak uptime preference must not drag movement");
+
+            var blanket = MechanicHintsConvert.ConvertGoalZones([_ => 1000f], new WPos(100, 200), 25f, 0f);
+            Check(blanket.Count == 0, "whole-arena blanket goal is noise and must be dropped");
+        });
+
         run("mechanic hints convert maps arena bounds to MP boundary geometry", () =>
         {
             var circle = MechanicHintsConvert.ConvertBounds(new ArenaBoundsCircle(20f), new WPos(100, 200), 3f);

@@ -201,7 +201,7 @@ sealed class GreenTiles(BossModule module) : Components.GenericAOEs(module)
             }
             hints.InteractWithTarget = closest;
         }
-        else if ((AI.AIManager.Instance?.Beh != null || Autorotation.MiscAI.NormalMovement.Instance != null) && !shape.Check(actor.Position)) // only automatically drop seeds if AI is on
+        else if (false && !shape.Check(actor.Position)) // MP 适配：无 AI 执行器（原 AIManager/NormalMovement 恒 null），自动放种子恒不触发；保留分支供源对照
         {
             HandleTransportingActor(slot, hints);
         }

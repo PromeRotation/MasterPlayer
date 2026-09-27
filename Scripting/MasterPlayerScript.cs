@@ -17,12 +17,14 @@ public abstract class MasterPlayerScript
 
     /// <summary>SafeZone 注册门面（包装 PR SafeZoneRegistry，停止时自动移除本脚本注册的区域）。</summary>
     public ScriptSafeZoneApi SafeZone => Host.SafeZone;
-
     /// <summary>移动门面（包装 PR GreenMoveSystem，内置让位/接管纪律）。</summary>
     public ScriptMoveApi Move => Host.Move;
 
     /// <summary>绘制门面（包装 PR DrawManager，id 自动加脚本前缀，停止时自动清理）。</summary>
     public ScriptDrawApi Draw => Host.Draw;
+
+    /// <summary>机制提示门面（朝向引导等 AIHints 式能力出口，回放期间宿主控制为空操作）。</summary>
+    public ScriptHintsApi Hints => Host.Hints;
 
     /// <summary>本脚本的设置存取（[UserSetting] 属性自动映射，亦可键值读写）。</summary>
     public ScriptSettingStore Settings => Host.Settings;

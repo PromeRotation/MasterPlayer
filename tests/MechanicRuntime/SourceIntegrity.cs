@@ -6,6 +6,35 @@ internal static class SourceIntegrity
 {
     private sealed record Adaptation(string Reason, string OriginalSha256, string ImportedSha256);
 
+    // 不纳入导入的上游文件：原插件入口、斗兽棋，以及 2026-09-27 移除的寻路引擎与 AI/移动执行控制
+    // （MP 使用自有 SafeZoneReborn 解算 + PR GreenMove 移动，这些上游文件无构造者）
+    private static readonly HashSet<string> ExcludedFiles = new(StringComparer.Ordinal)
+    {
+        "Framework/Plugin.cs",
+        "Pathfinding/Map.cs",
+        "Pathfinding/ThetaStar.cs",
+        "Pathfinding/NavigationDecision.cs",
+        "Pathfinding/MapVisualizer.cs",
+        "AI/AIBehaviour.cs",
+        "AI/AIController.cs",
+        "AI/AIManager.cs",
+        "AI/AIManagementWindow.cs",
+        "AI/AIRotationModule.cs",
+        "AI/Broadcast.cs",
+        "Framework/ActionManagerEx.cs",
+        "Framework/MovementOverride.cs",
+        "Framework/IPCProvider.cs",
+        "Framework/DTRProvider.cs",
+        "Framework/MultiboxManager.cs",
+        "Framework/WorldStateGameSync.cs",
+        "BossModule/AIHintsVisualizer.cs",
+        "Autorotation/UIRotationWindow.cs",
+        "Modules/Dawntrail/Ultimate/FRU/FRUAI.cs",
+        "Modules/Dawntrail/Savage/M02SHoneyBLovely/AI/AIExperiment.cs",
+        "Modules/Dawntrail/Savage/M04SWickedThunder/AI/AIExperiment.cs",
+    };
+    private static readonly string[] ExcludedPrefixes = ["Modules/Dawntrail/Foray/Crucible/", "Debug/", "Autorotation/MiscAI/"];
+
     public static int Validate(string repository, string originalRepository)
     {
         var source = Path.Combine(originalRepository, "BossMod");
@@ -17,7 +46,7 @@ internal static class SourceIntegrity
         var files = Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories)
             .Select(p => Path.GetRelativePath(source, p).Replace('\\', '/'))
             .Where(p => !p.Split('/').Any(part => part is "bin" or "obj")
-                && p != "Framework/Plugin.cs" && !p.StartsWith("Modules/Dawntrail/Foray/Crucible/")
+                && !ExcludedFiles.Contains(p) && !ExcludedPrefixes.Any(p.StartsWith)
                 && (p.EndsWith(".cs") || p.StartsWith("Pathfinding/ObstacleMaps/")))
             .Order().ToArray();
         var importedFiles = Directory.EnumerateFiles(imported, "*", SearchOption.AllDirectories)

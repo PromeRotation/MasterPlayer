@@ -172,3 +172,30 @@ rtk dotnet run --project tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj
 ```
 
 移植代码和场地数据沿用BMR许可；仓库已有 `ThirdPartyNotices/BossModReborn.LICENSE`，构建继续携带。
+
+## 2026-09-27 移除 BMR 寻路引擎与 AI/移动执行控制
+
+用户要求删除运行库中的 BMR 寻路与移动控制。MP 的走位由插件自有 SafeZoneReborn 解算器与 PR GreenMove 执行，这些导入代码在 MP 下无任何构造者，属于死重量与上游同步税。
+
+**删除 43 个文件**（精确排除清单硬编码于 `tests/MechanicRuntime/SourceIntegrity.cs`）：寻路引擎 `Pathfinding/` 的 Map/ThetaStar/NavigationDecision/MapVisualizer；AI 执行层 `AI/` 的 AIBehaviour/AIController/AIManager/AIManagementWindow/AIRotationModule/Broadcast（保留承重的 AIConfig）；移动控制枢纽 `Framework/` 的 ActionManagerEx/MovementOverride/IPCProvider/DTRProvider/MultiboxManager/WorldStateGameSync；`BossModule/AIHintsVisualizer.cs`；`Debug/` 整目录 14 个；`Autorotation/MiscAI/` 整目录 8 个与 `Autorotation/UIRotationWindow.cs`；3 个模块侧 AIRotationModule 子类（FRUAI、M02S/M04S AIExperiment）。Ex3TitanAI.cs 因同名 BossComponent 被状态机 ActivateOnEnter 使用，改为适配而非删除。
+
+**保留数据面**：障碍位图加载器（ObstacleMapDatabase/ObstacleMapManager）与 417 个位图资源（spec 要求资源逻辑名不丢，且是未来 MP 场地障碍接入的数据通道）；`AIHints.Teleporters`/`PathfindMapObstacles` 字段（M08S 组件绘制在用）；`Teleporter` 结构体迁入 `BossModule/AIHints.cs`（BossMod 命名空间）。Autorotation 轮转定义、RotationModuleManager/Registry、ActionTweaks/ActionQueue 不在本轮范围（删除会级联到 Replay/Timeline/Config 死 UI 树）。
+
+**新登记适配 9 个文件**（SourceChanges.json 共 25 条）：AIHints.cs、ArenaBounds.cs、QuestBattle.cs、UnmanagedRotation.cs、D092LeannanSith.cs、SmartRotationTweak.cs、ArenaChanges.cs、Ex3TitanAI.cs、ReplayDetailsWindow.cs；BossModule.cs 更新哈希与理由。门控一律按宿主环境（AI 执行器不存在）常量求真值，模块输出与移除前逐帧一致。
+
+**验证**（本工作区实测）：运行库构建 0 错误，诊断 25 条（17 CS8618 + 2 CS0649 + 6 CS0618；其中 AIConfig 预存字段 CS0649 随 AIManager 移除产生，良性）；`tests/MechanicRuntime` 2,546 断言 0 失败，启动覆盖保持 1,060/1,060 + 154/154，源完整性（新排除清单 + 反例）通过；全量回归 700 场景与脚本冒烟随本轮一并复核。导入 C# 源码数由 3,316 降至 3,273。逐模块完整行为验收与实机核验口径不变（报告第四、五节）。
+
+## 2026-09-27 六项能力接入与斗兽输出层性能修复
+
+用户按优化方向要求完成全部六项，并排查「高一毒龙毒云大量移动危险区导致掉帧」。
+
+1. **补集语义落地**：`MechanicHintsConvert.TryConvertComplement` 把 SDInverted 族/SDOutsideOfUnion/SDPrecisePosition 转内侧安全形状，经差集（新 IsGoal 通道）注册为优先级 1、Nearest 目标安全区（不外扩）；SDInvertedUnionOffset 仍跳过。导航宿主诊断加 NavGoalZoneCount。
+2. **场地障碍位图**：`PathfindMapObstacles` 位图区域 → 连通域角点网格外轮廓多边形 → 障碍注册；位图引用+矩形缓存避免每帧重转（转换复用 marching-squares，锚点=rect 中心对场心像素）。
+3. **OpEffectResult 通道**：LiveWorldSampler 逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽（对齐 BMR WorldStateGameSync），帧级稀疏上报；MechanicWorldFeed 按槽差分发 OpIncomingEffect（击退类武装 PendingKnockbacks），TargetConfirmed 翻转只补 OpEffectResult 不重发（防重复武装）。回放未存槽位保持降级。
+4. **GoalZones 消费**：仅机制级强目标（峰值权重 ≥100），0.5m 网格总和峰值 50% 以上轮廓，覆盖率 >65% 丢弃；500ms 节流；uptime 弱偏好不拖拽。
+5. **ScriptHintsApi**：脚本朝向引导门面（Hints.SetFacing），MechanicFacingControl 提取共享（导航桥/脚本共用），回放空操作，脚本停止自动撤销；IScriptHostContext/MasterPlayerScript 增 Hints 属性。
+6. **Teleporters→解算传送边**：SolverTeleporter 经 SafeZoneRuntime.SetTeleporters 发布（签名去重、失活清空）；BossModStyleAStar 入口圈节点扩展出口后继（耗时折算 g，leeway/Score 与步行一致）；SolveOptions.Teleporters 通道。回归：墙隔断场地目标不可达、加边后到达。
+
+**性能诊断结论**：掉帧主凶不是雷达也不是解算器（解算在后台线程），而是 CrucibleOutput.Apply 每帧为移动危险区重建 `FrozenConstraintGeometry`——每个 SDCapsule 每帧 168×168×5≈14 万次距离求值 + 28k 格哈希，实测 **12.12ms/个**（解析几何 0.022ms，差 550 倍），十余片移动毒云即吃满主线程。修复：SDCapsule 改解析多边形直接几何；ShapeDistance 增 ContentKey（圆/矩形/反矩形/交集/击退场），CrucibleOutput 按内容键缓存兜底几何（512 上限，Clear 清空）。回归含胶囊语义 4000 点对比与成本断言。
+
+**验证**（本工作区实测）：主项目 0 错误 0 警告；运行库 0 错误；tests/MechanicRuntime 2,550 断言 0 失败（新增击退槽位场景），启动覆盖 1,060+154 与源完整性不变；全量回归新增补集/位图/GoalZones/ScriptHints/传送边/胶囊场景，与既有 700 场景一并复核；脚本冒烟通过。

@@ -20,9 +20,9 @@
 
 ### 2.1 运行库（MechanicRuntime/，里程碑提交 6fd8905）
 
-- 导入上游 3,316 份 C# 源码、416 份障碍位图、1 份地图数据库；排除原插件入口与斗兽棋。独立编译，目标 net10.0-windows。
+- 导入上游 C# 源码、416 份障碍位图、1 份地图数据库；排除原插件入口与斗兽棋。独立编译，目标 net10.0-windows。2026-09-27 起进一步移除 BMR 寻路引擎与 AI/移动执行控制 43 个死代码文件（MP 走位由自有 SafeZoneReborn + PR GreenMove 承载，这些文件无构造者），保留障碍位图加载器/资源与 Teleporters 数据面；当前导入 3,273 份 C# 源码。
 - 全部 1,060 首领 + 154 区域模块可注册、构造、初始更新；FTM Extreme 四个类型补显式主 OID；Calcabrina 迟加载、CLL 动态列表、Enuo 塔名单隔离、冰面输入等 7 项本阶段修复。
-- 源码适配纪律：16 个登记文件逐文件固定修改前后 SHA-256（SourceChanges.json），反例测试拒绝未登记改动；嵌入资源名保留 `BossModReborn.Pathfinding.ObstacleMaps.*`。
+- 源码适配纪律：25 个登记文件逐文件固定修改前后 SHA-256（SourceChanges.json），反例测试拒绝未登记改动；嵌入资源名保留 `BossModReborn.Pathfinding.ObstacleMaps.*`。
 - 命名整改（提交 21c2f86）：引入层零 BMR 命名；上游 `BossMod` 命名空间与来源说明性文字保留。
 
 ### 2.2 输入桥（MechanicHost/，提交 3197c85）
@@ -63,7 +63,7 @@
 | 检查 | 结果 |
 |---|---|
 | 主项目构建（-p:CI=true） | 0 错误 0 警告 |
-| 运行库构建 | 0 错误（18 条上游预存 CS8618，规格列明不屏蔽） |
+| 运行库构建 | 0 错误（25 条诊断：17 CS8618 + 2 CS0649 + 6 CS0618，上游预存或执行层移除产生的良性项，规格列明不屏蔽） |
 | 全量回归 tests/ | **700 场景全过**（含绘制转换 8、导航转换与 diff 生命周期 9、时间轴行模型 3、回放适配 4） |
 | 运行库测试 tests/MechanicRuntime（真实 sqpack） | **2,546 断言 0 失败**；模块启动覆盖 1,060/1,060 + 154/154；输入桥 8 场景、绘制捕获 5 场景、源完整性（含未登记改动拒绝反例）全过 |
 | 斗兽棋上游同步回归 `--upstream-sync` | 40 场景全过 |
@@ -76,8 +76,8 @@
 
 ### 4.1 影响个别机制正确性（按影响排序）
 
-1. **OpEffectResult/IncomingEffects 未接**：击退预测（PendingKnockbacks）与待定 HP/状态确认缺通道；HP/状态由帧扫兜底，击退类组件的提前量降级。实时效果包 hook 已提供原始数据，剩余是接 OpEffectResult 包（PR 无对应事件，需扩展捕获）。
-2. **补集语义丢弃**：SDInverted 族/SDPrecisePosition/SDOutsideOfUnion 及采样填充率 >65% 的禁入区不注册（「禁止在 X 之外」在本地危险区模型无表达），有诊断计数；受影响模块的该类机制无导航约束（绘制侧正常）。
+1. ~~OpEffectResult/IncomingEffects 未接~~（2026-09-27 已接）：实时采样逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽差分驱动 `OpIncomingEffect`（击退预测 PendingKnockbacks 生效）+ `TargetConfirmed` 翻转补 `OpEffectResult`（待定 HP/状态加速确认）；回放录制未存槽位数据，回放保持降级。
+2. ~~补集语义丢弃~~（2026-09-27 已落地）：SDInverted 族/SDOutsideOfUnion/SDPrecisePosition 经 `TryConvertComplement` 取内侧安全形状，注册为优先级 1 目标安全区（分摊/集合/数字格机制获得导航约束）；SDInvertedUnionOffset 与采样填充率 >65% 的禁入区仍跳过（有诊断计数）。
 3. **采样兜底精度**：不可识别距离场按 0.5 码网格角点轮廓近似，孔洞忽略、每组件只保留最大环；直转覆盖常见形状（圆/月环/扇/环扇/矩形/十字/三角/凸多边形/胶囊/弧胶囊/带孔多边形）。
 4. **仅区域模块场景的导航提示不消费**（无首领模块时 AIHints 不聚合，避免与通用躲避重复）；这些区域仍有绘制与通用躲避。
 5. **扩展世界状态缺口**：团队/友方 NPC 队伍槽 8–63、仇恨表 OpHateChange、FocusTarget、OpMount/OpForayInfo/OpVisibility/OpAggroPlayer、深层迷宫状态、DutyActions 未接；PR 侧 SystemLog 无参数、TargetVfx 缺目标 ID（本体未提供，不修本体）。
@@ -86,7 +86,7 @@
 
 ### 4.2 只影响输出/自动化（机制提示正确性不受影响）
 
-- GoalZones 权重函数（uptime/身位/AOE 命中数）不映射为安全区目标；PredictedDamage 不做减伤/治疗调度；敌人优先级不做自动转火（MechanicControl 可用时例外）；ActionsToExecute/疾跑/交互不执行；ImminentSpecialMode（火毒/定身/混乱）仅文字提示不门控移动；Teleporters 无解算器对应。
+- GoalZones 权重函数：机制级强目标（权重 ≥100 软覆盖语义）已于 2026-09-27 映射为目标安全区（0.5m 采样轮廓、500ms 节流）；uptime/身位弱偏好仍不拖拽走位；PredictedDamage 不做减伤/治疗调度；敌人优先级不做自动转火（MechanicControl 可用时例外）；ActionsToExecute/疾跑/交互不执行；ImminentSpecialMode（火毒/定身/混乱）仅文字提示不门控移动；Teleporters 已于 2026-09-27 接入解算器传送边（SafeZoneRuntime.SetTeleporters → A* 出口后继）。
 - 绘制保真取舍：双视图用 MP 用户配色（不还原 BMR 逐模块配色/线宽）；ComplexPoly 孔洞在预览忽略（解算不受影响）；屏幕空间直画的个别原语无世界坐标可还原时跳过。
 - 模块级配置 UI（BMR 原配置窗/逐模块开关/角色分配）未移植；当前为全局开关+成熟度门槛。
 
@@ -113,3 +113,5 @@
 | 21c2f86 | 命名整改：引入层零 BMR 命名 |
 | 0920510 | 机制时间轴 |
 | cdd2187 | 回放驱动机制会话 |
+| （2026-09-27 工作区） | 移除 BMR 寻路引擎与 AI/移动执行控制（43 文件删除、9 文件登记适配），2,546 断言与 1,060+154 启动覆盖不变 |
+| （2026-09-27 工作区） | 六项能力接入：补集→目标安全区、场地障碍位图、OpIncomingEffect/OpEffectResult 通道、强 GoalZones→目标区、ScriptHintsApi 朝向引导、Teleporters→解算传送边；斗兽输出层性能修复（SDCapsule 解析几何替代每帧约束网格重建，12.12ms→0.02ms/个） |

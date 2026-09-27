@@ -482,7 +482,7 @@ public abstract class BossModule : IDisposable
         }
 
         CalculateModuleAIHints(slot, actor, assignment, hints);
-        if (!WindowConfig.AllowAutomaticActions && AI.AIManager.Instance?.Beh == null && Autorotation.MiscAI.NormalMovement.Instance == null)
+        if (!WindowConfig.AllowAutomaticActions) // MP 适配：运行库不含 AI 执行器（原 AIManager/NormalMovement 恒 null），真值表与上游一致
         {
             hints.ActionsToExecute.Clear();
         }

@@ -63,6 +63,8 @@ internal abstract class ShapeDistance
 {
     public abstract float Distance(in WPos p);
     public virtual IGeometryShape? Geometry(float y) => null;
+    // 走 FrozenConstraintGeometry 兜底的内容键（参数量化）；直接几何或不可缓存返回 null。
+    public virtual string? ContentKey() => null;
 }
 
 internal sealed class SDCircle(WPos origin, float radius) : ShapeDistance
@@ -71,12 +73,14 @@ internal sealed class SDCircle(WPos origin, float radius) : ShapeDistance
     public float Radius => radius;
     public override float Distance(in WPos p) => (p - origin).Length() - radius;
     public override IGeometryShape Geometry(float y) => new CircleGeometry(origin.ToVec3(y), radius);
+    public override string? ContentKey() => $"C|{origin.X:F2},{origin.Z:F2}|{radius:F2}";
 }
 internal sealed class SDInvertedCircle(WPos origin, float radius) : ShapeDistance
 {
     public WPos Origin => origin;
     public float Radius => radius;
     public override float Distance(in WPos p) => radius - (p - origin).Length();
+    public override string? ContentKey() => $"IC|{origin.X:F2},{origin.Z:F2}|{radius:F2}";
 }
 internal class SDRect(WPos origin, WDir dir, float front, float back, float halfWidth) : ShapeDistance
 {
@@ -89,12 +93,16 @@ internal class SDRect(WPos origin, WDir dir, float front, float back, float half
         return MathF.Sqrt(MathF.Max(qx, 0) * MathF.Max(qx, 0) + MathF.Max(qz, 0) * MathF.Max(qz, 0)) + MathF.Min(MathF.Max(qx, qz), 0);
     }
     public override IGeometryShape Geometry(float y) => new RectangleGeometry((origin + dir * ((front - back) / 2)).ToVec3(y), Angle.FromDirection(dir).Rad, halfWidth * 2, front + back);
+    public override string? ContentKey()
+        => $"R|{origin.X:F2},{origin.Z:F2}|{dir.X:F3},{dir.Z:F3}|{front:F2},{back:F2},{halfWidth:F2}";
 }
 internal sealed class SDInvertedRect(WPos origin, WDir dir, float front, float back, float halfWidth) : ShapeDistance
 {
     public SDInvertedRect(WPos origin, Angle rotation, float front, float back, float halfWidth) : this(origin, rotation.ToDirection(), front, back, halfWidth) { }
     private readonly SDRect _rect = new(origin, dir, front, back, halfWidth);
     public override float Distance(in WPos p) => -_rect.Distance(p);
+    public override string? ContentKey()
+        => $"IR|{origin.X:F2},{origin.Z:F2}|{dir.X:F3},{dir.Z:F3}|{front:F2},{back:F2},{halfWidth:F2}";
 }
 internal sealed class SDCapsule(WPos start, WDir direction, float length, float radius) : ShapeDistance
 {
@@ -103,6 +111,30 @@ internal sealed class SDCapsule(WPos start, WDir direction, float length, float 
     {
         var d = p - start;
         return (d - direction * Math.Clamp(d.Dot(direction), 0, length)).Length() - radius;
+    }
+    public override IGeometryShape? Geometry(float y)
+    {
+        // 两端半圆 + 切线的解析多边形，避免走 168×168 约束网格兜底（移动区每帧重建的主线程热点）
+        if (radius <= 0f || length < 0f || direction.LengthSq() <= 1e-12f)
+            return null;
+        var startV = start.ToVec3(y);
+        var endV = (start + direction * length).ToVec3(y);
+        var normal = direction.OrthoL();
+        var segments = Math.Clamp((int)MathF.Ceiling(radius * 4f), 4, 12);
+        var points = new List<Vector3>(2 * segments + 2);
+        for (var i = 0; i <= segments; ++i)
+        {
+            var t = (float)i / segments * MathF.PI;
+            var off = normal * MathF.Cos(t) + direction * MathF.Sin(t);
+            points.Add(new Vector3(endV.X + off.X * radius, y, endV.Z + off.Z * radius));
+        }
+        for (var i = 0; i <= segments; ++i)
+        {
+            var t = (float)i / segments * MathF.PI;
+            var off = -normal * MathF.Cos(t) - direction * MathF.Sin(t);
+            points.Add(new Vector3(startV.X + off.X * radius, y, startV.Z + off.Z * radius));
+        }
+        return new WorldPolygonGeometry(points);
     }
 }
 internal sealed class SDIntersection(params ShapeDistance[] shapes) : ShapeDistance
@@ -113,6 +145,18 @@ internal sealed class SDIntersection(params ShapeDistance[] shapes) : ShapeDista
         foreach (var shape in shapes) result = Math.Max(result, shape.Distance(p));
         return result;
     }
+    public override string? ContentKey()
+    {
+        var sb = new System.Text.StringBuilder("IX");
+        foreach (var shape in shapes)
+        {
+            var key = shape.ContentKey();
+            if (key == null)
+                return null;
+            sb.Append('|').Append(key);
+        }
+        return sb.ToString();
+    }
 }
 
 internal sealed class SDKnockbackInAABBRectAwayFromOrigin(WPos center, WPos origin, float distance, float halfWidth, float halfHeight) : ShapeDistance
@@ -122,6 +166,8 @@ internal sealed class SDKnockbackInAABBRectAwayFromOrigin(WPos center, WPos orig
         var landing = p + (p - origin).Normalized() * distance;
         return Math.Min(halfWidth - Math.Abs(landing.X - center.X), halfHeight - Math.Abs(landing.Z - center.Z));
     }
+    public override string? ContentKey()
+        => $"KB|{center.X:F2},{center.Z:F2}|{origin.X:F2},{origin.Z:F2}|{distance:F2},{halfWidth:F2},{halfHeight:F2}";
 }
 
 internal abstract record AOEShape

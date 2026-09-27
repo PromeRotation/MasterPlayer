@@ -12,6 +12,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
     private readonly Dictionary<string, (string Signature, SafeZoneAreaHandle Handle)> _areas = [];
     private readonly HashSet<string> _drawIds = [];
     private readonly Dictionary<string, DateTime> _messages = [];
+    private readonly Dictionary<string, IGeometryShape> _shapeGeometryCache = new(StringComparer.Ordinal);
     private IGeometryShape? _boundary;
     private IGeometryShape? _displayBoundary;
     private ArenaBounds? _bounds;
@@ -31,6 +32,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         _areas.Clear();
         foreach (var id in _drawIds) draw.Remove(id);
         _drawIds.Clear();
+        _shapeGeometryCache.Clear();
         if (_boundary != null && ReferenceEquals(manager.BuildSnapshot(DateTime.UtcNow).ArenaBoundary, _boundary)) manager.ClearArenaBoundary();
         _boundary = null; _displayBoundary = null; _bounds = null; _messages.Clear();
         _goalBounds = null; _goalFloor.Clear();
@@ -61,7 +63,35 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         IGeometryShape Geometry(AIHints.ForbiddenZone zone)
         {
             if (!zoneGeometries.TryGetValue(zone, out var geometry))
+            {
+                var key = zone.Shape.ContentKey();
+                if (key != null && _shapeGeometryCache.TryGetValue(key, out geometry))
+                {
+                    zoneGeometries[zone] = geometry;
+                    return geometry;
+                }
                 zoneGeometries[zone] = geometry = ZoneGeometry(zone, module, y);
+                if (key != null)
+                {
+                    if (_shapeGeometryCache.Count >= 512)
+                        _shapeGeometryCache.Clear();
+                    _shapeGeometryCache[key] = geometry;
+                }
+            }
+            return geometry;
+        }
+        IGeometryShape ShapeGeometry(ShapeDistance shape)
+        {
+            var key = shape.ContentKey();
+            if (key != null && _shapeGeometryCache.TryGetValue(key, out var cached))
+                return cached;
+            var geometry = shape.Geometry(y) ?? FrozenConstraintGeometry.Create(p => shape.Distance(p), module.Center, y);
+            if (key != null)
+            {
+                if (_shapeGeometryCache.Count >= 512)
+                    _shapeGeometryCache.Clear();
+                _shapeGeometryCache[key] = geometry;
+            }
             return geometry;
         }
         if (dangerEnabled)
@@ -76,7 +106,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
             i = 0;
             foreach (var shape in frame.Hints.TemporaryObstacles)
             {
-                var geometry = shape.Geometry(y) ?? FrozenConstraintGeometry.Create(p => shape.Distance(p), module.Center, y);
+                var geometry = ShapeGeometry(shape);
                 desired[$"obstacle/{i++}"] = new(geometry, default, AreaKind.Obstacle);
             }
             i = 0;

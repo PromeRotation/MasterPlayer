@@ -8,11 +8,12 @@
 - 45 个斗兽棋模块仅留在清单的排除行，不导入新运行库；Demo 类型保留作原核心的构建依赖，不计为需要移植的战斗。
 - 原清单只限定 `Modules/`，漏掉 97 个任务区域模块；新清点器扫描整个源工程的继承关系，再排除抽象类及 Demo。清单共 1,259 行，其中 1,214 行纳入目标。
 - 清点器的源类型集合必须与编译后反射出的非抽象 BossModule／ZoneModule 集合一致。编译／构造／启动检查与完整机制验收分别报告。
+- 2026-09-27 起移除 BMR 寻路引擎与 AI/移动执行控制（43 个文件）：`Pathfinding/` 的 Map/ThetaStar/NavigationDecision/MapVisualizer、`AI/`（仅保留 AIConfig）、`Framework/` 的 ActionManagerEx/MovementOverride/IPCProvider/DTRProvider/MultiboxManager/WorldStateGameSync、`BossModule/AIHintsVisualizer.cs`、`Debug/`、`Autorotation/MiscAI/`、`Autorotation/UIRotationWindow.cs`、3 个模块侧 AIRotationModule 子类（FRUAI、Ex3TitanAIRotation、M02S/M04S AIExperiment）。MP 的走位由自有 SafeZoneReborn 解算与 PR GreenMove 执行，这些上游文件无任何构造者。障碍位图加载器（ObstacleMapDatabase/ObstacleMapManager）、417 个位图资源与 `AIHints.Teleporters`/`PathfindMapObstacles` 数据面保留；`Teleporter` 结构体迁入 `BossModule/AIHints.cs`。精确排除清单以 `tests/MechanicRuntime/SourceIntegrity.cs` 为准。
 
 ## 已建立的宿主边界
 
 1. 引用本机实际运行的 Dalamud／FFCS／Lumina，目标与 MP 一致为 `net10.0-windows`，仅本库启用上游所需的 `preview` 语言。
-2. 显式绑定游戏数据和日志，然后初始化原配置及动作定义；不会创建原 Plugin、WorldStateGameSync、MovementOverride、ActionManagerEx。
+2. 显式绑定游戏数据和日志，然后初始化原配置及动作定义；不会创建原 Plugin。原 WorldStateGameSync、MovementOverride、ActionManagerEx 已随 2026-09-27 执行层移除从库中删除，不再是"存在但不创建"。
 3. 保留原 `WorldState.Execute` 和 `OpFrameStart`，让对象变化、内部事件、当前时钟与组件生命周期仍按上游顺序推进。
 4. `MechanicSession` 持有原 BossModuleManager 和 ZoneModuleManager，清理幂等，不能在旧世界上倒退时间。区域模块、首领模块或状态退出回调抛异常时，仍清理后续资源和共享配置订阅，最后汇总报告异常。
 5. 保留原状态机的估计时长与事件条件：超过估计读条开始时间不代表实际读条已经出现；实际开始／结束事件才推进对应状态。时间轴投影保留伤害类型及未知分支；`ExpectedEnd` 是从当前时刻预测的日期，按上游 `StateMachineWindow` 使用钳制后的状态已过时间，不让后续技能留在过去。`ElapsedInState` 保留实际已等待时间，状态机本身的原估计规则不变。
@@ -42,7 +43,7 @@
 | 绘制 | 捕获全部原背景／前景／敌人绘制，包括颜色、线宽、文字、眼睛、三角网格和带孔填充；`ActiveAOEs` 不是完整绘制入口，不能只枚举 AOE |
 | 几何与导航 | 将原距离场、持续约束、复合场地、连续 GoalZones 评分映射到 MP；不能用大圆代替多边形或把所有目标分数压成同优先级绿圈 |
 | AI 输出 | 消费目标优先级、禁向、伤害预测、技能／交互／移动请求。PR 的现有移动与控制能力优先；缺少的宿主能力需真实实现或明确记录 |
-| 任务导航 | 原 QuestBattle 仍含 Condition、vnavmesh IPC、原生退本及原 AI 单例门控。运行库的当前数据／日志绑定不会触发它们，但实时接入前必须转为宿主控制，不能将当前离线 noop 路径算作任务自动执行 |
+| 任务导航 | 原 QuestBattle 仍含 Condition、vnavmesh IPC、原生退本；原 AI 单例门控已于 2026-09-27 常量化为宿主环境真值（恒不产出任务自动导航提示）。实时接入前必须转为宿主控制，不能将当前 noop 路径算作任务自动执行 |
 | UI 与配置 | 原机制配置、角色分配、模块开关、预测时间轴及诊断信息接入 MP，并确认热重载后的依赖程序集身份 |
 | 完整行为验收 | 全量启动测试不能证明每个后续阶段、机制或绘制已工作；继续用事件序列／回放覆盖所有组件及上述桥接能力 |
 
@@ -61,4 +62,6 @@ PASS host session releases all managers and subscriptions after cleanup failures
 PASS: 2491 assertions; 0 failures
 ```
 
-库首次完整构建还有 18 条诊断：17 条导入源码的 `CS8618` 空值初始化警告、1 条移除原入口后 Camera 单例未赋值的 `CS0649`。没有用统一屏蔽来隐藏它们，需在相关能力接入／行为核验时逐项处理。主插件与既有测试仍独立构建，新增运行库尚未进入已部署的 MasterPlayer.dll。
+库首次完整构建还有 18 条诊断：17 条导入源码的 `CS8618` 空值初始化警告、1 条移除原入口后 Camera 单例未赋值的 `CS0649`。没有用统一屏蔽来隐藏它们，需在相关能力接入／行为核验时逐项处理。主插件与既有测试仍独立构建。
+
+2026-09-27 执行层移除后重新验证：运行库构建 0 错误，诊断 25 条（17 条 `CS8618`、2 条 `CS0649`——Camera 单例与 AIConfig 预存字段随 AIManager 移除不再赋值、6 条 `CS0618` 上游 gauge 过时用法），全部为上游预存或执行层移除产生的良性项；`tests/MechanicRuntime` 2,546 断言 0 失败，模块启动覆盖保持 1,060/1,060 + 154/154，源完整性（含新排除清单与 25 条登记适配）通过。本轮新登记适配 9 个文件：AIHints.cs（迁 Teleporter、删 InitPathfindMap/AIConfig 静态）、ArenaBounds.cs（删 PathfindMap 族）、BossModule.cs（门控真值化）、QuestBattle.cs、UnmanagedRotation.cs、D092LeannanSith.cs、SmartRotationTweak.cs、ArenaChanges.cs、Ex3TitanAI.cs（删 AIRotationModule 子类，保留同名 BossComponent）、ReplayDetailsWindow.cs（删寻路可视化与轮转选择调用）。

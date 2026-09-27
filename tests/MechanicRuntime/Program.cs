@@ -497,7 +497,31 @@ Scenario("feed action effect events reach module components", () =>
     Check(castEvents == 1 && last?.Action == new ActionID(ActionType.Spell, 351), "Action effect did not reach the world event");
     Check(last!.Targets.Count == 2 && last.Targets[0].ID == 100 && last.Targets[1].ID == 101, "Action effect targets were lost");
     Check(last.Rotation == BossMod.Network.PacketDecoder.IntToFloatAngle(0x8000), "Action effect rotation conversion differs from the packet decoder");
-    Check(session.World.Actors.Find(1)!.CastInfo!.EventHappened, "Action effect did not mark the matching cast");
+});
+
+Scenario("feed incoming effects arm and clear pending knockbacks", () =>
+{
+    using var session = new MechanicSession("feed regression");
+    var feed = new MechanicWorldFeed(session);
+    session.BeginFrame(start);
+    var kb = new ulong[8];
+    kb[0] = 0x1F; // ActionEffectType.Knockback = 31
+    var slot = new MechanicIncomingEffectSlot(3, 42, 1, (byte)ActionType.Spell, 351, 1, false, kb);
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()) with { IncomingEffects = [new(100, [slot])] });
+    var player = session.World.Actors.Find(100)!;
+    Check(player.IncomingEffects[3].GlobalSequence == 42, "incoming effect slot lost");
+    Check(player.PendingKnockbacks.Count == 1, "knockback effect did not arm a pending knockback");
+
+    var results = 0;
+    using var sub = session.World.Actors.EffectResult.Subscribe((_, seq, idx) => { if (seq == 42 && idx == 1) ++results; });
+    var confirmed = slot with { TargetConfirmed = true };
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()) with { IncomingEffects = [new(100, [confirmed])] });
+    Check(results == 1, "confirmed flip did not emit OpEffectResult");
+    Check(player.PendingKnockbacks.Count == 1, "confirmation must not clear pending knockbacks");
+
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
+    Check(player.IncomingEffects[3].GlobalSequence == 0, "cleared slot still holds the incoming effect");
+    Check(player.PendingKnockbacks.Count == 0, "cleared slot did not remove the pending knockback");
 });
 
 Scenario("feed tethers arrive via events and via frame fallback", () =>

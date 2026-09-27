@@ -20,6 +20,16 @@ public sealed class SafeZoneRuntime : IDisposable
     internal Func<DateTime>? ReplayClock { get; set; }
     public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
 
+    /// <summary>当前发布的解算传送边（机制导航桥写入，仅主线程）。</summary>
+    public IReadOnlyList<SolverTeleporter> Teleporters { get; private set; } = [];
+
+    /// <summary>发布/替换解算传送边；空列表清除。</summary>
+    public void SetTeleporters(IReadOnlyList<SolverTeleporter> teleporters)
+    {
+        Teleporters = teleporters;
+        _movement.SetTeleporters(teleporters);
+    }
+
     internal SafeZoneRuntime(IGreenMoveSystem movement, Func<bool> externalMovementEnabled, Func<bool> externalHasControl)
     {
         Manager = new(Setting);

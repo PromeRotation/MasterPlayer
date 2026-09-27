@@ -37,6 +37,8 @@
     <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />
     <Compile Include="..\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
     <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
+    <Compile Include="..\Scripting\ScriptHintsApi.cs" Link="ScriptHintsApi.cs" />
+    <Compile Include="..\MechanicHost\MechanicFacingControl.cs" Link="MechanicHost\MechanicFacingControl.cs" />
     <Compile Include="..\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
     <Compile Include="..\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
     <Compile Include="..\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />

@@ -138,7 +138,7 @@ sealed class Teleporters(BossModule module) : BossComponent(module)
 {
     private readonly List<WPos> activeTeleporters = [with(10)];
     private static readonly WPos[] teleporters = CalculateTeleporterPositions();
-    private readonly List<Pathfinding.Teleporter> activeTeleporterPairs = [with(5)];
+    private readonly List<Teleporter> activeTeleporterPairs = [with(5)]; // MP 适配：Teleporter 已迁入 BossMod 命名空间（AIHints.cs）
     private BitMask teleportingBlocked;
     private BitMask activeTeleportersMask;
 

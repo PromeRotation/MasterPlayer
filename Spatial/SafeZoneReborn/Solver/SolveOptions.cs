@@ -94,4 +94,9 @@ public sealed record SolveOptions
 
     /// <summary>是否生成 <c>SolveDebugData</c>（原始/简化路径等）。默认 false 以避免运行时分配，Debug 面板手动解算时开启。</summary>
     public bool GenerateDebugData { get; init; } = false;
+
+    // ───────────────────────── 传送边 ─────────────────────────
+
+    /// <summary>解算传送边（机制模块 AIHints.Teleporters 经 SafeZoneRuntime.SetTeleporters 发布）。仅主线程读写。</summary>
+    public IReadOnlyList<SolverTeleporter> Teleporters { get; set; } = [];
 }

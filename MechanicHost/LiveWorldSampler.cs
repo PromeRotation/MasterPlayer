@@ -2,6 +2,7 @@ using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using MasterPlayer.MechanicRuntime;
+using NativeActionEffectHandler = FFXIVClientStructs.FFXIV.Client.Game.Character.ActionEffectHandler;
 using NativeActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
 using NativeBattleChara = FFXIVClientStructs.FFXIV.Client.Game.Character.BattleChara;
 using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
@@ -19,8 +20,10 @@ internal static class LiveWorldSampler
     {
         var territory = (ushort)Svc.ClientState.TerritoryType;
         var localPlayer = Svc.Objects.LocalPlayer;
+        var incoming = new List<MechanicActorIncomingEffects>();
+        var actors = CaptureActors(incoming);
         return new(territory, ResolveCfc(territory), Id(localPlayer), Id(Svc.Targets.Target),
-            CaptureParty(localPlayer), waymarks, CaptureActors());
+            CaptureParty(localPlayer), waymarks, actors) { IncomingEffects = [.. incoming] };
     }
 
     internal static ulong Id(IGameObject? obj)
@@ -31,7 +34,7 @@ internal static class LiveWorldSampler
         return id is 0 or 0xE0000000 || (id >> 56) == 0xFF ? 0 : id;
     }
 
-    private static unsafe MechanicActorSnapshot[] CaptureActors()
+    private static unsafe MechanicActorSnapshot[] CaptureActors(List<MechanicActorIncomingEffects> incoming)
     {
         var table = Svc.Objects;
         var actors = new List<MechanicActorSnapshot>(table.Length);
@@ -117,6 +120,31 @@ internal static class LiveWorldSampler
                 obj.IsTargetable, isAlly, obj.IsDead, inCombat,
                 obj.OwnerId, obj.TargetObjectId, native->FateId, (int)native->RenderFlags, native->EventState,
                 modelState, animState1, animState2, tetherId, tetherTargetId, cast, statuses));
+
+            // 原生逐目标 IncomingEffects（对齐 BMR WorldStateGameSync 槽位扫描；只上报非零槽位，差分在喂养器侧）
+            if (chrNative != null)
+            {
+                var aeh = chrNative->GetActionEffectHandler();
+                if (aeh != null)
+                {
+                    List<MechanicIncomingEffectSlot>? slots = null;
+                    for (var s = 0; s < 32; ++s)
+                    {
+                        ref readonly var entry = ref aeh->IncomingEffects[s];
+                        if (entry.GlobalSequence == 0)
+                            continue;
+                        var raw = new ulong[8];
+                        var effectsCopy = entry.Effects;
+                        var src = (ulong*)&effectsCopy;
+                        for (var j = 0; j < 8; ++j)
+                            raw[j] = src[j];
+                        (slots ??= new(2)).Add(new(s, entry.GlobalSequence, entry.TargetIndex, entry.ActionType,
+                            entry.ActionId, entry.Source, entry.TargetConfirmed, raw));
+                    }
+                    if (slots != null)
+                        incoming.Add(new(id, [.. slots]));
+                }
+            }
         }
         return actors.ToArray();
     }

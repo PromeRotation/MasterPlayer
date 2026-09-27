@@ -14,7 +14,7 @@ public abstract class UnmanagedRotation(WorldState ws, float effectiveRange)
 
     public void Execute(Actor player, AIHints hints)
     {
-        if (AI.AIManager.Instance?.Beh != null || Autorotation.MiscAI.NormalMovement.Instance != null || config.EnableQuestBattles)
+        if (config.EnableQuestBattles) // MP 适配：运行库不含 AI 执行器（原 AIManager/NormalMovement 恒 null），真值表与上游一致
         {
             Hints = hints;
             Player = player;

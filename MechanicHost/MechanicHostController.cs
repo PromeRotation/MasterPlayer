@@ -45,6 +45,7 @@ public sealed class MechanicHostController : IDisposable
     public bool HasActiveModule => ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
     public bool NavigationActive => _navBridge?.NavigationActive == true;
     public int NavDangerZoneCount => _navBridge?.DangerZoneCount ?? 0;
+    public int NavGoalZoneCount => _navBridge?.GoalZoneCount ?? 0;
     public int NavObstacleCount => _navBridge?.ObstacleZoneCount ?? 0;
     public bool NavBoundaryActive => _navBridge?.BoundaryActive == true;
     public string? SpecialModeHint => _navBridge?.SpecialModeHint;

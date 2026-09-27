@@ -29,8 +29,6 @@ sealed class ReplayDetailsWindow : UIWindow
     private readonly EventList _events;
     private readonly ReplayAnalysis.AnalysisManager _analysis;
 
-    private readonly UITree _pfTree = new();
-    private AIHintsVisualizer? _pfVisu;
     private float _pfCushion;
     private float _pfTargetRadius = 3;
     private Positional _pfPositional = Positional.Any;
@@ -176,7 +174,7 @@ sealed class ReplayDetailsWindow : UIWindow
 
         if (ImGui.CollapsingHeader("Plan execution"))
         {
-            resetPF |= UIRotationWindow.DrawRotationSelector(_rmm);
+            // MP 适配：原 UIRotationWindow.DrawRotationSelector 调用随自动循环窗口移除（本窗口无构造者）
 
             if (_mgr.ActiveModule != null && ImGui.Button("Timeline"))
             {
@@ -633,8 +631,7 @@ sealed class ReplayDetailsWindow : UIWindow
             return;
         }
 
-        _pfVisu ??= new(_hints, _mgr.WorldState, player, _pfTargetRadius, _pfCushion);
-        _pfVisu.Draw(_pfTree);
+        // MP 适配：原寻路可视化（AIHintsVisualizer）随寻路引擎移除
 
         var rebuild = false;
         rebuild |= ImGui.SliderFloat("Zone cushion", ref _pfCushion, 0f, 5f);
@@ -689,7 +686,7 @@ sealed class ReplayDetailsWindow : UIWindow
         MoveTo(_player.PrevTimestamp());
     }
 
-    private void ResetPF() => _pfVisu = null;
+    private void ResetPF() { } // MP 适配：寻路可视化已移除，重置点保留为空操作
 
     private void SplitLog()
     {

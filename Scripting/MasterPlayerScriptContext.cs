@@ -20,6 +20,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     private readonly ScriptSafeZoneApi _safeZone;
     private readonly ScriptMoveApi _move;
     private readonly ScriptDrawApi _draw;
+    private readonly ScriptHintsApi _hints;
     private readonly IScriptEventRouter _router;
     private readonly HashSet<uint> _suppressedDodgeActions = [];
     private bool _disposed;
@@ -35,11 +36,13 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         _safeZone = new ScriptSafeZoneApi(metadata.Id, metadata.Name);
         _move = new ScriptMoveApi(Log);
         _draw = new ScriptDrawApi($"MasterPlayer_Script_{SanitizeId(metadata.Id)}_", _safeZone);
+        _hints = new ScriptHintsApi(() => IsReplay);
     }
 
     public ScriptSafeZoneApi SafeZone => _safeZone;
     public ScriptMoveApi Move => _move;
     public ScriptDrawApi Draw => _draw;
+    public ScriptHintsApi Hints => _hints;
     public ScriptSettingStore Settings => _settings;
     public Replay.ReplayWorldState? ReplayWorld => (_router as Replay.ReplayScriptEventRouter)?.World;
     public DateTime CurrentTime => ReplayWorld?.CurrentTime ?? DateTime.UtcNow;
@@ -197,6 +200,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         TryCleanup("清理安全区", () => _safeZone.Cleanup());
         TryCleanup("停止移动", () => _move.Cleanup());
         TryCleanup("清理绘制", () => _draw.Cleanup());
+        TryCleanup("撤销朝向", () => _hints.Cleanup());
     }
 
     private void TryCleanup(string what, Action action)
