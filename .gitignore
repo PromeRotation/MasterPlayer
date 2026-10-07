@@ -6,3 +6,4 @@ obj/
 .vscode/
 *.userprefs
 *.DotSettings.user
+Directory.Build.local.props

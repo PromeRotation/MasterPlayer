@@ -29,13 +29,28 @@ MasterPlayer 是 FFXIV 插件 **PromeRotation（PR）** 的卫星插件（PR 子
 
 ## 构建前置
 
+- .NET 10 SDK（只安装 .NET Runtime 无法编译）；可使用 `winget install --id Microsoft.DotNet.SDK.10 --exact` 安装
 - 与实际运行版本一致的 PromeRotation 程序集（`PromeRotation.dll` / `PromeRotation.Scripting.dll` / `ECommons.dll` 等）；仍需公开 GreenMove、事件、绘制和安全区控制状态接口，但不依赖本体的解算修复
 - 本机 XIVLauncherCN 的 Dalamud 开发环境（`%AppData%\XIVLauncherCN\addon\Hooks\dev\`，提供 Dalamud / ImGui / FFXIVClientStructs / Lumina 等引用）
 - 所有引用均 `Private=false`（不随输出拷贝），运行时由 PR 本体与 Dalamud 提供
-- 若本体不在默认路径，可用命令行属性覆盖：
+- `Directory.Build.props` 默认使用当前用户的 `%AppData%\XIVLauncherCN`，并在只有一个 PR 安装版本时自动引用 `installedPlugins\PromeRotation\<版本>\`。主项目、机制运行库和测试项目共用这些路径。多个 PR 版本并存时，必须指定实际启用的版本，避免引用错误的 DLL：
+  ```powershell
+  dotnet build -p:PromeRotationPath="D:\path\to\installedPlugins\PromeRotation\1.5.10.1"
+  ```
+- 也可继续通过本体源码仓库指定 `PromeRotationRoot`（引用该仓库 `PromeRotation\bin\Debug\`）：
   ```
   dotnet build -p:PromeRotationRoot="D:\path\to\PromeRotationRepo\"
   ```
+- 非默认启动器或 Dalamud 路径可通过 `XIVLauncherRoot`、`DalamudRoot` 覆盖。重复使用的本机配置可以保存在仓库根目录 `Directory.Build.local.props`（已被 Git 忽略），例如：
+  ```xml
+  <Project>
+    <PropertyGroup>
+      <PromeRotationPath>D:\path\to\installedPlugins\PromeRotation\1.5.10.1</PromeRotationPath>
+      <DalamudRoot>D:\path\to\addon\Hooks\dev\</DalamudRoot>
+    </PropertyGroup>
+  </Project>
+  ```
+- 宿主 Reborn 移动接口按可用性检测；旧版 PR 仍检查原有安全区的开关与控制权，新版同时检查 Reborn，插件自己的解算器保持独立。
 
 ## 构建命令
 
@@ -45,10 +60,28 @@ dotnet build
 
 （默认 Debug 配置；`-c Release` 亦可，输出路径相同。CI 环境下设 `CI=true` 时输出回退到本地 `bin\<Configuration>\`。）
 
+仅编译到仓库、暂不部署到游戏目录时：
+
+```powershell
+dotnet build -p:CI=true
+```
+
 回归直接编译插件内的安全区源码，覆盖跟随、移动让位、插件与本体隔离、错峰 AOE、生命周期、绘制转换与机制处理，无需启动游戏：
 
 ```
 dotnet run --project tests/MasterPlayer.RegressionTests.csproj
+```
+
+内置脚本编译与实际插件 DLL 的脚本库冒烟检查：
+
+```powershell
+dotnet run --project tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj -- . bin/Debug/MasterPlayer.dll
+```
+
+机制运行库测试还需本机游戏数据，指定真实 `game\sqpack` 目录：
+
+```powershell
+dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.csproj -- . "D:\path\to\FFXIV\game\sqpack"
 ```
 
 ## 部署方式
@@ -64,6 +97,8 @@ dotnet run --project tests/MasterPlayer.RegressionTests.csproj
 ## 机制脚本
 
 仓库 `Scripts/` 下使用 `MasterPlayer.Scripts` 及其子命名空间的机制脚本随 DLL 内置加载，无需复制到配置目录。斗兽奇弈五盘入口已内置；更新并重载插件后，在「机制脚本」页勾选所需脚本，进入对应区域自动启动。详情显示脚本来源，启用状态、设置与机制开关仍保存在 `MasterPlayer.json`。
+
+「金碟巨豆中心（糖豆人）」已内置，区域1165。按娱乐竞速场景运行，无需进入战斗；已核对十二份 ARR 中的两种第一关、搬砖与喷风跑圈第二关及决赛。支持自动走位、消失桥换道跳跃、水晶领取投放、箭头与强制移动处理，并提供读条范围、实时滚动球/旋转长条及五列波浪预测。进本前启用脚本，「自动竞速（走位、跳跃与搬运）」默认开启；测试须使用配套 PR/MP DLL，并关闭 PR 本体自动躲避，避免宿主移动接管。MP 不修改该宿主设置。回放仅绘制和模拟；实机待验项目见 [Blunderville 规格](docs/reference/Blunderville.spec.md)。定向离线验证：`dotnet run --project tests/MasterPlayer.RegressionTests.csproj -- --filter=Blunderville`，测试引用须指向配套 PR DLL。
 
 自定义 `.cs`、`.dll` 或 `*.mechanic.json` 仍放在配置目录：
 

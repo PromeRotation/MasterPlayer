@@ -44,8 +44,11 @@ public sealed record SolveOptions
     /// </summary>
     public float FallbackBoxRadius { get; init; } = 25f;
 
-    /// <summary>强制安全余量（yalm）。危险区按该距离向外扩张，副本边界/障碍按该距离收缩；任何路径都不得违反。</summary>
+    /// <summary>强制安全余量（yalm）。危险与障碍按该距离外扩；场地边界默认按该距离收缩，可由 ArenaSafetyMargin 单独覆盖。</summary>
     public float HardSafetyMargin { get; init; } = 0.5f;
+
+    /// <summary>场地边界收缩余量；为空时沿用 HardSafetyMargin。危险与障碍仍使用完整 HardSafetyMargin。</summary>
+    public float? ArenaSafetyMargin { get; init; }
 
     /// <summary>舒适安全余量（yalm）。不禁止通行，仅在靠近危险边缘时增加路径代价、降低目标评分。</summary>
     public float ComfortSafetyMargin { get; init; } = 2.0f;
@@ -70,6 +73,11 @@ public sealed record SolveOptions
 
     /// <summary>是否启用 Catmull-Rom 平滑。</summary>
     public bool EnablePathSmoothing { get; init; } = true;
+
+    public bool PreferStraightPaths { get; init; }
+
+    /// <summary>竞速路线允许等待周期机关后继续前往目标；普通战斗维持寻找安全落点的策略。</summary>
+    public bool GoalDirectedTemporalPlanning { get; init; }
 
     /// <summary>平滑强度 <c>[0,1]</c>。1 最弯，0 退化为直线。</summary>
     public float SmoothingStrength { get; init; } = 0.5f;

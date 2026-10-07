@@ -162,7 +162,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     }
 
     /// <summary>最近一次解算结果（含 EnableAutoMovement=false 时的只缓存场景），供 Debug 可视化读取。</summary>
-    public SafeZoneSolution? LatestSolution => _latestSolution;
+    public SafeZoneSolution? LatestSolution => _hasControl && _dispatchedSolution != null ? _dispatchedSolution : _latestSolution;
 
     /// <summary>本系统当前是否正在接管 GreenMove。</summary>
     public bool HasControl => _hasControl;
@@ -206,7 +206,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         }
 
         // 功能关闭或玩家不存在：松手（仅当曾接管才 Stop），不解算、不下发。
-        if (!_setting.EnableSafeZone || currentPlayer is null)
+        if (!_setting.EffectiveEnableSafeZone || currentPlayer is null)
         {
             Reset();
             return;
@@ -248,7 +248,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var solution = IsSolutionUsableForDispatch(_latestSolution, snapshot) ? _latestSolution : null;
 
         // 未开启自动移动：只缓存 Solution 供可视化，不下发；若之前接管过则松手。
-        if (!_setting.EnableAutoMovement || !allowMovement)
+        if (!_setting.EffectiveEnableAutoMovement || !allowMovement)
         {
             _phase = DispatchPhase.Idle;
             ReleaseControl();
@@ -321,6 +321,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         _pendingSolveCts = cts;
         _pendingSolveSnapshotVersion = snapshot.Version;
         _asyncSolveStartedCount++;
+        var options = CaptureSolveOptions();
 
         _pendingSolveTask = Task.Run(() =>
         {
@@ -331,7 +332,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                     return AsyncSolveResult.Cancelled(snapshot.Version);
                 }
 
-                var solution = _solver.Solve(snapshot, player, capability, _options, solveTime, previousSolution);
+                var solution = _solver.Solve(snapshot, player, capability, options, solveTime, previousSolution);
                 return AsyncSolveResult.Completed(snapshot.Version, solution, token.IsCancellationRequested);
             }
             catch (Exception ex)
@@ -340,6 +341,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             }
         }, token);
     }
+
+    private SolveOptions CaptureSolveOptions() => _options with
+    {
+        ArenaSafetyMargin = _setting.RuntimeArenaSafetyMargin ?? _options.ArenaSafetyMargin,
+        PreferStraightPaths = _setting.RuntimePreferStraightPaths,
+        GoalDirectedTemporalPlanning = _setting.RuntimePreferStraightPaths,
+    };
 
     private void CompletePendingSolve(SafeZoneSnapshot currentSnapshot)
     {
@@ -380,7 +388,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         }
 
         if (_disposed ||
-            !_setting.EnableSafeZone ||
+            !_setting.EffectiveEnableSafeZone ||
             wasCancelled || result.WasCancelled ||
             result.Solution is null ||
             !IsSolutionUsableForDispatch(result.Solution, currentSnapshot))
@@ -439,8 +447,23 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return;
         }
 
-        if ((solution.SourceSnapshotVersion != snapshot.Version || solution.UsesTemporalPlanning || !IsPointUnsafeNow(snapshot, player.Position, now)) &&
-            !IsTemporalPhaseSafe(solution, player, snapshot, now))
+        // A new snapshot is a reason to validate, not to restart GreenMove. Keep
+        // both its current waypoint and the worker's fresh result/TTL separately.
+        var keepCurrentRoute = ShouldKeepCurrentRoute(solution, player, snapshot, now);
+        // The solver can authorize exiting a hard obstacle spawned on the player.
+        // Ordinary traversal rejects that initial overlap; retain that verified
+        // escape unchanged only while its source geometry version still matches.
+        var validateCandidate = solution.SourceSnapshotVersion != snapshot.Version || solution.UsesTemporalPlanning
+            || !IsPointUnsafeNow(snapshot, player.Position, now);
+
+        if (!keepCurrentRoute && validateCandidate && !ReferenceEquals(solution, _dispatchedSolution))
+        {
+            var rebased = RebaseCandidate(solution, player.Position, now);
+            if (ReferenceEquals(_latestSolution, solution)) _latestSolution = rebased;
+            solution = rebased;
+        }
+
+        if (!keepCurrentRoute && validateCandidate && !IsTemporalPhaseSafe(solution, player, snapshot, now))
         {
             // 后台候选从旧位置起算，其前几个路点可能已在玩家身后。
             // 候选过期不等于正在执行的路线失效；从当前路点按最新危险窗复核后继续。
@@ -508,13 +531,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return;
         }
 
-        if (ShouldKeepCurrentRoute(solution, player, snapshot, now))
+        if (keepCurrentRoute)
         {
-            // TTL 重解可能产出"更近的新目标"，但旧 GreenMove 路线仍然有效。
-            // 保持旧路线，避免每次 MoveTo 重置 GreenMove 索引造成目标跳变/拉直/原地停。
-            _latestSolution = _dispatchedSolution;
             _phase = DispatchPhase.Moving;
-            _hasControl = true;
             return;
         }
 
@@ -545,10 +564,36 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             !IsTemporalPhaseSafe(previous, player, snapshot, now))
             return false;
 
-        // 后续重算继续沿用已执行路线的目标和紧急余量，不继承被拒绝候选的状态。
-        _latestSolution = previous;
         _phase = DispatchPhase.Moving;
         return true;
+    }
+
+    private static SafeZoneSolution RebaseCandidate(SafeZoneSolution solution, Vector3 position, DateTime now)
+    {
+        var path = solution.ExecutablePath;
+        var next = 1;
+        var closest = 0.75f * 0.75f;
+        var p = new Vector2(position.X, position.Z);
+        // Only discard a prefix already travelled. The current position must be
+        // on that polyline; the full remaining route is checked against the latest
+        // geometry and time windows below. Never skip a planned waiting phase.
+        for (var i = 0; i + 1 < path.Count && !path[i].IsWaitPoint; ++i)
+        {
+            var a = new Vector2(path[i].Position.X, path[i].Position.Z);
+            var b = new Vector2(path[i + 1].Position.X, path[i + 1].Position.Z);
+            var delta = b - a;
+            if (delta.LengthSquared() < 0.000001f) continue;
+            var along = Math.Clamp(Vector2.Dot(p - a, delta) / delta.LengthSquared(), 0, 1);
+            var distance = Vector2.DistanceSquared(p, a + along * delta);
+            if (distance + 0.000001f >= closest) continue;
+            closest = distance;
+            next = i + 1;
+        }
+        if (next <= 1) return solution;
+        var remaining = new TimedWaypoint[path.Count - next + 1];
+        remaining[0] = TimedWaypoint.Pass(position, now);
+        for (var i = next; i < path.Count; ++i) remaining[i - next + 1] = path[i];
+        return solution.WithExecutablePath(remaining);
     }
 
     private bool TryUseEmergencyRoute(ref SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
@@ -664,11 +709,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return true;
         if (boundary is DonutGeometry donut)
             return GeometryHelper.DistanceSquaredPointToSegmentXZ(donut.Position, from, to) >= donut.InnerRadius * donut.InnerRadius;
-        // Endpoints can both be inside a concave arena while the segment crosses a notch.
-        foreach (var contour in boundary.GetContours())
-            if (GeometryShape.ContourIntersectsSegment(contour, from, to, GeometryHelper.DefaultEpsilon))
-                return false;
-        return true;
+        // Composite contours can include internal edges covered by another shape.
+        // Check every interval between crossings against the actual containment rule.
+        return ArenaBoundaryTraversal.ContainsSegment(boundary, from, to);
     }
 
     private bool ShouldUrgentlyResolve(SafeZoneSolution solution, SafeZoneSnapshot snapshot, PlayerState player, DateTime now)
@@ -765,7 +808,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return false;
         }
 
-        if (newSolution.SourceSnapshotVersion != _dispatchedSolution.SourceSnapshotVersion)
+        if (newSolution.SourceSnapshotVersion != _dispatchedSolution.SourceSnapshotVersion &&
+            (newSolution.TargetPosition is not { } target || _dispatchedSolution.TargetPosition is not { } previousTarget ||
+             GeometryHelper.DistanceXZ(target, previousTarget) > MinArrivalTolerance))
         {
             return false;
         }
@@ -779,19 +824,17 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                 return false;
         }
 
-        if (IsPointUnsafeNow(snapshot, player.Position, now))
-        {
-            return false;
-        }
-
         var status = _greenMove.GetStatus();
         if (!status.IsRunning || status.FinalPoint is not { } finalPoint)
         {
             return false;
         }
 
+        if (newSolution.TargetPosition is { } requested &&
+            ActiveGoalPriorityAt(snapshot, requested, now) > ActiveGoalPriorityAt(snapshot, finalPoint.Position, now))
+            return false;
+
         return !IsPointUnsafeNow(snapshot, finalPoint.Position, now) &&
-               !IsDispatchedRouteUnsafeNow(snapshot, _dispatchedSolution, player.Position, status.CurrentIndex, now) &&
                IsTemporalPhaseSafe(_dispatchedSolution, player, snapshot, now);
     }
 
@@ -818,34 +861,14 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         return true;
     }
 
-    private static bool IsDispatchedRouteUnsafeNow(
-        SafeZoneSnapshot snapshot,
-        SafeZoneSolution dispatchedSolution,
-        Vector3 playerPosition,
-        int greenMoveCurrentIndex,
-        DateTime now)
+    private static int ActiveGoalPriorityAt(SafeZoneSnapshot snapshot, Vector3 point, DateTime now)
     {
-        var path = dispatchedSolution.ExecutablePath;
-        if (path.Count < 2)
-        {
-            return false;
-        }
-
-        var nextPathIndex = Math.Clamp(greenMoveCurrentIndex + 1, 1, path.Count - 1);
-        var previous = playerPosition;
-        for (var i = nextPathIndex; i < path.Count; i++)
-        {
-            var current = path[i].Position;
-            if (IsPointUnsafeNow(snapshot, current, now) ||
-                IsSegmentUnsafeNow(snapshot, previous, current, now))
-            {
-                return true;
-            }
-
-            previous = current;
-        }
-
-        return false;
+        var priority = int.MinValue;
+        foreach (var goal in snapshot.GoalAreas)
+            if (goal.Geometry.Contains(point))
+                foreach (var window in goal.GoalWindows)
+                    if (window.IsActiveAt(now)) priority = Math.Max(priority, window.Priority);
+        return priority;
     }
 
     private static bool IsSegmentUnsafeNow(SafeZoneSnapshot snapshot, Vector3 start, Vector3 end, DateTime now)

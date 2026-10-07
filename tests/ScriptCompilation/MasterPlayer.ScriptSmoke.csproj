@@ -5,23 +5,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <PromeRotationRoot Condition="'$(PromeRotationRoot)' == ''">C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\</PromeRotationRoot>
-    <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="ScriptCatalogRegression.cs" />
     <Compile Include="BmrSourceInventory.cs" />
-    <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/Microsoft.CodeAnalysis.dll" />
-    <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/Microsoft.CodeAnalysis.CSharp.dll" />
-    <Reference Include="PromeRotation" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/PromeRotation.dll" />
-    <Reference Include="PromeRotation.Scripting" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/PromeRotation.Scripting.dll" />
-    <Reference Include="ECommons" HintPath="$(PromeRotationRoot)PromeRotation/bin/Debug/ECommons.dll" />
-    <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" />
-    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)Dalamud.Bindings.ImGui.dll" />
-    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)FFXIVClientStructs.dll" />
-    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)InteropGenerator.Runtime.dll" />
-    <Reference Include="Lumina" HintPath="$(DalamudRoot)Lumina.dll" />
-    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)Lumina.Excel.dll" />
+    <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.dll" />
+    <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.CSharp.dll" />
+    <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />
+    <Reference Include="PromeRotation.Scripting" HintPath="$(PromeRotationPath)\PromeRotation.Scripting.dll" />
+    <Reference Include="ECommons" HintPath="$(PromeRotationPath)\ECommons.dll" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)\Dalamud.dll" />
+    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)\Dalamud.Bindings.ImGui.dll" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)\FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)\InteropGenerator.Runtime.dll" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)\Lumina.dll" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)\Lumina.Excel.dll" />
   </ItemGroup>
 </Project>

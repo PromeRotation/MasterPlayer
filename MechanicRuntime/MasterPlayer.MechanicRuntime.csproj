@@ -7,7 +7,6 @@
     <LangVersion>preview</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <DalamudRoot>$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudRoot>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Upstream\**\*.cs" />
@@ -23,15 +22,15 @@
     <Using Include="System.Numerics" />
     <Using Include="System.Threading.Tasks" />
     <Using Include="System.Text" />
-    <Reference Include="Dalamud" HintPath="$(DalamudRoot)Dalamud.dll" Private="false" />
-    <Reference Include="Dalamud.Common" HintPath="$(DalamudRoot)Dalamud.Common.dll" Private="false" />
-    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)Dalamud.Bindings.ImGui.dll" Private="false" />
-    <Reference Include="Dalamud.Bindings.ImPlot" HintPath="$(DalamudRoot)Dalamud.Bindings.ImPlot.dll" Private="false" />
-    <Reference Include="ImGuiScene" HintPath="$(DalamudRoot)ImGuiScene.dll" Private="false" />
-    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)FFXIVClientStructs.dll" Private="false" />
-    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)InteropGenerator.Runtime.dll" Private="false" />
-    <Reference Include="Lumina" HintPath="$(DalamudRoot)Lumina.dll" Private="false" />
-    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)Lumina.Excel.dll" Private="false" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)\Dalamud.dll" Private="false" />
+    <Reference Include="Dalamud.Common" HintPath="$(DalamudRoot)\Dalamud.Common.dll" Private="false" />
+    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)\Dalamud.Bindings.ImGui.dll" Private="false" />
+    <Reference Include="Dalamud.Bindings.ImPlot" HintPath="$(DalamudRoot)\Dalamud.Bindings.ImPlot.dll" Private="false" />
+    <Reference Include="ImGuiScene" HintPath="$(DalamudRoot)\ImGuiScene.dll" Private="false" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)\FFXIVClientStructs.dll" Private="false" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)\InteropGenerator.Runtime.dll" Private="false" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)\Lumina.dll" Private="false" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)\Lumina.Excel.dll" Private="false" />
     <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.6" />
     <EmbeddedResource Include="Upstream\Pathfinding\ObstacleMaps\*">
       <LogicalName>BossModReborn.Pathfinding.ObstacleMaps.%(Filename)%(Extension)</LogicalName>

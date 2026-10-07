@@ -18,7 +18,7 @@ internal static class SafeIntervalPathfinder
 
     // null 表示起点已经危险，保留原搜索的立即逃逸逻辑；JustBad 表示安全起点也找不到可行的时间路径。
     internal static BossModStyleAStar.Result? Search(
-        RasterizedMap map, Vector3 player, float speed, DateTime now, float startDelay, SolveOptions options)
+        RasterizedMap map, Vector3 player, float speed, DateTime now, float startDelay, SolveOptions options, bool requireGoal = false)
     {
         speed = MathF.Max(0.1f, speed);
         startDelay = MathF.Max(0f, startDelay);
@@ -58,11 +58,15 @@ internal static class SafeIntervalPathfinder
         var nodes = new List<Node> { new(new State(startCell, 0), startDelay, 0f, -1, 0f) };
         var best = new Dictionary<State, int> { [nodes[0].State] = 0 };
         var open = new PriorityQueue<int, float>();
+        float Heuristic(int cell) => requireGoal && map.GoalHeuristicPosition is { } goal
+            ? MathF.Max(0, GeometryHelper.DistanceXZ(map.CellCenter(cell % map.Columns, cell / map.Columns), goal) - map.Resolution * 2) / speed : 0;
         if (startDelay < startIntervals[0].Until)
-            open.Enqueue(0, startDelay);
+            open.Enqueue(0, startDelay + Heuristic(startCell));
         var expansions = 0;
         var safestPartial = -1;
         var safestUntil = startIntervals[0].Until;
+        var goalProgress = -1;
+        var goalDistance = Heuristic(startCell);
 
         while (open.TryDequeue(out var index, out _))
         {
@@ -72,6 +76,12 @@ internal static class SafeIntervalPathfinder
             if (++expansions > MaxExpansions)
                 break;
             var currentInterval = Intervals(current.State.Cell)[current.State.Interval];
+            if (requireGoal && current.Parent >= 0 && currentInterval.Until >= horizon
+                && Heuristic(current.State.Cell) < goalDistance - TimeEpsilon)
+            {
+                goalProgress = index;
+                goalDistance = Heuristic(current.State.Cell);
+            }
             // A conservative hit tail can temporarily prevent planning the entire
             // sequence. Still leave the current hazard for a strictly longer safe
             // interval; effect packets and the next solve can open the continuation.
@@ -80,10 +90,13 @@ internal static class SafeIntervalPathfinder
                 safestPartial = index;
                 safestUntil = currentInterval.Until;
             }
-            if (currentInterval.Until >= horizon)
+            if (requireGoal
+                ? currentInterval.Until >= current.Arrival + .5f
+                    && map.PixelPriorityAt(current.State.Cell % map.Columns, current.State.Cell / map.Columns) >= map.MaxGoalPriority
+                : currentInterval.Until >= horizon)
             {
                 var path = BuildPath(map, nodes, index, player, now);
-                return new BossModStyleAStar.Result(path, path[^1].Position, BossModStyleAStar.Score.Safe,
+                return new BossModStyleAStar.Result(path, path[^1].Position, requireGoal ? BossModStyleAStar.Score.SafeMaxPrio : BossModStyleAStar.Score.Safe,
                     0f, false, expansions);
             }
 
@@ -129,9 +142,19 @@ internal static class SafeIntervalPathfinder
                     var next = nodes.Count;
                     nodes.Add(new Node(state, arrival, waited, index, departure));
                     best[state] = next;
-                    open.Enqueue(next, arrival);
+                    open.Enqueue(next, arrival + Heuristic(cell));
                 }
             }
+        }
+
+        // A small route goal can straddle the conservative floor mask. Advance
+        // toward it through verified windows rather than declaring the safe
+        // starting pocket complete; the course planner can then advance its node.
+        if (requireGoal && goalProgress >= 0)
+        {
+            var path = BuildPath(map, nodes, goalProgress, player, now);
+            return new BossModStyleAStar.Result(path, path[^1].Position, BossModStyleAStar.Score.Safe,
+                0f, expansions > MaxExpansions, expansions) { IsPartialEscape = true };
         }
 
         if (safestPartial >= 0)
@@ -141,7 +164,7 @@ internal static class SafeIntervalPathfinder
             path[^1] = last with
             {
                 IsWaitPoint = true,
-                PlannedDepartureTime = now.AddSeconds(MathF.Max(nodes[safestPartial].Arrival, safestUntil - 0.05f)),
+                PlannedDepartureTime = now.AddSeconds(MathF.Max(nodes[safestPartial].Arrival, MathF.Min(horizon, safestUntil) - 0.05f)),
             };
             return new BossModStyleAStar.Result(path, last.Position, BossModStyleAStar.Score.Safe,
                 0f, expansions > MaxExpansions, expansions) { IsPartialEscape = true };

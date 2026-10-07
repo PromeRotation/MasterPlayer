@@ -1,5 +1,6 @@
 using MasterPlayer.Spatial.SafeZone;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -16,6 +17,17 @@ namespace MasterPlayer.Spatial.SafeZoneReborn.Solver;
 /// </summary>
 public static class BossModStyleAStar
 {
+    private readonly struct NodeBuffer : IDisposable
+    {
+        public readonly Node[] Nodes;
+        public NodeBuffer(int count)
+        {
+            Nodes = ArrayPool<Node>.Shared.Rent(count);
+            // Parent-chain guards can inspect the whole rented array.
+            Array.Clear(Nodes);
+        }
+        public void Dispose() => ArrayPool<Node>.Shared.Return(Nodes);
+    }
     /// <summary>路径质量评级。数值越大越好。</summary>
     public enum Score
     {
@@ -147,7 +159,8 @@ public static class BossModStyleAStar
         }
 
         var totalPixels = map.Columns * map.Rows;
-        var nodes = new Node[totalPixels];
+        using var nodeBuffer = new NodeBuffer(totalPixels);
+        var nodes = nodeBuffer.Nodes;
         var startIndex = (startRow * map.Columns) + startCol;
         var startMaxG = map.PixelMaxGAt(startCol, startRow);
         var startPrio = map.PixelPriorityAt(startCol, startRow);

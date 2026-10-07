@@ -2,16 +2,21 @@ namespace MasterPlayer.Spatial;
 
 internal static class HostMovement
 {
+    private static readonly System.Reflection.PropertyInfo? RebornSetting = typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornSetting");
+    private static readonly System.Reflection.PropertyInfo? RebornStatus = typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornMovementStatus");
+    private static readonly System.Reflection.PropertyInfo? RebornHasControl = RebornStatus?.PropertyType.GetProperty("HasControl");
+
     public static bool HasControl => PromeRotation.Plugin.Instance.SafeZoneMovementStatus.HasControl
-        || PromeRotation.Plugin.Instance.SafeZoneRebornMovementStatus.HasControl;
+        || RebornStatus?.GetValue(PromeRotation.Plugin.Instance) is { } status && RebornHasControl?.GetValue(status) is true;
 
     public static bool AutomaticMovementEnabled
     {
         get
         {
             var host = PromeRotation.Plugin.Instance;
+            var reborn = RebornSetting?.GetValue(host) as PromeRotation.Spatial.SafeZone.SafeZoneSetting;
             return host.SafeZoneSetting.EnableSafeZone && host.SafeZoneSetting.EnableAutoMovement
-                || host.SafeZoneRebornSetting.EnableSafeZone && host.SafeZoneRebornSetting.EnableAutoMovement;
+                || reborn is { EnableSafeZone: true, EnableAutoMovement: true };
         }
     }
 
@@ -19,6 +24,7 @@ internal static class HostMovement
     {
         var host = PromeRotation.Plugin.Instance;
         host.SafeZoneSetting.EnableAutoMovement = false;
-        host.SafeZoneRebornSetting.EnableAutoMovement = false;
+        if (RebornSetting?.GetValue(host) is PromeRotation.Spatial.SafeZone.SafeZoneSetting reborn)
+            reborn.EnableAutoMovement = false;
     }
 }

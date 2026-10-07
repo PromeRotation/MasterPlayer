@@ -27,5 +27,5 @@ foreach (var file in Directory.EnumerateFiles(Path.Combine(args[0], "Scripts"), 
     if (!result.Success) throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
-if (count != 8) throw new InvalidOperationException($"Expected five boards and three dungeons, got {count}.");
+if (count != 9) throw new InvalidOperationException($"Expected five boards, three dungeons and Blunderville, got {count}.");
 ScriptCatalogRegression.Run(args[1], references);

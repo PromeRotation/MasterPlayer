@@ -2,6 +2,7 @@ using MasterPlayer.Spatial.SafeZone;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Spatial.SafeZoneReborn.Solver;
@@ -18,6 +19,13 @@ namespace MasterPlayer.Spatial.SafeZoneReborn.Solver;
 /// </summary>
 public sealed class RasterizedMap
 {
+    private readonly record struct BoundaryGridKey(float X, float Z, float Resolution, int Columns, int Rows, int Margin);
+    private sealed class BoundaryGridCache
+    {
+        public BoundaryGridKey Key;
+        public bool[]? Blocked;
+    }
+    private static readonly ConditionalWeakTable<IStaticArenaBoundary, BoundaryGridCache> BoundaryGrids = new();
     /// <summary>单轴最大格子数上限。超过则自动放大 <c>Resolution</c> 收敛到该上限，并通过 <see cref="WasCoarsened"/> 标注。</summary>
     public const int MaxCellsPerAxis = 400;
 
@@ -258,9 +266,10 @@ public sealed class RasterizedMap
             coarsened);
 
         var marginCells = (int)MathF.Ceiling(MathF.Max(0f, options.HardSafetyMargin) / resolution);
+        var arenaMarginCells = (int)MathF.Ceiling(MathF.Max(0f, options.ArenaSafetyMargin ?? options.HardSafetyMargin) / resolution);
 
         // 覆盖起点的障碍按立即危险处理，只允许退出；边界和其他障碍仍不可通行。
-        map.MarkBoundaryAndObstacles(snapshot, playerPosition, marginCells);
+        map.MarkBoundaryAndObstacles(snapshot, playerPosition, marginCells, arenaMarginCells);
 
         // 危险区几何 → PixelMaxG（保守膨胀 + 时间窗口投影）。
         map.RasterizeDangerAreas(snapshot, playerPosition, options, marginCells, solveTimeUtc, safeSpeed);
@@ -288,26 +297,28 @@ public sealed class RasterizedMap
         return (player.X - r, player.Z - r, player.X + r, player.Z + r);
     }
 
-    private void MarkBoundaryAndObstacles(SafeZoneSnapshot snapshot, Vector3 playerPosition, int marginCells)
+    private void MarkBoundaryAndObstacles(SafeZoneSnapshot snapshot, Vector3 playerPosition, int marginCells, int arenaMarginCells)
     {
         var boundary = snapshot.ArenaBoundary;
-        var blocked = new bool[_pixelMaxG.Length];
-
-        // 边界外部：保守起见，格子不完整在内即阻挡。
-        if (boundary is not null)
+        bool[] blocked;
+        if (boundary is IStaticArenaBoundary immutable)
         {
-            for (var row = 0; row < Rows; row++)
+            var cache = BoundaryGrids.GetValue(immutable, _ => new());
+            var key = new BoundaryGridKey(OriginX, OriginZ, Resolution, Columns, Rows, arenaMarginCells);
+            lock (cache)
             {
-                for (var col = 0; col < Columns; col++)
+                if (cache.Blocked == null || cache.Key != key)
                 {
-                    if (!IsCellFullyInside(boundary, col, row))
-                    {
-                        blocked[(row * Columns) + col] = true;
-                    }
+                    cache.Blocked = BuildBoundaryGrid(boundary, arenaMarginCells);
+                    cache.Key = key;
                 }
+                // Per-solve obstacles must never mutate the shared terrain mask.
+                blocked = (bool[])cache.Blocked.Clone();
             }
         }
+        else blocked = BuildBoundaryGrid(boundary, arenaMarginCells);
 
+        var obstacles = snapshot.HardObstacles.Count == 0 ? null : new bool[blocked.Length];
         // 永久障碍：相交即阻挡。
         foreach (var obstacle in snapshot.HardObstacles)
         {
@@ -317,14 +328,15 @@ public sealed class RasterizedMap
             {
                 if (CellIntersectsGeometry(obstacle.Geometry, col, row))
                 {
-                    blocked[(row * Columns) + col] = true;
+                    obstacles![(row * Columns) + col] = true;
                 }
             });
         }
 
-        if (marginCells > 0)
+        if (obstacles != null)
         {
-            DilateBoolGrid(blocked, marginCells);
+            if (marginCells > 0) DilateBoolGrid(obstacles, marginCells);
+            for (var i = 0; i < blocked.Length; i++) blocked[i] |= obstacles[i];
         }
 
         for (var i = 0; i < _pixelMaxG.Length; i++)
@@ -334,6 +346,17 @@ public sealed class RasterizedMap
                 _pixelMaxG[i] = BlockedMaxG;
             }
         }
+    }
+
+    private bool[] BuildBoundaryGrid(IGeometryShape? boundary, int margin)
+    {
+        var blocked = new bool[_pixelMaxG.Length];
+        if (boundary == null) return blocked;
+        for (var row = 0; row < Rows; ++row)
+            for (var col = 0; col < Columns; ++col)
+                blocked[row * Columns + col] = !IsCellFullyInside(boundary, col, row);
+        if (margin > 0) DilateBoolGrid(blocked, margin);
+        return blocked;
     }
 
     /// <summary>
@@ -491,7 +514,8 @@ public sealed class RasterizedMap
     /// </summary>
     private void RasterizeGoalAreas(SafeZoneSnapshot snapshot, DateTime solveTime, Vector3 playerPosition)
     {
-        var unsafeClearance = BuildUnsafeClearanceGrid();
+        float[]? unsafeClearance = null;
+        var clearanceBuilt = false;
         var activeGoals = 0;
 
         foreach (var goal in snapshot.GoalAreas)
@@ -522,6 +546,12 @@ public sealed class RasterizedMap
             if (!hasActive)
             {
                 continue;
+            }
+
+            if (activePreference == PositionPreference.Deepest && !clearanceBuilt)
+            {
+                unsafeClearance = BuildUnsafeClearanceGrid();
+                clearanceBuilt = true;
             }
 
             HasSingleCenterGoal = ++activeGoals == 1 && activePreference == PositionPreference.Center;

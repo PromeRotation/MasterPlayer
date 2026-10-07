@@ -76,6 +76,14 @@ public sealed class SafeZoneSolution
         return copy;
     }
 
+    internal SafeZoneSolution WithExecutablePath(IReadOnlyList<TimedWaypoint> path)
+        => new(Status, SourceSnapshotVersion, SolveTime, SolvedAt, TargetPosition, path, DebugData,
+            EscapeDeadline, EscapeDuration, SettledTargetPosition)
+        {
+            UsesTemporalPlanning = UsesTemporalPlanning, IsPartialEscape = IsPartialEscape,
+            ReducedDangerStartSafetyTime = ReducedDangerStartSafetyTime, MaxArrivalTolerance = MaxArrivalTolerance,
+        };
+
     /// <summary>逃离时的到达容差上限，保证停止位置仍位于搜索验证过的终点格内。</summary>
     internal float MaxArrivalTolerance { get; init; } = float.PositiveInfinity;
 

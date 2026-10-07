@@ -13,10 +13,12 @@
 宿主边界：
 
 - `PromeEventBus` 提供事件，`Svc` 提供游戏状态，PR 移速服务提供标量输入。
-- `HostMovement` 读取 PR 旧版/Reborn 的自动移动开关和控制权，避免同时指挥 GreenMove；仅用户点击面板按钮时关闭这两套自动移动。
+- `HostMovement` 读取 PR 旧版及可用的 Reborn 自动移动开关和控制权，避免同时指挥 GreenMove；Reborn 属性通过缓存反射探测，兼容未公开该接口的旧宿主。仅用户点击面板按钮时关闭宿主提供的自动移动。
 - `IGreenMoveSystem` 执行最终路线。新路线立即提交，后续逐帧推进由宿主负责，不依赖修改 PR 的回调订阅顺序。GreenMove 本身没有通用 owner token，控制权让位只覆盖可观察的安全区状态。
 - 雷达直接使用本地几何。世界绘制经 `Radar/HostDrawingGeometry` 转成宿主具体几何类型后调用 DrawManager；保留月环孔洞、非对称矩形和多边形顶点。
 
 安全区修复只需重新构建并重载 MasterPlayer。外部源码脚本应改用 `MasterPlayer.Spatial.SafeZone`、`MasterPlayer.Spatial.Geometry`，外部 DLL 应重新编译；绘制样式/绑定仍用 `PromeRotation.Spatial.Drawing`，移动仍用 `PromeRotation.GreenMoveSystem`。
 
 验证入口：`dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。定向生命周期与几何检查可加 `-- --local-safezone`。
+
+2026-10-08：糖豆人静态赛道通过 `IStaticArenaBoundary` 声明不可变的X/Z几何，复用弱引用关联的边界栅格与轮廓空间索引。局部范围、格距/尺寸、边界余量或几何实例改变时重建；普通几何和可变闭包不进入此缓存。动态危险、时间窗、障碍和目标不缓存。A*临时节点使用独占池化数组，租用后完全清零、返回结果只保留独立路点。`-- --navigation-performance` 对实际赛道求解及主线程调度进行离线计时；`-- --filter='Blunderville performance'` 验证缓存失效、动态数据隔离、并行读取、池化隔离与五种赛道的精确边界遍历。

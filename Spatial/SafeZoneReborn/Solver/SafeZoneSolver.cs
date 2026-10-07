@@ -95,9 +95,12 @@ public sealed class SafeZoneSolver
             playerGeometricallySafe: !playerInDangerNow,
             requireSafePath: map.HasFiniteDanger && !playerInDangerNow);
 
-        if (result.BestScore < BossModStyleAStar.Score.Safe && map.HasFiniteDanger &&
+        // A race must cross periodic obstacles to reach its waypoint. A safe
+        // pocket before a hammer is only a staging point, not a completed goal.
+        var timedGoal = options.GoalDirectedTemporalPlanning && map.MaxGoalPriority > 0 && result.BestScore < BossModStyleAStar.Score.SafeMaxPrio;
+        if ((result.BestScore < BossModStyleAStar.Score.Safe || timedGoal) && map.HasFiniteDanger &&
             SafeIntervalPathfinder.Search(map, player.Position, capability.CurrentSpeed, solveTime,
-                capability.MovementStartDelay, options) is { } temporal)
+                capability.MovementStartDelay, options, timedGoal) is { } temporal)
         {
             if (temporal.BestScore == BossModStyleAStar.Score.JustBad)
             {
@@ -129,6 +132,19 @@ public sealed class SafeZoneSolver
                     phase.Add(waypoint);
                     if (waypoint.IsWaitPoint)
                         break;
+                }
+            }
+            if (options.PreferStraightPaths && phase.Count > 2)
+            {
+                // Keep absolute arrival/departure times and every wait. GreenMove
+                // should not spend a frame advancing through each collinear cell.
+                for (var i = phase.Count - 2; i > 0; --i)
+                {
+                    var a = phase[i].Position - phase[i - 1].Position; a.Y = 0;
+                    var b = phase[i + 1].Position - phase[i].Position; b.Y = 0;
+                    if (!phase[i].IsWaitPoint && a.LengthSquared() > .001f && b.LengthSquared() > .001f
+                        && Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)) > .99999f)
+                        phase.RemoveAt(i);
                 }
             }
             return new SafeZoneSolution(SolutionStatus.Success, version, solveTime, solvedAt,
@@ -168,6 +184,23 @@ public sealed class SafeZoneSolver
         {
             executable = result.Path;
             appliedSmoothing = false;
+        }
+
+        // Grid scoring can select a bent route even on an open straight bridge.
+        // Prefer continuous input only when the shorter segment passes the same
+        // buffered cells, boundary edges, obstacles and damage-time checks.
+        if (options.PreferStraightPaths && !playerInDangerNow && executable.Count > 2 && options.Teleporters.Count == 0)
+        {
+            var start = executable[0];
+            var end = executable[^1];
+            var arrival = start.PlannedDepartureTime.AddSeconds(
+                GeometryHelper.DistanceXZ(start.Position, end.Position) / MathF.Max(.1f, capability.CurrentSpeed));
+            TimedWaypoint[] direct = [start, TimedWaypoint.Pass(end.Position, arrival, end.SpeedMultiplier)];
+            if (IsProcessedPathSafe(map, direct, solveTime))
+            {
+                executable = direct;
+                appliedSmoothing = false;
+            }
         }
 
         // 目标内落点安顿：玩家已在激活目标区内 + 当前几何安全 + A* 残余移动 ≤ 安顿容差 → 视为已安顿。
@@ -286,7 +319,7 @@ public sealed class SafeZoneSolver
             return rawPath;
         }
 
-        if (options.EnablePathSmoothing && simplified.Count >= 3)
+        if (options.EnablePathSmoothing && !options.PreferStraightPaths && simplified.Count >= 3)
         {
             try
             {

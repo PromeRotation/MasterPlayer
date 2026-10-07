@@ -45,16 +45,19 @@ internal static class ScriptCatalogRegression
             dynamic Find(string id) => Scripts().Single(d => d.Metadata.Id == id);
             void ExpectOverride(string id, string source)
             {
-                Check(Scripts().Length == 8, "An override must replace its built-in entry.");
+                Check(Scripts().Length == 9, "An override must replace its built-in entry.");
                 Check(Find(id).Source.ToString() == source, "The configuration directory must win.");
             }
             void Pass(string name) => Console.WriteLine($"PASS script catalog: {name}");
 
             Refresh();
-            Check(Scripts().Length == 8 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
-                "An empty configuration must discover five boards and three dungeons, excluding examples.");
+            Check(Scripts().Length == 9 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
+                "An empty configuration must discover five boards, three dungeons and Blunderville, excluding examples.");
             foreach (var (id, territory) in new[] { ("sastasha", 1036u), ("tamtara", 1037u), ("copperbell", 1038u) })
                 Check(((uint[])Find("masterplayer.dungeon." + id).Metadata.Territorys).SequenceEqual([territory]), "Dungeon territory identity must match the remade duty.");
+            var race = Find("masterplayer.goldsaucer.blunderville");
+            Check(((uint[])race.Metadata.Territorys).SequenceEqual([1165u]), "Blunderville must activate in the actual minigame territory.");
+            Check(((IEnumerable<string>)race.CreateInstance().GetMechanisms()).Count() == 7, "Expose six obstacle groups and the race controls for the minigame.");
             Check(Scripts().All(d => d.CreateInstance().GetType().Assembly == assembly), "Factories must use the loaded plugin assembly.");
             Check(!Directory.EnumerateFiles((string)manager.ScriptsDirectory, "*", SearchOption.AllDirectories).Any(),
                 "Discovery must not copy scripts into the configuration directory.");
@@ -91,12 +94,12 @@ internal static class ScriptCatalogRegression
             Check(Find(builtInId).Source.ToString() == "BuiltIn", "A failed external load must leave the built-in available.");
             File.Delete(sourcePath);
             Refresh();
-            Check(Scripts().Length == 8 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
+            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
             Pass("compile failure reports an error; removal restores the built-in");
 
             File.WriteAllText(sourcePath, Source("Independent external script", "external.independent"));
             Refresh();
-            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
+            Check(Scripts().Length == 10 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
             File.Delete(sourcePath);
             Pass("unrelated external scripts coexist with built-ins");
 
@@ -132,12 +135,12 @@ internal static class ScriptCatalogRegression
 
             definition.Name = "Renamed visual script";
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
-            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
+            Check(Scripts().Length == 10 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
-            Check(Scripts().Length == 8 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
+            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);

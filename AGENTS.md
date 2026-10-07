@@ -23,7 +23,7 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 
 查询 API 时按归属查阅对应仓库：PR 封装查 PromeRotation，卫月服务与接口查 Dalamud，游戏原生结构与函数查 FFCS。核对具体签名、类型和调用约束，不凭记忆臆造成员；同时确认源码版本与当前编译引用及运行环境匹配。
 
-> **警告：编译必须引用用户实际运行的那份 PromeRotation.dll**（csproj 经 `PromeRotationRoot` 指向本体仓库的 `bin\Debug`）。PR 本体更新后必须重新编译本插件，否则运行时出现 `MissingMethodException` / 类型身份不一致。分发时目标用户的 PR 版本必须与编译引用版本一致。
+> **警告：编译必须引用用户实际运行的那份 PromeRotation.dll**（默认自动发现单个已安装版本，可用 `PromeRotationPath` 指定 DLL 目录，或经 `PromeRotationRoot` 引用本体仓库的 `bin\Debug`）。PR 本体更新后必须重新编译本插件，否则运行时出现 `MissingMethodException` / 类型身份不一致。分发时目标用户的 PR 版本必须与编译引用版本一致。
 
 ## 3. 目录结构与共享契约
 
@@ -522,9 +522,9 @@ public sealed class ScriptManager : IDisposable
 
 ### 4.1 构建前置
 
-1. **PromeRotation 本体已构建**：本体仓库（默认 `C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork\`）下已存在 `PromeRotation\bin\Debug\` 产物（`PromeRotation.dll`、`PromeRotation.Scripting.dll`、`ECommons.dll` 等）。csproj 直接引用这些 DLL。
+1. **.NET 10 SDK 与实际运行的 PR DLL 就位**：`Directory.Build.props` 在当前用户仅安装一个 PR 版本时自动引用 `%AppData%\XIVLauncherCN\installedPlugins\PromeRotation\<版本>\`；多个版本时必须指定 `PromeRotationPath`。设置 `PromeRotationRoot` 时仍使用该源码仓库的 `PromeRotation\bin\Debug\` 产物。
 2. **Dalamud CN 开发 DLL 就位**：`%AppData%\XIVLauncherCN\addon\Hooks\dev\` 下有 `Dalamud.dll`、`Dalamud.Bindings.ImGui.dll`、`FFXIVClientStructs.dll`、`Lumina.dll` 等（装了 XIVLauncherCN 开发者模式即有）。
-3. 本体在其他路径时用命令行覆盖 `PromeRotationRoot` 属性（注意以 `\` 结尾）：
+3. `XIVLauncherRoot` / `DalamudRoot` / `PromeRotationPath` 可通过命令行属性或已忽略的根目录 `Directory.Build.local.props` 覆盖，主项目及测试共用。源码仓库引用仍可覆盖 `PromeRotationRoot`：
    ```bash
    dotnet build -p:PromeRotationRoot=D:\path\to\PromeRotationFork\
    ```
@@ -541,6 +541,7 @@ dotnet build MasterPlayer.csproj
 - PR 用 shadow copy + 可收集 `AssemblyLoadContext` 加载子插件，DLL 不锁文件，游戏运行中可直接覆盖构建。
 - 首次加载后若插件管理器列表里没有 MasterPlayer，点「刷新全部」让它重扫 `Plugins\` 目录。
 - **PR 本体升级后必须重新构建本插件**（见第 2 节警告）。
+- 环境验证使用 `dotnet build -p:CI=true` 输出到仓库 `bin\Debug\`，避免验证阶段覆盖已安装插件。宿主 `SafeZoneRebornSetting` / `SafeZoneRebornMovementStatus` 由 `Spatial/HostMovement.cs` 缓存反射探测；旧版无该接口时仍检查旧版控制权，新版两者均检查。回归 fixture 仅在宿主提供 Reborn 接口时测试宿主 Reborn 所有权，插件本地 Reborn 测试始终执行。
 
 ## 5. 核心 API 速查
 
@@ -831,3 +832,10 @@ public readonly record struct GreenMovePoint(
 - 斗兽输出层性能修复：移动危险区（B31 毒云 SDCapsule）每帧重建 FrozenConstraintGeometry 是掉帧主凶（实测 12.12ms/个 vs 解析几何 0.022ms，550 倍），与雷达/解算无关（解算在后台线程）。SDCapsule 改解析多边形直接几何；ShapeDistance 增 ContentKey，CrucibleOutput 按内容键缓存兜底几何（512 上限）。
 - 踩坑：BossMod 值类型字段/闭包会把 MechanicRuntime 程序集依赖引入 MasterPlayer.dll 的类型布局，导致 ScriptManager 内置发现 GetTypes 在缺 MechanicRuntime 探测路径下整体失败（冒烟抓获）。引用类型字段无此问题；值类型一律拆基元或引用。
 - 验证：主项目 0 错误 0 警告；运行库 0 错误；tests/MechanicRuntime 2,551 断言 0 失败；全量回归 708 场景通过；脚本冒烟 19 项通过；已部署插件目录。
+
+### 2026-10-07 金碟巨豆中心竞速绘制
+
+- 内置脚本 `masterplayer.goldsaucer.blunderville`，区域1165；小游戏不依赖战斗旗标，先提供纯绘制。五份 ARR 覆盖两种第一关、两种第二关与决赛，20个内部动作全部压制通用躲避；尺寸静态查询与客户端一致，34803为visual不画。
+- 34812自身源点z190.4、包落点z187.396，必须分开；同轮原生扫描只补缺，不能覆写包内锁定快照。34797/98效果朝向与锁定读条相差90°，只沿用捕获的扇形；35409按源点至落点计算冲锋，不能用占位-π朝向。
+- 滚动球16351/旋转长条9020动态刷新，其余helper判定保持短时静态快照。波浪每列独立预测后四段，实际效果校时/消费，取消、死亡、销毁、超时及回放倒退清理。MapEffect与全机关活动定位未唯一证实，不猜提前开关、跳跃或最快导航；详情见 `docs/reference/Blunderville.spec.md`。
+- 本轮52专项、759全量场景、9脚本编译及20项冒烟通过；运行库2,550断言0失败。Release 0错误（25条已有上游警告），按实装PR1.5.10.1编译，插件目录已备份替换并核对哈希。实机验收待用户完成。

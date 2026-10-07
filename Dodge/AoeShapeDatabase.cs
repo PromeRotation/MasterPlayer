@@ -52,6 +52,8 @@ public static class AoeShapeDatabase
     // casterHitboxRadius 为施法者 hitbox 半径：按 BMR 规则计入 CastType 3/4/5 的尺寸。
     public static bool TryGetShape(uint actionId, float casterHitboxRadius, out AoeShapeDescriptor? descriptor)
     {
+        if (Mechanics.Blunderville.BlundervilleCatalog.TryGet(actionId, out _))
+            return Mechanics.Blunderville.BlundervilleCatalog.TryGetShape(actionId, out descriptor);
         if (Mechanics.Dungeons.ArrDungeonCatalog.TryGetShape(actionId, out descriptor))
             return true;
         if (Mechanics.Crucible.CrucibleActionCatalog.IsClaimed(actionId))

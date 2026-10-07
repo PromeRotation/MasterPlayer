@@ -123,7 +123,8 @@ public sealed class ScriptMoveApi
         var safeZoneHasControl = SafeZoneHasControl;
         if (MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
             return false;
-        if (!HostMovement.AutomaticMovementEnabled && !MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement &&
+        if (!HostMovement.AutomaticMovementEnabled && !MasterPlayerPlugin.Instance!.SafeZone.Setting.EffectiveEnableAutoMovement &&
+            !MasterPlayerPlugin.Instance.SafeZone.Setting.RuntimeMovementHeld &&
             !safeZoneHasControl)
             return true;
 

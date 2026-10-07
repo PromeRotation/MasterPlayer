@@ -292,7 +292,7 @@ public sealed class SafeZoneManager : IDisposable
     {
         ThrowIfDisposed();
 
-        if (!_setting.EnableSafeZone)
+        if (!_setting.EffectiveEnableSafeZone)
         {
             return new SafeZoneSnapshot(
                 _version,

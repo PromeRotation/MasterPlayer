@@ -8,6 +8,16 @@ using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 
 var passed = 0;
+if (args.Contains("--radar-performance"))
+{
+    NavigationPerformance.Radar();
+    return;
+}
+if (args.Contains("--navigation-performance"))
+{
+    NavigationPerformance.Run();
+    return;
+}
 if (args.Contains("--local-safezone"))
 {
     LocalSafeZoneRegression.Run(Run);
@@ -334,6 +344,15 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 
 CrucibleMechanicRegression.Run(Run);
 ArrDungeonRegression.Run(Run);
+BlundervilleRegression.Run(Run);
+BlundervilleNavigationRegression.Run(Run);
+BlundervilleRaceStateRegression.Run(Run);
+BlundervilleBridgeRegression.Run(Run);
+BlundervilleJumpRegression.Run(Run);
+BlundervilleRacePlannerRegression.Run(Run);
+BlundervilleRampRegression.Run(Run);
+BlundervilleAnimationRegression.Run(Run);
+NavigationCacheRegression.Run(Run);
 UpstreamSyncRegression.Run(Run);
 CrucibleAllRegression.Run(Run);
 CrucibleTimingRegression.Run(Run);
@@ -342,6 +361,7 @@ LateDodgeRegression.Run(Run);
 MindflayerLiveRegression.Run(Run);
 High2LiveMovementRegression.Run(Run);
 MovingHazardDispatchRegression.Run(Run);
+NavigationContinuityRegression.Run(Run);
 Low2LiveRegression.Run(Run);
 Low2MissingMechanicsRegression.Run(Run);
 MindflayerWaterRegression.Run(Run);

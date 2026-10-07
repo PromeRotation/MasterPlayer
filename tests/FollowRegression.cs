@@ -22,6 +22,23 @@ internal static partial class FollowRegression
     public static void Run(Action<string, Action> run)
     {
         RunCombatRange(run);
+        run("Host movement disabling preserves the plugin's own automation", () =>
+        {
+            using var scope = new FollowScope();
+            var host = PromeRotation.Plugin.Instance;
+            host.SafeZoneSetting.EnableSafeZone = host.SafeZoneSetting.EnableAutoMovement = true;
+            var reborn = typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornSetting")?.GetValue(host)
+                as PromeRotation.Spatial.SafeZone.SafeZoneSetting;
+            if (reborn is not null)
+                reborn.EnableSafeZone = reborn.EnableAutoMovement = true;
+            Check(MasterPlayer.Spatial.HostMovement.AutomaticMovementEnabled, "Host automation must be detected.");
+            MasterPlayer.Spatial.HostMovement.DisableAutomaticMovement();
+            Check(!host.SafeZoneSetting.EnableAutoMovement && reborn?.EnableAutoMovement != true
+                && !MasterPlayer.Spatial.HostMovement.AutomaticMovementEnabled,
+                "Disabling host automation must affect all available host solvers.");
+            Check(MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement,
+                "The plugin's own automation must remain enabled.");
+        });
         run("Follow approaches a battle target and stops at hitbox distance", () =>
         {
             using var scope = new FollowScope();
@@ -130,7 +147,8 @@ internal static partial class FollowRegression
             Check(scope.MoveCount == 1, "An unavailable party member must allow the enabled current-target fallback.");
         });
 
-        foreach (var owner in new[] { "legacy", "Reborn", "plugin" })
+        foreach (var owner in typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornMovementStatus") is null
+            ? new[] { "legacy", "plugin" } : new[] { "legacy", "Reborn", "plugin" })
         {
             run($"Follow yields to {owner} and resumes after control is released", () =>
             {
@@ -158,8 +176,8 @@ internal static partial class FollowRegression
             var first = scope.Manager.BuildSnapshot(DateTime.UtcNow);
             Check(first.GoalAreas.Count == 1 && scope.MoveCount == 0, "auto-follow bypassed planner");
             scope.TargetPosition = new(12, 0, 0);
-            scope.SetDodgeControl("Reborn", true); scope.Update();
-            scope.SetDodgeControl("Reborn", false); scope.Update();
+            scope.SetDodgeControl("plugin", true); scope.Update();
+            scope.SetDodgeControl("plugin", false); scope.Update();
             var moved = scope.Manager.BuildSnapshot(DateTime.UtcNow);
             Check(moved.Version == first.Version && moved.GoalAreas[0].Geometry.Position == scope.TargetPosition,
                 "moving target invalidated every in-flight solve instead of using dynamic binding");
@@ -327,7 +345,7 @@ internal static partial class FollowRegression
             scope.Settings.EnableAutoDodge = true; scope.Update();
             var now = DateTime.UtcNow;
             var foreign = scope.Manager.AddGoalArea(new CircleTemplate(2), new StaticTransform(new(-5,0,0),0), [new GoalWindow(now,null,0,PositionPreference.Nearest)]);
-            scope.SetDodgeControl("Reborn",true);
+            scope.SetDodgeControl("plugin",true);
             scope.Controller.Dispose(); scope.Controller.Dispose();
             Check(scope.Manager.BuildSnapshot(now).GoalAreas.Single().Handle == foreign && scope.StopCount == 0, "cleanup took foreign goal or route");
         });
@@ -360,7 +378,7 @@ internal static partial class FollowRegression
         private readonly Dictionary<FieldInfo, object?> _savedSettings;
         private readonly List<string> _errors = [];
         private readonly object _legacy;
-        private readonly object _reborn;
+        private readonly object? _reborn;
         private readonly MasterPlayerPlugin _localPlugin;
         public MasterPlayerSettings Settings { get; }
         public FollowController Controller { get; }
@@ -446,11 +464,14 @@ internal static partial class FollowRegression
             var assembly = typeof(PromeRotation.Plugin).Assembly;
             var plugin = RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
             _legacy = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZone.SafeZoneMovementSystem")!);
-            _reborn = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!);
+            var rebornType = assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem");
+            _reborn = rebornType is null ? null : RuntimeHelpers.GetUninitializedObject(rebornType);
             SetField(plugin, "_safeZoneMovementSystem", _legacy);
-            SetField(plugin, "_safeZoneRebornMovementSystem", _reborn);
+            if (_reborn is not null)
+                SetField(plugin, "_safeZoneRebornMovementSystem", _reborn);
             SetField(plugin, "_safeZoneSetting", new PromeRotation.Spatial.SafeZone.SafeZoneSetting());
-            SetField(plugin, "_safeZoneRebornSetting", new PromeRotation.Spatial.SafeZone.SafeZoneSetting());
+            if (_reborn is not null)
+                SetField(plugin, "_safeZoneRebornSetting", new PromeRotation.Spatial.SafeZone.SafeZoneSetting());
             Replace(typeof(PromeRotation.Plugin), nameof(PromeRotation.Plugin.Instance), plugin);
             var movement = ScriptServiceProxy.Create<IGreenMoveSystem>((name, args) =>
             {
@@ -476,7 +497,7 @@ internal static partial class FollowRegression
         }
 
         public void SetDodgeControl(string owner, bool hasControl)
-            => SetField(owner == "plugin" ? _localPlugin.SafeZone.MovementStatus : owner == "legacy" ? _legacy : _reborn, "_hasControl", hasControl);
+            => SetField(owner == "plugin" ? _localPlugin.SafeZone.MovementStatus : owner == "legacy" ? _legacy : _reborn!, "_hasControl", hasControl);
 
         private static void SetField(object target, string name, object value)
             => target.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(target, value);

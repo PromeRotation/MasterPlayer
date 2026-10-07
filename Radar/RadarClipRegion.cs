@@ -27,6 +27,13 @@ internal sealed class RadarClipRegion
 
     public IEnumerable<IReadOnlyList<Vector2>> ClipPolygon(IReadOnlyList<Vector2> polygon)
     {
+        // The background is already split and clipped in the constructor. Clipping
+        // all its triangles against themselves again costs O(n²) every UI frame.
+        if (ReferenceEquals(polygon, Outline))
+        {
+            foreach (var piece in _pieces) yield return piece;
+            yield break;
+        }
         // A concave intersection can have disconnected islands. Split both operands before clipping.
         foreach (var input in ConvexParts(polygon))
             foreach (var piece in _pieces)

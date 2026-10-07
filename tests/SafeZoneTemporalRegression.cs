@@ -401,7 +401,8 @@ internal static class SafeZoneTemporalRegression
             }
         });
 
-        foreach (var owner in new[] { "none", "legacy", "Reborn", "plugin", "replay" })
+        foreach (var owner in typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornMovementStatus") is null
+            ? new[] { "none", "legacy", "plugin", "replay" } : new[] { "none", "legacy", "Reborn", "plugin", "replay" })
         {
             run($"script route cleanup respects actual safe-zone ownership: {owner}", () => CheckScriptCleanup(owner));
         }
@@ -645,15 +646,20 @@ internal static class SafeZoneTemporalRegression
         var assembly = typeof(PromeRotation.Plugin).Assembly;
         var plugin = (PromeRotation.Plugin)RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
         var legacy = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZone.SafeZoneMovementSystem")!);
-        var reborn = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!);
+        var rebornType = assembly.GetType("PromeRotation.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem");
+        var reborn = rebornType is null ? null : RuntimeHelpers.GetUninitializedObject(rebornType);
         using var localPlugin = new MasterPlayerPlugin(new FakeMove());
         SetField(localPlugin.SafeZone.MovementStatus, "_hasControl", owner == "plugin");
         SetField(legacy, "_hasControl", owner == "legacy");
-        SetField(reborn, "_hasControl", owner == "Reborn");
+        if (reborn is not null)
+            SetField(reborn, "_hasControl", owner == "Reborn");
         SetField(plugin, "_safeZoneMovementSystem", legacy);
-        SetField(plugin, "_safeZoneRebornMovementSystem", reborn);
+        if (reborn is not null)
+            SetField(plugin, "_safeZoneRebornMovementSystem", reborn);
         SetField(plugin, "_safeZoneSetting", new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true });
-        SetField(plugin, "_safeZoneRebornSetting", new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true });
+        var rebornSetting = new HostZone.SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true };
+        if (reborn is not null)
+            SetField(plugin, "_safeZoneRebornSetting", rebornSetting);
 
         // Seed an accepted route without installing game hooks or executing game input.
         var movement = RuntimeHelpers.GetUninitializedObject(assembly.GetType("PromeRotation.GreenMoveSystem.GreenMoveManager")!);
@@ -668,7 +674,7 @@ internal static class SafeZoneTemporalRegression
             var route = new List<GreenMovePoint> { new(Vector3.UnitX), new(Vector3.UnitX * 2), new(Vector3.UnitX * 3) };
             if (owner == "replay")
             {
-                plugin.SafeZoneSetting.EnableAutoMovement = plugin.SafeZoneRebornSetting.EnableAutoMovement = false;
+                plugin.SafeZoneSetting.EnableAutoMovement = rebornSetting.EnableAutoMovement = false;
                 localPlugin.Scripts.ReplayModeActive = true;
                 SetField(movement, "route", route.ToList());
                 SetField(movement, "currentIndex", 0);

@@ -1,0 +1,12 @@
+{
+  "source": "2026-10-08 02.16.26 ARR; local position and status only, no actor identifiers",
+  "course": "FirstA",
+  "positions": [
+    { "t": 211.922, "position": [-200.061, 9.995, -247.456], "status": 3694 },
+    { "t": 213.75, "position": [-199.878, 9.995, -253.376], "status": 3694 },
+    { "t": 236.307, "position": [-200.031, 9.995, -248.280], "status": 3694 },
+    { "t": 237.63, "position": [-200.092, 9.995, -253.254], "status": 3694 }
+  ],
+  "observedStuns": [215.496, 227.981, 240.378, 252.852],
+  "observedFalls": [231.84, 256.71]
+}
