@@ -13,7 +13,7 @@ internal sealed class BlundervilleOutput(ScriptSafeZoneApi safeZone, ScriptDrawA
         if (player is { } position && BlundervilleEncounter.Finite(position))
             foreach (var preview in encounter.Previews(now))
             {
-                if (!enabled(preview.Group) || Vector3.DistanceSquared(position, preview.Geometry.Position) > 100 * 100) continue;
+                if (!enabled(preview.Group) || !Radar.RadarLocalGeometry.Intersects(preview.Geometry.GetBounds(), position, 25)) continue;
                 using var group = safeZone.BeginDrawingGroup(preview.Group);
                 wanted.Add(preview.Id);
                 draw.AddAoePreview(preview.Id, preview.Geometry, false, preview.Outline, preview.Progress);

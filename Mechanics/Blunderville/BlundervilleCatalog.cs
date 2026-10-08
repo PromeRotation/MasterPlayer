@@ -16,6 +16,7 @@ internal static class BlundervilleCatalog
     // Action sheet from the user's CN client; see docs/reference/Blunderville.spec.md.
     private static readonly FrozenDictionary<uint, BlundervilleRule> Rules = new Dictionary<uint, BlundervilleRule>
     {
+        [29795] = new(Devices, new CircleTemplate(3)),
         [34716] = new(Devices, new RectangleTemplate(2, 3)),
         [34717] = new(Casts, new CircleTemplate(3)),
         [34718] = new(Devices, new RectangleTemplate(10, 4)),

@@ -2,7 +2,11 @@ using System.Numerics;
 
 namespace MasterPlayer.Mechanics.Blunderville;
 
-internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool Jump, float? Facing, string Hint);
+internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool Jump, float? Facing, string Hint, bool DirectTraversal = false)
+{
+    public IReadOnlyList<Vector3>? ContinuousPath { get; init; }
+    public float HeadingTolerance { get; init; }
+}
 
 internal sealed class BlundervilleRacePlanner
 {
@@ -15,6 +19,9 @@ internal sealed class BlundervilleRacePlanner
     private Vector3? _deliveryTarget;
     private bool _recovering;
     private int _recoveryNodeCount;
+    private DateTime _forcedExpiry;
+    private Vector3 _forcedPosition;
+    private (float Heading, bool Safe) _forcedHeading;
     public int Cursor => _cursor;
     public bool Recovering => _recovering;
     public BlundervilleRecoveryCorridor? RecoveryCorridor { get; private set; }
@@ -34,6 +41,7 @@ internal sealed class BlundervilleRacePlanner
             _cursor = NearestSegment(position);
             _arrival = default; _arrivalTarget = null;
             _deliveryTarget = null; _recovering = false; RecoveryCorridor = null;
+            _forcedExpiry = default;
         }
         _previous = position;
         if (state.Course == BlundervilleCourse.FirstA && position.Y < 12
@@ -99,7 +107,16 @@ internal sealed class BlundervilleRacePlanner
         var desired = MathF.Atan2(destination.X - position.X, destination.Z - position.Z);
         if (state.ForcedMoveExpiresAt is { } expires && state.ForcedDirectionOffset is { } offset
             && expires != DateTime.MaxValue && expires - now <= TimeSpan.FromSeconds(0.8) && expires >= now)
-            return new(destination, true, false, MathF.IEEERemainder(desired - offset, MathF.Tau), "预先对齐强制移动方向");
+        {
+            if (_forcedExpiry != expires || Vector3.DistanceSquared(_forcedPosition, position) > .25f * .25f)
+            {
+                _forcedExpiry = expires; _forcedPosition = position;
+                _forcedHeading = BlundervilleForcedMovement.Heading(BlundervilleRoutes.Boundary(state.Course), position, destination);
+            }
+            var forced = _forcedHeading;
+            return new(destination, true, false, MathF.IEEERemainder(forced.Heading - offset, MathF.Tau),
+                forced.Safe ? "沿完整安全直线对齐强制移动" : "强制移动准备过晚：朝最长地板方向，仍有跌落风险");
+        }
         var canMove = state.CanMoveToward(position, destination, arrowDirection, now);
         var hint = state.MustStopForAccelerationBomb(now) ? "加速度炸弹：停步"
             : state.IsForcedMoving ? "等待强制移动结束"
@@ -108,17 +125,16 @@ internal sealed class BlundervilleRacePlanner
             : state.IsSlidingSlope ? "湿滑坡面：沿路线前进"
             : _recovering ? "掉桥恢复：沿外侧到坡口，横向上坡"
             : state.IsSpinning ? "旋转移动：沿桥面转向" : "沿路线竞速";
-        var jump = !_recovering && canMove && state.CanJump(now) && grounded && !jumping
-            && (gapAhead
-                || state.Course == BlundervilleCourse.Final && BlundervilleRoutes.NeedsRepeatedJump(state.Course, position));
-        if (nativeMisdirection && state.HasMisdirection && executionTarget is { } execution)
-            jump = !_recovering && state.CanMoveToward(position, execution, arrowDirection, now) && state.CanJump(now) && grounded && !jumping && gapAhead;
+        // A missing floor probe is also a cliff, a pillar or a rising slope.
+        // Only JumpPlanner/BridgePlanner may authorize a measured takeoff/landing.
+        const bool jump = false;
         var hold = nativeMisdirection && state.HasMisdirection ? !state.CanMove(now) : !canMove;
         return new(destination, hold, jump, null, hint);
     }
 
     public void Reset()
     {
+        _forcedExpiry = default;
         _nodes = []; _version = -1; _cursor = 0; _arrival = default; _arrivalTarget = null; _previous = null;
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }

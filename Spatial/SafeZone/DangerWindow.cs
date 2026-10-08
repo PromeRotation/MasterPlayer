@@ -15,6 +15,11 @@ namespace MasterPlayer.Spatial.SafeZone;
 /// </summary>
 public readonly record struct DangerWindow(DateTime DangerFrom, DateTime? DangerUntil, DateTime? TelegraphFrom = null)
 {
+    // A swept moving body already includes sampling/trajectory uncertainty.
+    // Applying cast preparation time to every slice blocks positions it has left.
+    internal bool HasMotionEnvelope { get; init; }
+    internal DangerWindow Buffered(float start, float end) => HasMotionEnvelope ? this
+        : new(DangerFrom.AddSeconds(-MathF.Max(0, start)), DangerUntil?.AddSeconds(MathF.Max(0, end)), TelegraphFrom);
     /// <summary>创建一个永久危险窗口（无结束时间，无预告）。</summary>
     public static DangerWindow Persistent(DateTime dangerFrom) => new(dangerFrom, null, null);
 

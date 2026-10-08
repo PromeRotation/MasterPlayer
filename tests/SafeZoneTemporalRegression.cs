@@ -627,6 +627,7 @@ internal static class SafeZoneTemporalRegression
     {
         var type = typeof(SafeZoneSolver).Assembly.GetType("MasterPlayer.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
         var movement = RuntimeHelpers.GetUninitializedObject(type);
+        SetField(movement, "_setting", new SafeZoneSetting());
         SetField(movement, "_options", Options);
         SetField(movement, "_greenMove", move);
         SetField(movement, "_externalMovementEnabled", (Func<bool>)(() => legacySetting is { EnableSafeZone: true, EnableAutoMovement: true }));

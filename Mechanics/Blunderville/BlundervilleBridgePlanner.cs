@@ -72,10 +72,10 @@ internal sealed class BlundervilleBridgePlanner
         var deadline = tracker.BridgeNextDisappearAt(currentIndex, now);
         var remainingSeconds = deadline is { } close ? (float)(close - now).TotalSeconds : 0;
         var exitSeconds = Math.Max(0, player.Z - EndZ) / 6;
-        if (player.Z <= -351f && grounded && !jumping)
-            return BeginJump(player, new(player.X, Floor, -355.2f), -1, "跳上终点平台");
+        if (player.Z <= -349.5f && grounded && !jumping)
+            return BeginJump(new(player.X, Floor, -351f), new(player.X, Floor, -355.2f), -1, "助跑后跳上终点平台");
         if (_switchLane >= 0 && !tracker.BridgeEnabled((byte)(14 + _switchLane), now)) ClearPreparation();
-        if (_switchLane < 0 && (remainingSeconds < 1.35f && exitSeconds + 0.2f > remainingSeconds || !tracker.BridgeEnabled(currentIndex, now)))
+        if (_switchLane < 0 && (remainingSeconds < 2.2f && exitSeconds + 0.2f > remainingSeconds || !tracker.BridgeEnabled(currentIndex, now)))
         {
             var bestRemaining = 0.8f;
             foreach (var adjacent in new[] { lane - 1, lane + 1 })
@@ -91,7 +91,7 @@ internal sealed class BlundervilleBridgePlanner
                 var direction = MathF.Sign(Centers[_switchLane] - Centers[lane]);
                 _takeoff = new(Centers[lane] + direction * 2.0f, Floor, Math.Max(EndZ - 0.2f, player.Z - 0.8f));
                 _preparedLanding = new(Centers[_switchLane] - direction * 1.65f, Floor, Math.Max(EndZ - 0.4f, player.Z - 2.2f));
-                _crossing = Crossing(player, _preparedLanding.Value);
+                _crossing = Crossing(_takeoff.Value, _preparedLanding.Value);
             }
         }
         if (_switchLane >= 0 && _takeoff is { } takeoff && _preparedLanding is { } preparedLanding)
@@ -130,10 +130,7 @@ internal sealed class BlundervilleBridgePlanner
     }
 
     private static IGeometryShape Crossing(Vector3 from, Vector3 landing)
-    {
-        var delta = landing - from; delta.Y = 0;
-        return new RectangleGeometry((from + landing) / 2, MathF.Atan2(delta.X, delta.Z), 2.2f, delta.Length() + 1.2f);
-    }
+        => new BlundervilleJumpCorridor(from, landing, 2.2f, 1.2f);
 
     private static int NearestLane(float x)
     {

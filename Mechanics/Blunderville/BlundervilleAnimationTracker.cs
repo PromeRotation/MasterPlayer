@@ -3,7 +3,7 @@ using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Mechanics.Blunderville;
 
-// FirstA's hammers have no cast. Their helpers turn before each animated sweep.
+// FirstA and Delivery hammers have no cast. Helpers turn before each sweep.
 // Timings and helper positions are measured independently of the navigation path.
 internal sealed class BlundervilleAnimationTracker
 {
@@ -14,12 +14,12 @@ internal sealed class BlundervilleAnimationTracker
 
     public void Map(byte index, uint state, DateTime now)
     {
-        if (index is not (0 or 12)) return;
+        if (index is not (0 or 12 or 41)) return;
         if (state is 0x20001 or 0x80004) _starts[index] = now;
         else
         {
             _starts.Remove(index);
-            foreach (var id in _devices.Where(p => Group(p.Value.Action) == index).Select(p => p.Key).ToArray())
+            foreach (var id in _devices.Where(p => Group(p.Value.Actor, p.Value.Action) == index).Select(p => p.Key).ToArray())
                 _devices.Remove(id);
         }
     }
@@ -32,7 +32,7 @@ internal sealed class BlundervilleAnimationTracker
         {
             if (MathF.Cos(actor.Rotation - old.Actor.Rotation) > -.95f)
             {
-                if (old.Phase == default && _starts.TryGetValue(Group(action), out var seed)
+                if (old.Phase == default && _starts.TryGetValue(Group(actor, action), out var seed)
                     && now >= seed && now - seed < TimeSpan.FromSeconds(.3))
                 {
                     var seeded = old with { Phase = seed.AddSeconds(-.05) };
@@ -44,7 +44,7 @@ internal sealed class BlundervilleAnimationTracker
             _devices[actor.Id] = next with { Forecast = Forecast(next) };
             return;
         }
-        var phase = _starts.TryGetValue(Group(action), out var start) && now >= start && now - start < TimeSpan.FromSeconds(.3)
+        var phase = _starts.TryGetValue(Group(actor, action), out var start) && now >= start && now - start < TimeSpan.FromSeconds(.3)
             ? start.AddSeconds(-.05) : default;
         var device = new Device(actor, column, columns, action, action == 34716 ? 2.1 : 4.15, phase, 0, []);
         _devices[actor.Id] = phase == default ? device : device with { Forecast = Forecast(device) };
@@ -94,7 +94,7 @@ internal sealed class BlundervilleAnimationTracker
         return device.Action == 34716 ? rank switch { 0 => .53, 1 => .935, _ => 1.245 } : .83 + rank * .407;
     }
 
-    private static int Group(uint action) => action == 34716 ? 0 : 12;
+    private static int Group(BlundervilleActor actor, uint action) => actor.Position.Z > 0 ? 41 : action == 34716 ? 0 : 12;
 
     private static bool Identify(BlundervilleActor actor, out int column, out int columns, out uint action)
     {
@@ -107,10 +107,12 @@ internal sealed class BlundervilleAnimationTracker
         else if (Near(p.Z, -219.9f) || Near(p.Z, -232)) left = -203;
         else if (Near(p.Z, -225.3f) || Near(p.Z, -239.05f)) left = p.X < -200 ? -209 : -197;
         else if (Near(p.Z, -261) || Near(p.Z, -281)) { left = -206; columns = 4; action = 34718; }
+        else if (Near(p.Z, 226.9f) && Near(p.Y, 6)) left = -203;
         else return false;
         var spacing = action == 34716 ? 3 : 4;
         column = (int)MathF.Round((p.X - left) / spacing);
-        return column >= 0 && column < columns && Near(p.X, left + column * spacing) && p.Y is > 8 and < 19;
+        return column >= 0 && column < columns && Near(p.X, left + column * spacing)
+            && (p.Z > 0 ? Near(p.Y, 6) : p.Y is > 8 and < 19);
     }
 
     private static bool Near(float a, float b) => MathF.Abs(a - b) < .05f;

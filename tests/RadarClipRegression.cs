@@ -7,6 +7,15 @@ internal static class RadarClipRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        run("radar local course culls distant shapes without losing intersecting beams", () =>
+        {
+            var center = new Vector3(-200, 11.28f, -105);
+            Check(!RadarLocalGeometry.Intersects(new CircleGeometry(new(-200, 11, -200), 5).GetBounds(), center, 25), "Distant course device remained visible.");
+            Check(RadarLocalGeometry.Intersects(new RayRectangleGeometry(new(-200, 11, -150), 0, 8, 100).GetBounds(), center, 25), "A beam reaching the player was culled by its distant origin.");
+            var boundary = MasterPlayer.Mechanics.Blunderville.BlundervilleRoutes.Boundary(MasterPlayer.Mechanics.Blunderville.BlundervilleCourse.FirstA);
+            var visible = RadarLocalGeometry.Segments(boundary, center, 25).ToArray();
+            Check(visible.Length > 0 && visible.Length < boundary.GetContours().Sum(c => c.Count) / 3, "Local viewport still drew the whole course.");
+        });
         run("radar fits each authored Crucible arena after camera rotation without changing its shape", () =>
         {
             var fields = new[]

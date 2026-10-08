@@ -8,6 +8,10 @@ namespace MasterPlayer.Mechanics.Blunderville;
 
 internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafeZoneApi safeZone, ScriptDrawApi draw)
 {
+    public bool HasMovementControl => runtime.MovementStatus.HasControl;
+    public bool CommitJump(Vector3 landing, Vector3 player, float speed, DateTime now) => runtime.CommitJumpMovement(this, landing, player, speed, now);
+    public void ReleaseJump() => runtime.ReleaseCommittedMovement(this);
+    public void StopForRunup() => runtime.StopOwnedMovement(this);
     private sealed record Registered(BlundervilleHazard Hazard, SafeZoneAreaHandle Handle);
     private readonly Dictionary<string, Registered> _dangers = [];
     private SafeZoneAreaHandle _goal;
@@ -27,7 +31,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             Clear(); return;
         }
         var recovery = crossing is BlundervilleRecoveryCorridor;
-        var preciseRoute = state.Course == BlundervilleCourse.FirstB && player.Y >= 8.5f
+        var preciseRoute = decision.DirectTraversal || state.Course == BlundervilleCourse.FirstB && player.Y >= 8.5f
                 && (player.Z is < -118 and > -158 || decision.Target is { Z: < -118 and > -158 })
             || state.Course == BlundervilleCourse.Ring && (player.Z < -137 || decision.Target is { Z: < -137 })
             || state.Course == BlundervilleCourse.Final && player.Y >= 35 && (player.Z < 129 || decision.Target is { Z: < 129 });
@@ -53,7 +57,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             _boundary = new LocalCorridor(recovery ? crossing! : crossing == null ? source : new CrossingCorridor(source, crossing), center, tightCrossing ? 8 : preciseRoute ? 16 : 28);
             runtime.Manager.SetArenaBoundary(_boundary);
         }
-        var goalRadius = tightCrossing || preciseRoute || recovery ? 0.2f : 0.8f;
+        var goalRadius = tightCrossing || preciseRoute || recovery || decision.DirectTraversal ? 0.2f : 0.8f;
         if (decision.Target != _target || _goalRadius != goalRadius || _goal.IsValid && !runtime.Manager.ContainsArea(_goal))
         {
             _target = decision.Target; _goalRadius = goalRadius;
@@ -67,7 +71,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             }
             else { if (_goal.IsValid) safeZone.Remove(_goal); _goal = default; }
         }
-        var desired = encounter.Hazards(now).Where(h => DistanceXZ(player, h.Geometry.Position) <= 48).ToDictionary(h => h.Id);
+        var desired = encounter.Hazards(now).Where(h => Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
         foreach (var id in _dangers.Keys.Where(id => !desired.ContainsKey(id)).ToArray())
         { safeZone.Remove(_dangers[id].Handle); _dangers.Remove(id); }
         foreach (var (id, hazard) in desired)
@@ -75,26 +79,37 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             var template = Template(hazard.Geometry);
             if (template == null) continue;
             var binding = new StaticTransform(hazard.Geometry.Position, hazard.Geometry.Rotation);
-            DangerWindow[] windows = [new(hazard.From, hazard.Until, hazard.Telegraph)];
+            DangerWindow[] windows = [new(hazard.From, hazard.Until, hazard.Telegraph)
+                { HasMotionEnvelope = hazard.Id.StartsWith("bumper/", StringComparison.Ordinal) }];
             if (_dangers.TryGetValue(id, out var existing))
             {
                 if (existing.Hazard == hazard) continue;
-                var dynamic = id.StartsWith("ball/", StringComparison.Ordinal) || id.StartsWith("beam/", StringComparison.Ordinal);
+                var dynamic = id.StartsWith("ball/", StringComparison.Ordinal) || id.StartsWith("beam/", StringComparison.Ordinal) || id.StartsWith("bumper/", StringComparison.Ordinal);
                 if (runtime.Manager.UpdateArea(existing.Handle, template, binding, windows, incrementVersion: !dynamic))
                 { _dangers[id] = new(hazard, existing.Handle); continue; }
                 safeZone.Remove(existing.Handle); _dangers.Remove(id);
             }
-            var handle = safeZone.AddDangerSnapshot(template, binding, windows);
+            // Forecast geometry already includes body uncertainty; the solver
+            // applies its own clearance. Add/update must use identical geometry.
+            var handle = safeZone.AddExactDangerSnapshot(template, binding, windows);
             safeZone.SetNavigationOnly(handle, true);
             _dangers[id] = new(hazard, handle);
         }
+        runtime.RequestDirectTraversal(this, automatic && !replay && decision.DirectTraversal ? decision.Target : null, now, decision.ContinuousPath, decision.HeadingTolerance);
     }
 
     public void Clear()
     {
+        runtime.RequestDirectTraversal(this, null, runtime.CurrentTime);
         runtime.RequestAutomaticMovement(this, false);
         ClearAreas();
         draw.Remove("race/route"); draw.Remove("race/goal");
+    }
+
+    public void ApplyDirectFrame(BlundervilleRaceState state, BlundervilleRaceDecision decision, DateTime now)
+    {
+        runtime.RequestAutomaticMovement(this, true, decision.Hold, state.NavigationBaseSpeed(now), arenaSafetyMargin: .1f, preferStraightPaths: true);
+        runtime.RequestDirectTraversal(this, decision.DirectTraversal ? decision.Target : null, now, headingTolerance: decision.HeadingTolerance);
     }
 
     private void ClearAreas()
@@ -118,8 +133,9 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
     };
     private static float DistanceXZ(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));
 
-    private sealed class LocalCorridor(IGeometryShape source, Vector3 center, float radius) : IStaticArenaBoundary
+    private sealed class LocalCorridor(IGeometryShape source, Vector3 center, float radius) : ILocalViewBoundary
     {
+        public float ViewRadius => 25;
         public ArenaBoundaryIndex TraversalIndex { get; } = new(source.GetContours());
         public GeometryKind Kind => source.Kind;
         public Vector3 Position => center;

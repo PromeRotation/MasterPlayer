@@ -17,6 +17,100 @@ internal static class NavigationContinuityRegression
 
     public static void Run(Action<string, Action> run)
     {
+        foreach (var release in new[] { "owner", "expiry", "hold", "reset" })
+            run($"Navigation continuity committed jump releases on {release}", () =>
+            {
+                using var runtime = Runtime(out var move);
+                var owner = new object(); var other = new object();
+                runtime.RequestAutomaticMovement(owner, true, preferStraightPaths: true);
+                var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+                var landing = Vector3.UnitZ * 4;
+                var solution = SafeZoneSolution.Succeeded(snapshot.Version, Epoch, Epoch, landing,
+                    [TimedWaypoint.Pass(Vector3.Zero, Epoch), TimedWaypoint.Pass(landing, Epoch.AddSeconds(.7))]);
+                Dispatch(runtime, solution, Vector3.Zero, snapshot, Epoch);
+                Check(!runtime.CommitJumpMovement(other, landing, Vector3.Zero, 6, Epoch), "An unregistered owner committed another route.");
+                Check(!runtime.CommitJumpMovement(owner, Vector3.UnitX * 4, Vector3.Zero, 6, Epoch), "A different destination acquired a flight lease.");
+                var danger = runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(landing, 0), [new(Epoch, null)]);
+                Check(!runtime.CommitJumpMovement(owner, landing, Vector3.Zero, 6, Epoch), "A newly unsafe landing authorized takeoff.");
+                runtime.Manager.RemoveArea(danger);
+                Check(runtime.CommitJumpMovement(owner, landing, Vector3.Zero, 6, Epoch), "Verified direct flight was rejected.");
+                runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(landing, 0), [new(Epoch, null)]);
+                snapshot = runtime.Manager.BuildSnapshot(Epoch);
+                var stops = move.StopCount;
+                Dispatch(runtime, null, Vector3.UnitZ * 2, snapshot, Epoch.AddSeconds(.3));
+                Check(move.IsRunning && move.StopCount == stops, "Ground invalidation interrupted an already committed flight.");
+                runtime.ReleaseCommittedMovement(other);
+                Dispatch(runtime, null, Vector3.UnitZ * 2, snapshot, Epoch.AddSeconds(.4));
+                Check(move.IsRunning, "An unrelated owner revoked flight input.");
+                var end = Epoch.AddSeconds(.8);
+                switch (release)
+                {
+                    case "owner": runtime.ReleaseCommittedMovement(owner); break;
+                    case "expiry": end = Epoch.AddSeconds(1.21); break;
+                    case "hold": runtime.RequestAutomaticMovement(owner, true, hold: true); break;
+                    case "reset": runtime.Clear(); break;
+                }
+                Dispatch(runtime, null, Vector3.UnitZ * 2, snapshot, end);
+                Check(!move.IsRunning, "Flight commitment survived its owner/expiry/capability lifecycle.");
+            });
+        run("Navigation continuity finishes an underway temporal escape only with verified emergency margin", () =>
+        {
+            using var runtime = Runtime(out var move);
+            runtime.RequestAutomaticMovement(new object(), true, preferStraightPaths: true);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            var path = new[] { TimedWaypoint.Pass(Vector3.Zero, Epoch), TimedWaypoint.Pass(Vector3.UnitZ * 10, Epoch.AddSeconds(10.0 / 6)) };
+            var solution = new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, Epoch, Epoch, Vector3.UnitZ * 10, path, null)
+                { UsesTemporalPlanning = true };
+            Dispatch(runtime, solution, Vector3.Zero, snapshot, Epoch);
+            Check(move.IsRunning, "Temporal route did not begin.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.Zero, 0), [new(Epoch.AddSeconds(.5), Epoch.AddSeconds(.8))]);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, solution, Vector3.Zero, snapshot, Epoch);
+            Check(move.IsRunning && move.MoveCount == 1 && runtime.MovementStatus.LatestSolution?.ReducedDangerStartSafetyTime == .25f,
+                "A minor forecast correction stopped a safe exit inside the future hazard.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.Zero, 0), [new(Epoch.AddSeconds(.1), Epoch.AddSeconds(.8))]);
+            Dispatch(runtime, solution, Vector3.Zero, runtime.Manager.BuildSnapshot(Epoch), Epoch);
+            Check(!move.IsRunning, "Emergency continuation ignored a hit before the route could exit.");
+        });
+        run("Navigation continuity bounds rejected solve retries without delaying a new snapshot", () =>
+        {
+            using var runtime = Runtime(out _);
+            var movement = runtime.MovementStatus;
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            for (var frame = 0; frame < 200; ++frame)
+            {
+                var now = Epoch.AddSeconds(frame * .005);
+                movement.GetType().GetMethod("StartPendingSolve", Private)!.Invoke(movement,
+                    [snapshot, Player(Vector3.Zero, snapshot), new MovementCapability(6, 6, 0, false, 6, 6), now, null]);
+                if (Get(movement, "_pendingSolveTask") is System.Threading.Tasks.Task task) task.GetAwaiter().GetResult();
+                movement.GetType().GetMethod("CompletePendingSolve", Private)!.Invoke(movement, [snapshot]);
+                Set(movement, "_latestSolution", null!);
+            }
+            Check(movement.AsyncSolveStartedCount is >= 9 and <= 10, "Rejected candidates spawned a worker each frame.");
+            var count = movement.AsyncSolveStartedCount;
+            runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.UnitX * 12, 0), [new(Epoch, null)]);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch.AddSeconds(.996));
+            movement.GetType().GetMethod("StartPendingSolve", Private)!.Invoke(movement,
+                [snapshot, Player(Vector3.Zero, snapshot), new MovementCapability(6, 6, 0, false, 6, 6), Epoch.AddSeconds(.996), null]);
+            Check(movement.AsyncSolveStartedCount == count + 1, "New geometry was delayed by the failed-solve throttle.");
+            if (Get(movement, "_pendingSolveTask") is System.Threading.Tasks.Task last) last.GetAwaiter().GetResult();
+        });
+
+        run("Navigation continuity recovers a racing actor from the eroded arena edge", () =>
+        {
+            var p = new Vector3(5.95f, 0, 0);
+            var boundary = new CircleGeometry(Vector3.Zero, 6);
+            var snapshot = new SafeZoneSnapshot(1, Epoch, boundary, [], [],
+                [new(new(1, AreaKind.Goal), new CircleGeometry(Vector3.Zero, 1), [GoalWindow.Persistent(Epoch, 100)])]);
+            var solution = new SafeZoneSolver().Solve(snapshot, Player(p, snapshot), new(6, 6, 0, false, 6, 6),
+                new() { GoalDirectedTemporalPlanning = true }, Epoch);
+            Check(solution.ExecutablePath.Count == 2 && solution.UsesTemporalPlanning
+                && solution.ExecutablePath[^1].Position.X < 5.5f, "Eroded border stranded an actor standing on real floor.");
+            Check(ArenaBoundaryTraversal.ContainsSegment(boundary, p, solution.ExecutablePath[^1].Position), "Recovery left the true floor.");
+            var outside = new SafeZoneSolver().Solve(snapshot, Player(new(6.2f, 0, 0), snapshot), new(6, 6, 0, false, 6, 6),
+                new() { GoalDirectedTemporalPlanning = true }, Epoch);
+            Check(!outside.UsesTemporalPlanning, "Boundary recovery authorized an outside starting position.");
+        });
         foreach (var latency in new[] { .08, .3 })
             run($"Navigation continuity FirstA arrow bridge with {latency * 1000:F0}ms solves and unrelated hazards", () => Bridge(latency));
 

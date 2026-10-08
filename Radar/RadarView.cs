@@ -54,6 +54,7 @@ public sealed class RadarView
     private Vector3 _center;
     private RadarProjection _projection;
     private bool _hovered;
+    private float _visibleRadius;
 
     private readonly List<Vector2> _projectedA = new(64);
     private readonly List<Vector2> _projectedB = new(64);
@@ -77,7 +78,7 @@ public sealed class RadarView
         _hovered = hovered;
         float visibleRadius;
         IReadOnlyList<Vector2>? arenaOutline = null;
-        if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary)
+        if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary && boundary is not ILocalViewBoundary)
         {
             var display = boundary;
             _center = boundary.Position;
@@ -103,10 +104,12 @@ public sealed class RadarView
             }
 
             _center = position.Value;
-            visibleRadius = DefaultVisibleRadius;
+            visibleRadius = (snapshot.ArenaBoundary as ILocalViewBoundary)?.ViewRadius ?? DefaultVisibleRadius;
             _projection = new(_center, _screenCenter,
-                radiusPx / DefaultVisibleRadius, rotation);
+                radiusPx / visibleRadius, rotation);
         }
+
+        _visibleRadius = visibleRadius;
 
         var canvas = new RadarCanvas(drawList, _screenCenter, radiusPx, arenaOutline);
         DrawDisc(canvas, settings);
@@ -300,6 +303,12 @@ public sealed class RadarView
             return;
         }
 
+        if (boundary is ILocalViewBoundary)
+        {
+            foreach (var (a, b) in RadarLocalGeometry.Segments(boundary, _center, _visibleRadius))
+                canvas.StrokeSegment(_projection.Project(a), _projection.Project(b), ImGui.GetColorU32(BoundaryColor), 1.5f);
+            return;
+        }
         foreach (var contour in boundary.GetContours())
         {
             ProjectInto(contour, _projectedA);
@@ -309,6 +318,7 @@ public sealed class RadarView
 
     private void FillGeometry(RadarCanvas canvas, IGeometryShape geometry, Vector4 fill, Vector4 stroke, float pulse)
     {
+        if (!RadarLocalGeometry.Intersects(geometry.GetBounds(), _center, _visibleRadius)) return;
         var contours = geometry.GetContours();
         if (contours.Count == 0)
         {

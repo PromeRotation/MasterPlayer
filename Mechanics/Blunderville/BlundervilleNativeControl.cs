@@ -76,26 +76,20 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
 
         var jumping = Svc.Condition[ConditionFlag.Jumping61] || Svc.Condition[ConditionFlag.Jumping];
         var grounded = !jumping && HasFloor(player.Position, 0.35f, 0.35f);
-        var horizontal = new Vector3(desiredDirection.X, 0, desiredDirection.Z);
-        var gap = false;
-        if (grounded && IsFinite(horizontal) && horizontal.LengthSquared() > 0.0001f)
-        {
-            horizontal = Vector3.Normalize(horizontal);
-            gap = !HasFloor(player.Position + horizontal * 1.2f, 0.55f, 0.8f)
-                || !HasFloor(player.Position + horizontal * 2f, 0.55f, 0.8f);
-        }
-
-        return new(grounded, jumping, gap, ArrowDirection(player));
+        return new(grounded, jumping, false, ArrowDirection(player));
     }
 
-    public void Apply(DateTime now, bool authorized, bool jump, float? facing, ulong? interactId)
+    public float? ReadArrowDirection() => !_disposed && LivePlayer() is { } player ? ArrowDirection(player) : null;
+
+    public bool Apply(DateTime now, bool authorized, bool jump, float? facing, ulong? interactId)
     {
         if (_disposed || !authorized || HostMovement.HasControl || HostMovement.AutomaticMovementEnabled || LivePlayer() is not { } player)
         {
             ClearFacing();
-            return;
+            return false;
         }
 
+        var launched = false;
         ApplyFacing(player, facing);
         var jumping = Svc.Condition[ConditionFlag.Jumping61] || Svc.Condition[ConditionFlag.Jumping];
         if (jump && !jumping && now >= _nextJump && !player.IsCasting
@@ -106,7 +100,7 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
             if (manager != null && manager->GetActionStatus(ActionType.GeneralAction, 2) == 0)
             {
                 _nextJump = now.AddSeconds(0.7);
-                manager->UseAction(ActionType.GeneralAction, 2);
+                launched = manager->UseAction(ActionType.GeneralAction, 2);
             }
         }
 
@@ -115,6 +109,7 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
             && now >= _stillSince.AddSeconds(0.2) && now >= _lastSample && now - _lastSample <= TimeSpan.FromSeconds(0.2)
             && !PromeRotation.Plugin.Instance.GreenMoveSystem.IsRunning)
             Interact(player, id, now);
+        return launched;
     }
 
     public void Dispose()

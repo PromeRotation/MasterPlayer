@@ -24,6 +24,7 @@
     <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
     <Compile Include="..\Radar\RadarPathDashes.cs" Link="RadarPathDashes.cs" />
     <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
+    <Compile Include="..\Radar\RadarLocalGeometry.cs" Link="RadarLocalGeometry.cs" />
     <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
     <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\MechanicHost\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />

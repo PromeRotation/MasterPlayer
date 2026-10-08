@@ -17,6 +17,8 @@ public sealed class SafeZoneRuntime : IDisposable
     private readonly HashSet<object> _straightPathRequests = [];
     private readonly Dictionary<object, float> _movementSpeeds = [];
     private readonly Dictionary<object, float> _arenaMargins = [];
+    private object? _committedOwner;
+    private object? _directOwner;
 
     public SafeZoneSetting Setting { get; } = new();
     public SafeZoneManager Manager { get; }
@@ -28,8 +30,12 @@ public sealed class SafeZoneRuntime : IDisposable
     internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false)
     {
         if (_disposed) return;
+        if (!enabled && ReferenceEquals(_directOwner, owner)) RequestDirectTraversal(owner, null, CurrentTime);
+        if ((!enabled || hold) && ReferenceEquals(_committedOwner, owner)) ReleaseCommittedMovement(owner);
         var wasHeld = Setting.RuntimeMovementHeld;
         if (enabled) _movementRequests.Add(owner); else _movementRequests.Remove(owner);
+        if (_directOwner != null && _movementRequests.Count != 1)
+        { _directOwner = null; _movement.SetDirectTraversal(null, CurrentTime); }
         if (enabled && hold) _movementHolds.Add(owner); else _movementHolds.Remove(owner);
         if (enabled && preferStraightPaths) _straightPathRequests.Add(owner); else _straightPathRequests.Remove(owner);
         Setting.RuntimePreferStraightPaths = _straightPathRequests.Count != 0;
@@ -46,8 +52,51 @@ public sealed class SafeZoneRuntime : IDisposable
         if (wasHeld != Setting.RuntimeMovementHeld || oldMargin != Setting.RuntimeArenaSafetyMargin) _movement.Reset();
     }
 
+    // Only a requesting owner may commit its already-dispatched, direct landing
+    // route. This short lease does not create a second movement controller.
+    internal bool CommitJumpMovement(object owner, Vector3 landing, Vector3 player, float speed, DateTime now)
+    {
+        if (_disposed || !_movementRequests.Contains(owner) || _movementHolds.Count != 0
+            || !_movement.CommitJumpRoute(landing, player, speed, now)) return false;
+        _committedOwner = owner;
+        return true;
+    }
+
+    internal void ReleaseCommittedMovement(object owner)
+    {
+        if (!ReferenceEquals(_committedOwner, owner)) return;
+        _committedOwner = null;
+        _movement.ClearJumpRoute();
+    }
+
+    internal void StopOwnedMovement(object owner)
+    {
+        if (!_movementRequests.Contains(owner)) return;
+        ReleaseCommittedMovement(owner);
+        _movement.Reset();
+    }
+
+    internal void RequestDirectTraversal(object owner, Vector3? target, DateTime now, IReadOnlyList<Vector3>? path = null, float headingTolerance = 0)
+    {
+        if (_disposed) return;
+        if (target.HasValue && _movementRequests.Contains(owner) && _movementRequests.Count == 1)
+        {
+            _directOwner = owner;
+            _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance);
+        }
+        else if (ReferenceEquals(_directOwner, owner))
+        {
+            _directOwner = null;
+            _movement.SetDirectTraversal(null, now);
+        }
+    }
+
     private void ClearMovementRequests()
     {
+        _directOwner = null;
+        _movement.SetDirectTraversal(null, CurrentTime);
+        _committedOwner = null;
+        _movement.ClearJumpRoute();
         _movementRequests.Clear(); _movementHolds.Clear();
         _straightPathRequests.Clear(); Setting.RuntimePreferStraightPaths = false;
         _movementSpeeds.Clear(); Setting.RuntimeBaseSpeed = null;

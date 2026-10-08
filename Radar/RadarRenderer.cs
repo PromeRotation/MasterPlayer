@@ -100,7 +100,7 @@ public sealed class RadarRenderer : IDisposable
         var frameIds = _frameIds;
         frameIds.Clear();
 
-        if (snapshot.ArenaBoundary is { } boundary)
+        if (snapshot.ArenaBoundary is { } boundary && boundary is not ILocalViewBoundary)
         {
             var id = IdPrefix + "Boundary";
             draw.Add(id, HostDrawingGeometry.Convert(boundary), BoundaryStyle, durationMs: SelfExpireMs);

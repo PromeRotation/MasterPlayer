@@ -5,14 +5,24 @@ using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 using MasterPlayer.Spatial.SafeZoneReborn;
 using MasterPlayer.Spatial.SafeZoneReborn.Solver;
+using PromeRotation.GreenMoveSystem;
 
 internal static class BlundervilleJumpRegression
 {
     private static readonly DateTime Epoch = new(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
-    private sealed record RecordedJump(string Name, BlundervilleCourse Course, Vector3 Takeoff, Vector3 Landing, float Approach);
+    internal sealed record RecordedJump(string Name, BlundervilleCourse Course, Vector3 Takeoff, Vector3 Landing, float Approach);
 
     public static void Run(Action<string, Action> run)
     {
+        run("Blunderville jump requires a running landing route owned by this movement system", () =>
+        {
+            var takeoff = new Vector3(-191.5f, 13.565f, -344.57f);
+            var landing = new Vector3(-194.85f, 13.565f, -345.97f);
+            GreenMoveStatus Movement(Vector3 point) => new(true, new(point), new(point), 0, 1, 0);
+            Check(!BlundervilleJumpExecution.Ready(landing, true, Movement(takeoff)), "Old takeoff route authorized launch.");
+            Check(!BlundervilleJumpExecution.Ready(landing, false, Movement(landing)), "Another owner's route authorized launch.");
+            Check(BlundervilleJumpExecution.Ready(landing, true, Movement(landing)), "Direct landing route was rejected.");
+        });
         foreach (var link in RecordedJumps())
         {
             run($"Blunderville recorded short jump approaches the precise takeoff: {link.Name}", () =>
@@ -237,7 +247,7 @@ internal static class BlundervilleJumpRegression
             });
     }
 
-    private static IEnumerable<RecordedJump> RecordedJumps()
+    internal static IEnumerable<RecordedJump> RecordedJumps()
     {
         foreach (var side in new[] { -1f, 1f })
         {

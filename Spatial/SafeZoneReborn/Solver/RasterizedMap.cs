@@ -389,8 +389,9 @@ public sealed class RasterizedMap
             var intervals = new List<DangerInterval>();
             foreach (var window in danger.DangerWindows)
             {
-                var effectiveFrom = window.DangerFrom - startSafety;
-                var effectiveUntil = window.DangerUntil is null ? (DateTime?)null : window.DangerUntil.Value + endSafety;
+                var buffered = window.Buffered((float)startSafety.TotalSeconds, (float)endSafety.TotalSeconds);
+                var effectiveFrom = buffered.DangerFrom;
+                var effectiveUntil = buffered.DangerUntil;
 
                 if (effectiveUntil is { } until && until < solveTime)
                 {

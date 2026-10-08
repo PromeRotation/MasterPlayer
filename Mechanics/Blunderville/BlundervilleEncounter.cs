@@ -5,7 +5,7 @@ using MasterPlayer.Spatial.SafeZone;
 namespace MasterPlayer.Mechanics.Blunderville;
 
 internal sealed record BlundervilleCast(uint Action, Vector3 Location, float? Rotation, DateTime StartedAt, DateTime FinishAt, Vector3? SourcePosition = null);
-internal sealed record BlundervilleActor(ulong Id, uint Oid, Vector3 Position, bool Dead = false, BlundervilleCast? Cast = null, float Rotation = 0);
+internal sealed record BlundervilleActor(ulong Id, uint Oid, Vector3 Position, bool Dead = false, BlundervilleCast? Cast = null, float Rotation = 0, float HitboxRadius = 0);
 internal sealed record BlundervillePreview(string Id, string Group, IGeometryShape Geometry, bool Outline = false, float Progress = 1);
 internal sealed record BlundervilleHazard(string Id, IGeometryShape Geometry, DateTime From, DateTime Until, DateTime Telegraph);
 
@@ -16,6 +16,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private sealed record Wave(ulong Source, Vector3 Origin, float Rotation, DateTime StartedAt, DateTime Impact, int Consumed = -1);
     private sealed record Route(Vector3 A, Vector3 B, DateTime LastSeen);
     private sealed record LastCast(BlundervilleCast Cast, bool FromPacket);
+    private sealed record Motion(Vector3 Position, Vector3 Velocity, DateTime At);
+    private readonly Dictionary<ulong, Motion> _ballMotion = [];
+    private readonly Dictionary<ulong, BlundervilleHazard> _charges = [];
     private readonly Dictionary<ulong, BlundervilleActor> _actors = [];
     private readonly Dictionary<ulong, Pending> _casts = [];
     private readonly Dictionary<ulong, LastCast> _lastCasts = [];
@@ -28,8 +31,18 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly HashSet<uint> _missingFacing = [];
     private DateTime _lastTime;
     private readonly BlundervilleAnimationTracker _animations = new();
+    private readonly BlundervilleAlternatingPulseTracker _alternatingPulses = new();
+    private readonly BlundervilleRhythmTracker _rhythms = new();
+    private readonly BlundervilleBumperTracker _bumpers = new();
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
+
+    public bool BumpersReady(Vector3 player)
+    {
+        var band = _actors.Values.Where(a => a.Oid == 16339 && MathF.Abs(a.Position.X - player.X) < 8
+            && (player.Z > -181 ? a.Position.Z is > -180 and < -164 : a.Position.Z is > -205 and < -185)).ToArray();
+        return band.Length > 0 && band.All(a => _bumpers.Ready(a.Id) && _rhythms.Ready(a.Id, 34717, _lastTime));
+    }
 
     public void Synchronize(IEnumerable<BlundervilleActor> actors, DateTime now)
     {
@@ -40,8 +53,24 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         {
             if (actor.Dead) { Remove(id); continue; }
             if (_actors.TryGetValue(id, out var old) && old.Oid != actor.Oid) Remove(id);
+            if (actor.Oid == BlundervilleCatalog.Ball)
+            {
+                var velocity = Vector3.Zero;
+                if (_ballMotion.TryGetValue(id, out var motion) && now > motion.At && now - motion.At < TimeSpan.FromSeconds(.5))
+                {
+                    var delta = actor.Position - motion.Position; delta.Y = 0;
+                    velocity = delta.LengthSquared() < .0009f && now - motion.At < TimeSpan.FromSeconds(.25)
+                        ? motion.Velocity : delta / (float)(now - motion.At).TotalSeconds;
+                    if (velocity.LengthSquared() > 225) velocity = Vector3.Zero;
+                    if (delta.LengthSquared() < .0009f && now - motion.At < TimeSpan.FromSeconds(.25))
+                    { _actors[id] = actor; continue; }
+                }
+                _ballMotion[id] = new(actor.Position, velocity, now);
+            }
             _actors[id] = actor;
+            _bumpers.Observe(actor, now);
             _animations.Observe(actor, now);
+            _alternatingPulses.Observe(actor, now);
             if (actor.Cast is { } cast) StartCast(id, cast, now, fromPacket: false);
             // Normal completion keeps the preview for its effect; disappearance well before finish means cancellation.
             else if (_casts.TryGetValue(id, out var pending) && now < pending.Cast.FinishAt.AddSeconds(-0.35))
@@ -53,6 +82,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     {
         Tick(now);
         _animations.Map(index, state, now);
+        _alternatingPulses.Map(index, state);
     }
 
     public void StartCast(ulong source, BlundervilleCast cast, DateTime now, bool fromPacket = true)
@@ -94,7 +124,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             _waves[source] = new(source, pos, facing!.Value, cast.StartedAt, cast.FinishAt);
     }
 
-    public void Effect(ulong source, uint action, uint sequence, Vector3? position, float? rotation, DateTime now)
+    public void Effect(ulong source, uint action, uint sequence, Vector3? position, float? rotation, DateTime now, Vector3? destination = null)
     {
         Tick(now);
         if (!BlundervilleCatalog.TryGet(action, out var rule)) return;
@@ -118,11 +148,28 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             return;
         }
         if (position is not { } pos || !Finite(pos)) return;
-        if (rule.Charge) { ObserveRoute(source, pos, now); return; }
+        if (action == 34717) _bumpers.Effect(source, pos, now);
+        if (rule.Charge)
+        {
+            ObserveRoute(source, pos, now);
+            if (destination is { } end && Finite(end))
+            {
+                var delta = end - pos; delta.Y = 0;
+                var length = delta.Length();
+                // ARR charge packets precede the visible traversal. Keep the
+                // swept body occupied through that animation, including its endpoints.
+                if (length is > .5f and < 8)
+                    _charges[source] = new($"charge/{source}", new RectangleGeometry((pos + end) / 2,
+                        MathF.Atan2(delta.X, delta.Z), 3, length + 3), now, now.AddSeconds(1.8), now);
+            }
+            return;
+        }
         // Ball snapshots would leave circles behind a moving obstacle; the object scan draws its current position.
         if (action == 34776 || rule.Shape == null) return;
         if (rule.Shape is not CircleTemplate && (rotation is not { } facing || !float.IsFinite(facing))) return;
         if (rotation is { } animationFacing) _animations.Effect(source, action, pos, animationFacing, now);
+        _alternatingPulses.Effect(source, action, pos, now);
+        if (_actors.TryGetValue(source, out var rhythmActor)) _rhythms.Effect(rhythmActor, action, pos, rotation ?? 0, now);
         if (action == BlundervilleCatalog.BeamAction)
         {
             var beamId = $"beam/{source}";
@@ -157,6 +204,10 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public void Remove(ulong source)
     {
         _animations.Remove(source);
+        _alternatingPulses.Remove(source);
+        _rhythms.Remove(source);
+        _bumpers.Remove(source);
+        _ballMotion.Remove(source); _charges.Remove(source);
         _actors.Remove(source); _casts.Remove(source); _lastCasts.Remove(source); _waves.Remove(source); _routes.Remove(source); _beams.Remove(source);
         foreach (var id in _pulses.Where(p => p.Value.Source == source).Select(p => p.Key).ToArray()) _pulses.Remove(id);
     }
@@ -170,17 +221,21 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var id in _waves.Where(p => now > p.Value.Impact.AddSeconds(4 * StepSeconds + 0.55)).Select(p => p.Key).ToArray()) _waves.Remove(id);
         foreach (var id in _routes.Where(p => now > p.Value.LastSeen.AddSeconds(8)).Select(p => p.Key).ToArray()) _routes.Remove(id);
         foreach (var id in _beams.Where(p => now >= p.Value.Expires).Select(p => p.Key).ToArray()) _beams.Remove(id);
+        foreach (var id in _charges.Where(p => now >= p.Value.Until).Select(p => p.Key).ToArray()) _charges.Remove(id);
     }
 
     public IEnumerable<BlundervillePreview> Previews(DateTime now)
     {
         Tick(now);
-        foreach (var hazard in _animations.Hazards(now).Where(h => h.From <= now.AddSeconds(2)))
+        foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
             yield return new(hazard.Id, BlundervilleCatalog.Devices, hazard.Geometry, now < hazard.From,
                 (float)Math.Clamp(1 - (hazard.From - now).TotalSeconds / 2, .25, 1));
         foreach (var cast in _casts.Values)
             yield return new($"cast/{cast.Source}", cast.Group, cast.Geometry);
+        foreach (var body in _bumpers.Hazards.Where(h => h.From <= now && h.Until >= now))
+            yield return new(body.Id, BlundervilleCatalog.Devices, body.Geometry, true);
         foreach (var pulse in _pulses.Values) yield return pulse.Preview;
+        foreach (var charge in _charges.Values) yield return new(charge.Id, BlundervilleCatalog.Routes, charge.Geometry);
         foreach (var actor in _actors.Values.Where(a => a.Oid == BlundervilleCatalog.Ball))
             yield return new($"ball/{actor.Id}", BlundervilleCatalog.Balls, new CircleGeometry(actor.Position, 2));
         foreach (var (source, beam) in _beams)
@@ -211,12 +266,20 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _actors.Clear(); _casts.Clear(); _lastCasts.Clear(); _pulses.Clear(); _waves.Clear(); _routes.Clear(); _beams.Clear();
         _sequences.Clear(); _sequenceOrder.Clear(); _missingFacing.Clear(); _lastTime = default;
         _animations.Reset();
+        _alternatingPulses.Reset();
+        _rhythms.Reset();
+        _bumpers.Reset();
+        _ballMotion.Clear(); _charges.Clear();
     }
 
     public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
     {
         Tick(now);
         foreach (var hazard in _animations.Hazards(now)) yield return hazard;
+        foreach (var hazard in _alternatingPulses.Hazards(now)) yield return hazard;
+        foreach (var hazard in _rhythms.Hazards(now)) yield return hazard;
+        foreach (var hazard in _bumpers.Hazards) yield return hazard;
+        foreach (var hazard in _charges.Values) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
                 yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt,
@@ -231,7 +294,14 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                     impact, impact.AddSeconds(0.2), wave.StartedAt);
             }
         foreach (var actor in _actors.Values.Where(a => a.Oid == BlundervilleCatalog.Ball))
+        {
             yield return new($"ball/{actor.Id}", new CircleGeometry(actor.Position, 2), now, now.AddSeconds(0.3), now);
+            if (!_ballMotion.TryGetValue(actor.Id, out var motion) || motion.Velocity.LengthSquared() < .1f) continue;
+            // Each interval covers the whole swept ball, not just a future center.
+            for (var i = 0; i < 4; ++i)
+                yield return new($"ball/{actor.Id}/future/{i}", new CircleGeometry(actor.Position + motion.Velocity * (.1f + i * .2f),
+                    2 + motion.Velocity.Length() * .1f), now.AddSeconds(i * .2), now.AddSeconds((i + 1) * .2), now);
+        }
         foreach (var (source, beam) in _beams)
         {
             var geometry = _actors.TryGetValue(source, out var actor) && actor.Oid == BlundervilleCatalog.BeamActor && float.IsFinite(actor.Rotation)

@@ -11,6 +11,7 @@ internal static class BlundervilleRegression
     // Independent expectations from the CN Action sheet, not the production catalog.
     private static readonly (uint Action, string Shape, float Range, float Width)[] Dimensions =
     [
+        (29795,"circle",3,0),
         (34716,"centered",3,2), (34717,"circle",3,0), (34718,"centered",4,10),
         (34773,"circle",5,0), (34775,"rectangle",3,3), (34776,"circle",2,0),
         (34796,"circle",5,0), (34797,"fan",8,180), (34798,"fan",8,180),
@@ -21,6 +22,30 @@ internal static class BlundervilleRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("Blunderville animated charge occupies its announced traversal before actor movement", () =>
+        {
+            var encounter = new BlundervilleEncounter(_ => { });
+            var start = new Vector3(-6.874f, 18.15f, -363.8f); var end = new Vector3(-3.525f, 18.14f, -363.821f);
+            encounter.Synchronize([new(1, 16350, start)], Epoch);
+            encounter.Effect(1, 34774, 1, start, 0, Epoch, end);
+            var hazard = encounter.Hazards(Epoch.AddSeconds(.1)).Single();
+            Check(hazard.Geometry.Contains((start + end) / 2) && hazard.Until >= Epoch.AddSeconds(1.6), "Charge had only a historical route outline.");
+            Check(!encounter.Hazards(Epoch.AddSeconds(2)).Any(), "A completed charge remained an obstacle.");
+        });
+        run("Blunderville rolling ball forecasts its sweep and rejects teleports", () =>
+        {
+            var encounter = new BlundervilleEncounter(_ => { });
+            var actor = new BlundervilleActor(1, 16351, new(5.5f, 17, -364));
+            encounter.Synchronize([actor], Epoch);
+            actor = actor with { Position = actor.Position + Vector3.UnitZ * .4f };
+            encounter.Synchronize([actor], Epoch.AddSeconds(.1));
+            var future = encounter.Hazards(Epoch.AddSeconds(.1)).Where(h => h.Id.Contains("/future/")).ToArray();
+            Check(future.Length == 4 && future.Any(h => h.Geometry.Contains(actor.Position + Vector3.UnitZ * 3)), "Ball movement was absent from future danger.");
+            encounter.Synchronize([actor], Epoch.AddSeconds(.2));
+            Check(encounter.Hazards(Epoch.AddSeconds(.2)).Count(h => h.Id.Contains("/future/")) == 4, "An unchanged network sample flickered the prediction off.");
+            encounter.Synchronize([actor with { Position = actor.Position + Vector3.UnitX * 30 }], Epoch.AddSeconds(.3));
+            Check(!encounter.Hazards(Epoch.AddSeconds(.3)).Any(h => h.Id.Contains("/future/")), "A teleport became a fast-moving hazard.");
+        });
         foreach (var expected in Dimensions)
             run($"Blunderville AID {expected.Action}: client dimensions and forward orientation", () =>
             {
@@ -401,7 +426,13 @@ internal static class BlundervilleRegression
                 }
             }
         }
-        Check(actions.SetEquals(Dimensions.Select(d=>d.Action).Concat([34774u,34803u,35409u])),"Five recordings did not cover the complete observed action set.");
+        using var final = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", "animation-final-194843.json")));
+        foreach (var e in final.RootElement.GetProperty("events").EnumerateArray().Where(e => e[1].GetString() == "hit"))
+        {
+            Check(e.GetArrayLength() == 5 && e[2].GetUInt64() is > 0 and < 256, "Final fixture retained an original identifier or unreviewed fields.");
+            actions.Add(e[3].GetUInt32());
+        }
+        Check(actions.SetEquals(Dimensions.Select(d=>d.Action).Concat([34774u,34803u,35409u])),"Recordings did not cover the complete observed action set.");
     }
 
     private static void AssertShape(IGeometryShape shape,uint action,Vector3 origin,float rotation)

@@ -21,6 +21,17 @@ internal static class BlundervilleRacePlannerRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("Blunderville recorded slope cliff never triggers an unplanned jump", () =>
+        {
+            var state = new BlundervilleRaceState();
+            state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20013, 0, 0, 0, Epoch);
+            var planner = new BlundervilleRacePlanner();
+            foreach (var p in new[] { new Vector3(-208.82f, 11.276f, -126.238f), new Vector3(-207.141f, 11.368f, -127.245f) })
+            {
+                var decision = planner.Update(state, Epoch, p, true, false, true, null);
+                Check(!decision.Jump && !decision.Hold && decision.Target != null, "A missing forward floor probe launched toward the central pit.");
+            }
+        });
         foreach (var file in Directory.GetFiles(Fixtures, "race-arr-*.json").Order())
             run($"Blunderville race {Path.GetFileNameWithoutExtension(file)}: recorded start, status and qualification gates", () => RecordedRounds(file));
 
@@ -130,7 +141,10 @@ internal static class BlundervilleRacePlannerRegression
             var state = Start(0x4E31);
             var planner = new BlundervilleRacePlanner();
             var pos = new Vector3(6, 31.5f, 153.8f);
-            Check(planner.Update(state, Epoch, pos, true, false, false, null).Jump, "The recorded final stairs did not request jumping.");
+            var approach = planner.Update(state, Epoch, pos, true, false, false, null);
+            Check(!approach.Jump, "The base route jumped before reaching its measured takeoff.");
+            var jump = new BlundervilleJumpPlanner().Plan(state.Course, Epoch, new(6, 31.5f, 153), approach.Target!.Value, true, false);
+            Check(jump is { Jump: true } && jump.Target.Z == 149, "The measured final stair takeoff lost its landing.");
             Check(!planner.Update(state, Epoch.AddSeconds(0.1), pos + Vector3.UnitY, false, true, true, null).Jump, "The airborne player requested another jump.");
             state.SynchronizeStatuses([new(3737, 0, Epoch.AddSeconds(2))], Epoch.AddSeconds(0.2));
             var locked = planner.Update(state, Epoch.AddSeconds(0.2), pos, true, false, true, null);

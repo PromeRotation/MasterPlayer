@@ -63,6 +63,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private int _asyncSolveAcceptedCount;
     private int _asyncSolveCancelledCount;
     private int _asyncSolveDiscardedCount;
+    private DateTime _lastSolveStartedAt;
+    private int _lastSolveVersion = -1;
 
     /// <summary>已经下发给 GreenMove 的那份 Solution。引用未变则不重复 MoveTo，避免每帧 reset GreenMove 运行时状态。</summary>
     private SafeZoneSolution? _dispatchedSolution;
@@ -167,13 +169,134 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     /// <summary>本系统当前是否正在接管 GreenMove。</summary>
     public bool HasControl => _hasControl;
 
+    private Vector3? _jumpLanding;
+    private DateTime _jumpCommittedAt;
+    private Vector3? _directTarget;
+    private DateTime _directUntil;
+    private IReadOnlyList<Vector3> _directPath = [];
+    private int _directGeneration, _directDispatchedGeneration = -1;
+    private float _directHeadingTolerance;
+    private int _directProgress, _directOffset, _directValidationVersion;
+    private DateTime _directNextValidation;
+    private bool _directInputAcquired;
+
+    internal void SetDirectTraversal(Vector3? target, DateTime until, IReadOnlyList<Vector3>? path = null, float headingTolerance = 0)
+    {
+        path ??= target is { } p ? [p] : [];
+        if (_directTarget != target || !_directPath.SequenceEqual(path))
+        {
+            ++_directGeneration;
+            _directProgress = _directOffset = 0; _directNextValidation = default;
+            CancelPendingSolve();
+            _latestSolution = _dispatchedSolution = null;
+            if (target == null || _directTarget == null) ReleaseControl();
+        }
+        _directTarget = target; _directUntil = until;
+        if (!_directPath.SequenceEqual(path)) _directPath = path.ToArray();
+        _directHeadingTolerance = headingTolerance;
+    }
+
+    private bool UpdateDirectTraversal(PlayerState player, SafeZoneSnapshot snapshot, DateTime now, bool allowed)
+    {
+        if (_directTarget is not { } target) return false;
+        if (now > _directUntil) { SetDirectTraversal(null, now); return false; }
+        CancelPendingSolve();
+        if (!allowed || !_setting.EffectiveEnableAutoMovement || _externalMovementEnabled() || _externalHasControl())
+        { ReleaseControl(); return true; }
+        var running = _directGeneration == _directDispatchedGeneration && _hasControl && _greenMove is { IsRunning: true };
+        if (running && player.IsMoving) _directInputAcquired = true;
+        if (running) _directProgress = Math.Clamp(_directOffset + _greenMove!.GetStatus().CurrentIndex, 0, _directPath.Count);
+        var next = _directProgress;
+        if (next >= _directPath.Count || GeometryHelper.DistanceXZ(player.Position, target) < .03f)
+        { ReleaseControl(); _phase = DispatchPhase.Idle; return true; }
+        if (running && now < _directNextValidation && _directValidationVersion == snapshot.Version) return true;
+        _directNextValidation = now.AddSeconds(.05); _directValidationVersion = snapshot.Version;
+        // Validate the complete run, including up to 100ms to acquire native input.
+        // No intermediate wait/partial escape or background publication delay.
+        var delay = player.IsMoving || running && _directInputAcquired ? 0 : .1;
+        var safe = IsTemporalSegmentSafe(snapshot, player.Position, player.Position, now, now.AddSeconds(delay), .2f, endSafety: .1f);
+        var points = new List<TimedWaypoint> { TimedWaypoint.Pass(player.Position, now) };
+        var from = player.Position; var time = now;
+        for (var i = next; safe && i < _directPath.Count; ++i)
+        {
+            var to = _directPath[i]; var end = time.AddSeconds(GeometryHelper.DistanceXZ(from, to) / MathF.Max(.1f, player.CurrentSpeed));
+            for (var offset = 0.0; safe && offset <= delay + .001; offset += .025)
+                safe = IsTemporalSegmentSafe(snapshot, from, to, time.AddSeconds(offset), end.AddSeconds(offset), .2f, endSafety: .1f);
+            // Before native input locks the arrow, a frame of rotation can
+            // change the entire ray. Verify that corridor before starting.
+            if (safe && _directHeadingTolerance > 0 && _directPath.Count == 1)
+            {
+                var d = to - from; var angle = MathF.Atan2(d.X, d.Z);
+                for (var sign = -1; sign <= 1 && safe; sign += 2)
+                {
+                    var a = angle + sign * _directHeadingTolerance;
+                    var ray = from + new Vector3(MathF.Sin(a), 0, MathF.Cos(a)) * (d.Z / MathF.Cos(a));
+                    var arrival = time.AddSeconds(GeometryHelper.DistanceXZ(from, ray) / MathF.Max(.1f, player.CurrentSpeed));
+                    for (var offset = 0.0; safe && offset <= delay + .001; offset += .025)
+                        safe = IsTemporalSegmentSafe(snapshot, from, ray, time.AddSeconds(offset), arrival.AddSeconds(offset), .2f, endSafety: .1f);
+                }
+            }
+            points.Add(TimedWaypoint.Pass(to, end)); from = to; time = end;
+        }
+        if (!safe) { _phase = DispatchPhase.Released; ReleaseControl(); return true; }
+        var solution = new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
+            points)
+            { UsesTemporalPlanning = true, MaxArrivalTolerance = .03f, ReducedDangerStartSafetyTime = .2f };
+        _latestSolution = solution;
+        if (!_hasControl || _directGeneration != _directDispatchedGeneration || _greenMove?.IsRunning != true)
+        {
+            _greenMove!.MoveTo(BuildGreenMovePoints(solution, snapshot, now));
+            _directOffset = next;
+            _dispatchedSolution = solution;
+            _directDispatchedGeneration = _directGeneration;
+            _dispatchCount++; _lastDispatchUtc = now;
+        }
+        _hasControl = true; _phase = DispatchPhase.Moving;
+        return true;
+    }
+
+    internal bool CommitJumpRoute(Vector3 landing, Vector3 position, float speed, DateTime now)
+    {
+        if (_disposed || !_hasControl || _externalMovementEnabled() || _externalHasControl()
+            || _dispatchedSolution is not { IsSuccess: true } || !OnLandingRoute(landing)) return false;
+        if (!float.IsFinite(speed) || speed is < 4.8f or > 8.5f) return false;
+        var snapshot = _manager.BuildSnapshot(now);
+        var player = new PlayerState(position, 0, speed, false, false, 0, true, snapshot.Version);
+        if (!IsTemporalPhaseSafe(_dispatchedSolution, player, snapshot, now)) return false;
+        _jumpLanding = landing; _jumpCommittedAt = now;
+        return true;
+    }
+
+    internal void ClearJumpRoute() { _jumpLanding = null; _jumpCommittedAt = default; }
+
+    private bool OnLandingRoute(Vector3 landing)
+        => _greenMove?.GetStatus() is { IsRunning: true, CurrentPoint: { } current, FinalPoint: { } final }
+            && GeometryHelper.DistanceXZ(current.Position, landing) <= .35f
+            && GeometryHelper.DistanceXZ(final.Position, landing) <= .35f;
+
+    private bool ContinueJumpRoute(DateTime now)
+    {
+        if (_jumpLanding is not { } landing) return false;
+        if (!_hasControl || !_setting.EffectiveEnableAutoMovement || _externalMovementEnabled() || _externalHasControl()
+            || now < _jumpCommittedAt || now - _jumpCommittedAt > TimeSpan.FromSeconds(1.2) || !OnLandingRoute(landing))
+        { ClearJumpRoute(); return false; }
+        // A jump cannot wait in midair for a newly calculated ground route.
+        // The caller releases this bounded lease on landing or loss of capability.
+        _phase = DispatchPhase.Moving;
+        return true;
+    }
+
     public void Reset()
     {
+        _directTarget = null; _directUntil = default;
+        ClearJumpRoute();
         CancelPendingSolve();
         ReleaseControl();
         _latestSolution = null;
         _dispatchedSolution = null;
         _lastUnsafeUtc = DateTime.MinValue;
+        _lastSolveStartedAt = default;
+        _lastSolveVersion = -1;
         _phase = DispatchPhase.Idle;
     }
 
@@ -217,9 +340,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         var player = currentPlayer.Value;
 
+        if (allowMovement && ContinueJumpRoute(now)) return;
+
         // 每帧解析一次快照：既供重解，也供 ShouldWaitForCast 读取最新危险区。
         var snapshot = _manager.BuildSnapshot(now);
         CompletePendingSolve(snapshot);
+        if (UpdateDirectTraversal(player, snapshot, now, allowMovement)) return;
         if (IsPointUnsafeNow(snapshot, player.Position, now))
         {
             _lastUnsafeUtc = now;
@@ -281,7 +407,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var ageSeconds = (now - solution.SolvedAt).TotalSeconds;
 
         // 周期重解：覆盖版本号不变时的限时/延迟危险窗口推进与跟随实体的危险区移动。
-        if (ageSeconds > ResolveTtlSeconds)
+        if (ageSeconds > (_setting.RuntimePreferStraightPaths ? .25 : ResolveTtlSeconds))
         {
             return false;
         }
@@ -314,6 +440,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return;
         }
 
+        // Failed or rejected candidates have no usable TTL. Bound retries for
+        // the same snapshot as well, instead of scheduling a worker every frame.
+        var retryInterval = previousSolution is { IsSuccess: true } ? UrgentResolveTtlSeconds : ResolveTtlSeconds;
+        if (snapshot.Version == _lastSolveVersion && solveTime >= _lastSolveStartedAt
+            && (solveTime - _lastSolveStartedAt).TotalSeconds < retryInterval)
+            return;
+
         DisposeCompletedPendingSolve();
 
         var cts = new CancellationTokenSource();
@@ -321,6 +454,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         _pendingSolveCts = cts;
         _pendingSolveSnapshotVersion = snapshot.Version;
         _asyncSolveStartedCount++;
+        _lastSolveStartedAt = solveTime;
+        _lastSolveVersion = snapshot.Version;
         var options = CaptureSolveOptions();
 
         _pendingSolveTask = Task.Run(() =>
@@ -431,6 +566,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
     private void Dispatch(SafeZoneSolution? solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
+        if (ContinueJumpRoute(now)) return;
         if (_externalMovementEnabled() || _externalHasControl())
         {
             _phase = DispatchPhase.YieldingToHost;
@@ -560,8 +696,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private bool TryContinueDispatchedRoute(PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
         if (!_hasControl || _greenMove is not { IsRunning: true } ||
-            _dispatchedSolution is not { IsSuccess: true } previous ||
-            !IsTemporalPhaseSafe(previous, player, snapshot, now))
+            _dispatchedSolution is not { IsSuccess: true } previous)
+            return false;
+        if (!IsTemporalPhaseSafe(previous, player, snapshot, now)
+            && !TryUseEmergencyRoute(ref previous, player, snapshot, now,
+                allowTemporal: _setting.RuntimePreferStraightPaths && !previous.ExecutablePath.Any(p => p.IsWaitPoint)))
             return false;
 
         _phase = DispatchPhase.Moving;
@@ -596,10 +735,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         return solution.WithExecutablePath(remaining);
     }
 
-    private bool TryUseEmergencyRoute(ref SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
+    private bool TryUseEmergencyRoute(ref SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now, bool allowTemporal = false)
     {
         const float emergencyStartSafety = 0.25f;
-        if (solution.UsesTemporalPlanning || solution.ExecutablePath.Count < 2 || solution.ReducedDangerStartSafetyTime.HasValue
+        if (solution.UsesTemporalPlanning && !allowTemporal || solution.ExecutablePath.Count < 2 || solution.ReducedDangerStartSafetyTime.HasValue
             || _options.DangerStartSafetyTime <= emergencyStartSafety
             || !SafeZoneSolver.HasPendingDangerAtPlayer(snapshot, player.Position, now)
             || !IsTemporalPhaseSafe(solution, player, snapshot, now, emergencyStartSafety))
@@ -661,7 +800,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         return IsTemporalSegmentSafe(snapshot, position, position, time, time, startSafety);
     }
 
-    private bool IsTemporalSegmentSafe(SafeZoneSnapshot snapshot, Vector3 from, Vector3 to, DateTime start, DateTime end, float? startSafety = null, HashSet<IGeometryShape>? escaping = null)
+    private bool IsTemporalSegmentSafe(SafeZoneSnapshot snapshot, Vector3 from, Vector3 to, DateTime start, DateTime end, float? startSafety = null, HashSet<IGeometryShape>? escaping = null, float? endSafety = null)
     {
         if (snapshot.ArenaBoundary is { } boundary && !IsArenaSegmentSafe(boundary, from, to))
             return false;
@@ -676,10 +815,17 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                 continue;
             foreach (var window in danger.DangerWindows)
             {
-                var buffered = new DangerWindow(window.DangerFrom.AddSeconds(-MathF.Max(0f, startSafety ?? _options.DangerStartSafetyTime)),
-                    window.DangerUntil?.AddSeconds(MathF.Max(0f, _options.DangerEndSafetyTime)));
+                var buffered = window.Buffered(startSafety ?? _options.DangerStartSafetyTime, endSafety ?? _options.DangerEndSafetyTime);
                 if (buffered.OverlapsInterval(start, end))
                 {
+                    if (escaping == null)
+                    {
+                        var duration = (end - start).TotalSeconds;
+                        var a = duration <= 0 ? from : Vector3.Lerp(from, to, (float)Math.Clamp((buffered.DangerFrom - start).TotalSeconds / duration, 0, 1));
+                        var b = duration <= 0 ? to : Vector3.Lerp(from, to, buffered.DangerUntil is { } until ? (float)Math.Clamp((until - start).TotalSeconds / duration, 0, 1) : 1);
+                        if (danger.Geometry.Contains(a) || danger.Geometry.Contains(b) || danger.Geometry.IntersectsSegment(a, b)) return false;
+                        continue;
+                    }
                     var steps = Math.Max(1, (int)MathF.Ceiling(GeometryHelper.DistanceXZ(from, to) / 0.1f));
                     for (var i = 0; i < steps; ++i)
                     {
@@ -820,7 +966,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             if (newSolution.UsesTemporalPlanning != _dispatchedSolution.UsesTemporalPlanning ||
                 newSolution.TargetPosition is not { } next || _dispatchedSolution.TargetPosition is not { } previous ||
                 GeometryHelper.DistanceXZ(next, previous) > MinArrivalTolerance ||
-                IsSolutionPlanOverdue(_dispatchedSolution, player.Position, now))
+                _dispatchedSolution.ExecutablePath.Any(p => p.IsWaitPoint) && IsSolutionPlanOverdue(_dispatchedSolution, player.Position, now))
                 return false;
         }
 
@@ -834,7 +980,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             ActiveGoalPriorityAt(snapshot, requested, now) > ActiveGoalPriorityAt(snapshot, finalPoint.Position, now))
             return false;
 
-        return !IsPointUnsafeNow(snapshot, finalPoint.Position, now) &&
+        return (_dispatchedSolution.UsesTemporalPlanning || !IsPointUnsafeNow(snapshot, finalPoint.Position, now)) &&
                IsTemporalPhaseSafe(_dispatchedSolution, player, snapshot, now);
     }
 
@@ -1088,6 +1234,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     /// <summary>若本系统正在接管 GreenMove 则停止；否则不动（不抢占其它来源的 GreenMove）。</summary>
     private void ReleaseControl()
     {
+        _directInputAcquired = false;
+        ClearJumpRoute();
         if (!_hasControl)
         {
             return;

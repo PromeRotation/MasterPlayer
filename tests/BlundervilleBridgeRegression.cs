@@ -5,6 +5,9 @@ using MasterPlayer.Mechanics.Blunderville;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 using MasterPlayer.Spatial.SafeZoneReborn.Solver;
+using MasterPlayer.Spatial;
+using MasterPlayer.Scripting;
+using PromeRotation.GreenMoveSystem;
 
 internal static class BlundervilleBridgeRegression
 {
@@ -13,6 +16,8 @@ internal static class BlundervilleBridgeRegression
 
     public static void Run(Action<string, Action> run)
     {
+        foreach (var delay in new[] { .08, .3 })
+            run($"Blunderville bridge jump dispatch simulation with {delay:F2}s worker latency", () => SimulateJump(delay));
         run("Blunderville bridges reject unknown state and unrelated map indices", () =>
         {
             var t = new BlundervilleBridgeTracker();
@@ -168,6 +173,86 @@ internal static class BlundervilleBridgeRegression
         }
         foreach (var e in events.OrderBy(e => e.Seconds)) Map(t, e.Index, e.State, e.Seconds);
         return t;
+    }
+
+    private static void SimulateJump(double latency)
+    {
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var now = Epoch.AddSeconds(15.3);
+        var move = new JumpMove();
+        using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
+        using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
+        var nav = new BlundervilleNavigation(runtime, api, new());
+        var state = new BlundervilleRaceState();
+        state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20013, 0, 0, 0, Epoch);
+        var tracker = Learned(); var planner = new BlundervilleBridgePlanner(); var gate = new BlundervilleJumpExecution();
+        var encounter = new BlundervilleEncounter(_ => { });
+        var p = new Vector3(-196.5f, 13.565f, -338);
+        SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 0.0;
+        double? launch = null; var finished = false;
+        for (var tick = 0; tick < 300; ++tick)
+        {
+            var t = tick * .01; now = Epoch.AddSeconds(15.3 + t); move.Now = now;
+            var flying = launch is { } at && t - at < .7;
+            if (tick == 120) { Map(tracker, 14, 0x80004, 16.5); Map(tracker, 16, 0x80004, 16.5); }
+            if (tick % 10 == 0)
+            {
+                var plan = planner.Plan(tracker, now, p, Finish, !flying, flying)!;
+                if (gate.Prepare(plan.CrossingCorridor as BlundervilleJumpCorridor, p) is { } execution)
+                    plan = plan with { Target = execution.Target, Hold = execution.Hold, Jump = false, CrossingCorridor = execution.Corridor };
+                api.UtcNowForTest = now;
+                nav.Apply(state, new(plan.Target, plan.Hold, plan.Jump, null, plan.Hint), encounter, now, p, true, false, false, plan.CrossingCorridor);
+            }
+            var snapshot = runtime.Manager.BuildSnapshot(now);
+            if (pending != null && t >= ready) { accepted = pending; pending = null; }
+            if (pending == null && t >= nextSolve)
+            {
+                var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!.Invoke(runtime.MovementStatus, null)!;
+                pending = new SafeZoneSolver().Solve(snapshot, new(p, 0, 6, false, false, 0, true, snapshot.Version), new(6, 6, 0, false, 6, 6), options, now);
+                ready = t + latency; nextSolve = ready + .1;
+            }
+            if (gate.Sample(now, p, !flying, flying, runtime.MovementStatus.HasControl, move.GetStatus()))
+            {
+                Check(launch == null, "A single gap launched more than once.");
+                Check(nav.CommitJump(gate.Landing!.Value, p, gate.MeasuredSpeed, now), "Landing route could not be committed.");
+                gate.ConfirmLaunch(now); launch = t; flying = true;
+            }
+            if (!gate.InFlight) nav.ReleaseJump();
+            if (gate.NeedsRunupRetry) nav.StopForRunup();
+            runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus,
+                [accepted, new PlayerState(p, 0, 6, false, false, 0, true, snapshot.Version), snapshot, now]);
+            p = move.Advance(p);
+            if (!flying)
+                Check(Math.Abs(p.X + 196.5f) < 2.425f && 15.3 + t < 16.5 || Math.Abs(p.X + 203.5f) < 2.425f,
+                    $"Walking or landing entered an unsupported bridge gap at {p}, t={t:F2}.");
+            if (launch is { } started && t >= started + .7)
+            {
+                Check(Math.Abs(p.X + 203.5f) < 2.425f, "Flight ended short of the neighbouring bridge.");
+                finished = true; break;
+            }
+        }
+        Check(finished, "Bridge switch never completed a jump.");
+    }
+
+    private sealed class JumpMove : IGreenMoveSystem
+    {
+        private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready;
+        public DateTime Now;
+        public bool IsRunning => _index < _points.Count;
+        public GreenMoveStatus GetStatus() => new(IsRunning, IsRunning ? _points[_index] : null, _points.LastOrDefault(), _index, _points.Count, Math.Max(0, _points.Count - _index - 1));
+        public void MoveTo(GreenMovePoint p) => MoveTo([p]);
+        public void MoveTo(IReadOnlyList<GreenMovePoint> points) { _points = points; _index = 0; _ready = Now.AddSeconds(.08); }
+        public void Stop() { _points = []; _index = 0; }
+        public void Append(GreenMovePoint p) => throw new NotSupportedException();
+        public void Append(IReadOnlyList<GreenMovePoint> p) => throw new NotSupportedException();
+        public void ClearQueue() => Stop(); public void SkipCurrent() => ++_index;
+        public Vector3 Advance(Vector3 p)
+        {
+            if (!IsRunning || Now < _ready) return p;
+            var delta = _points[_index].Position - p; delta.Y = 0; var length = delta.Length();
+            if (length <= _points[_index].Tolerance) { ++_index; return p; }
+            return p + delta / length * Math.Min(length, .06f);
+        }
     }
 
     private static void Map(BlundervilleBridgeTracker t, byte index, uint state, double seconds) => t.Map(index, state, Epoch.AddSeconds(seconds));

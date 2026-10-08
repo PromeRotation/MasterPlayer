@@ -59,6 +59,18 @@ internal static class NavigationPerformance
             var layout = MasterPlayer.Radar.RadarArenaLayout.Create(boundary, boundary.Position, Vector2.Zero, 150, 0);
             var clip = new MasterPlayer.Radar.RadarClipRegion(layout.Outline, Vector2.Zero, 150);
             Measure(course + " radar background clip", 5, () => { foreach (var part in clip.ClipPolygon(clip.Outline)) _ = part.Count; });
+            var watch = Stopwatch.StartNew();
+            foreach (var contour in boundary.GetContours())
+                for (var i = 0; i < contour.Count; ++i)
+                    foreach (var segment in clip.ClipSegment(layout.Projection.Project(contour[i]), layout.Projection.Project(contour[(i + 1) % contour.Count]))) _ = segment;
+            Console.WriteLine($"PERF {course} old full boundary stroke: {watch.Elapsed.TotalMilliseconds:F2}ms");
+            var center = BlundervilleRoutes.VerifiedStart(course);
+            var projection = new MasterPlayer.Radar.RadarProjection(center, Vector2.Zero, 150f / 25, 0);
+            var localClip = new MasterPlayer.Radar.RadarClipRegion(MasterPlayer.Radar.RadarClipRegion.Circle(Vector2.Zero, 150), Vector2.Zero, 150);
+            Measure(course + " local boundary stroke", 12, () => {
+                foreach (var (a, b) in MasterPlayer.Radar.RadarLocalGeometry.Segments(boundary, center, 25))
+                    foreach (var segment in localClip.ClipSegment(projection.Project(a), projection.Project(b))) _ = segment;
+            });
         }
     }
 

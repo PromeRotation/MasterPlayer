@@ -71,6 +71,10 @@ public sealed class SafeZoneSolver
 
         var playerInDangerNow = IsPlayerInDangerNow(snapshot, player.Position, solveTime);
 
+        if (options.GoalDirectedTemporalPlanning && map.PixelMaxGAt(startCol, startRow) < 0
+            && TryRecoverArenaMargin(snapshot, map, player.Position, capability, options, solveTime) is { } recovery)
+            return recovery;
+
         if (!playerInDangerNow &&
             TryReuseSettledGoalLock(snapshot, map, player.Position, previousSolution, solveTime, out var lockedTarget))
         {
@@ -146,6 +150,7 @@ public sealed class SafeZoneSolver
                         && Vector3.Dot(Vector3.Normalize(a), Vector3.Normalize(b)) > .99999f)
                         phase.RemoveAt(i);
                 }
+                phase = StraightenTemporalPhase(map, phase, capability.CurrentSpeed, solveTime);
             }
             return new SafeZoneSolution(SolutionStatus.Success, version, solveTime, solvedAt,
                 phase.Count >= 2 ? phase[^1].Position : null, phase, BuildDebug(options, temporal, map))
@@ -257,6 +262,42 @@ public sealed class SafeZoneSolver
         return false;
     }
 
+    private static SafeZoneSolution? TryRecoverArenaMargin(SafeZoneSnapshot snapshot, RasterizedMap map, Vector3 player,
+        MovementCapability capability, SolveOptions options, DateTime now)
+    {
+        // The actor can stand inside the real floor but outside the eroded grid
+        // after input tolerance or a knockback. Authorize only a short, fully
+        // checked segment back into that grid; never bridge a real floor hole.
+        if (snapshot.ArenaBoundary is not { } boundary || !boundary.Contains(player)) return null;
+        var radius = MathF.Min(2, (options.ArenaSafetyMargin ?? options.HardSafetyMargin) + map.Resolution * 2);
+        var (col, row) = map.WorldToCell(player);
+        var cells = (int)MathF.Ceiling(radius / map.Resolution);
+        var candidates = new List<Vector3>();
+        for (var z = row - cells; z <= row + cells; ++z)
+            for (var x = col - cells; x <= col + cells; ++x)
+                if (map.InBounds(x, z) && map.PixelMaxGAt(x, z) >= 0)
+                {
+                    var p = map.CellCenter(x, z);
+                    if (GeometryHelper.DistanceXZ(player, p) <= radius) candidates.Add(p);
+                }
+        foreach (var target in candidates.OrderBy(p => GeometryHelper.DistanceXZ(player, p)))
+        {
+            if (!ArenaBoundaryTraversal.ContainsSegment(boundary, player, target)) continue;
+            if (snapshot.HardObstacles.Any(o => o.Geometry.Contains(player) || o.Geometry.Contains(target)
+                || o.Geometry.IntersectsSegment(player, target))) continue;
+            var departure = now.AddSeconds(MathF.Max(0, capability.MovementStartDelay));
+            var arrival = departure.AddSeconds(GeometryHelper.DistanceXZ(player, target) / MathF.Max(.1f, capability.CurrentSpeed));
+            if (snapshot.DangerAreas.Any(d => (d.Geometry.Contains(player, options.HardSafetyMargin)
+                    || d.Geometry.Contains(target, options.HardSafetyMargin) || d.Geometry.IntersectsSegment(player, target, options.HardSafetyMargin))
+                && d.DangerWindows.Any(w => w.Buffered(options.DangerStartSafetyTime,
+                    options.DangerEndSafetyTime).OverlapsInterval(now, arrival.AddSeconds(.1))))) continue;
+            return new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
+                [TimedWaypoint.Pass(player, departure), TimedWaypoint.Pass(target, arrival)], null)
+                { UsesTemporalPlanning = true, MaxArrivalTolerance = .1f };
+        }
+        return null;
+    }
+
     private static bool IsProcessedPathSafe(RasterizedMap map, IReadOnlyList<TimedWaypoint> path, DateTime now)
     {
         var previousCell = -1;
@@ -289,6 +330,13 @@ public sealed class SafeZoneSolver
                 previousTime = time;
             }
         }
+        foreach (var waypoint in path.Where(p => p.IsWaitPoint))
+        {
+            var (col, row) = map.WorldToCell(waypoint.Position);
+            if (!map.InBounds(col, row) || !CellSafe(row * map.Columns + col,
+                (float)(waypoint.PlannedArrivalTime - now).TotalSeconds,
+                (float)(waypoint.PlannedDepartureTime - now).TotalSeconds)) return false;
+        }
         return true;
 
         bool CellSafe(int cell, float from, float until)
@@ -297,6 +345,29 @@ public sealed class SafeZoneSolver
                 if (until >= danger.From && from <= danger.Until) return false;
             return true;
         }
+    }
+
+    private static List<TimedWaypoint> StraightenTemporalPhase(RasterizedMap map, List<TimedWaypoint> path, float speed, DateTime now)
+    {
+        // Validate the entire retimed suffix after each shortcut. A shorter route
+        // can arrive during an earlier pulse; geometry-only smoothing is unsafe.
+        for (var anchor = 0; anchor + 2 < path.Count && !path[anchor].IsWaitPoint; ++anchor)
+            for (var end = path.Count - 1; end > anchor + 1; --end)
+            {
+                var candidate = path.Take(anchor + 1).Concat(path.Skip(end)).ToList();
+                for (var i = anchor + 1; i < candidate.Count; ++i)
+                {
+                    var previous = candidate[i - 1]; var current = candidate[i];
+                    var arrival = previous.PlannedDepartureTime.AddSeconds(GeometryHelper.DistanceXZ(previous.Position, current.Position)
+                        / MathF.Max(.1f, speed * (current.SpeedMultiplier > 0 ? current.SpeedMultiplier : 1)));
+                    candidate[i] = current with { PlannedArrivalTime = arrival,
+                        PlannedDepartureTime = current.IsWaitPoint ? current.PlannedDepartureTime : arrival };
+                }
+                if (!IsProcessedPathSafe(map, candidate, now)) continue;
+                path = candidate;
+                break;
+            }
+        return path;
     }
 
     /// <summary>
@@ -377,7 +448,7 @@ public sealed class SafeZoneSolver
                     break;
                 }
 
-                var effectiveFrom = window.DangerFrom - startSafety;
+                var effectiveFrom = window.Buffered((float)startSafety.TotalSeconds, 0).DangerFrom;
                 if (effectiveFrom > solveTime && (earliestFutureFrom is null || effectiveFrom < earliestFutureFrom.Value))
                 {
                     earliestFutureFrom = effectiveFrom;
