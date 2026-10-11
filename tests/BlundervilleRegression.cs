@@ -13,7 +13,7 @@ internal static class BlundervilleRegression
     [
         (29795,"circle",3,0),
         (34716,"centered",3,2), (34717,"circle",3,0), (34718,"centered",4,10),
-        (34773,"circle",5,0), (34775,"rectangle",3,3), (34776,"circle",2,0),
+        (34773,"circle",5,0), (34775,"centered",3,3), (34776,"circle",2,0),
         (34796,"circle",5,0), (34797,"fan",8,180), (34798,"fan",8,180),
         (34799,"rectangle",4,4), (34800,"rectangle",31,12), (34801,"circle",6,0),
         (34802,"circle",5,0), (34804,"rectangle",6,6), (34805,"circle",6,0),

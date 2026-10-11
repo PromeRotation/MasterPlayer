@@ -11,6 +11,9 @@ internal sealed class BlundervilleBridgePlanner
     private const float Floor = 13.565f;
     private const float StartZ = -322.928f;
     private const float EndZ = -353.072f;
+    // 1.6m was tried for more run-up margin but lands short from the outer
+    // lane 14 (01:01 replay); keep the measured 2.0m edge takeoff.
+    internal const float SwitchTakeoffOffset = 2.0f;
     private Vector3? _landing;
     private IGeometryShape? _crossing;
     private int _landingLane = -1;
@@ -72,7 +75,9 @@ internal sealed class BlundervilleBridgePlanner
         var deadline = tracker.BridgeNextDisappearAt(currentIndex, now);
         var remainingSeconds = deadline is { } close ? (float)(close - now).TotalSeconds : 0;
         var exitSeconds = Math.Max(0, player.Z - EndZ) / 6;
-        if (player.Z <= -349.5f && grounded && !jumping)
+        // Prepare the straight finish jump four metres early: the run-up is the
+        // walk itself, and 1.5m left no time for one scan plus route dispatch.
+        if (player.Z <= -347.5f && grounded && !jumping)
             return BeginJump(new(player.X, Floor, -351f), new(player.X, Floor, -355.2f), -1, "助跑后跳上终点平台");
         if (_switchLane >= 0 && !tracker.BridgeEnabled((byte)(14 + _switchLane), now)) ClearPreparation();
         if (_switchLane < 0 && (remainingSeconds < 2.2f && exitSeconds + 0.2f > remainingSeconds || !tracker.BridgeEnabled(currentIndex, now)))
@@ -89,11 +94,20 @@ internal sealed class BlundervilleBridgePlanner
             {
                 _switchOriginLane = lane;
                 var direction = MathF.Sign(Centers[_switchLane] - Centers[lane]);
-                _takeoff = new(Centers[lane] + direction * 2.0f, Floor, Math.Max(EndZ - 0.2f, player.Z - 0.8f));
+                _takeoff = new(Centers[lane] + direction * SwitchTakeoffOffset, Floor, Math.Max(EndZ - 0.2f, player.Z - 0.8f));
                 _preparedLanding = new(Centers[_switchLane] - direction * 1.65f, Floor, Math.Max(EndZ - 0.4f, player.Z - 2.2f));
-                _crossing = Crossing(_takeoff.Value, _preparedLanding.Value);
+                _crossing = new BlundervilleJumpCorridor(_takeoff.Value, _preparedLanding.Value, 3f, 1.2f) { LaneSwitch = true };
             }
         }
+        // The executor launches a lane switch from wherever its run-up crosses
+        // the takeoff band, which can precede this planner's own edge check.
+        if (_switchLane >= 0 && _preparedLanding is { } launched && (!grounded || jumping))
+        {
+            var flight = BeginJump(player, launched, _switchLane, "保持跳跃落点，等待着地");
+            _airborne = true;
+            return flight with { Jump = false };
+        }
+        if (_switchLane >= 0 && grounded && !jumping && lane == _switchLane) ClearPreparation();
         if (_switchLane >= 0 && _takeoff is { } takeoff && _preparedLanding is { } preparedLanding)
         {
             var direction = MathF.Sign(Centers[_switchLane] - Centers[_switchOriginLane]);

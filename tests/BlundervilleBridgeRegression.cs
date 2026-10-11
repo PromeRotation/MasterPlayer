@@ -35,7 +35,7 @@ internal static class BlundervilleBridgeRegression
             Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(6)) == null, "One cycle was accepted as a reliable repeating timer.");
             Map(t, 14, 0x80004, 10.6); Map(t, 14, 0x20001, 12);
             var deadline = t.BridgeNextDisappearAt(14, Epoch.AddSeconds(12));
-            Check(deadline is { } d && Math.Abs((d - Epoch).TotalSeconds - 16.55) < 0.001,
+            Check(deadline is { } d && Math.Abs((d - Epoch).TotalSeconds - (16.55 - BlundervilleBridgeTracker.CollapseMargin)) < 0.001,
                 "The measured median timer was replaced with an assumed period.");
         });
         run("Blunderville bridge collapse is immediate and reappearance preserves its cycle", () =>
@@ -45,7 +45,7 @@ internal static class BlundervilleBridgeRegression
             Check(!t.BridgeEnabled(14, Epoch.AddSeconds(16.5)), "A vanished bridge was still navigable.");
             Check(t.BridgeNextAppearAt(14, Epoch.AddSeconds(16.5)) == Epoch.AddSeconds(18), "Reappearance did not use the measured absent interval.");
             Map(t, 14, 0x20001, 18);
-            Check(t.BridgeEnabled(14, Epoch.AddSeconds(18)) && t.BridgeNextDisappearAt(14, Epoch.AddSeconds(18)) == Epoch.AddSeconds(22.5),
+            Check(t.BridgeEnabled(14, Epoch.AddSeconds(18)) && t.BridgeNextDisappearAt(14, Epoch.AddSeconds(18)) == Epoch.AddSeconds(22.5 - BlundervilleBridgeTracker.CollapseMargin),
                 "The next measured appearance lost timing calibration.");
         });
         run("Blunderville missed collapse cannot revive through an expired prediction", () =>
@@ -59,13 +59,25 @@ internal static class BlundervilleBridgeRegression
         {
             var t = Learned();
             Map(t, 14, 0x20001, 15.2);
-            Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(15.2)) == Epoch.AddSeconds(16.5), "A duplicate appearance extended the safe window.");
+            Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(15.2)) == Epoch.AddSeconds(16.5 - BlundervilleBridgeTracker.CollapseMargin), "A duplicate appearance extended the safe window.");
+        });
+        run("Blunderville a single late bridge packet keeps the earlier cycle deadline", () =>
+        {
+            var t = Learned();
+            Map(t, 14, 0x80004, 16.5); Map(t, 14, 0x20001, 19);
+            // The 2.5s absence is one late appearance packet. The fitted clock
+            // survives, and the collapse follows the previous collapse by one
+            // period instead of being pushed out by the delayed appearance.
+            Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(19)) == Epoch.AddSeconds(22.5 - BlundervilleBridgeTracker.CollapseMargin),
+                "A delayed appearance discarded or extended the measured bridge cycle.");
         });
         run("Blunderville discontinuous bridge timing drops a false periodic fit", () =>
         {
             var t = Learned();
             Map(t, 14, 0x80004, 16.5); Map(t, 14, 0x20001, 19);
-            Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(19)) == null, "A discontinuous absent interval remained predictable.");
+            Map(t, 14, 0x80004, 21.2); Map(t, 14, 0x20001, 24.4);
+            Map(t, 14, 0x80004, 26.1); Map(t, 14, 0x20001, 29.9);
+            Check(t.BridgeNextDisappearAt(14, Epoch.AddSeconds(29.9)) == null, "A mostly discontinuous bridge clock remained predictable.");
         });
         run("Blunderville bridge replay seek and reset discard all support and timers", () =>
         {

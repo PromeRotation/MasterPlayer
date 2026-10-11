@@ -15,6 +15,15 @@ internal static class BlundervilleRampRegression
         using var fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
             "Fixtures", "Blunderville", "ramp-recovery-012045.json")));
         var surface = new Surface(fixture.RootElement.GetProperty("surface"));
+        using var latest = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+            "Fixtures", "Blunderville", "recovery-surface-231958.json")));
+        var fullSurface = new Surface(latest.RootElement.GetProperty("surface"));
+        foreach (var start in new[] { new Vector3(-8.957f, 6.027f, -280.720f), new Vector3(11, 6.043f, -309), new Vector3(-11, 6.043f, -330) })
+            foreach (var speed in new[] { 6f, 12f })
+                run($"Blunderville ramp latest lower floor {start} at {speed}m/s", () => Simulate(start, speed, fullSurface));
+        foreach (var start in new[] { new Vector3(-7.401f, 9.873f, -268.116f), new Vector3(7.584f, 9.689f, -268.055f) })
+            foreach (var speed in new[] { 6f, 12f })
+                run($"Blunderville ramp latest recorded lip {start.X} at {speed}m/s", () => Simulate(start, speed, surface));
         foreach (var sample in fixture.RootElement.GetProperty("positions").EnumerateArray())
         {
             var start = Vec(sample.GetProperty("position"));
@@ -43,6 +52,8 @@ internal static class BlundervilleRampRegression
             planner.Update(state, Epoch.AddSeconds(.2), new(10, 9.9f, -268), true, false, true, null);
             Check(planner.Recovering, "Height alone cleared recovery while still beside the platform.");
             var landed = planner.Update(state, Epoch.AddSeconds(.3), new(7, 10.03f, -268), true, false, false, null);
+            Check(planner.Recovering && landed.Target is { X: 5 }, "Recovery released at the eroded platform edge.");
+            landed = planner.Update(state, Epoch.AddSeconds(.35), new(5, 10.03f, -268), true, false, false, null);
             Check(!planner.Recovering && planner.RecoveryCorridor == null && landed.Target is { Z: -271 },
                 "Confirmed landing failed to rejoin the high route.");
             planner.Update(state, Epoch.AddSeconds(.4), new(-11, 6, -271), true, false, true, null);
@@ -86,7 +97,7 @@ internal static class BlundervilleRampRegression
             var decision = planner.Update(state, now, position, true, false, true, null);
             if (!planner.Recovering)
             {
-                Check(position.Y >= 9.8f && MathF.Abs(position.X) <= 7.4f && position.Z >= -270,
+                Check(position.Y >= 9.8f && MathF.Abs(position.X) <= 5.8f && position.Z >= -270,
                     $"Recovery ended before reaching the platform at {position}.");
                 navigation.Apply(state, decision, encounter, now, position, true, false, false);
                 Check(decision.Target is { Z: -271 }, "The completed ascent skipped the bridge approach.");

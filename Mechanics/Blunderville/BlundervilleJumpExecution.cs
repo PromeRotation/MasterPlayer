@@ -11,6 +11,7 @@ internal sealed class BlundervilleJumpExecution
     private bool _running, _airborne, _completed;
     private DateTime _launched, _lastSample;
     private readonly Queue<(DateTime Time, Vector3 Position)> _samples = new();
+    internal const float LaneSwitchLateral = 1.5f;
     public bool InFlight => _launched != default;
     public bool NeedsRunupRetry { get; private set; }
     public float MeasuredSpeed { get; private set; }
@@ -29,7 +30,8 @@ internal sealed class BlundervilleJumpExecution
         var progress = Vector3.Dot(Flat(player - link.Takeoff), direction);
         var lateral = Flat(player - link.Takeoff) - direction * progress;
         // Publish the landing while a metre of run-up floor still remains.
-        if (!_running && progress is >= -3f and <= -.65f && lateral.LengthSquared() <= .3f * .3f)
+        var tolerance = link.LaneSwitch ? LaneSwitchLateral : .3f;
+        if (!_running && progress is >= -3f and <= -.65f && lateral.LengthSquared() <= tolerance * tolerance)
         { _running = true; NeedsRunupRetry = false; }
         return new(_running ? link.Landing : link.Takeoff - direction * 1.15f, false, false, link,
             _running ? "助跑中：确认移动速度后起跳" : "对齐跳跃助跑位置");
@@ -68,8 +70,12 @@ internal sealed class BlundervilleJumpExecution
         var duration = _samples.Count > 0 ? (now - _samples.Peek().Time).TotalSeconds : 0;
         if (duration >= .075) velocity = Flat(player - _samples.Peek().Position) / (float)duration;
         MeasuredSpeed = Vector3.Dot(velocity, direction);
-        var aligned = (velocity - direction * MeasuredSpeed).Length() < 1.2f;
-        if (progress is >= -.18f and <= .3f && lateral <= .4f && ready && MeasuredSpeed is >= 4.8f and <= 8.5f && aligned)
+        // A lane switch reacts while the player is still walking down the lane
+        // (one 100ms scan plus route latency); its run-up line is then offset
+        // from the planned axis. The takeoff band and run-up speed still apply.
+        var aligned = (velocity - direction * MeasuredSpeed).Length() < (link.LaneSwitch ? 2f : 1.2f);
+        if (progress is >= -.18f and <= .3f && lateral <= (link.LaneSwitch ? LaneSwitchLateral : .4f) && ready
+            && MeasuredSpeed is >= 4.8f and <= 8.5f && aligned)
             return true;
         // A missed launch must not turn the flight corridor into walkable floor.
         if (progress >= .05f) Retry();

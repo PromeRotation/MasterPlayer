@@ -47,6 +47,11 @@ internal sealed class BlundervilleJumpPlanner
         if (link == null) { ClearJump(); return null; }
         var (start, end) = link.Value;
         var forward = Direction(start, end);
+        // A nearby gap does not supersede a corner still ahead of the base
+        // route. In FirstB the second takeoff is visible before the turn onto
+        // its board; selecting it there strands the base cursor at that turn.
+        if (_corridor == null && Vector2.Dot(new(forwardTarget.X - start.X, forwardTarget.Z - start.Z), forward) < -.3f)
+            return null;
         var offset = new Vector2(player.X - start.X, player.Z - start.Z);
         var progress = Vector2.Dot(offset, forward);
         if (progress > 0.45f) { ClearJump(); return null; }
@@ -105,6 +110,9 @@ internal sealed class BlundervilleJumpCorridor : IGeometryShape
     private readonly RectangleGeometry _rectangle;
     public Vector3 Takeoff { get; }
     public Vector3 Landing { get; }
+    // A vanishing-bridge lane switch lands anywhere on a 5m-wide lane, so the
+    // run-up need not sit on the exact axis (see BlundervilleJumpExecution).
+    public bool LaneSwitch { get; init; }
     public BlundervilleJumpCorridor(Vector3 takeoff, Vector3 landing, float width = 3, float padding = 2)
     {
         Takeoff = takeoff; Landing = landing;

@@ -34,14 +34,28 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleAlternatingPulseTracker _alternatingPulses = new();
     private readonly BlundervilleRhythmTracker _rhythms = new();
     private readonly BlundervilleBumperTracker _bumpers = new();
+    private readonly BlundervilleChargeTracker _deliveryCharges = new();
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
 
     public bool BumpersReady(Vector3 player)
     {
-        var band = _actors.Values.Where(a => a.Oid == 16339 && MathF.Abs(a.Position.X - player.X) < 8
-            && (player.Z > -181 ? a.Position.Z is > -180 and < -164 : a.Position.Z is > -205 and < -185)).ToArray();
-        return band.Length > 0 && band.All(a => _bumpers.Ready(a.Id) && _rhythms.Ready(a.Id, 34717, _lastTime));
+        // Both bridges in the entry lane must have confirmed clocks. Other
+        // unlearned lanes remain blocked by TraversalHazards instead.
+        var bands = _actors.Values.Where(a => a.Oid == 16339 && MathF.Abs(a.Position.X - player.X) < 8
+            && (a.Position.Z is > -180 and < -164 || a.Position.Z is > -205 and < -185)).ToArray();
+        return bands.Any(a => a.Position.Z is > -205 and < -185)
+            && (player.Z <= -181 || bands.Any(a => a.Position.Z is > -180 and < -164))
+            && bands.Where(a => player.Z > -181 || a.Position.Z < -185)
+                .All(a => _bumpers.Ready(a.Id) && _rhythms.Ready(a.Id, 34717, _lastTime));
+    }
+
+    public bool DeliveryReady(Vector3 destination, DateTime now)
+    {
+        if (destination.X is > -225 and < -175) return true;
+        var sources = _actors.Values.Where(a => a.Oid == 16350 && a.Position.Z is > 245 and < 280
+            && (destination.X < -225 ? a.Position.X < -200 : a.Position.X > -200)).ToArray();
+        return sources.Length > 0 && sources.All(a => _deliveryCharges.Ready(a.Id, now));
     }
 
     public void Synchronize(IEnumerable<BlundervilleActor> actors, DateTime now)
@@ -152,6 +166,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (rule.Charge)
         {
             ObserveRoute(source, pos, now);
+            if (action == 34774) _deliveryCharges.Effect(source, pos, destination, now, rotation);
             if (destination is { } end && Finite(end))
             {
                 var delta = end - pos; delta.Y = 0;
@@ -207,6 +222,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _alternatingPulses.Remove(source);
         _rhythms.Remove(source);
         _bumpers.Remove(source);
+        _deliveryCharges.Remove(source);
         _ballMotion.Remove(source); _charges.Remove(source);
         _actors.Remove(source); _casts.Remove(source); _lastCasts.Remove(source); _waves.Remove(source); _routes.Remove(source); _beams.Remove(source);
         foreach (var id in _pulses.Where(p => p.Value.Source == source).Select(p => p.Key).ToArray()) _pulses.Remove(id);
@@ -227,7 +243,8 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public IEnumerable<BlundervillePreview> Previews(DateTime now)
     {
         Tick(now);
-        foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
+        foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now))
+            .Concat(_deliveryCharges.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
             yield return new(hazard.Id, BlundervilleCatalog.Devices, hazard.Geometry, now < hazard.From,
                 (float)Math.Clamp(1 - (hazard.From - now).TotalSeconds / 2, .25, 1));
         foreach (var cast in _casts.Values)
@@ -269,6 +286,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _alternatingPulses.Reset();
         _rhythms.Reset();
         _bumpers.Reset();
+        _deliveryCharges.Reset();
         _ballMotion.Clear(); _charges.Clear();
     }
 
@@ -279,6 +297,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var hazard in _alternatingPulses.Hazards(now)) yield return hazard;
         foreach (var hazard in _rhythms.Hazards(now)) yield return hazard;
         foreach (var hazard in _bumpers.Hazards) yield return hazard;
+        foreach (var hazard in _deliveryCharges.Hazards(now)) yield return hazard;
         foreach (var hazard in _charges.Values) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
@@ -308,6 +327,14 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 ? new RayRectangleGeometry(actor.Position, actor.Rotation, 8, 100) : beam.Preview.Geometry;
             yield return new($"beam/{source}", geometry, now, now.AddSeconds(0.15), now);
         }
+    }
+
+    public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now)
+    {
+        foreach (var hazard in Hazards(now)) yield return hazard;
+        foreach (var actor in _actors.Values.Where(a => a.Oid == 16339))
+            if (!_bumpers.Ready(actor.Id) || !_rhythms.Ready(actor.Id, 34717, now))
+                yield return _bumpers.UnknownTraversalHazard(actor, now);
     }
 
     private void ObserveRoute(ulong source, Vector3 position, DateTime now)

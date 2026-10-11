@@ -64,6 +64,7 @@ public sealed class SafeZoneSolution
     /// <summary>该路径是已验证时间路线的当前阶段，必须到等待点停下并重解，不能按普通目标路线延用。</summary>
     internal bool UsesTemporalPlanning { get; init; }
     internal bool IsPartialEscape { get; init; }
+    internal IReadOnlyList<TimedWaypoint> ContinuationPath { get; init; } = EmptyPath;
 
     // A failed ordinary solve or dispatch may spend part of its early-start cushion.
     // The actual damage window and all spatial/end margins remain unchanged.
@@ -82,6 +83,7 @@ public sealed class SafeZoneSolution
         {
             UsesTemporalPlanning = UsesTemporalPlanning, IsPartialEscape = IsPartialEscape,
             ReducedDangerStartSafetyTime = ReducedDangerStartSafetyTime, MaxArrivalTolerance = MaxArrivalTolerance,
+            ContinuationPath = ContinuationPath,
         };
 
     /// <summary>逃离时的到达容差上限，保证停止位置仍位于搜索验证过的终点格内。</summary>

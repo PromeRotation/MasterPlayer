@@ -7,6 +7,9 @@ using PromeRotation.GreenMoveSystem;
 
 namespace MasterPlayer.Spatial;
 
+internal sealed record DirectTraversalExecution(IReadOnlyList<Vector3> Path, int CurrentIndex,
+    bool HasControl, bool Rejected, bool InputLocked, DirectTraversalMotion? Motion = null);
+
 public sealed class SafeZoneRuntime : IDisposable
 {
     private readonly SafeZoneRebornMovementSystem _movement;
@@ -17,8 +20,10 @@ public sealed class SafeZoneRuntime : IDisposable
     private readonly HashSet<object> _straightPathRequests = [];
     private readonly Dictionary<object, float> _movementSpeeds = [];
     private readonly Dictionary<object, float> _arenaMargins = [];
+    private readonly Dictionary<object, float> _hardMargins = [];
     private object? _committedOwner;
     private object? _directOwner;
+    private object? _directFeedbackOwner;
 
     public SafeZoneSetting Setting { get; } = new();
     public SafeZoneManager Manager { get; }
@@ -27,13 +32,14 @@ public sealed class SafeZoneRuntime : IDisposable
     internal Func<DateTime>? ReplayClock { get; set; }
     public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
 
-    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false)
+    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null)
     {
         if (_disposed) return;
         if (!enabled && ReferenceEquals(_directOwner, owner)) RequestDirectTraversal(owner, null, CurrentTime);
         if ((!enabled || hold) && ReferenceEquals(_committedOwner, owner)) ReleaseCommittedMovement(owner);
         var wasHeld = Setting.RuntimeMovementHeld;
-        if (enabled) _movementRequests.Add(owner); else _movementRequests.Remove(owner);
+        var ownersChanged = enabled ? _movementRequests.Add(owner) : _movementRequests.Remove(owner);
+        if (ownersChanged) _movement.ClearTemporalContinuation();
         if (_directOwner != null && _movementRequests.Count != 1)
         { _directOwner = null; _movement.SetDirectTraversal(null, CurrentTime); }
         if (enabled && hold) _movementHolds.Add(owner); else _movementHolds.Remove(owner);
@@ -43,13 +49,19 @@ public sealed class SafeZoneRuntime : IDisposable
         else _movementSpeeds.Remove(owner);
         if (enabled && arenaSafetyMargin is { } margin && float.IsFinite(margin) && margin is >= 0 and <= 2) _arenaMargins[owner] = margin;
         else _arenaMargins.Remove(owner);
+        if (enabled && hardSafetyMargin is { } hardMargin && float.IsFinite(hardMargin) && hardMargin is >= 0 and <= 2) _hardMargins[owner] = hardMargin;
+        else _hardMargins.Remove(owner);
         Setting.RuntimeMovementRequested = _movementRequests.Count != 0;
         Setting.RuntimeMovementHeld = _movementHolds.Count != 0;
         Setting.RuntimeBaseSpeed = _movementSpeeds.Count != 0 ? _movementSpeeds.Values.Min() : null;
         var oldMargin = Setting.RuntimeArenaSafetyMargin;
+        var oldHardMargin = Setting.RuntimeHardSafetyMargin;
         Setting.RuntimeArenaSafetyMargin = _movementRequests.Count == 0 ? null
             : _movementRequests.Max(request => _arenaMargins.GetValueOrDefault(request, 0.5f));
-        if (wasHeld != Setting.RuntimeMovementHeld || oldMargin != Setting.RuntimeArenaSafetyMargin) _movement.Reset();
+        Setting.RuntimeHardSafetyMargin = _hardMargins.Count == 0 ? null
+            : _movementRequests.Max(request => _hardMargins.GetValueOrDefault(request, 0.5f));
+        if (wasHeld != Setting.RuntimeMovementHeld || oldMargin != Setting.RuntimeArenaSafetyMargin
+            || oldHardMargin != Setting.RuntimeHardSafetyMargin) _movement.Reset();
     }
 
     // Only a requesting owner may commit its already-dispatched, direct landing
@@ -76,13 +88,14 @@ public sealed class SafeZoneRuntime : IDisposable
         _movement.Reset();
     }
 
-    internal void RequestDirectTraversal(object owner, Vector3? target, DateTime now, IReadOnlyList<Vector3>? path = null, float headingTolerance = 0)
+    internal void RequestDirectTraversal(object owner, Vector3? target, DateTime now, IReadOnlyList<Vector3>? path = null,
+        float headingTolerance = 0, DirectTraversalMotion? motion = null)
     {
         if (_disposed) return;
         if (target.HasValue && _movementRequests.Contains(owner) && _movementRequests.Count == 1)
         {
-            _directOwner = owner;
-            _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance);
+            _directOwner = _directFeedbackOwner = owner;
+            _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance, motion, now);
         }
         else if (ReferenceEquals(_directOwner, owner))
         {
@@ -91,9 +104,15 @@ public sealed class SafeZoneRuntime : IDisposable
         }
     }
 
+    internal DirectTraversalExecution GetDirectTraversalExecution(object owner, DateTime now)
+        => !_disposed && ReferenceEquals(_directFeedbackOwner, owner)
+            && _movementRequests.Contains(owner) && _movementRequests.Count == 1
+            ? _movement.GetDirectTraversalExecution(now) : new([], 0, false, false, false);
+
     private void ClearMovementRequests()
     {
         _directOwner = null;
+        _directFeedbackOwner = null;
         _movement.SetDirectTraversal(null, CurrentTime);
         _committedOwner = null;
         _movement.ClearJumpRoute();
@@ -101,6 +120,7 @@ public sealed class SafeZoneRuntime : IDisposable
         _straightPathRequests.Clear(); Setting.RuntimePreferStraightPaths = false;
         _movementSpeeds.Clear(); Setting.RuntimeBaseSpeed = null;
         _arenaMargins.Clear(); Setting.RuntimeArenaSafetyMargin = null;
+        _hardMargins.Clear(); Setting.RuntimeHardSafetyMargin = null;
         Setting.RuntimeMovementRequested = false; Setting.RuntimeMovementHeld = false;
     }
 

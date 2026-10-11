@@ -352,8 +352,22 @@ BlundervilleJumpRegression.Run(Run);
 BlundervilleJumpExecutionRegression.Run(Run);
 BlundervilleRacePlannerRegression.Run(Run);
 BlundervilleRampRegression.Run(Run);
+BlundervilleFirstBFeedbackRegression.Run(Run);
 BlundervilleAnimationRegression.Run(Run);
 BlundervilleObstacleRegression.Run(Run);
+BlundervilleBumperPlannerRegression.Run(Run);
+BlundervilleIceMotionRegression.Run(Run);
+BlundervilleSlideObservationRegression.Run(Run);
+BlundervilleIceContinuationRegression.Run(Run);
+BlundervilleSlideEnvelopeRegression.Run(Run);
+ArenaBoundaryTubeRegression.Run(Run);
+BlundervilleBumperSweepRegression.Run(Run);
+NavigationDirectTraversalPhysicalRegression.Run(Run);
+BlundervilleLatestForecastRegression.Run(Run);
+BlundervilleFeedback001440Regression.Run(Run);
+BlundervilleFeedback001711Regression.Run(Run);
+BlundervilleFeedback010120Regression.Run(Run);
+NavigationTemporalContinuationRegression.Run(Run);
 NavigationDirectTraversalRegression.Run(Run);
 NavigationCacheRegression.Run(Run);
 UpstreamSyncRegression.Run(Run);
@@ -396,7 +410,8 @@ Console.WriteLine($"PASS: {passed} regression scenarios");
 void Run(string name, Action test)
 {
     if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
-    test();
+    try { test(); }
+    catch { Console.WriteLine($"FAIL {name}"); throw; }
     passed++;
     Console.WriteLine($"PASS {name}");
 }

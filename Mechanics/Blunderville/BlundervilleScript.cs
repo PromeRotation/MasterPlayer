@@ -190,7 +190,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
             if (_native?.SupportsMisdirection == true)
                 _decision = _arrowPlanner.Apply(_decision, _race, player, motion.ArrowDirection, now, _navigation?.HasMovementControl == true);
             else _arrowPlanner.Reset();
-            _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now);
+            _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
+            _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
         }
         else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); }
         IGeometryShape? crossing = null;

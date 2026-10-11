@@ -9,6 +9,7 @@ namespace MasterPlayer.Mechanics.Blunderville;
 internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafeZoneApi safeZone, ScriptDrawApi draw)
 {
     public bool HasMovementControl => runtime.MovementStatus.HasControl;
+    public DirectTraversalExecution GetDirectTraversalExecution(DateTime now) => runtime.GetDirectTraversalExecution(this, now);
     public bool CommitJump(Vector3 landing, Vector3 player, float speed, DateTime now) => runtime.CommitJumpMovement(this, landing, player, speed, now);
     public void ReleaseJump() => runtime.ReleaseCommittedMovement(this);
     public void StopForRunup() => runtime.StopOwnedMovement(this);
@@ -17,6 +18,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
     private SafeZoneAreaHandle _goal;
     private Vector3? _target;
     private IGeometryShape? _boundary;
+    private IGeometryShape? _sourceBoundary;
     private BlundervilleCourse _course;
     private Vector3 _regionCenter;
     private IGeometryShape? _crossing;
@@ -35,7 +37,9 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
                 && (player.Z is < -118 and > -158 || decision.Target is { Z: < -118 and > -158 })
             || state.Course == BlundervilleCourse.Ring && (player.Z < -137 || decision.Target is { Z: < -137 })
             || state.Course == BlundervilleCourse.Final && player.Y >= 35 && (player.Z < 129 || decision.Target is { Z: < 129 });
-        runtime.RequestAutomaticMovement(this, automatic && !replay, decision.Hold, state.NavigationBaseSpeed(now), preciseRoute ? 0.1f : null, preferStraightPaths: true);
+        var delivery = state.Course == BlundervilleCourse.Delivery;
+        runtime.RequestAutomaticMovement(this, automatic && !replay, decision.Hold, state.NavigationBaseSpeed(now),
+            preciseRoute || delivery ? 0.1f : null, preferStraightPaths: true, hardSafetyMargin: delivery ? .1f : null);
         using var group = safeZone.BeginDrawingGroup("竞速路线与机制处理");
         if (decision.Target is { } target && showRoute)
         {
@@ -48,16 +52,18 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         var middle = decision.Target is { } destinationPoint ? (destinationPoint + player) * 0.5f : player;
         var center = new Vector3(MathF.Round(middle.X / 10) * 10, player.Y, MathF.Round(middle.Z / 10) * 10);
         var tightCrossing = crossing != null && state.Course == BlundervilleCourse.FirstA || crossing is BlundervilleJumpCorridor;
-        if (_boundary == null || _course != state.Course || DistanceXZ(center, _regionCenter) > 0.1f || !ReferenceEquals(_crossing, crossing) || _preciseRoute != preciseRoute)
+        var source = BlundervilleRoutes.NavigationBoundary(state.Course, player);
+        if (_boundary == null || !ReferenceEquals(_sourceBoundary, source) || _course != state.Course || DistanceXZ(center, _regionCenter) > 0.1f || !ReferenceEquals(_crossing, crossing) || _preciseRoute != preciseRoute)
         {
             _course = state.Course; _regionCenter = center; _crossing = crossing; _preciseRoute = preciseRoute;
-            var source = BlundervilleRoutes.Boundary(state.Course);
+            _sourceBoundary = source;
             // Lower-floor recovery must not union in the high bridge: in X/Z that
             // would authorize shortcuts through its wall before reaching the ramp.
             _boundary = new LocalCorridor(recovery ? crossing! : crossing == null ? source : new CrossingCorridor(source, crossing), center, tightCrossing ? 8 : preciseRoute ? 16 : 28);
             runtime.Manager.SetArenaBoundary(_boundary);
         }
-        var goalRadius = tightCrossing || preciseRoute || recovery || decision.DirectTraversal ? 0.2f : 0.8f;
+        var closeWaypoints = state.Course == BlundervilleCourse.FirstB && player.Z is < -194 and > -336;
+        var goalRadius = tightCrossing || preciseRoute || recovery || closeWaypoints || decision.DirectTraversal ? 0.2f : 0.8f;
         if (decision.Target != _target || _goalRadius != goalRadius || _goal.IsValid && !runtime.Manager.ContainsArea(_goal))
         {
             _target = decision.Target; _goalRadius = goalRadius;
@@ -71,20 +77,25 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             }
             else { if (_goal.IsValid) safeZone.Remove(_goal); _goal = default; }
         }
-        var desired = encounter.Hazards(now).Where(h => Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
+        var desired = encounter.TraversalHazards(now).Where(h => Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
         foreach (var id in _dangers.Keys.Where(id => !desired.ContainsKey(id)).ToArray())
         { safeZone.Remove(_dangers[id].Handle); _dangers.Remove(id); }
         foreach (var (id, hazard) in desired)
         {
+            if (_dangers.TryGetValue(id, out var existing) && existing.Hazard == hazard) continue;
             var template = Template(hazard.Geometry);
             if (template == null) continue;
             var binding = new StaticTransform(hazard.Geometry.Position, hazard.Geometry.Rotation);
             DangerWindow[] windows = [new(hazard.From, hazard.Until, hazard.Telegraph)
-                { HasMotionEnvelope = hazard.Id.StartsWith("bumper/", StringComparison.Ordinal) }];
-            if (_dangers.TryGetValue(id, out var existing))
+                { HasMotionEnvelope = hazard.Id.StartsWith("bumper/", StringComparison.Ordinal)
+                    || hazard.Id.StartsWith("charge/", StringComparison.Ordinal)
+                    || hazard.Id.StartsWith("rhythm/", StringComparison.Ordinal)
+                        && (hazard.Id.Contains("/34717/", StringComparison.Ordinal) || hazard.Id.Contains("/34773/", StringComparison.Ordinal)
+                            || hazard.Id.Contains("/34799/", StringComparison.Ordinal)) }];
+            if (existing != null)
             {
-                if (existing.Hazard == hazard) continue;
-                var dynamic = id.StartsWith("ball/", StringComparison.Ordinal) || id.StartsWith("beam/", StringComparison.Ordinal) || id.StartsWith("bumper/", StringComparison.Ordinal);
+                var dynamic = id.StartsWith("ball/", StringComparison.Ordinal) || id.StartsWith("beam/", StringComparison.Ordinal)
+                    || id.StartsWith("bumper/", StringComparison.Ordinal) || id.StartsWith("bumper-unknown/", StringComparison.Ordinal);
                 if (runtime.Manager.UpdateArea(existing.Handle, template, binding, windows, incrementVersion: !dynamic))
                 { _dangers[id] = new(hazard, existing.Handle); continue; }
                 safeZone.Remove(existing.Handle); _dangers.Remove(id);
@@ -95,7 +106,8 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             safeZone.SetNavigationOnly(handle, true);
             _dangers[id] = new(hazard, handle);
         }
-        runtime.RequestDirectTraversal(this, automatic && !replay && decision.DirectTraversal ? decision.Target : null, now, decision.ContinuousPath, decision.HeadingTolerance);
+        runtime.RequestDirectTraversal(this, automatic && !replay && decision.DirectTraversal ? decision.Target : null, now,
+            decision.ContinuousPath, decision.HeadingTolerance, decision.TraversalMotion);
     }
 
     public void Clear()
@@ -109,7 +121,8 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
     public void ApplyDirectFrame(BlundervilleRaceState state, BlundervilleRaceDecision decision, DateTime now)
     {
         runtime.RequestAutomaticMovement(this, true, decision.Hold, state.NavigationBaseSpeed(now), arenaSafetyMargin: .1f, preferStraightPaths: true);
-        runtime.RequestDirectTraversal(this, decision.DirectTraversal ? decision.Target : null, now, headingTolerance: decision.HeadingTolerance);
+        runtime.RequestDirectTraversal(this, decision.DirectTraversal ? decision.Target : null, now,
+            decision.ContinuousPath, decision.HeadingTolerance, decision.TraversalMotion);
     }
 
     private void ClearAreas()
@@ -120,11 +133,12 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         _goal = default; _target = null;
         if (_boundary != null && ReferenceEquals(runtime.Manager.BuildSnapshot(runtime.CurrentTime).ArenaBoundary, _boundary))
             runtime.Manager.ClearArenaBoundary();
-        _boundary = null; _course = BlundervilleCourse.None; _crossing = null; _preciseRoute = false;
+        _boundary = _sourceBoundary = null; _course = BlundervilleCourse.None; _crossing = null; _preciseRoute = false;
     }
 
     private static GeometryTemplate? Template(IGeometryShape geometry) => geometry switch
     {
+        BlundervilleBumperSweep sweep => new BlundervilleBumperSweep.SnapshotTemplate(sweep),
         CircleGeometry c => new CircleTemplate(c.Radius),
         FanGeometry f => new FanTemplate(f.Radius, f.AngleRadians),
         RayRectangleGeometry r => new RayRectangleTemplate(r.MinLocalX, r.MaxLocalX, r.Length),

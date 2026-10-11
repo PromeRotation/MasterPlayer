@@ -126,7 +126,7 @@ public sealed class SafeZoneSolver
                 return SafeZoneSolution.Failed(SolutionStatus.NoTemporalPath, version, solveTime, solvedAt);
             }
 
-            // GreenMove 不消费时间戳。只下发首次等待前的连续移动，后续路段由周期重解在解禁后接续。
+            // GreenMove 不消费时间戳。只下发首次等待前的连续移动；竞速保存后续路段，解禁后按最新快照复核接续。
             // 时间搜索的路径不做平滑或重计时，避免跨过危险窗口或切入危险几何。
             var phase = new List<TimedWaypoint>();
             if (temporal.HasPath)
@@ -154,7 +154,11 @@ public sealed class SafeZoneSolver
             }
             return new SafeZoneSolution(SolutionStatus.Success, version, solveTime, solvedAt,
                 phase.Count >= 2 ? phase[^1].Position : null, phase, BuildDebug(options, temporal, map))
-                { UsesTemporalPlanning = true, IsPartialEscape = temporal.IsPartialEscape };
+                {
+                    UsesTemporalPlanning = true, IsPartialEscape = temporal.IsPartialEscape,
+                    ContinuationPath = options.GoalDirectedTemporalPlanning && phase.Count > 0 && phase[^1].IsWaitPoint
+                        ? temporal.Path.SkipWhile(p => p.Position != phase[^1].Position || !p.IsWaitPoint).ToArray() : [],
+                };
         }
 
         // 无路径（起点就是 best）→ 无需移动空成功。

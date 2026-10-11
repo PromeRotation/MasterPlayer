@@ -35,7 +35,8 @@ internal static class BlundervilleAnimationRegression
                     ++total;
                     var pose = replay.Events.LastOrDefault(p => p[1].GetString() == "turn" && p[2].GetUInt64() == source && p[0].GetDouble() <= t);
                     var hitPosition = pose.ValueKind == JsonValueKind.Undefined ? actor.Position : Vec(pose[4]);
-                    if (replay.Encounter.Hazards(Epoch.AddSeconds(t - .35)).Any(h => h.Id.StartsWith($"rhythm/{source}/{action}/")
+                    if (replay.Encounter.Hazards(Epoch.AddSeconds(t - .35)).Any(h => (h.Id.StartsWith($"rhythm/{source}/{action}/")
+                        || action == 34775 && h.Id.StartsWith($"animation/{source}/"))
                         && h.Geometry.Contains(hitPosition, .01f)
                         && h.From.AddSeconds(-.5) <= Epoch.AddSeconds(t) && h.Until.AddSeconds(.3) >= Epoch.AddSeconds(t))) ++covered;
                     else Console.WriteLine($"RHYTHM missing source={source} action={action} time={t:F3} position={hitPosition}");
@@ -228,7 +229,7 @@ internal static class BlundervilleAnimationRegression
         Check(move.Count < 45 && reverse < 4, "Animation handling repeatedly restarted or reversed the route.");
     }
 
-    private sealed class Recording : IDisposable
+    internal sealed class Recording : IDisposable
     {
         public JsonDocument Data { get; }
         public JsonElement[] Events { get; }

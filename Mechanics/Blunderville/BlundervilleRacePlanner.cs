@@ -6,6 +6,7 @@ internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool
 {
     public IReadOnlyList<Vector3>? ContinuousPath { get; init; }
     public float HeadingTolerance { get; init; }
+    public Spatial.DirectTraversalMotion? TraversalMotion { get; init; }
 }
 
 internal sealed class BlundervilleRacePlanner
@@ -22,6 +23,7 @@ internal sealed class BlundervilleRacePlanner
     private DateTime _forcedExpiry;
     private Vector3 _forcedPosition;
     private (float Heading, bool Safe) _forcedHeading;
+    private float? _forcedFacing;
     public int Cursor => _cursor;
     public bool Recovering => _recovering;
     public BlundervilleRecoveryCorridor? RecoveryCorridor { get; private set; }
@@ -42,13 +44,17 @@ internal sealed class BlundervilleRacePlanner
             _arrival = default; _arrivalTarget = null;
             _deliveryTarget = null; _recovering = false; RecoveryCorridor = null;
             _forcedExpiry = default;
+            _forcedFacing = null;
         }
         _previous = position;
         if (state.Course == BlundervilleCourse.FirstA && position.Y < 12
             && position.X is > -224 and < -176 && position.Z is > -355 and < -322)
             return new(null, true, false, null, "已跌落消失桥，等待回到桥面或手动恢复");
         if (_recovering && grounded && !jumping && position.Y >= 9.8f
-            && MathF.Abs(position.X) <= 7.4f && position.Z is >= -270 and <= -263)
+            && MathF.Abs(position.X) <= 8 && position.Z is >= -270 and <= -266)
+            _cursor = Math.Max(_cursor, _recoveryNodeCount - 2);
+        if (_recovering && grounded && !jumping && position.Y >= 9.8f
+            && MathF.Abs(position.X) <= 5.8f && position.Z is >= -270 and <= -266)
         {
             _recovering = false; RecoveryCorridor = null;
             _cursor = _recoveryNodeCount - 1;
@@ -74,9 +80,12 @@ internal sealed class BlundervilleRacePlanner
         }
         else
         {
-            if (state.Course == BlundervilleCourse.FirstB && position.Y < 9.8f
+            if (state.Course == BlundervilleCourse.FirstB && (position.Y < 9.8f
+                    || position.Y < 10.1f && MathF.Abs(position.X) > 6.5f && position.Z is > -270 and < -266)
                 && position.Z is < -263 and > -337 && !_recovering)
             {
+                if (!grounded || jumping)
+                    return new(null, true, false, null, "等待击飞落地，重新确认回坡起点");
                 var normal = BlundervilleRoutes.Nodes(state.Course, position);
                 var recovery = BlundervilleRoutes.FirstBRecovery(position);
                 _recoveryNodeCount = recovery.Count;
@@ -84,6 +93,8 @@ internal sealed class BlundervilleRacePlanner
                 RecoveryCorridor = new([position, .. recovery.Select(n => n.Position)], 1);
                 _cursor = 0; _recovering = true;
             }
+            if (!_recovering && grounded && !jumping && !BlundervilleRoutes.IsLoop(state.Course))
+                RejoinForwardSegment(position);
             while (_cursor < _nodes.Count && (!_recovering || grounded && !jumping) && Reached(position, _cursor))
             {
                 if (_cursor == _nodes.Count - 1 && BlundervilleRoutes.IsLoop(state.Course)) { _cursor = 0; break; }
@@ -105,7 +116,8 @@ internal sealed class BlundervilleRacePlanner
         }
         _arrival = default; _arrivalTarget = null;
         var desired = MathF.Atan2(destination.X - position.X, destination.Z - position.Z);
-        if (state.ForcedMoveExpiresAt is { } expires && state.ForcedDirectionOffset is { } offset
+        if (state.IsForcedMoving) _forcedFacing = null;
+        else if (state.ForcedMoveExpiresAt is { } expires && state.ForcedDirectionOffset is { } offset
             && expires != DateTime.MaxValue && expires - now <= TimeSpan.FromSeconds(0.8) && expires >= now)
         {
             if (_forcedExpiry != expires || Vector3.DistanceSquared(_forcedPosition, position) > .25f * .25f)
@@ -113,10 +125,15 @@ internal sealed class BlundervilleRacePlanner
                 _forcedExpiry = expires; _forcedPosition = position;
                 _forcedHeading = BlundervilleForcedMovement.Heading(BlundervilleRoutes.Boundary(state.Course), position, destination);
             }
-            var forced = _forcedHeading;
-            return new(destination, true, false, MathF.IEEERemainder(forced.Heading - offset, MathF.Tau),
-                forced.Safe ? "沿完整安全直线对齐强制移动" : "强制移动准备过晚：朝最长地板方向，仍有跌落风险");
+            _forcedFacing = MathF.IEEERemainder(_forcedHeading.Heading - offset, MathF.Tau);
         }
+        // The local countdown can end before the server replaces it with 3737.
+        // Keep the committed facing through that gap; release on confirmation or
+        // a bounded timeout if the command was cancelled or its signal was lost.
+        if (_forcedFacing is { } facing && now <= _forcedExpiry.AddSeconds(.75))
+            return new(destination, true, false, facing,
+                _forcedHeading.Safe ? "沿完整安全直线对齐强制移动" : "强制移动准备过晚：朝最长地板方向，仍有跌落风险");
+        _forcedFacing = null;
         var canMove = state.CanMoveToward(position, destination, arrowDirection, now);
         var hint = state.MustStopForAccelerationBomb(now) ? "加速度炸弹：停步"
             : state.IsForcedMoving ? "等待强制移动结束"
@@ -135,6 +152,7 @@ internal sealed class BlundervilleRacePlanner
     public void Reset()
     {
         _forcedExpiry = default;
+        _forcedFacing = null;
         _nodes = []; _version = -1; _cursor = 0; _arrival = default; _arrivalTarget = null; _previous = null;
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }
@@ -171,6 +189,27 @@ internal sealed class BlundervilleRacePlanner
         var ab = node.Position - _nodes[index - 1].Position; ab.Y = 0;
         var bp = position - node.Position; bp.Y = 0;
         return Vector3.Dot(bp, ab) >= 0 && DistanceXZ(position, node.Position) < (node.Jump ? 6 : 4);
+    }
+
+    private void RejoinForwardSegment(Vector3 position)
+    {
+        // A jump, forced movement or another traversal controller can pass
+        // several nodes without entering their small arrival circles. Use the
+        // floor the player actually reached, never a desired future target.
+        var closest = 2.5f * 2.5f;
+        for (var i = _cursor; i + 1 < _nodes.Count; ++i)
+        {
+            var a = _nodes[i].Position; var b = _nodes[i + 1].Position;
+            var ab = new Vector2(b.X - a.X, b.Z - a.Z);
+            if (ab.LengthSquared() < .001f) continue;
+            var t = Vector2.Dot(new(position.X - a.X, position.Z - a.Z), ab) / ab.LengthSquared();
+            if (t < .05f || t > 1.05f) continue;
+            var projected = Vector3.Lerp(a, b, Math.Clamp(t, 0, 1));
+            if (MathF.Abs(projected.Y - position.Y) > .8f) continue;
+            var distance = Vector2.DistanceSquared(new(position.X, position.Z), new(projected.X, projected.Z));
+            if (distance >= closest) continue;
+            closest = distance; _cursor = i + 1;
+        }
     }
 
     private static float DistanceXZ(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));

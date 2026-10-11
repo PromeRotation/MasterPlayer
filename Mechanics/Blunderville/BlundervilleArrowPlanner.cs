@@ -6,6 +6,21 @@ namespace MasterPlayer.Mechanics.Blunderville;
 // hammer row must reacquire the rotating arrow, so ordinary timed A* is invalid.
 internal sealed class BlundervilleArrowPlanner
 {
+    // The second hammer row covers Z=-286..-276. Directly south of both side
+    // walkways are real exit holes (Z<-289.5); only X=-203..-197 continues.
+    // Stop the straight run between the hammers and those holes, then hand the
+    // bend into the central exit to ordinary navigation. ARR 2026-10-12 00:17
+    // pinned the old -289 endpoint against the hole edge and ping-ponged with
+    // ordinary navigation across the -288.5 hand-off for ten seconds.
+    internal const float SecondRowExit = -287.5f;
+    internal const float SecondRowRelease = -286.8f;
+    // A small drift after the hand-off must not re-enter the arrow controller.
+    // Only a real return toward the hammers (e.g. knockback) re-arms it.
+    internal const float SecondRowRearm = -284.5f;
+    // Any start between the rows is outside both hammer rows. A staging point a
+    // few decimetres away needs another exact arrow alignment and cost 4-5s.
+    internal const float StagingSlack = 2.5f;
+
     private Vector3? _target;
     private Vector3 _origin;
     private DateTime _started;
@@ -13,6 +28,7 @@ internal sealed class BlundervilleArrowPlanner
     private float? _lastArrow;
     private DateTime _lastSample;
     private float _angularSpeed;
+    private bool _pastSecondRow;
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state,
         Vector3 player, float? arrow, DateTime now, bool inputRequested = false)
@@ -28,9 +44,16 @@ internal sealed class BlundervilleArrowPlanner
             }
             _lastArrow = sample; _lastSample = now;
         }
+        var pastSecondRow = player.Z < SecondRowRelease || _pastSecondRow && player.Z < SecondRowRearm;
         if (!state.IsRacing || state.Qualified || state.Course != BlundervilleCourse.FirstA || !state.HasMisdirection
-            || player.Z is > -247 or < -288.5f || player.Y < 9 || !state.CanMove(now))
-        { Reset(); return normal with { DirectTraversal = false }; }
+            || player.Z > -247 || pastSecondRow || player.Y < 9 || !state.CanMove(now))
+        {
+            var keepReleased = pastSecondRow && state.IsRacing && !state.Qualified
+                && state.Course == BlundervilleCourse.FirstA && state.HasMisdirection;
+            Reset(); _pastSecondRow = keepReleased;
+            return normal with { DirectTraversal = false };
+        }
+        _pastSecondRow = false;
         if (_target is { } active)
         {
             if (!_aligned && Distance(player, _origin) < .01f && (!inputRequested || now - _started > TimeSpan.FromSeconds(.06))) ClearTarget();
@@ -53,8 +76,8 @@ internal sealed class BlundervilleArrowPlanner
         }
         var row = player.Z > -268.5f ? -261f : -281f;
         var staging = row + 7.5f;
-        var approach = player.Z > staging + .4f;
-        var end = approach ? staging : row - 8;
+        var approach = player.Z > staging + StagingSlack;
+        var end = approach ? staging : row == -261f ? row - 8 : SecondRowExit;
         // The middle island at z=-270 and the central opening in the second
         // row are real floor exclusions. Exit beside them, not into their edge.
         var side = player.X < -200 ? -1 : 1;
@@ -78,7 +101,7 @@ internal sealed class BlundervilleArrowPlanner
     }
 
     private void ClearTarget() { _target = null; _started = default; _aligned = false; }
-    public void Reset() { ClearTarget(); _lastArrow = null; _lastSample = default; _angularSpeed = 0; }
+    public void Reset() { ClearTarget(); _lastArrow = null; _lastSample = default; _angularSpeed = 0; _pastSecondRow = false; }
     // One 30fps frame of acquisition, centered at 16ms, plus sample error.
     private float AcquisitionTolerance => MathF.Max(.06f, MathF.Abs(_angularSpeed) * .017f + .025f);
     private static float Distance(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));

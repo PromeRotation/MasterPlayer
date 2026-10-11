@@ -16,6 +16,7 @@ public sealed class SafeZoneSetting
 
     internal bool RuntimeMovementRequested { get; set; }
     internal bool RuntimeMovementHeld { get; set; }
+    internal float? RuntimeHardSafetyMargin { get; set; }
     internal bool RuntimePreferStraightPaths { get; set; }
     internal float? RuntimeBaseSpeed { get; set; }
     internal float? RuntimeArenaSafetyMargin { get; set; }

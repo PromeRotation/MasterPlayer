@@ -22,7 +22,7 @@ internal static class BlundervilleCatalog
         [34718] = new(Devices, new RectangleTemplate(10, 4)),
         [34773] = new(Devices, new CircleTemplate(5)),
         [34774] = new(Routes, null, true),
-        [34775] = new(Devices, RayRectangleTemplate.Symmetric(3, 3)),
+        [34775] = new(Devices, new RectangleTemplate(3, 3)),
         [34776] = new(Balls, new CircleTemplate(2)),
         [34796] = new(Devices, new CircleTemplate(5)),
         [34797] = new(Casts, new FanTemplate(8, MathF.PI)),

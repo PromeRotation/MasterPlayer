@@ -3,6 +3,6 @@ using MasterPlayer.Scripting;
 
 namespace MasterPlayer.Scripts.GoldSaucer;
 
-[MechanicScript("金碟巨豆中心（糖豆人）", [1165u], "masterplayer.goldsaucer.blunderville", "1.7.0", "XSZ",
-    "圆圈机关轨迹避让、箭头桥连续穿行；助跑跳跃、局部雷达与动画判定预测。")]
+[MechanicScript("金碟巨豆中心（糖豆人）", [1165u], "masterplayer.goldsaucer.blunderville", "1.12.0", "XSZ",
+    "普通桥连续避让与五米冰滑；圆圈机关预测、箭头桥穿行、助跑跳跃与局部雷达。")]
 public sealed class Blunderville : BlundervilleScript;
