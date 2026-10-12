@@ -29,7 +29,8 @@ internal sealed class BlundervilleFinalPlanner
     // layered lane search runs there: x -6.5..6.5, goal row -368, then the
     // ordinary route takes the flat finish. Speed is the measured 2.0m/s.
     internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
-        (float From, float To)[]? Strips = null)
+        (float From, float To)[]? Strips = null, Vector3[]? Spoke = null, ushort Colour = 0,
+        float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance)
     {
         // An intermediate plan may only stop where standing is not a gamble.
         public bool Rest(float z) => Strips == null || Strips.Any(s => z >= s.From && z <= s.To);
@@ -42,10 +43,33 @@ internal sealed class BlundervilleFinalPlanner
         [(272.5f, 290), (257, 262.5f), (235.3f, 237), (180.7f, 187.4f)]);
     internal static readonly Profile FirstBRamp = new(BlundervilleCourse.FirstB, -336, -367.5f, -368, 6, 9.5f,
         BlundervilleRaceState.SlidingSlopeSpeed, false, "终点坡");
+    // Delivery carries (2026-10-13 route research, 21 rounds): the generic
+    // solver walked onto the E bridge, where one of two charger lines along
+    // the bridge fires about every 2s, and then found no departure and stood
+    // in it. One corridor per colour through the hold points of the timed
+    // carry plans; stations every 2m along it, lanes 1m apart across it, the
+    // last station is the drop trigger. The hub start is reached by the route.
+    internal static readonly Profile DeliveryWest = Corridor("搬运西线", 35,
+        [new(-200, 6, 252), new(-206.5f, 6, 258), new(-221, 6, 265.5f), new(-239.1f, 6, 274.6f)]);
+    internal static readonly Profile DeliveryEast = Corridor("搬运东线", 36,
+        [new(-200, 6, 252), new(-190.5f, 6, 257), new(-181, 6, 263), new(-172, 6, 268.5f), new(-160.7f, 6, 274.6f)]);
+    internal static readonly Profile DeliveryNorth = Corridor("搬运北线", 37,
+        // The drop pad is cut off at z~208.2 for x -203.4..-199.5: the planned
+        // carries come down the west walkway and step east of that hole.
+        [new(-200, 6, 252), new(-201, 6, 244), new(-202.6f, 6, 224.4f), new(-202.7f, 6, 220), new(-202.5f, 6, 212.2f),
+            new(-200.6f, 6, 210.9f), new(-199.2f, 6, 207.8f), new(-199.6f, 6, 207)]);
+    // The schedule footprints already include their calibrated growth and the
+    // windows their +-0.45s, so no extra clearance and a 0.25s lag: with the
+    // Final margins the E bridge pendulum row (gaps 0.36–0.79s between 11
+    // windows per 10s) never opened. Half-metre lanes find the slivers.
+    private static Profile Corridor(string name, ushort colour, Vector3[] spoke)
+        => new(BlundervilleCourse.Delivery, 0, 0, 0, 3, 5, null, false, name, null, spoke, colour, .5f, 0, Lag, .4f);
     private readonly Profile _profile;
     public BlundervilleFinalPlanner(Profile? profile = null) => _profile = profile ?? Final;
     internal const double Lag = .35, StandAfterGoal = 2.5, Lead = .15, Tail = .1, WaveLead = .4, WaveTail = .3;
     private static readonly double[] Waits = [0, .5, 1, 1.5, 2, 3];
+    // Delivery pendulum cells fire twice per 4.2s: a hold must reach the next gap.
+    private static readonly double[] CorridorWaits = [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
 
     internal sealed record Waypoint(Vector3 Position, DateTime Arrival, DateTime Departure);
     private sealed record Node(Vector3 Position, double Time, double Wait, Node? Parent, int Lane);
@@ -54,15 +78,19 @@ internal sealed class BlundervilleFinalPlanner
     private List<Waypoint>? _plan;
     private int _next, _stretchStart;
     private Vector3[]? _stretch;
-    private DateTime _lastTime, _retry;
+    private DateTime _lastTime, _retry, _stretchSince;
+    private Vector3 _stretchFrom;
 
     public IReadOnlyList<Waypoint>? Plan => _plan;
 
-    public void Reset() { _plan = null; _next = 0; _stretch = null; _lastTime = _retry = default; }
+    public void Reset() { _plan = null; _next = 0; _stretch = null; _lastTime = _retry = _stretchSince = default; }
 
     public bool Active(BlundervilleRaceState state, Vector3 player, DateTime now)
-        => state.IsRacing && !state.Qualified && state.Course == _profile.Course && state.CanMove(now)
-            && player.Z > _profile.Bottom && player.Z <= _profile.Top && player.Y > _profile.MinY && MathF.Abs(player.X) <= _profile.Lanes + 2;
+        => state.IsRacing && !state.Qualified && state.Course == _profile.Course && state.CanMove(now) && player.Y > _profile.MinY
+            && (_profile.Spoke is { } spoke
+                ? state.CarryCrystalParam == _profile.Colour && Along(spoke, player) is var (s, _, distance, length)
+                    && distance <= _profile.Lanes + 2 && s < length - .3f
+                : player.Z > _profile.Bottom && player.Z <= _profile.Top && MathF.Abs(player.X) <= _profile.Lanes + 2);
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state,
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, DirectTraversalExecution? execution = null)
@@ -73,13 +101,14 @@ internal sealed class BlundervilleFinalPlanner
         // direct traversals; clearing that flag here stalled FirstA in the
         // 2026.10.12 16:55 ARR (1.14.0). Only ever pass them through.
         if (!Active(state, player, now) || normal.Hold) { Reset(); return normal; }
-        var floor = BlundervilleRoutes.Boundary(state.Course);
+        var floor = BlundervilleRoutes.NavigationBoundary(state.Course, player);
         var speed = _profile.Speed ?? state.NavigationBaseSpeed(now);
-        var index = new HazardIndex(hazards, now);
+        var index = new HazardIndex(hazards, now, _profile.HazardClearance, _profile.ExecutionLag, _profile.StandClearance);
         if (_plan != null)
         {
             while (_next < _plan.Count && Distance(player, _plan[_next].Position) <= ArrivalTolerance) ++_next;
-            if (_next >= _plan.Count || execution is { Rejected: true } || OffRoute(player) || !StillSafe(index, floor, player, now, speed))
+            if (_next >= _plan.Count || execution is { Rejected: true } || OffRoute(player) || !StillSafe(index, floor, player, now, speed)
+                || Refused(execution, player, now))
                 _plan = null;
         }
         if (_plan == null)
@@ -97,10 +126,14 @@ internal sealed class BlundervilleFinalPlanner
             }
         }
         var current = _plan[_next - 1];
-        if (now < current.Departure && Distance(player, current.Position) <= ArrivalTolerance)
+        if (now < current.Departure)
         {
             _stretch = null;
-            return new(player, true, false, null, $"{_profile.Name}：在安全处等待机关间隙", false);
+            if (Distance(player, current.Position) <= ArrivalTolerance)
+                return new(player, true, false, null, $"{_profile.Name}：在安全处等待机关间隙", false);
+            // A replan while still moving can overshoot its first wait point
+            // (Delivery replay: 0.56m into a charger line); step back onto it.
+            return new(current.Position, false, false, null, $"{_profile.Name}：回到等待点", true) { ContinuousPath = [current.Position] };
         }
         // Publish one unchanged stretch up to the next wait; the runtime
         // follows GreenMove progress, so the path must not shrink per point.
@@ -110,6 +143,7 @@ internal sealed class BlundervilleFinalPlanner
             while (end < _plan.Count - 1 && _plan[end].Departure - _plan[end].Arrival < TimeSpan.FromMilliseconds(50)) ++end;
             _stretchStart = _next;
             _stretch = _plan.Skip(_next).Take(end - _next + 1).Select(w => w.Position).ToArray();
+            _stretchSince = default;
         }
         return new(_stretch[^1], false, false, null, $"{_profile.Name}：按机关时序连续穿行", true) { ContinuousPath = _stretch };
     }
@@ -123,6 +157,16 @@ internal sealed class BlundervilleFinalPlanner
         if (BlundervilleRefuge.Find(floor, hazards, player, now) is { } refuge)
             return new(refuge, false, false, null, $"{_profile.Name}：先避开即将判定的机关", true) { ContinuousPath = [refuge] };
         return new(player, true, false, null, $"{_profile.Name}：无可行避让，原地等待", false);
+    }
+
+    // The runtime releases a plain direct path it judges unsafe without
+    // flagging it (only motion routes are marked Rejected); republishing the
+    // same stretch then leaves the player standing in the next window.
+    private bool Refused(DirectTraversalExecution? execution, Vector3 player, DateTime now)
+    {
+        if (_stretch == null || execution is not { HasControl: false }) { _stretchSince = default; return false; }
+        if (_stretchSince == default) { _stretchSince = now; _stretchFrom = player; return false; }
+        return (now - _stretchSince).TotalSeconds > .2 && Distance(player, _stretchFrom) < .1f;
     }
 
     private bool OffRoute(Vector3 player)
@@ -142,7 +186,7 @@ internal sealed class BlundervilleFinalPlanner
         var leg = Distance(previous.Position, upcoming.Position);
         var progress = Math.Clamp(leg - Distance(player, upcoming.Position), 0, leg);
         var scheduled = (previous.Departure - now).TotalSeconds + progress / speed;
-        if (scheduled < -Lag) return false;
+        if (scheduled < -_profile.ExecutionLag) return false;
         if (Distance(player, previous.Position) <= ArrivalTolerance && scheduled > 0 && !index.Stand(player, 0, scheduled)) return false;
         var from = previous.Position; var time = (previous.Departure - now).TotalSeconds;
         for (var i = _next; i < _plan.Count; ++i)
@@ -157,11 +201,14 @@ internal sealed class BlundervilleFinalPlanner
         // run-up and first flight clear (the full stair timeline is only a
         // preference when the search picked the departure).
         if (_profile.Stairs && MathF.Abs(from.Z - RunupZ) < .01f) return FirstFlightClear(index, from, time);
+        // The drop trigger delivers on arrival; nobody stands there.
+        if (_profile.Spoke is { } spoke && Distance(from, spoke[^1]) < 1.5f) return true;
         return index.Stand(from, time, time + StandAfterGoal);
     }
 
     private static List<Waypoint>? Search(Profile profile, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
     {
+        if (profile.Spoke is { } spoke) return SearchCorridor(profile, spoke, index, floor, player, now, speed);
         // Plan onto the stair landing (z=154); below Bottom the stair jump
         // route takes over.
         var goal = MathF.Max(profile.Exit, player.Z - Horizon);
@@ -208,6 +255,11 @@ internal sealed class BlundervilleFinalPlanner
         // The run-up start is only 0.8m below z=156; a plan from there must
         // still hand over (20:42 replay idled at z=156 inside an R5 circle).
         if (best == null || player.Z - best.Position.Z < LayerStep - .01f && !(profile.Stairs && MathF.Abs(best.Position.Z - RunupZ) < .01f)) return null;
+        return ToPlan(best, now);
+    }
+
+    private static List<Waypoint> ToPlan(Node best, DateTime now)
+    {
         var nodes = new List<Node>();
         for (var n = best; n != null; n = n.Parent) nodes.Add(n);
         nodes.Reverse();
@@ -290,6 +342,7 @@ internal sealed class BlundervilleFinalPlanner
 
     private static bool CanAdvance(Profile profile, IGeometryShape floor, Vector3 player)
     {
+        if (profile.Spoke != null) return true;
         var z = MathF.Floor((player.Z - .5f) / LayerStep) * LayerStep;
         var center = (int)MathF.Round(player.X);
         for (var lane = Math.Max(center - (int)MaxLateral, -profile.Lanes); lane <= Math.Min(center + (int)MaxLateral, profile.Lanes); ++lane)
@@ -322,13 +375,18 @@ internal sealed class BlundervilleFinalPlanner
     private sealed class HazardIndex
     {
         private readonly Dictionary<int, List<Window>> _rows = [];
-        public HazardIndex(IReadOnlyList<BlundervilleHazard> hazards, DateTime now)
+        private readonly float _clearance, _standClearance;
+        private readonly double _lag;
+        public HazardIndex(IReadOnlyList<BlundervilleHazard> hazards, DateTime now, float clearance, double lag, float standClearance)
         {
+            _clearance = clearance; _lag = lag; _standClearance = standClearance;
             foreach (var h in hazards)
             {
                 var wave = h.Id.StartsWith("wave/", StringComparison.Ordinal) || h.Id.StartsWith("cast/", StringComparison.Ordinal);
-                var window = new Window(h.Geometry, h.Geometry.GetBounds(), (h.From - now).TotalSeconds - (wave ? WaveLead : Lead),
-                    (h.Until - now).TotalSeconds + (wave ? WaveTail : Tail));
+                // The Delivery schedule windows already carry their calibrated +-0.45s.
+                var calibrated = h.Id.StartsWith("delivery/", StringComparison.Ordinal);
+                var window = new Window(h.Geometry, h.Geometry.GetBounds(), (h.From - now).TotalSeconds - (calibrated ? 0 : wave ? WaveLead : Lead),
+                    (h.Until - now).TotalSeconds + (calibrated ? 0 : wave ? WaveTail : Tail));
                 if (window.Until < 0 || !float.IsFinite(window.Bounds.MinZ) || !float.IsFinite(window.Bounds.MaxZ)) continue;
                 for (var row = (int)MathF.Floor((window.Bounds.MinZ - 1) / 2); row <= (int)MathF.Floor((window.Bounds.MaxZ + 1) / 2); ++row)
                 {
@@ -342,7 +400,7 @@ internal sealed class BlundervilleFinalPlanner
         {
             if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var list)) return true;
             foreach (var w in list)
-                if (w.Until >= from && w.From <= until + Lag && w.Geometry.Contains(p, Clearance)) return false;
+                if (w.Until >= from && w.From <= until + _lag && w.Geometry.Contains(p, _standClearance)) return false;
             return true;
         }
 
@@ -357,10 +415,91 @@ internal sealed class BlundervilleFinalPlanner
                 var at = start + s * (end - start);
                 if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var list)) continue;
                 foreach (var w in list)
-                    if (w.Until >= at && w.From <= at + Lag && w.Geometry.Contains(p, Clearance)) return false;
+                    if (w.Until >= at && w.From <= at + _lag && w.Geometry.Contains(p, _clearance)) return false;
             }
             return true;
         }
+    }
+
+    private static List<Waypoint>? SearchCorridor(Profile profile, Vector3[] spoke, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
+    {
+        var stations = Stations(spoke);
+        var (start, across, _, _) = Along(spoke, player);
+        var width = (int)MathF.Round(profile.Lanes / profile.LaneWidth); var reach = (int)MathF.Round(MaxLateral / profile.LaneWidth);
+        List<Node> layer = [new(player, 0, 0, null, Math.Clamp((int)MathF.Round(across / profile.LaneWidth), -width, width))];
+        Node? refuge = null, goal = null;
+        var from = stations.FindIndex(station => station.S > start + .5f);
+        if (from < 0 && start < stations[^1].S - .05f) from = stations.Count - 1;
+        for (var k = from; k >= 0 && k < stations.Count && layer.Count > 0; ++k)
+        {
+            var (_, point, lateral) = stations[k];
+            var last = k == stations.Count - 1;
+            var lanes = last ? 0 : width;
+            var next = new Dictionary<(int Lane, int Bucket), Node>();
+            foreach (var node in layer)
+                foreach (var wait in CorridorWaits)
+                {
+                    if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait)) break;
+                    var depart = node.Time + wait;
+                    for (var lane = Math.Max(node.Lane - reach, -lanes); lane <= Math.Min(node.Lane + reach, lanes); ++lane)
+                    {
+                        var to = point + lateral * (lane * profile.LaneWidth);
+                        var arrival = depart + Distance(node.Position, to) / speed;
+                        if (arrival > 30) continue;
+                        if (!ArenaBoundaryTraversal.ContainsTube(floor, node.Position, to, FloorClearance)) continue;
+                        if (!index.Segment(node.Position, to, depart, arrival)) continue;
+                        var key = (lane, (int)(arrival / .2));
+                        if (!next.TryGetValue(key, out var old) || old.Time > arrival)
+                            next[key] = new(to, arrival, wait, node, lane);
+                    }
+                }
+            layer = next.Values.GroupBy(n => n.Lane).SelectMany(g => g.OrderBy(n => n.Time).Take(2)).ToList();
+            foreach (var node in layer.OrderBy(n => n.Time))
+                if (index.Stand(node.Position, node.Time, node.Time + StandAfterGoal)) { refuge = node; break; }
+            if (last && layer.Count > 0) goal = layer.MinBy(n => n.Time);
+        }
+        var best = goal ?? refuge;
+        return best?.Parent == null ? null : ToPlan(best, now);
+    }
+
+    private static List<(float S, Vector3 Point, Vector3 Lateral)> Stations(Vector3[] spoke)
+    {
+        var result = new List<(float, Vector3, Vector3)>();
+        var walked = 0f;
+        for (var i = 0; i + 1 < spoke.Length; ++i)
+        {
+            var (direction, length) = Heading(spoke[i], spoke[i + 1]);
+            var lateral = new Vector3(-direction.Z, 0, direction.X);
+            for (var s = MathF.Ceiling(walked / LayerStep) * LayerStep; s < walked + length - .5f; s += LayerStep)
+                result.Add((s, spoke[i] + direction * (s - walked), lateral));
+            walked += length;
+        }
+        var (tail, _) = Heading(spoke[^2], spoke[^1]);
+        result.Add((walked, spoke[^1], new Vector3(-tail.Z, 0, tail.X)));
+        return result;
+    }
+
+    // Arc length and signed lateral offset of the nearest corridor point.
+    private static (float S, float U, float Distance, float Length) Along(Vector3[] spoke, Vector3 p)
+    {
+        float walked = 0, bestS = 0, bestU = 0, best = float.PositiveInfinity;
+        for (var i = 0; i + 1 < spoke.Length; ++i)
+        {
+            var (direction, length) = Heading(spoke[i], spoke[i + 1]);
+            var offset = (p - spoke[i]) with { Y = 0 };
+            var along = Math.Clamp(Vector3.Dot(offset, direction), 0, length);
+            var across = offset - direction * along;
+            if (across.Length() < best)
+            { best = across.Length(); bestS = walked + along; bestU = Vector3.Dot(across, new Vector3(-direction.Z, 0, direction.X)); }
+            walked += length;
+        }
+        return (bestS, bestU, best, walked);
+    }
+
+    private static (Vector3 Direction, float Length) Heading(Vector3 a, Vector3 b)
+    {
+        var delta = (b - a) with { Y = 0 };
+        return (delta / delta.Length(), delta.Length());
     }
 
     private static float Distance(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));

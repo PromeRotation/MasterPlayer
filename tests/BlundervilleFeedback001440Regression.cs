@@ -204,7 +204,8 @@ internal static class BlundervilleFeedback001440Regression
                 Console.WriteLine($"DELIVERY score={score} t={t:F2} p={p}");
                 if (score == 3) break;
             }
-            else if (!carrying && Distance(p, BlundervilleRaceState.PickupCenter) <= 1.3f) carrying = true;
+            // The hub pickup EventRange fires 3.15–3.90m from its centre (21 rounds).
+            else if (!carrying && Distance(p, BlundervilleRaceState.PickupCenter) <= 3.15f) carrying = true;
         }
         Console.WriteLine($"DELIVERY score={score} elapsed={elapsed:F2} p={p} dispatch={move.Count} solverMax={maximumSolve:F1}ms");
         frameTimes.Sort();

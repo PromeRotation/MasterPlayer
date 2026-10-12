@@ -88,6 +88,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             var binding = new StaticTransform(hazard.Geometry.Position, hazard.Geometry.Rotation);
             DangerWindow[] windows = [new(hazard.From, hazard.Until, hazard.Telegraph)
                 { HasMotionEnvelope = hazard.Id.StartsWith("bumper/", StringComparison.Ordinal)
+                    || hazard.Id.StartsWith("delivery/", StringComparison.Ordinal)
                     || hazard.Id.StartsWith("charge/", StringComparison.Ordinal)
                     || hazard.Id.StartsWith("rhythm/", StringComparison.Ordinal)
                         && (hazard.Id.Contains("/34717/", StringComparison.Ordinal) || hazard.Id.Contains("/34773/", StringComparison.Ordinal)

@@ -42,6 +42,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleBumperTracker _bumpers = new();
     private readonly BlundervilleChargeTracker _deliveryCharges = new();
     private readonly BlundervilleRampPushers _rampPushers = new();
+    public BlundervilleDeliverySchedule DeliverySchedule { get; } = new();
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
 
@@ -59,6 +60,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
 
     public bool DeliveryReady(Vector3 destination, DateTime now)
     {
+        if (DeliverySchedule.Active) return true;
         if (destination.X is > -225 and < -175) return true;
         var sources = _actors.Values.Where(a => a.Oid == 16350 && a.Position.Z is > 245 and < 280
             && (destination.X < -225 ? a.Position.X < -200 : a.Position.X > -200)).ToArray();
@@ -172,6 +174,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             return;
         }
         if (position is not { } pos || !Finite(pos)) return;
+        DeliverySchedule.Observe(action, pos, now);
         if (action == 34717) _bumpers.Effect(source, pos, now);
         if (rule.Charge)
         {
@@ -302,12 +305,22 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Reset();
         _bumpers.Reset();
         _deliveryCharges.Reset();
-        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset();
+        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null);
     }
 
     public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
     {
         Tick(now);
+        // On the Delivery clock the calibrated schedule is the only source
+        // for its devices; the live learners add wider, later windows.
+        if (DeliverySchedule.Active)
+        {
+            foreach (var hazard in DeliverySchedule.Hazards(now)) yield return hazard;
+            foreach (var cast in _casts.Values)
+                if (cast.Cast.Action is not (BlundervilleCatalog.VisualWave or 34800 or 34716 or 34774 or 34799))
+                    yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt, cast.Cast.FinishAt.AddSeconds(0.2), cast.Cast.StartedAt);
+            yield break;
+        }
         foreach (var hazard in _animations.Hazards(now)) yield return hazard;
         foreach (var hazard in _alternatingPulses.Hazards(now)) yield return hazard;
         foreach (var hazard in _rhythms.Hazards(now)) yield return hazard;

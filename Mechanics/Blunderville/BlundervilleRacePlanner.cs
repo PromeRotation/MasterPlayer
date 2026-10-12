@@ -11,6 +11,9 @@ internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool
 
 internal sealed class BlundervilleRacePlanner
 {
+    // The hub pickup is an EventRange that fires 3.15–3.90m from its centre
+    // (21 Delivery rounds); 1.3m walked an extra ~2m every pickup.
+    internal const float PickupRadius = 2.6f;
     private IReadOnlyList<BlundervilleRouteNode> _nodes = [];
     private long _version = -1;
     private int _cursor;
@@ -70,7 +73,7 @@ internal sealed class BlundervilleRacePlanner
                 {
                     _nodes = state.CarryCrystalParam == 0 && _deliveryTarget is { } previousDelivery
                         ? BlundervilleRoutes.DeliveryNodes(position, previousDelivery).Reverse().ToArray()
-                        : state.CarryCrystalParam == 0 ? [new(delivery, 1.3f)] : BlundervilleRoutes.DeliveryNodes(position, delivery);
+                        : state.CarryCrystalParam == 0 ? [new(delivery, PickupRadius)] : BlundervilleRoutes.DeliveryNodes(position, delivery);
                     _deliveryTarget = delivery; _cursor = NearestSegment(position);
                 }
                 while (_cursor + 1 < _nodes.Count && Reached(position, _cursor)) _cursor++;
@@ -108,7 +111,8 @@ internal sealed class BlundervilleRacePlanner
                 ? $"未识别的水晶参数 {state.CarryCrystalParam}" : "等待通关确认");
 
         var distance = DistanceXZ(position, destination);
-        if (state.Course == BlundervilleCourse.Delivery && _cursor == _nodes.Count - 1 && distance <= 1.3f)
+        if (state.Course == BlundervilleCourse.Delivery && _cursor == _nodes.Count - 1
+            && distance <= (state.CarryCrystalParam == 0 ? PickupRadius : 1.3f))
         {
             if (_arrivalTarget != destination) { _arrivalTarget = destination; _arrival = now; }
             // Pickup and delivery are automatic EventRange triggers; status/score confirms success.

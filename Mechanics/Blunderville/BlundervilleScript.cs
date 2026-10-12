@@ -30,6 +30,10 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleBumperPlanner _bumperPlanner = new();
     private readonly BlundervilleFinalPlanner _finalPlanner = new();
     private readonly BlundervilleFinalPlanner _rampPlanner = new(BlundervilleFinalPlanner.FirstBRamp);
+    private readonly BlundervilleFinalPlanner _deliveryWest = new(BlundervilleFinalPlanner.DeliveryWest);
+    private readonly BlundervilleFinalPlanner _deliveryEast = new(BlundervilleFinalPlanner.DeliveryEast);
+    private readonly BlundervilleFinalPlanner _deliveryNorth = new(BlundervilleFinalPlanner.DeliveryNorth);
+    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _rampPlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -79,7 +83,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _output = null; _encounter = null; _player = null; _nextScan = default;
         _jumpExecution.Clear();
         _arrowPlanner.Reset();
-        _bumperPlanner.Reset(); _finalPlanner.Reset(); _rampPlanner.Reset();
+        _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset();
     }
 
     private unsafe void Scan(DateTime now)
@@ -87,7 +91,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _nextScan = now.AddSeconds(0.1);
         if (_encounter == null) return;
         if (_lastTick != default && now < _lastTick)
-        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); _rampPlanner.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
+        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
         _lastTick = now;
         if (ReplayWorld is { } world)
         {
@@ -121,6 +125,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _race?.SynchronizeStatuses(Svc.Objects.LocalPlayer?.StatusList.Select(s => new BlundervilleRaceStatus(s.StatusId, s.Param,
             Replay.ReplayStatus.Expiration(now, s.RemainingTime))) ?? [], now);
         _encounter.Synchronize(actors, now);
+        _encounter.DeliverySchedule.SetStart(_race is { Course: BlundervilleCourse.Delivery, IsRacing: true, StartedByDirector: true } delivery
+            ? delivery.StartedAt : null);
         if (_player is { } current && _race is { IsRacing: false, IsPrepared: false, Qualified: false } race)
         {
             var course = BlundervilleRoutes.FromPosition(current);
@@ -171,7 +177,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         {
             _navigation?.Clear(); _native?.Apply(now, false, false, null, null);
             _planner.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _recoveryCorridor = null;
-            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); _rampPlanner.Reset(); return;
+            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); return;
         }
         var replay = ReplayWorld != null;
         var motion = default(BlundervilleNativeState);
@@ -194,15 +200,21 @@ public abstract class BlundervilleScript : MasterPlayerScript
             else _arrowPlanner.Reset();
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
-            // Timed lane search on the Final slope and the FirstB pusher ramp only.
-            var lanePlanner = _race.Course switch { BlundervilleCourse.Final => _finalPlanner, BlundervilleCourse.FirstB => _rampPlanner, _ => null };
+            // Timed lane search on the Final slope, the FirstB pusher ramp and
+            // the Delivery carry corridor of the crystal's colour.
+            var lanePlanner = _race.Course switch
+            {
+                BlundervilleCourse.Final => _finalPlanner,
+                BlundervilleCourse.FirstB => _rampPlanner,
+                BlundervilleCourse.Delivery => _race.CarryCrystalParam switch { 35 => _deliveryWest, 36 => _deliveryEast, 37 => _deliveryNorth, _ => null },
+                _ => null
+            };
             if (lanePlanner != null)
                 _decision = lanePlanner.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
                     _navigation?.GetDirectTraversalExecution(now));
-            if (lanePlanner != _finalPlanner) _finalPlanner.Reset();
-            if (lanePlanner != _rampPlanner) _rampPlanner.Reset();
+            foreach (var lane in LanePlanners) if (lane != lanePlanner) lane.Reset();
         }
-        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); _rampPlanner.Reset(); }
+        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
         if (_race.IsRacing && !_decision.Hold && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
             _decision = _decision with { Hold = true, Jump = false, Hint = "加速度炸弹：在安全处提前停步" };
         if (automatic && !replay && _race.Course == BlundervilleCourse.Final && !_decision.DirectTraversal)

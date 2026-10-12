@@ -18,6 +18,9 @@ internal sealed class BlundervilleRaceState
     public bool Qualified { get; private set; }
     public int Score { get; private set; }
     public DateTime StartedAt { get; private set; }
+    // Only a Director start is the real course clock; a recovered start is
+    // the plugin's load time and must not drive start-relative schedules.
+    public bool StartedByDirector { get; private set; }
     public long RoundVersion { get; private set; }
     public ushort CarryCrystalParam => ActiveStatus(3704, _lastTime)?.Param ?? 0;
     public Vector3? DeliveryTarget => CarryCrystalParam switch
@@ -64,7 +67,7 @@ internal sealed class BlundervilleRaceState
                 Qualified = false;
                 _ended = false;
                 Score = 0;
-                StartedAt = now;
+                StartedAt = now; StartedByDirector = true;
                 RoundVersion++;
                 break;
             case 3 when Course == BlundervilleCourse.Delivery && param1 <= 3:
@@ -106,7 +109,7 @@ internal sealed class BlundervilleRaceState
             || HasStatus(149, now) || HasStatus(3782, now) || HasStatus(3708, now)) return false;
         Course = course;
         IsRacing = true;
-        StartedAt = now;
+        StartedAt = now; StartedByDirector = false;
         RoundVersion++;
         return true;
     }

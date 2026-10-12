@@ -100,6 +100,8 @@ internal static partial class BlundervilleRoutes
     {
         // Pass through the central pickup/ramp hub before taking one of three
         // raised spokes. A straight line between outer scoring platforms falls.
+        // Carries on the course clock run the timed corridors of
+        // BlundervilleFinalPlanner; these nodes serve returns and fallback.
         if (destination.X < -225)
             return ReadOnly(N(-200, 5.42f, 252, 2f), N(-215, 6, 261, 1.6f), N(-231, 6, 271, 1.6f), new(destination, 1.4f));
         if (destination.X > -175)
