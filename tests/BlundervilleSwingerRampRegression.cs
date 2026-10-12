@@ -40,9 +40,35 @@ internal static class BlundervilleSwingerRampRegression
             Check(results.Sum(r => r.CorridorHits) == 0, "The swinger corridor walked into a recorded sweep.");
             Check(results.Average(r => r.Corridor) < 7 && results.Max(r => r.Corridor) < 8.5, "The swinger corridor no longer crosses the ramp without stopping.");
         });
+        // The slope rows (z -219.9..-239.05) and the 3802 bomb gained at -212.6:
+        // it explodes on movement within ~0.6s of its 5.008s expiry.
+        run("Blunderville swinger slope corridor holds the bomb clear of the sweeps", () =>
+        {
+            var results = new List<(double Phase, (double Elapsed, int Hits, bool Exploded) Corridor, (double Elapsed, int Hits, bool Exploded) Solver)>();
+            for (var phase = 10.0; phase < 14.2; phase += .35)
+            {
+                var corridor = Simulate("animation-firsta-030838.json", phase, true, true); var solver = Simulate("animation-firsta-030838.json", phase, false, true);
+                results.Add((phase, corridor, solver));
+                Console.WriteLine($"SLOPE phase {phase:F2}: corridor {corridor.Elapsed:F2}s hits {corridor.Hits} bomb {(corridor.Exploded ? "EXPLODED" : "ok")},"
+                    + $" solver {solver.Elapsed:F2}s hits {solver.Hits} bomb {(solver.Exploded ? "EXPLODED" : "ok")}");
+            }
+            Console.WriteLine($"SLOPE corridor mean {results.Average(r => r.Corridor.Elapsed):F2}s max {results.Max(r => r.Corridor.Elapsed):F2}s hits {results.Sum(r => r.Corridor.Hits)}"
+                + $" explosions {results.Count(r => r.Corridor.Exploded)}; solver mean {results.Average(r => r.Solver.Elapsed):F2}s max {results.Max(r => r.Solver.Elapsed):F2}s"
+                + $" hits {results.Sum(r => r.Solver.Hits)} explosions {results.Count(r => r.Solver.Exploded)}");
+            // 2026-10-13: corridor mean 8.8s (max 9.2s), the solver with the early
+            // bomb stop 13.3s (max 15.1s; live MP 12.7–14.0s).
+            Check(results.All(r => r.Corridor.Hits == 0 && !r.Corridor.Exploded), "The slope corridor was hit or set off the bomb.");
+            Check(results.Average(r => r.Corridor.Elapsed) < 10, "The slope corridor no longer crosses the rows without long holds.");
+        });
     }
 
     private static (double Elapsed, int Hits) Simulate(string fixture, double phase, bool corridor)
+    {
+        var (elapsed, hits, _) = Simulate(fixture, phase, corridor, false);
+        return (elapsed, hits);
+    }
+
+    private static (double Elapsed, int Hits, bool Exploded) Simulate(string fixture, double phase, bool corridor, bool slope)
     {
         using var replay = new BlundervilleAnimationRegression.Recording(fixture);
         var now = Epoch; var move = new Moving();
@@ -50,8 +76,10 @@ internal static class BlundervilleSwingerRampRegression
         using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
         var nav = new BlundervilleNavigation(runtime, api, new()); var state = new BlundervilleRaceState();
         state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20013, 0, 0, 0, Epoch);
-        var planner = new BlundervilleRacePlanner(); var lanes = new BlundervilleFinalPlanner(BlundervilleFinalPlanner.FirstARamp);
-        var p = new Vector3(-208.76f, 11.28f, -126.3f); var previous = p; var direct = false;
+        var planner = new BlundervilleRacePlanner();
+        var lanes = new BlundervilleFinalPlanner(slope ? BlundervilleFinalPlanner.FirstASlope : BlundervilleFinalPlanner.FirstARamp);
+        var p = slope ? new Vector3(-200, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -209.5f), -209.5f) : new Vector3(-208.76f, 11.28f, -126.3f);
+        var previous = p; var direct = false; DateTime? bomb = null; var lastMove = DateTime.MinValue; var exploded = false;
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = phase; var nextScan = phase;
         var impacts = replay.Events.Where(e => e[1].GetString() == "hit").ToArray(); var hitIndex = 0; var hits = 0;
         const double frame = 1.0 / 30;
@@ -61,9 +89,13 @@ internal static class BlundervilleSwingerRampRegression
             if (t + 1e-7 >= nextScan)
             {
                 nextScan = t + .1; replay.Advance(t); api.UtcNowForTest = now;
+                state.SynchronizeStatuses(bomb is { } b && now < b ? [new(3802, 0, b)] : [], now);
                 var decision = planner.Update(state, now, p, true, false, false, null);
-                // Mirrors BlundervilleScript: the FirstA lane planner.
+                // Mirrors BlundervilleScript: the FirstA lane planner, then the bomb stop.
                 if (corridor) decision = lanes.Apply(decision, state, replay.Encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
+                if (!decision.Hold && !(corridor && lanes.HoldsBomb && !state.MustStopForAccelerationBomb(now))
+                    && BlundervilleBombStop.StopEarly(state, replay.Encounter.TraversalHazards(now), p, now))
+                    decision = decision with { Hold = true, Jump = false };
                 direct = decision.DirectTraversal;
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
             }
@@ -80,10 +112,16 @@ internal static class BlundervilleSwingerRampRegression
                     pending = new SafeZoneSolver().Solve(snapshot, player, capability, options, now);
                     ready = t + .12; nextSolve = ready + .1;
                 }
-                runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
+                // A held runtime has reset its movement; nothing is dispatched.
+                if (!runtime.Setting.RuntimeMovementHeld)
+                    runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             }
+            // 19 recorded expiries: still >= 0.62s never exploded, <= 0.47s always did.
+            if (bomb is { } expiry && !exploded && now.AddSeconds(frame) >= expiry && now < expiry && (expiry - lastMove).TotalSeconds < .6) exploded = true;
             previous = p; p = move.Advance(p, (float)frame);
             p = p with { Y = BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, p.Z) };
+            if (Vector3.DistanceSquared(previous, p) > 1e-6f) lastMove = now.AddSeconds(frame);
+            if (slope && bomb == null && p.Z <= -212.6f) bomb = now.AddSeconds(frame + 5.008);
             Check(BlundervilleRoutes.Boundary(BlundervilleCourse.FirstA).Contains(p), $"Movement left the floor at {p} ({fixture} {phase:F2}).");
             while (hitIndex < impacts.Length && impacts[hitIndex][0].GetDouble() <= t)
             {
@@ -91,9 +129,9 @@ internal static class BlundervilleSwingerRampRegression
                 var actor = replay.Actors[effect[2].GetUInt64()];
                 if (new RectangleGeometry(actor.Position, effect[4].GetSingle(), 2, 3).Contains(p, .15f)) ++hits;
             }
-            if (p.Z < -151.5f) return (t - phase, hits);
+            if (p.Z < (slope ? -247.5f : -151.5f) && (bomb is not { } done || now > done)) return (t - phase, hits, exploded);
         }
-        return (30, hits);
+        return (30, hits, exploded);
     }
 
     private sealed class Moving : IGreenMoveSystem

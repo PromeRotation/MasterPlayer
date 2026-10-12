@@ -8,6 +8,7 @@ using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 
 var passed = 0;
+var failures = new List<string>();
 if (args.Contains("--radar-performance"))
 {
     NavigationPerformance.Radar();
@@ -411,12 +412,26 @@ MechanicTimelineViewRegression.Run(Run);
 MechanicReplayAdapterRegression.Run(Run);
 
 Console.WriteLine($"PASS: {passed} regression scenarios");
+if (failures.Count > 0)
+{
+    Console.WriteLine($"FAILED: {failures.Count} regression scenarios");
+    foreach (var failure in failures) Console.WriteLine($"  {failure}");
+    Environment.ExitCode = 1;
+}
 
 void Run(string name, Action test)
 {
     if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
     try { test(); }
-    catch { Console.WriteLine($"FAIL {name}"); throw; }
+    catch (Exception e)
+    {
+        Console.WriteLine($"FAIL {name}");
+        // --keep-going records the failure and runs the remaining scenarios.
+        if (!args.Contains("--keep-going")) throw;
+        Console.WriteLine($"  {e.GetType().Name}: {e.Message}");
+        failures.Add($"{name}: {e.Message}");
+        return;
+    }
     passed++;
     Console.WriteLine($"PASS {name}");
 }

@@ -31,10 +31,11 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleFinalPlanner _finalPlanner = new();
     private readonly BlundervilleFinalPlanner _rampPlanner = new(BlundervilleFinalPlanner.FirstBRamp);
     private readonly BlundervilleFinalPlanner _swingerPlanner = new(BlundervilleFinalPlanner.FirstARamp);
+    private readonly BlundervilleFinalPlanner _slopePlanner = new(BlundervilleFinalPlanner.FirstASlope);
     private readonly BlundervilleFinalPlanner _deliveryWest = new(BlundervilleFinalPlanner.DeliveryWest);
     private readonly BlundervilleFinalPlanner _deliveryEast = new(BlundervilleFinalPlanner.DeliveryEast);
     private readonly BlundervilleFinalPlanner _deliveryNorth = new(BlundervilleFinalPlanner.DeliveryNorth);
-    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _rampPlanner, _swingerPlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
+    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _rampPlanner, _swingerPlanner, _slopePlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -210,7 +211,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
             {
                 BlundervilleCourse.Final => _finalPlanner,
                 BlundervilleCourse.FirstB => _rampPlanner,
-                BlundervilleCourse.FirstA => _swingerPlanner,
+                // The cylinder/ice planner owns z -158..-208.
+                BlundervilleCourse.FirstA => player.Z > -180 ? _swingerPlanner : player.Z < -209 ? _slopePlanner : null,
                 BlundervilleCourse.Delivery => _race.CarryCrystalParam switch { 35 => _deliveryWest, 36 => _deliveryEast, 37 => _deliveryNorth, _ => null },
                 _ => null
             };
@@ -220,7 +222,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
             foreach (var lane in LanePlanners) if (lane != lanePlanner) lane.Reset();
         }
         else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
-        if (_race.IsRacing && !_decision.Hold && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
+        // The slope corridor plans its own stand-still clear of the sweeps.
+        if (_race.IsRacing && !_decision.Hold && !(_slopePlanner.HoldsBomb && !_race.MustStopForAccelerationBomb(now))
+            && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
             _decision = _decision with { Hold = true, Jump = false, Hint = "加速度炸弹：在安全处提前停步" };
         if (automatic && !replay && _race.Course == BlundervilleCourse.Final && !_decision.DirectTraversal)
         {

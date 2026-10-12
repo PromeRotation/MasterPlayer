@@ -30,7 +30,7 @@ internal sealed class BlundervilleFinalPlanner
     // ordinary route takes the flat finish. Speed is the measured 2.0m/s.
     internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
         (float From, float To)[]? Strips = null, Vector3[]? Spoke = null, ushort Colour = 0,
-        float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance)
+        float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance, bool Bomb = false)
     {
         // An intermediate plan may only stop where standing is not a gamble.
         public bool Rest(float z) => Strips == null || Strips.Any(s => z >= s.From && z <= s.To);
@@ -67,6 +67,14 @@ internal sealed class BlundervilleFinalPlanner
     internal static readonly Profile FirstARamp = new(BlundervilleCourse.FirstA, 0, 0, 0, 4, 10, null, false, "坡道摆锤", null,
         [new(-209, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -126), -126),
             new(-209, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -151.5f), -151.5f)]);
+    // The FirstA slope (z -212.6..-247): four 34716 rows alternating centre
+    // and side groups, and the 3802 bomb gained at -212.6 that explodes on any
+    // movement in its last ~0.6s. MP took 12.7–14.0s against 6.6s for the best
+    // humans; the corridor also places the bomb stand-still where no sweep
+    // reaches it (the forced stop used to land inside a row: 01:01, 02:33).
+    internal static readonly Profile FirstASlope = new(BlundervilleCourse.FirstA, 0, 0, 0, 11, 9.5f, null, false, "炸弹坡", null,
+        [new(-200, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -209), -209),
+            new(-200, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -247.5f), -247.5f)], Bomb: true);
     // The schedule footprints already include their calibrated growth and the
     // windows their +-0.45s, so no extra clearance and a 0.25s lag: with the
     // Final margins the E bridge pendulum row (gaps 0.36–0.79s between 11
@@ -85,14 +93,17 @@ internal sealed class BlundervilleFinalPlanner
     private readonly record struct Window(IGeometryShape Geometry, GeometryBounds Bounds, double From, double Until);
 
     private List<Waypoint>? _plan;
+    private DateTime? _planBomb;
     private int _next, _stretchStart;
     private Vector3[]? _stretch;
     private DateTime _lastTime, _retry, _stretchSince;
     private Vector3 _stretchFrom;
 
     public IReadOnlyList<Waypoint>? Plan => _plan;
+    // The current plan already contains the bomb stand-still.
+    public bool HoldsBomb => _plan != null && _planBomb != null;
 
-    public void Reset() { _plan = null; _next = 0; _stretch = null; _lastTime = _retry = _stretchSince = default; }
+    public void Reset() { _plan = null; _planBomb = null; _next = 0; _stretch = null; _lastTime = _retry = _stretchSince = default; }
 
     public bool Active(BlundervilleRaceState state, Vector3 player, DateTime now)
         => state.IsRacing && !state.Qualified && state.Course == _profile.Course && state.CanMove(now) && player.Y > _profile.MinY
@@ -113,17 +124,20 @@ internal sealed class BlundervilleFinalPlanner
         var floor = BlundervilleRoutes.NavigationBoundary(state.Course, player);
         var speed = _profile.Speed ?? state.NavigationBaseSpeed(now);
         var index = new HazardIndex(hazards, now, _profile.HazardClearance, _profile.ExecutionLag, _profile.StandClearance);
+        // A newly gained (or refreshed) bomb needs its stand-still in the plan.
+        var bomb = _profile.Bomb && state.AccelerationBombExpiresAt is { } expires && expires != DateTime.MaxValue ? expires : (DateTime?)null;
         if (_plan != null)
         {
             while (_next < _plan.Count && Distance(player, _plan[_next].Position) <= ArrivalTolerance) ++_next;
             if (_next >= _plan.Count || execution is { Rejected: true } || OffRoute(player) || !StillSafe(index, floor, player, now, speed)
-                || Refused(execution, player, now))
+                || Refused(execution, player, now) || bomb != _planBomb)
                 _plan = null;
         }
         if (_plan == null)
         {
             if (now < _retry) return Fallback(index, floor, hazards, player, now);
-            _plan = Search(_profile, index, floor, player, now, speed);
+            _planBomb = bomb;
+            _plan = Search(_profile, index, floor, player, now, speed, bomb is { } b ? ((b - now).TotalSeconds - BombLead, (b - now).TotalSeconds + BombTail) : null);
             _next = 1; _stretch = null;
             if (_plan is not { Count: >= 2 })
             {
@@ -215,9 +229,14 @@ internal sealed class BlundervilleFinalPlanner
         return index.Stand(from, time, time + StandAfterGoal);
     }
 
-    private static List<Waypoint>? Search(Profile profile, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
+    // The bomb explodes on movement within ~0.6s of expiry; the race state
+    // forces the stop 1.2s before it. Stand still from 1.3s before to 0.3s after.
+    internal const double BombLead = 1.3, BombTail = .3;
+
+    private static List<Waypoint>? Search(Profile profile, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed,
+        (double From, double Until)? hold = null)
     {
-        if (profile.Spoke is { } spoke) return SearchCorridor(profile, spoke, index, floor, player, now, speed);
+        if (profile.Spoke is { } spoke) return SearchCorridor(profile, spoke, index, floor, player, now, speed, hold);
         // Plan onto the stair landing (z=154); below Bottom the stair jump
         // route takes over.
         var goal = MathF.Max(profile.Exit, player.Z - Horizon);
@@ -430,7 +449,8 @@ internal sealed class BlundervilleFinalPlanner
         }
     }
 
-    private static List<Waypoint>? SearchCorridor(Profile profile, Vector3[] spoke, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
+    private static List<Waypoint>? SearchCorridor(Profile profile, Vector3[] spoke, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed,
+        (double From, double Until)? hold)
     {
         var stations = Stations(spoke);
         var (start, across, _, _) = Along(spoke, player);
@@ -455,6 +475,8 @@ internal sealed class BlundervilleFinalPlanner
                         var to = point + lateral * (lane * profile.LaneWidth);
                         var arrival = depart + Distance(node.Position, to) / speed;
                         if (arrival > 30) continue;
+                        // No movement during a bomb stand-still.
+                        if (hold is { } h && depart < h.Until && arrival > h.From) continue;
                         if (!ArenaBoundaryTraversal.ContainsTube(floor, node.Position, to, FloorClearance)) continue;
                         if (!index.Segment(node.Position, to, depart, arrival)) continue;
                         var key = (lane, (int)(arrival / .2));

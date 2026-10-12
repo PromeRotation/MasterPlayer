@@ -68,11 +68,12 @@ internal static class BlundervilleRingRegression
             var clean = outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0);
             Console.WriteLine($"RING clean rounds {clean}/{outcomes.Length}, falls {outcomes.Count(o => o.Fall != null)},"
                 + $" beam hits {outcomes.Sum(o => o.BeamHits.Count)}, cast hits {outcomes.Sum(o => o.CastHits.Count)}");
-            // 2026-10-13 (1.14.7, fixed 0.12s solve latency): 11/21 clean, no falls,
-            // 9 beam and 15 cast snapshots (before: 9/21, 20 and 21). Raise as it improves.
+            // 2026-10-13 (fixed 0.12s solve latency): 1.14.8 16/21 clean, no falls,
+            // 11 beam and 12 cast snapshots, all in the four rounds past 69s
+            // (1.14.6: 9/21, 20 and 21; 1.14.7: 11/21, 9 and 15). Raise as it improves.
             Check(outcomes.All(o => o.Fall == null), "A Ring replay fell off the course.");
-            Check(outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0) >= 10
-                && outcomes.Sum(o => o.BeamHits.Count) <= 12 && outcomes.Sum(o => o.CastHits.Count) <= 18,
+            Check(outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0) >= 15
+                && outcomes.Sum(o => o.BeamHits.Count) <= 14 && outcomes.Sum(o => o.CastHits.Count) <= 15,
                 "The Ring replays fell below their recorded baseline.");
         });
     }

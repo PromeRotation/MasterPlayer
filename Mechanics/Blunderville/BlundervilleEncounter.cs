@@ -44,6 +44,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleRampPushers _rampPushers = new();
     public BlundervilleDeliverySchedule DeliverySchedule { get; } = new();
     public BlundervilleRingBeam RingBeam { get; } = new();
+    private readonly BlundervilleRingCycles _ringCycles = new();
     private readonly BlundervilleCylinderSchedule _cylinders = new();
     // Cylinders whose learned clocks have both been ready once: from then on
     // they behave exactly as before the schedule existed.
@@ -148,6 +149,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         else geometry = rule.Shape!.Resolve(pos, facing ?? 0, null);
         _lastCasts[source] = new(cast, fromPacket);
         _casts[source] = new(source, cast, geometry, rule.Group);
+        if (fromPacket && cast.Action is 34797 or 34798 or 34805) _ringCycles.Cast(cast.Action, pos, cast.StartedAt);
         if (fromPacket && cast.Action == 34717 && _actors.TryGetValue(source, out var cylinder) && cylinder.Oid == 16339)
             _cylinders.Cast(source, pos, cast.StartedAt);
         if (cast.Action == BlundervilleCatalog.WaveStart && IsWaveOrigin(pos, facing ?? 0))
@@ -313,7 +315,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Reset();
         _bumpers.Reset(); _cylinders.Reset(); _learnedCylinders.Clear();
         _deliveryCharges.Reset();
-        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null);
+        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset();
     }
 
     public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
@@ -369,6 +371,8 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             yield return new($"beam/{source}", geometry, now, now.AddSeconds(0.15), now);
         }
         foreach (var hazard in RingBeam.Hazards(now)) yield return hazard;
+        // Ring fan and circle cycles beyond the casts in flight (Ring clock only).
+        if (RingBeam.Active) foreach (var hazard in _ringCycles.Hazards(now)) yield return hazard;
     }
 
     public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now)
