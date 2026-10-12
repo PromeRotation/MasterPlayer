@@ -111,7 +111,7 @@ internal static class BlundervilleFeedback151049Regression
         // FirstB ramp climb at the measured 2.0m/s through the recorded pushers,
         // entering at several phases of their 12.85s ping-pong.
         using (var ramp = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", "firstb-ramp-pushers.json"))))
-            foreach (var (name, rows) in ramp.RootElement.GetProperty("recordings").EnumerateObject().Take(3).Select(p => (p.Name, p.Value.Clone().EnumerateArray().ToArray())).ToArray())
+            foreach (var (name, rows) in ramp.RootElement.GetProperty("recordings").EnumerateObject().Take(4).Select(p => (p.Name, p.Value.Clone().EnumerateArray().ToArray())).ToArray())
                 foreach (var entry in new[] { 20.0, 23.2, 26.4, 29.6 })
                     run($"Blunderville 151049 FirstB ramp climb without pushes {name} at {entry:F1}", () => SimulateRamp(name, rows, entry));
         foreach (var recording in Recordings)
@@ -128,7 +128,7 @@ internal static class BlundervilleFeedback151049Regression
         using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
         var nav = new BlundervilleNavigation(runtime, api, new()); var state = new BlundervilleRaceState();
         state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20014, 0, 0, 0, Epoch);
-        var planner = new BlundervilleRacePlanner();
+        var planner = new BlundervilleRacePlanner(); var rampPlanner = new BlundervilleFinalPlanner(BlundervilleFinalPlanner.FirstBRamp); var direct = false;
         var p = new Vector3(0, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstB, -338), -338); var previous = p;
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 0.0; var nextScan = 0.0;
         const double frame = 1.0 / 30; var index = 0;
@@ -146,20 +146,28 @@ internal static class BlundervilleFeedback151049Regression
             if (t + 1e-7 >= nextScan)
             {
                 nextScan = t + .1; api.UtcNowForTest = now;
-                var decision = planner.Update(state, now, p, true, false, false, null, false);
+                // Mirrors BlundervilleScript: the ramp lane planner over the race route.
+                var decision = rampPlanner.Apply(planner.Update(state, now, p, true, false, false, null, false), state,
+                    encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
+                direct = decision.DirectTraversal;
                 nav.Apply(state, decision, encounter, now, p, true, false, false);
             }
             var snapshot = runtime.Manager.BuildSnapshot(now);
             var player = new PlayerState(p, 0, move.Speed, Vector3.DistanceSquared(previous, p) > 1e-6f, false, 0, true, snapshot.Version);
-            if (pending != null && t >= ready) { accepted = pending; pending = null; }
-            if (pending == null && t >= nextSolve)
+            var limits = new MovementCapability(move.Speed, move.Speed, 0, false, move.Speed, move.Speed);
+            if (direct) ((SafeZoneRebornMovementSystem)runtime.MovementStatus).Update(player, limits, now);
+            else
             {
-                var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!.Invoke(runtime.MovementStatus, null)!;
-                var watch = System.Diagnostics.Stopwatch.StartNew();
-                pending = new SafeZoneSolver().Solve(snapshot, player, new(move.Speed, move.Speed, 0, false, move.Speed, move.Speed), options, now);
-                ready = t + Math.Max(.3, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                if (pending != null && t >= ready) { accepted = pending; pending = null; }
+                if (pending == null && t >= nextSolve)
+                {
+                    var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!.Invoke(runtime.MovementStatus, null)!;
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    pending = new SafeZoneSolver().Solve(snapshot, player, limits, options, now);
+                    ready = t + Math.Max(.3, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                }
+                runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             }
-            runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             previous = p; p = move.Advance(p, (float)frame);
             p.Y = BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstB, p.Z);
             // Pushes land on the announced step at its packet.
@@ -174,7 +182,7 @@ internal static class BlundervilleFeedback151049Regression
             if (p.Z <= -367)
             {
                 Console.WriteLine($"RAMP {recording} entry {entry:F1}: climbed in {t - entry:F2}s, dispatch {move.Count}");
-                Check(t - entry < 27, "The FirstB ramp climb waited far longer than its 14.5s walk.");
+                Check(t - entry < 22, "The FirstB ramp climb waited far longer than its 14.5s walk.");
                 return;
             }
         }

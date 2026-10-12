@@ -22,6 +22,18 @@ internal sealed class BlundervilleFinalPlanner
     // |x|=16 is a 0.55m strip behind the z=178–182 pillars that dead-ends
     // (2026.10.07 19:51 replay side -1 idled there for 20s).
     private const int MaxLane = 15;
+    // ARR 2026-10-12 18:27 FirstB: the generic solver on the 3703 ramp walked
+    // back 5m three times below the first pusher row (z -347.8), then side-
+    // stepped into the top row and was pushed down twice. The ramp has the
+    // same shape as the Final slope (timed rows, uphill = -Z), so the same
+    // layered lane search runs there: x -6.5..6.5, goal row -368, then the
+    // ordinary route takes the flat finish. Speed is the measured 2.0m/s.
+    internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name);
+    internal static readonly Profile Final = new(BlundervilleCourse.Final, Top, Bottom, Exit, MaxLane, 2, null, true, "决赛");
+    internal static readonly Profile FirstBRamp = new(BlundervilleCourse.FirstB, -336, -367.5f, -368, 6, 9.5f,
+        BlundervilleRaceState.SlidingSlopeSpeed, false, "终点坡");
+    private readonly Profile _profile;
+    public BlundervilleFinalPlanner(Profile? profile = null) => _profile = profile ?? Final;
     internal const double Lag = .35, StandAfterGoal = 2.5, Lead = .15, Tail = .1, WaveLead = .4, WaveTail = .3;
     private static readonly double[] Waits = [0, .5, 1, 1.5, 2, 3];
 
@@ -38,9 +50,9 @@ internal sealed class BlundervilleFinalPlanner
 
     public void Reset() { _plan = null; _next = 0; _stretch = null; _lastTime = _retry = default; }
 
-    public static bool Active(BlundervilleRaceState state, Vector3 player, DateTime now)
-        => state.IsRacing && !state.Qualified && state.Course == BlundervilleCourse.Final && state.CanMove(now)
-            && player.Z is > Bottom and <= Top && player.Y > 2;
+    public bool Active(BlundervilleRaceState state, Vector3 player, DateTime now)
+        => state.IsRacing && !state.Qualified && state.Course == _profile.Course && state.CanMove(now)
+            && player.Z > _profile.Bottom && player.Z <= _profile.Top && player.Y > _profile.MinY && MathF.Abs(player.X) <= _profile.Lanes + 2;
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state,
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, DirectTraversalExecution? execution = null)
@@ -52,7 +64,7 @@ internal sealed class BlundervilleFinalPlanner
         // 2026.10.12 16:55 ARR (1.14.0). Only ever pass them through.
         if (!Active(state, player, now) || normal.Hold) { Reset(); return normal; }
         var floor = BlundervilleRoutes.Boundary(state.Course);
-        var speed = state.NavigationBaseSpeed(now);
+        var speed = _profile.Speed ?? state.NavigationBaseSpeed(now);
         var index = new HazardIndex(hazards, now);
         if (_plan != null)
         {
@@ -63,14 +75,14 @@ internal sealed class BlundervilleFinalPlanner
         if (_plan == null)
         {
             if (now < _retry) return Fallback(index, floor, hazards, player, now);
-            _plan = Search(index, floor, player, now, speed);
+            _plan = Search(_profile, index, floor, player, now, speed);
             _next = 1; _stretch = null;
             if (_plan is not { Count: >= 2 })
             {
                 _plan = null; _retry = now.AddSeconds(.2);
                 // In a dead end no forward layer is reachable by floor; hand
                 // back to the race route, whose solver can walk back out.
-                if (!CanAdvance(floor, player)) return normal with { Hint = "决赛：退出死角，改走常规路线" };
+                if (!CanAdvance(_profile, floor, player)) return normal with { Hint = $"{_profile.Name}：退出死角，改走常规路线" };
                 return Fallback(index, floor, hazards, player, now);
             }
         }
@@ -78,7 +90,7 @@ internal sealed class BlundervilleFinalPlanner
         if (now < current.Departure && Distance(player, current.Position) <= ArrivalTolerance)
         {
             _stretch = null;
-            return new(player, true, false, null, "决赛：在安全处等待机关间隙", false);
+            return new(player, true, false, null, $"{_profile.Name}：在安全处等待机关间隙", false);
         }
         // Publish one unchanged stretch up to the next wait; the runtime
         // follows GreenMove progress, so the path must not shrink per point.
@@ -89,7 +101,7 @@ internal sealed class BlundervilleFinalPlanner
             _stretchStart = _next;
             _stretch = _plan.Skip(_next).Take(end - _next + 1).Select(w => w.Position).ToArray();
         }
-        return new(_stretch[^1], false, false, null, "决赛：按机关时序连续穿行", true) { ContinuousPath = _stretch };
+        return new(_stretch[^1], false, false, null, $"{_profile.Name}：按机关时序连续穿行", true) { ContinuousPath = _stretch };
     }
 
     // Inside the Final hazard slope the ordinary solver re-creates the
@@ -97,10 +109,10 @@ internal sealed class BlundervilleFinalPlanner
     private BlundervilleRaceDecision Fallback(HazardIndex index, IGeometryShape floor, IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now)
     {
         _stretch = null;
-        if (index.Stand(player, 0, 1.5)) return new(player, true, false, null, "决赛：等待可通行的机关时序", false);
+        if (index.Stand(player, 0, 1.5)) return new(player, true, false, null, $"{_profile.Name}：等待可通行的机关时序", false);
         if (BlundervilleRefuge.Find(floor, hazards, player, now) is { } refuge)
-            return new(refuge, false, false, null, "决赛：先避开即将判定的机关", true) { ContinuousPath = [refuge] };
-        return new(player, true, false, null, "决赛：无可行避让，原地等待", false);
+            return new(refuge, false, false, null, $"{_profile.Name}：先避开即将判定的机关", true) { ContinuousPath = [refuge] };
+        return new(player, true, false, null, $"{_profile.Name}：无可行避让，原地等待", false);
     }
 
     private bool OffRoute(Vector3 player)
@@ -134,15 +146,15 @@ internal sealed class BlundervilleFinalPlanner
         // The stair run-up start is not a standing refuge: keep at least the
         // run-up and first flight clear (the full stair timeline is only a
         // preference when the search picked the departure).
-        if (MathF.Abs(from.Z - RunupZ) < .01f) return FirstFlightClear(index, from, time);
+        if (_profile.Stairs && MathF.Abs(from.Z - RunupZ) < .01f) return FirstFlightClear(index, from, time);
         return index.Stand(from, time, time + StandAfterGoal);
     }
 
-    private static List<Waypoint>? Search(HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
+    private static List<Waypoint>? Search(Profile profile, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed)
     {
         // Plan onto the stair landing (z=154); below Bottom the stair jump
         // route takes over.
-        var goal = MathF.Max(Exit, player.Z - Horizon);
+        var goal = MathF.Max(profile.Exit, player.Z - Horizon);
         List<Node> layer = [new(player, 0, 0, null, (int)MathF.Round(player.X))];
         // A horizon end that cannot be reached yet: advance to the deepest
         // node that stays clear for a while, then plan again from there.
@@ -156,10 +168,10 @@ internal sealed class BlundervilleFinalPlanner
                 {
                     if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait)) break;
                     var depart = node.Time + wait;
-                    for (var lane = Math.Max(node.Lane - (int)MaxLateral, -MaxLane); lane <= Math.Min(node.Lane + (int)MaxLateral, MaxLane); ++lane)
+                    for (var lane = Math.Max(node.Lane - (int)MaxLateral, -profile.Lanes); lane <= Math.Min(node.Lane + (int)MaxLateral, profile.Lanes); ++lane)
                     {
                         var to = new Vector3(lane, node.Position.Y, z);
-                        if (!Viable(lane, z)) continue;
+                        if (!Viable(profile, lane, z)) continue;
                         var arrival = depart + Distance(node.Position, to) / speed;
                         if (arrival > 30) continue;
                         if (!ArenaBoundaryTraversal.ContainsTube(floor, node.Position, to, FloorClearance)) continue;
@@ -182,10 +194,10 @@ internal sealed class BlundervilleFinalPlanner
         // From the last layer, hand over at the stair run-up start only when
         // the run-up, the takeoff and the first flight stay clear (the 34796
         // circles at z=156 hit 15:10 and 19:51 replays right at the hand-over).
-        if (layer.Count > 0 && layer[0].Position.Z <= Exit + .01f && StairRunup(index, floor, layer, speed) is { } runup) best = runup;
+        if (profile.Stairs && layer.Count > 0 && layer[0].Position.Z <= Exit + .01f && StairRunup(index, floor, layer, speed) is { } runup) best = runup;
         // The run-up start is only 0.8m below z=156; a plan from there must
         // still hand over (20:42 replay idled at z=156 inside an R5 circle).
-        if (best == null || player.Z - best.Position.Z < LayerStep - .01f && best.Position.Z > RunupZ + .01f) return null;
+        if (best == null || player.Z - best.Position.Z < LayerStep - .01f && !(profile.Stairs && MathF.Abs(best.Position.Z - RunupZ) < .01f)) return null;
         var nodes = new List<Node>();
         for (var n = best; n != null; n = n.Parent) nodes.Add(n);
         nodes.Reverse();
@@ -259,32 +271,38 @@ internal sealed class BlundervilleFinalPlanner
     // floor alone. The 17:44 ARR plan ended in the V wedge at (-1.2,206.2)
     // between two wave-zone pits; layers only advance, so it stood there and
     // a wave column hit it every 6s. The floor is static: compute once.
-    private static readonly Lazy<HashSet<(int Lane, int Z)>> ViableCells = new(BuildViable);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Profile, HashSet<(int Lane, int Z)>> ViableCells = new();
 
-    internal static bool Viable(int lane, float z)
-        => z > Top + .01f || ViableCells.Value.Contains((lane, (int)MathF.Round(z)));
+    internal static bool Viable(int lane, float z) => Viable(Final, lane, z);
 
-    private static bool CanAdvance(IGeometryShape floor, Vector3 player)
+    private static bool Viable(Profile profile, int lane, float z)
+        => z > profile.Top + .01f || ViableCells.GetOrAdd(profile, BuildViable).Contains((lane, (int)MathF.Round(z)));
+
+    private static bool CanAdvance(Profile profile, IGeometryShape floor, Vector3 player)
     {
         var z = MathF.Floor((player.Z - .5f) / LayerStep) * LayerStep;
         var center = (int)MathF.Round(player.X);
-        for (var lane = Math.Max(center - (int)MaxLateral, -MaxLane); lane <= Math.Min(center + (int)MaxLateral, MaxLane); ++lane)
-            if (Viable(lane, z) && ArenaBoundaryTraversal.ContainsTube(floor, player, new(lane, player.Y, z), FloorClearance)) return true;
-        return z < Exit - .01f;
+        for (var lane = Math.Max(center - (int)MaxLateral, -profile.Lanes); lane <= Math.Min(center + (int)MaxLateral, profile.Lanes); ++lane)
+            if (Viable(profile, lane, z) && ArenaBoundaryTraversal.ContainsTube(floor, player, new(lane, player.Y, z), FloorClearance)) return true;
+        return z < profile.Exit - .01f;
     }
 
-    private static HashSet<(int Lane, int Z)> BuildViable()
+    private static HashSet<(int Lane, int Z)> BuildViable(Profile profile)
     {
-        var floor = BlundervilleRoutes.Boundary(BlundervilleCourse.Final);
+        var floor = BlundervilleRoutes.Boundary(profile.Course);
         var viable = new HashSet<(int Lane, int Z)>();
-        var exit = (int)Exit;
-        for (var lane = -MaxLane; lane <= MaxLane; ++lane)
-            foreach (var side in new[] { -1f, 1f })
-                if (ArenaBoundaryTraversal.ContainsTube(floor, new(lane, 0, exit), new(side * BlundervilleRoutes.FinalStairLane, 0, RunupZ), FloorClearance))
-                { viable.Add((lane, exit)); break; }
-        for (var z = exit + (int)LayerStep; z <= Top; z += (int)LayerStep)
-            for (var lane = -MaxLane; lane <= MaxLane; ++lane)
-                for (var next = Math.Max(lane - (int)MaxLateral, -MaxLane); next <= Math.Min(lane + (int)MaxLateral, MaxLane); ++next)
+        var exit = (int)profile.Exit; var lanes = profile.Lanes;
+        for (var lane = -lanes; lane <= lanes; ++lane)
+        {
+            var cell = new Vector3(lane, 0, exit);
+            if (profile.Stairs
+                ? new[] { -1f, 1f }.Any(side => ArenaBoundaryTraversal.ContainsTube(floor, cell, new(side * BlundervilleRoutes.FinalStairLane, 0, RunupZ), FloorClearance))
+                : ArenaBoundaryTraversal.ContainsTube(floor, cell, cell - Vector3.UnitZ * .01f, FloorClearance))
+                viable.Add((lane, exit));
+        }
+        for (var z = exit + (int)LayerStep; z <= profile.Top; z += (int)LayerStep)
+            for (var lane = -lanes; lane <= lanes; ++lane)
+                for (var next = Math.Max(lane - (int)MaxLateral, -lanes); next <= Math.Min(lane + (int)MaxLateral, lanes); ++next)
                     if (viable.Contains((next, z - (int)LayerStep))
                         && ArenaBoundaryTraversal.ContainsTube(floor, new(lane, 0, z), new(next, 0, z - LayerStep), FloorClearance))
                     { viable.Add((lane, z)); break; }
