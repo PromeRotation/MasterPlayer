@@ -204,6 +204,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             else _arrowPlanner.Reset();
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
+            _decision = BlundervilleSpinWeave.Apply(_decision, _race, player, _planner.Recovering);
             // Timed lane search on the Final slope, the FirstB pusher ramp, the
             // FirstA swinger ramp and the Delivery carry corridor of the
             // crystal's colour.
