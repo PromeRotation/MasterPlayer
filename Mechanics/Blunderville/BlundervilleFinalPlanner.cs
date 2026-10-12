@@ -58,6 +58,15 @@ internal sealed class BlundervilleFinalPlanner
         // carries come down the west walkway and step east of that hole.
         [new(-200, 6, 252), new(-201, 6, 244), new(-202.6f, 6, 224.4f), new(-202.7f, 6, 220), new(-202.5f, 6, 212.2f),
             new(-200.6f, 6, 210.9f), new(-199.2f, 6, 207.8f), new(-199.6f, 6, 207)]);
+    // 2026-10-13 route research: MP stopped 0.8–2.8s before each of the three
+    // 34716 swinger rows on the FirstA ramp (z -130.3/-138.8/-147.3), 10.3s
+    // for the section against 3.6s for the best humans (17:44, 16:55, 02:33).
+    // Each row sweeps its three 3m columns one after another every 2.1s, so a
+    // column is clear for ~1.6s between hits: a timed corridor crosses them.
+    // The race route's west lane, x -213..-205.
+    internal static readonly Profile FirstARamp = new(BlundervilleCourse.FirstA, 0, 0, 0, 4, 10, null, false, "坡道摆锤", null,
+        [new(-209, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -126), -126),
+            new(-209, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstA, -151.5f), -151.5f)]);
     // The schedule footprints already include their calibrated growth and the
     // windows their +-0.45s, so no extra clearance and a 0.25s lag: with the
     // Final margins the E bridge pendulum row (gaps 0.36–0.79s between 11
@@ -470,8 +479,9 @@ internal sealed class BlundervilleFinalPlanner
         {
             var (direction, length) = Heading(spoke[i], spoke[i + 1]);
             var lateral = new Vector3(-direction.Z, 0, direction.X);
+            // Heights follow the spoke (the FirstA ramp climbs 6m).
             for (var s = MathF.Ceiling(walked / LayerStep) * LayerStep; s < walked + length - .5f; s += LayerStep)
-                result.Add((s, spoke[i] + direction * (s - walked), lateral));
+                result.Add((s, Vector3.Lerp(spoke[i], spoke[i + 1], (s - walked) / length), lateral));
             walked += length;
         }
         var (tail, _) = Heading(spoke[^2], spoke[^1]);

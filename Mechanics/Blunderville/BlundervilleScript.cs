@@ -30,10 +30,11 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleBumperPlanner _bumperPlanner = new();
     private readonly BlundervilleFinalPlanner _finalPlanner = new();
     private readonly BlundervilleFinalPlanner _rampPlanner = new(BlundervilleFinalPlanner.FirstBRamp);
+    private readonly BlundervilleFinalPlanner _swingerPlanner = new(BlundervilleFinalPlanner.FirstARamp);
     private readonly BlundervilleFinalPlanner _deliveryWest = new(BlundervilleFinalPlanner.DeliveryWest);
     private readonly BlundervilleFinalPlanner _deliveryEast = new(BlundervilleFinalPlanner.DeliveryEast);
     private readonly BlundervilleFinalPlanner _deliveryNorth = new(BlundervilleFinalPlanner.DeliveryNorth);
-    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _rampPlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
+    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _rampPlanner, _swingerPlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -127,6 +128,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _encounter.Synchronize(actors, now);
         _encounter.DeliverySchedule.SetStart(_race is { Course: BlundervilleCourse.Delivery, IsRacing: true, StartedByDirector: true } delivery
             ? delivery.StartedAt : null);
+        _encounter.RingBeam.SetStart(_race is { Course: BlundervilleCourse.Ring, IsRacing: true, StartedByDirector: true } ring
+            ? ring.StartedAt : null);
         if (_player is { } current && _race is { IsRacing: false, IsPrepared: false, Qualified: false } race)
         {
             var course = BlundervilleRoutes.FromPosition(current);
@@ -200,12 +203,14 @@ public abstract class BlundervilleScript : MasterPlayerScript
             else _arrowPlanner.Reset();
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
-            // Timed lane search on the Final slope, the FirstB pusher ramp and
-            // the Delivery carry corridor of the crystal's colour.
+            // Timed lane search on the Final slope, the FirstB pusher ramp, the
+            // FirstA swinger ramp and the Delivery carry corridor of the
+            // crystal's colour.
             var lanePlanner = _race.Course switch
             {
                 BlundervilleCourse.Final => _finalPlanner,
                 BlundervilleCourse.FirstB => _rampPlanner,
+                BlundervilleCourse.FirstA => _swingerPlanner,
                 BlundervilleCourse.Delivery => _race.CarryCrystalParam switch { 35 => _deliveryWest, 36 => _deliveryEast, 37 => _deliveryNorth, _ => null },
                 _ => null
             };

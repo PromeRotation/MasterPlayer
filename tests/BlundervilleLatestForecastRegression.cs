@@ -64,28 +64,32 @@ internal static class BlundervilleLatestForecastRegression
                 Console.WriteLine($"LATEST BODY lead={lead:F1}s covered={covered} gated={untrusted}");
             });
 
-        run("Blunderville latest forecast unconfirmed entry clocks remain blocked across the full route", () =>
+        run("Blunderville latest forecast unconfirmed entry clocks open only through their cast schedule", () =>
         {
             using var replay = new Recording();
-            // Two beats per endpoint (two complete cycles) confirm a clock since
-            // 1.12.0; the z=-193/-203 cylinders reach their fourth beat at 21.42s.
+            // Two beats per endpoint (two complete cycles) confirm a learned
+            // clock since 1.12.0; the z=-193/-203 cylinders reach their fourth
+            // beat at 21.42s.
             replay.Advance(21.3);
             var now = Epoch.AddSeconds(21.3);
-            Check(!replay.Encounter.BumpersReady(new(-210, 17.47f, -158)), "An incomplete endpoint pattern authorized early entry.");
-            var blocked = replay.Encounter.TraversalHazards(now).Where(h => h.Id.StartsWith("bumper-unknown/")).ToArray();
+            var ice = replay.Events.Where(e => e[1].GetString() == "cast" && e[5][2].GetSingle() is < -190 and > -205)
+                .Select(e => e[2].GetUInt64()).Distinct().ToArray();
+            Check(ice.Length >= 4 && ice.Any(id => !replay.BodyReady(id) || !replay.PulseReady(id, now)),
+                "The learned trackers confirmed an incomplete endpoint pattern.");
+            // 1.14.7: one 34717 cast anchors each cylinder on its known half
+            // cycle, so the entrance opens without the learned clocks.
+            Check(replay.Encounter.BumpersReady(new(-210, 17.47f, -158)), "The cast-anchored clocks did not open the entrance.");
+            var hazards = replay.Encounter.TraversalHazards(now).ToArray();
+            Check(!hazards.Any(h => h.Id.StartsWith("bumper-unknown/")), "An anchored cylinder still blocked its lane as unknown.");
             var covered = 0;
-            foreach (var e in replay.Events.Where(e => e[1].GetString() == "move" && e[0].GetDouble() > 21.3 && e[0].GetDouble() < 43))
+            foreach (var e in replay.Events.Where(e => e[1].GetString() == "move" && e[0].GetDouble() > 21.3 && e[0].GetDouble() < 30 && ice.Contains(e[2].GetUInt64())))
             {
-                var hazard = blocked.SingleOrDefault(h => h.Id == $"bumper-unknown/{e[2].GetUInt64()}");
-                if (hazard == null) continue;
-                var impact = Epoch.AddSeconds(e[0].GetDouble());
-                var position = Vec(e[3]);
-                Check(hazard.From <= impact && hazard.Until >= impact && new[] { -1, 1 }
-                    .All(sign => hazard.Geometry.Contains(position + Vector3.UnitX * (sign * 1.2f))),
-                    "An unconfirmed entry clock became a safe gap after its short body forecast expired.");
+                var impact = Epoch.AddSeconds(e[0].GetDouble()); var position = Vec(e[3]);
+                Check(new[] { -1, 1 }.All(sign => hazards.Any(h => h.Id.StartsWith($"bumper/{e[2].GetUInt64()}/") && h.From <= impact && h.Until >= impact
+                    && h.Geometry.Contains(position + Vector3.UnitX * (sign * 1.2f)))), "A scheduled cylinder body escaped its published sweep.");
                 ++covered;
             }
-            Check(covered > 50, "Insufficient unconfirmed-lane trajectory evidence.");
+            Check(covered > 20, "Insufficient scheduled-lane trajectory evidence.");
         });
 
         foreach (var risk in new[] { "opposite phase", "different axis" })

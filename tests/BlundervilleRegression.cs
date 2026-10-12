@@ -9,6 +9,8 @@ internal static class BlundervilleRegression
 {
     private static readonly DateTime Epoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     // Independent expectations from the CN Action sheet, not the production catalog.
+    // The Final waves 34804/34812 are 6x6 boxes centred on their source: 192
+    // recorded hits fall at dz -4..+2.3 around the effect (1.14.5).
     private static readonly (uint Action, string Shape, float Range, float Width)[] Dimensions =
     [
         (29795,"circle",3,0),
@@ -16,8 +18,8 @@ internal static class BlundervilleRegression
         (34773,"circle",5,0), (34775,"centered",3,3), (34776,"circle",2,0),
         (34796,"circle",5,0), (34797,"fan",8,180), (34798,"fan",8,180),
         (34799,"rectangle",4,4), (34800,"rectangle",31,12), (34801,"circle",6,0),
-        (34802,"circle",5,0), (34804,"rectangle",6,6), (34805,"circle",6,0),
-        (34808,"rectangle",100,8), (34812,"rectangle",6,6),
+        (34802,"circle",5,0), (34804,"centered",6,6), (34805,"circle",6,0),
+        (34808,"rectangle",100,8), (34812,"centered",6,6),
     ];
 
     public static void Run(Action<string, Action> run)

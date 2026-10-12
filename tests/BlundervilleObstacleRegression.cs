@@ -14,6 +14,10 @@ internal static class BlundervilleObstacleRegression
 {
     private static readonly DateTime Epoch = new(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc);
     private const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
+    private static readonly bool Trace = Environment.GetEnvironmentVariable("OBS_TRACE") == "1";
+    private static readonly double? FixedWorker = double.TryParse(Environment.GetEnvironmentVariable("OBS_WORKER"), out var worker) ? worker : null;
+    private static readonly double TraceFrom = double.TryParse(Environment.GetEnvironmentVariable("OBS_FROM"), out var from) ? from : 1e9;
+    private static readonly double TraceTo = double.TryParse(Environment.GetEnvironmentVariable("OBS_TO"), out var to) ? to : -1;
     public static void Run(Action<string, Action> run)
     {
         run("Blunderville obstacles cold and expired tracking never authorize a learned route", () =>
@@ -64,6 +68,41 @@ internal static class BlundervilleObstacleRegression
             Console.WriteLine($"BODY coverage {total-misses}/{total} residual={extra}");
             Check(misses==0,"Future moving body escaped the forecast envelope.");
         });
+        // 2026-10-13: the known half cycles anchor every cylinder from one
+        // cast. The entrance opens by the earliest human arrival (~8s), not
+        // after two learned cycles (17:44: 8.2s wait from 16.5s; 01:01: 13.3s).
+        foreach (var fx in new[] { "obstacles-firsta-174429.json", "obstacles-firsta-010120.json", "obstacles-firsta-044552.json" })
+            run($"Blunderville obstacles cylinder schedule opens early and covers pulses and bodies {fx}", () =>
+            {
+                using var replay = new Recording(fx);
+                replay.Advance(8);
+                Check(replay.Encounter.BumpersReady(new(-210.25f, 17.47f, -158)), "The scheduled cylinder clocks were not ready by 8s.");
+                // The schedule itself; once learned, the encounter publishes the trackers'.
+                var schedule = (BlundervilleCylinderSchedule)typeof(BlundervilleEncounter).GetField("_cylinders", Private)!.GetValue(replay.Encounter)!;
+                int pulses = 0, bodies = 0, misses = 0;
+                const double lead = 3;
+                foreach (var e in replay.Events.Where(e => e[0].GetDouble() > 8 + lead && replay.Actors[e[2].GetUInt64()].Oid == 16339
+                    && (e[1].GetString() == "move" || e[1].GetString() == "hit" && e[3].GetUInt32() == 34717)))
+                {
+                    var t = e[0].GetDouble(); replay.Advance(t - lead); var at = Epoch.AddSeconds(t); var id = e[2].GetUInt64();
+                    // Packets only arrive late: 01:01 delivers whole batches of
+                    // cylinder moves 0.5s (43.94s) and 1.1s (82.59s) late.
+                    var hazards = schedule.Hazards(Epoch.AddSeconds(t - lead)).Where(h => h.From <= at && h.Until >= at.AddSeconds(-1.2)).ToArray();
+                    if (e[1].GetString() == "hit")
+                    {
+                        ++pulses;
+                        if (!hazards.Any(h => h.Id.StartsWith($"rhythm/{id}/34717/") && h.Geometry.Contains(Vec(e[4]))))
+                        { if (misses++ < 10) Console.WriteLine($"SCHEDULE pulse miss {e}"); }
+                        continue;
+                    }
+                    ++bodies;
+                    var p = Vec(e[3]);
+                    if (!new[] { p - Vector3.UnitX * 1.2f, p + Vector3.UnitX * 1.2f }.All(q => hazards.Any(h => h.Id.StartsWith($"bumper/{id}/") && h.Geometry.Contains(q))))
+                    { if (misses++ < 10) Console.WriteLine($"SCHEDULE body miss {e}"); }
+                }
+                Console.WriteLine($"SCHEDULE {fx}: pulses {pulses}, bodies {bodies}, misses {misses}");
+                Check(pulses > 100 && bodies > 1000 && misses == 0, "A scheduled cylinder forecast missed a recorded pulse or body.");
+            });
         run("Blunderville obstacles recorded contact stuns precede pulse effects", () =>
         {
             using var replay = new Recording();
@@ -175,6 +214,15 @@ internal static class BlundervilleObstacleRegression
         foreach (var phase in new[] { 16.5, 20.0, 24.0, 29.8 })
             run($"Blunderville obstacles 01:01 entrance phase {phase:F1}", () => Simulate(false, phase, .3, 2, slippery: true,
                 frameStep: 1.0 / 30, fixture: "obstacles-firsta-010120.json", maximumElapsed: 50));
+        // OBS_PHASES: a phase sweep over the three recordings for comparisons.
+        if (Environment.GetEnvironmentVariable("OBS_PHASES") == "1")
+            run("Blunderville obstacles sweep", () =>
+            {
+                foreach (var fx in new[] { "obstacles-firsta-010120.json", "obstacles-firsta-174429.json", "obstacles-firsta-044552.json" })
+                    for (var phase = 15.0; phase < 34; phase += 2.4)
+                        try { Simulate(false, phase, .3, 2, slippery: true, frameStep: 1.0 / 30, fixture: fx, maximumElapsed: 60); }
+                        catch (InvalidOperationException e) { Console.WriteLine($"SWEEP {fx[17..23]} phase {phase:F1}: {e.Message}"); }
+            });
         // ARR 2026-10-12 17:44 (1.14.2): 8.2s at the entrance from 16.5s, then
         // the run stalled on the ice and the player finished it by hand.
         foreach (var phase in new[] { 16.5, 20.0, 24.6, 29.0 })
@@ -234,7 +282,8 @@ internal static class BlundervilleObstacleRegression
             var milliseconds = timer.Elapsed.TotalMilliseconds;
             workerMax = Math.Max(workerMax, milliseconds); workerTotal += milliseconds;
             var completion = new TaskCompletionSource<BlundervilleBumperPlanner.Step[]>();
-            scheduled.Add((completion, value, now.AddSeconds(Math.Max(latency, milliseconds / 1000))));
+            // OBS_WORKER fixes the search latency for reproducible comparisons.
+            scheduled.Add((completion, value, now.AddSeconds(FixedWorker ?? Math.Max(latency, milliseconds / 1000))));
             return completion.Task;
         }, latency);
         var p = arrow ? new Vector3(-200, 10.03f, -248.2f) : new Vector3(-210.25f, 17.47f, -158);
@@ -269,6 +318,9 @@ internal static class BlundervilleObstacleRegression
                     decision = bumperPlanner.Apply(decision, state, replay.Encounter, p, now, beforeExecution);
                 }
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
+                if (Trace && (Math.Abs(t * 2 - Math.Round(t * 2)) < .01 || TraceFrom <= t && t <= TraceTo))
+                    Console.WriteLine($"TRACE t={t:F2} p=({p.X:F2},{p.Z:F2}) hold={decision.Hold} direct={decision.DirectTraversal} hint={decision.Hint}"
+                        + (TraceFrom <= t && t <= TraceTo ? $" path={string.Join(" ", decision.ContinuousPath?.Select(q => $"({q.X:F1},{q.Z:F1})") ?? [])} slippery={move.Slippery}" : ""));
                 lastDecision = decision;
                 if (elapsed > 1) scanTimes.Add(frameWatch.Elapsed.TotalMilliseconds - (workerTotal - workerBefore));
             }
