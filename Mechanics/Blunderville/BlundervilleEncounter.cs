@@ -24,6 +24,12 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly Dictionary<ulong, LastCast> _lastCasts = [];
     private readonly Dictionary<string, Pulse> _pulses = [];
     private readonly Dictionary<ulong, Wave> _waves = [];
+    // Each Final wave column re-casts every 5.91–6.04s in six recordings; a
+    // wave cast is visible only ~1s before its origin hits. Remember the last
+    // cast per column to forecast the next cycles for route planning.
+    private sealed record WaveCycle(Vector3 Origin, float Rotation, DateTime LastStart, double CastSeconds);
+    private readonly Dictionary<ulong, WaveCycle> _waveCycles = [];
+    internal const double WaveCyclePeriod = 5.98;
     private readonly Dictionary<ulong, Route> _routes = [];
     private readonly Dictionary<ulong, Pulse> _beams = [];
     private readonly HashSet<(ulong, uint, uint)> _sequences = [];
@@ -35,6 +41,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleRhythmTracker _rhythms = new();
     private readonly BlundervilleBumperTracker _bumpers = new();
     private readonly BlundervilleChargeTracker _deliveryCharges = new();
+    private readonly BlundervilleRampPushers _rampPushers = new();
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
 
@@ -135,7 +142,10 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _lastCasts[source] = new(cast, fromPacket);
         _casts[source] = new(source, cast, geometry, rule.Group);
         if (cast.Action == BlundervilleCatalog.WaveStart && IsWaveOrigin(pos, facing ?? 0))
+        {
             _waves[source] = new(source, pos, facing!.Value, cast.StartedAt, cast.FinishAt);
+            _waveCycles[source] = new(pos, facing.Value, cast.StartedAt, (cast.FinishAt - cast.StartedAt).TotalSeconds);
+        }
     }
 
     public void Effect(ulong source, uint action, uint sequence, Vector3? position, float? rotation, DateTime now, Vector3? destination = null)
@@ -167,15 +177,18 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         {
             ObserveRoute(source, pos, now);
             if (action == 34774) _deliveryCharges.Effect(source, pos, destination, now, rotation);
+            if (action == 34774) _rampPushers.Effect(source, pos, destination, now);
             if (destination is { } end && Finite(end))
             {
                 var delta = end - pos; delta.Y = 0;
                 var length = delta.Length();
                 // ARR charge packets precede the visible traversal. Keep the
                 // swept body occupied through that animation, including its endpoints.
+                // A FirstB ramp step has already pushed with its packet.
+                var occupied = action == 34774 && BlundervilleRampPushers.OnRamp(pos, end) ? BlundervilleRampPushers.Occupied : 1.8;
                 if (length is > .5f and < 8)
                     _charges[source] = new($"charge/{source}", new RectangleGeometry((pos + end) / 2,
-                        MathF.Atan2(delta.X, delta.Z), 3, length + 3), now, now.AddSeconds(1.8), now);
+                        MathF.Atan2(delta.X, delta.Z), 3, length + 3), now, now.AddSeconds(occupied), now);
             }
             return;
         }
@@ -223,8 +236,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Remove(source);
         _bumpers.Remove(source);
         _deliveryCharges.Remove(source);
-        _ballMotion.Remove(source); _charges.Remove(source);
+        _ballMotion.Remove(source); _charges.Remove(source); _rampPushers.Remove(source);
         _actors.Remove(source); _casts.Remove(source); _lastCasts.Remove(source); _waves.Remove(source); _routes.Remove(source); _beams.Remove(source);
+        _waveCycles.Remove(source);
         foreach (var id in _pulses.Where(p => p.Value.Source == source).Select(p => p.Key).ToArray()) _pulses.Remove(id);
     }
 
@@ -244,7 +258,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     {
         Tick(now);
         foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now))
-            .Concat(_deliveryCharges.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
+            .Concat(_deliveryCharges.Hazards(now)).Concat(_rampPushers.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
             yield return new(hazard.Id, BlundervilleCatalog.Devices, hazard.Geometry, now < hazard.From,
                 (float)Math.Clamp(1 - (hazard.From - now).TotalSeconds / 2, .25, 1));
         foreach (var cast in _casts.Values)
@@ -281,13 +295,14 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public void Reset()
     {
         _actors.Clear(); _casts.Clear(); _lastCasts.Clear(); _pulses.Clear(); _waves.Clear(); _routes.Clear(); _beams.Clear();
+        _waveCycles.Clear();
         _sequences.Clear(); _sequenceOrder.Clear(); _missingFacing.Clear(); _lastTime = default;
         _animations.Reset();
         _alternatingPulses.Reset();
         _rhythms.Reset();
         _bumpers.Reset();
         _deliveryCharges.Reset();
-        _ballMotion.Clear(); _charges.Clear();
+        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset();
     }
 
     public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
@@ -299,6 +314,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var hazard in _bumpers.Hazards) yield return hazard;
         foreach (var hazard in _deliveryCharges.Hazards(now)) yield return hazard;
         foreach (var hazard in _charges.Values) yield return hazard;
+        foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
                 yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt,
@@ -335,6 +351,32 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var actor in _actors.Values.Where(a => a.Oid == 16339))
             if (!_bumpers.Ready(actor.Id) || !_rhythms.Ready(actor.Id, 34717, now))
                 yield return _bumpers.UnknownTraversalHazard(actor, now);
+        foreach (var hazard in WaveCycleForecasts(now)) yield return hazard;
+    }
+
+    // Next cycles of each observed wave column, beyond the cast in flight.
+    // Windows widen with the 0.38–0.56s step spread recorded per segment.
+    private IEnumerable<BlundervilleHazard> WaveCycleForecasts(DateTime now)
+    {
+        if (!BlundervilleCatalog.TryGet(BlundervilleCatalog.WaveStart, out var origin) || origin.Shape == null) yield break;
+        foreach (var (source, cycle) in _waveCycles)
+        {
+            if (!_actors.ContainsKey(source) || (now - cycle.LastStart).TotalSeconds > 3 * WaveCyclePeriod) continue;
+            for (var k = 1; k <= 2; ++k)
+            {
+                var impact = cycle.LastStart.AddSeconds(k * WaveCyclePeriod + cycle.CastSeconds);
+                if (now > impact.AddSeconds(4 * StepSeconds + .5)) continue;
+                yield return new($"wave/cycle/{source}/{k}/0", origin.Shape.Resolve(cycle.Origin, cycle.Rotation, null),
+                    impact.AddSeconds(-.3), impact.AddSeconds(.3), impact.AddSeconds(-cycle.CastSeconds));
+                for (var i = 1; i <= 4; ++i)
+                {
+                    var step = impact.AddSeconds(i * StepSeconds);
+                    var spread = .1 * i;
+                    yield return new($"wave/cycle/{source}/{k}/{i}", new RayRectangleGeometry(cycle.Origin + new Vector3(0, -StepHeight * i, 6 * i), cycle.Rotation, 6, 6),
+                        step.AddSeconds(-.2 - spread), step.AddSeconds(.3 + spread), impact.AddSeconds(-cycle.CastSeconds));
+                }
+            }
+        }
     }
 
     private void ObserveRoute(ulong source, Vector3 position, DateTime now)

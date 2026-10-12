@@ -170,12 +170,26 @@ internal static partial class BlundervilleRoutes
             N(0, 13.5f, -347), N(0, 17.6f, -362), N(0, 18.94f, -377, 1.4f));
 
     private static IReadOnlyList<BlundervilleRouteNode> FinalNodes(float side)
-        => ReadOnly(N(0, 3.22f, 290), N(side * 6, 5.45f, 275), N(side * 6, 6, 264), N(side * 10, 9.2f, 251),
-            N(side * 6, 13.5f, 237), N(side * 6, 14.8f, 224), N(side * 6, 18.6f, 209), N(side * 6, 22.8f, 198),
-            N(side * 9, 28.9f, 180), N(side * 6, 30.3f, 167), N(side * 6, 31.5f, 154),
-            N(side * 6, 31.5f, 153, .3f, true), N(side * 6, 32.6f, 149, .3f, true),
-            N(side * 6, 33.5f, 145, .3f, true), N(side * 6, 34.4f, 141, .3f, true), N(side * 6, 35.8f, 137, .3f),
-            N(side * 6, 35.8f, 136.6f), N(side * 8.5f, 39.597f, 128), N(side * 8.5f, 39.597f, 123.8f, .3f));
+        // z=262–275: the only walkway is x≈5–15 beside the wall at x=±5 (a pit
+        // spans |x|≤5 at z=270), i.e. inside the x=±10 R5 circle. Hug the wall
+        // to shorten that chord (1.1s at x=5.8 vs 1.26s at x=6 off-wall).
+        // z=256–238: the inner lane x=±3.5 (pits at |x|=6–9, walls at ±1) is
+        // only reached by the x=±4 sweeps, twice per 11.07s. The 243 and 229
+        // sweep rows leave a strip at z≈236 to cross outward; the outer lane
+        // x=±13.5 then meets one 34801 position and the x=±10 34802 circle.
+        => ReadOnly(N(0, 3.22f, 290), N(side * 3.5f, 4.8f, 278), N(side * 5.8f, 5.45f, 273), N(side * 5.8f, 6, 262),
+            N(side * 3.5f, 8.2f, 256), N(side * 3.5f, 13.3f, 236), N(side * 13.5f, 13.3f, 236),
+            N(side * 13, 25.6f, 190),
+            N(side * 9, 28.9f, 180), N(side * 6, 30.3f, 167), N(side * FinalStairLane, 31.5f, 154),
+            N(side * FinalStairLane, 31.5f, 153, .3f, true), N(side * FinalStairLane, 32.6f, 149, .3f, true),
+            N(side * FinalStairLane, 33.5f, 145, .3f, true), N(side * FinalStairLane, 34.4f, 141, .3f, true), N(side * FinalStairLane, 35.8f, 137, .3f),
+            N(side * FinalStairLane, 35.8f, 136.6f), N(side * 8.5f, 39.597f, 128), N(side * 8.5f, 39.597f, 123.8f, .3f));
+
+    // The stair steps are flat across |x|≈1.5–14. The 34801 row over z≈140–152
+    // cycles 12m boxes centred x=-12/-4/4/12 every 6.03s: x=±6 lies in two of
+    // them (one on the edge), x=±4 in one, and x=-4 also misses the z=156
+    // 34796 circles. The blind stair climb (~5.5s) fits only the longer gap.
+    internal const float FinalStairLane = 4;
 
     private static readonly IReadOnlyList<BlundervilleRouteNode> RingNodes = ReadOnly(
         N(218, 10, -125), N(212, 10, -110), N(198, 10, -107), N(185, 10, -114), N(184, 10, -135),
@@ -188,7 +202,7 @@ internal static partial class BlundervilleRoutes
     private static IReadOnlyList<BlundervilleRouteNode> ReadOnly(params BlundervilleRouteNode[] nodes) => Array.AsReadOnly(nodes);
     private static bool Finite(Vector3 point) => float.IsFinite(point.X) && float.IsFinite(point.Y) && float.IsFinite(point.Z);
 
-    private static float HeightHint(BlundervilleCourse course, float z) => course switch
+    internal static float HeightHint(BlundervilleCourse course, float z) => course switch
     {
         BlundervilleCourse.FirstA => Interpolate(z, [-375, -318, -307, -250, -214, -152, -127, -100], [13.57f, 13.57f, 10.03f, 10.03f, 17.47f, 17.47f, 11.28f, 11.28f]),
         BlundervilleCourse.FirstB => Interpolate(z, [-390, -367, -336, -100], [18.94f, 18.94f, 10.03f, 10.03f]),

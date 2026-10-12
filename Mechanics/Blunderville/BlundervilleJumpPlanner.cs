@@ -89,10 +89,11 @@ internal sealed class BlundervilleJumpPlanner
         }
         if (course == BlundervilleCourse.Final && player.Z is <= 154.5f and > 137.7f)
         {
-            if (player.Z > 149.5f && player.Y < 32.2f) return (new(side * 6, 31.5f, 153), new(side * 6, 32.6f, 149));
-            if (player.Z > 145.5f && player.Y < 33.1f) return (new(side * 6, 32.6f, 149), new(side * 6, 33.5f, 145));
-            if (player.Z > 141.5f && player.Y < 34f) return (new(side * 6, 33.5f, 145), new(side * 6, 34.4f, 141));
-            return (new(side * 6, 34.4f, 141), new(side * 6, 35.8f, 137));
+            var x = side * BlundervilleRoutes.FinalStairLane;
+            if (player.Z > 149.5f && player.Y < 32.2f) return (new(x, 31.5f, 153), new(x, 32.6f, 149));
+            if (player.Z > 145.5f && player.Y < 33.1f) return (new(x, 32.6f, 149), new(x, 33.5f, 145));
+            if (player.Z > 141.5f && player.Y < 34f) return (new(x, 33.5f, 145), new(x, 34.4f, 141));
+            return (new(x, 34.4f, 141), new(x, 35.8f, 137));
         }
         if (course == BlundervilleCourse.Ring && player.X < 187 && player.Z is <= -135.5f and > -142.1f)
             return (new(183.8f, 10, -138.6f), new(185.6f, 10, -142.8f));

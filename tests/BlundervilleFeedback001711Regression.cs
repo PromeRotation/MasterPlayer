@@ -76,7 +76,7 @@ internal static class BlundervilleFeedback001711Regression
                 Epoch, Epoch.AddSeconds(2.5), Epoch)];
             var result = (BlundervilleBumperPlanner.Step[])typeof(BlundervilleBumperPlanner)
                 .GetMethod("Search", BindingFlags.NonPublic | BindingFlags.Static)!
-                .Invoke(null, new object?[] { floor, block, origin, 6f, Epoch, 20.5, null, true })!;
+                .Invoke(null, new object?[] { floor, block, origin, 6f, Epoch, 20.5, null, true, true })!;
             // Only two verified slides are committed; the exit is a preview, so
             // the queued route advances past the blocked row rather than to -205.
             Check(result.Length > 0 && (result[^1].LandingPosition ?? result[^1].Position).Z < origin.Z - 5,

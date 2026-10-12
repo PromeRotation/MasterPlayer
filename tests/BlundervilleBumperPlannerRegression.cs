@@ -431,7 +431,7 @@ internal static class BlundervilleBumperPlannerRegression
     private static BlundervilleBumperPlanner.Step[] Search(IGeometryShape floor, BlundervilleHazard[] hazards, Vector3 origin,
         BlundervilleBumperPlanner.Step? anchor = null)
         => (BlundervilleBumperPlanner.Step[])typeof(BlundervilleBumperPlanner).GetMethod("Search", BindingFlags.NonPublic | BindingFlags.Static)!
-            .Invoke(null, [floor, hazards, origin, 6f, Epoch, 20.5, anchor, false])!;
+            .Invoke(null, [floor, hazards, origin, 6f, Epoch, 20.5, anchor, false, false])!;
     private static object? Get(BlundervilleBumperPlanner planner, string field) => typeof(BlundervilleBumperPlanner).GetField(field, Private)!.GetValue(planner);
     private static void Set(BlundervilleBumperPlanner planner, string field, object? value) => typeof(BlundervilleBumperPlanner).GetField(field, Private)!.SetValue(planner, value);
     private static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }

@@ -12,6 +12,32 @@ internal sealed class BlundervilleRhythmTracker
         public readonly List<Beat> Beats = [];
         public readonly List<DateTime> BurstStarts = [];
         public IReadOnlyList<BlundervilleHazard> Forecast = [];
+        public readonly Dictionary<(int X, int Z), Beat> Spots = [];
+        public bool RecurrenceBroken;
+    }
+
+    // Final 34801/34802 helpers revisit fixed spots with one period that four
+    // recordings agree on within 0.05s (19:51, 22:18, 23:23 and 10-12 15:10);
+    // only the starting phase differs. Each spot is predictable from its own
+    // latest hit, so the course need not wait 9–17 jittered beats to learn.
+    // Anchored to the spot's own latest packet the forecast is usually within
+    // ~0.05s; 0.1s missed jittered packets in the 19:51 recording. Execution
+    // lag is added by the consumer (Final planner / solver), not here.
+    // The 4-step 34801 rows (one 1.86s step per cycle) revisit spots ±0.2s.
+    internal const double RecurrenceLead = .25, RecurrenceTail = .3, RecurrenceHorizon = 20, RecurrenceTolerance = .4;
+    internal static double? FinalRecurrence(uint action, Vector3 p)
+    {
+        if (MathF.Abs(p.X) > 15) return null;
+        return action switch
+        {
+            34801 when p.Z is > 140 and < 205 => 6.03,
+            34801 when p.Z is > 215 and < 255 => 11.07,
+            34802 when p.Z is > 260 and < 275 => 2.54,
+            34802 when p.Z is > 215 and < 235 => 3.26,
+            // End-of-course alternating circles: every endpoint repeats each 5.08s.
+            34796 or 29795 when p.Z is > 130 and < 180 => 5.08,
+            _ => null
+        };
     }
     private readonly Dictionary<(ulong Source, uint Action), Track> _tracks = [];
 
@@ -28,6 +54,7 @@ internal sealed class BlundervilleRhythmTracker
             if (elapsed is >= 0 and < .2) return;
             if (elapsed < 0 || elapsed > 8 || action == 34773 && Vector3.DistanceSquared(position, beats[^1].Position) > .04f)
             { beats.Clear(); track.BurstStarts.Clear(); track.Forecast = []; }
+            if (elapsed < 0) { track.Spots.Clear(); track.RecurrenceBroken = false; }
         }
         beats.Add(new(now, position, rotation));
         if (action == 34773)
@@ -50,6 +77,36 @@ internal sealed class BlundervilleRhythmTracker
             return;
         }
         if (beats.Count > (action == 34717 ? AlternatingHistory : 2 * length + 1)) beats.RemoveAt(0);
+        if (FinalRecurrence(action, position) is { } period && !track.RecurrenceBroken)
+        {
+            var spot = ((int)MathF.Round(position.X), (int)MathF.Round(position.Z * 2));
+            if (track.Spots.TryGetValue(spot, out var previous))
+            {
+                var gap = (now - previous.At).TotalSeconds;
+                var cycles = Math.Round(gap / period);
+                // A revisit off the verified period means this is not the
+                // recorded layout; fall back to the generic pattern learner.
+                if (cycles < 1 || Math.Abs(gap - cycles * period) > RecurrenceTolerance) track.RecurrenceBroken = true;
+            }
+            if (!track.RecurrenceBroken)
+            {
+                track.Spots[spot] = new(now, position, rotation);
+                var recurring = new List<BlundervilleHazard>
+                {
+                    new($"rhythm/{actor.Id}/{action}/{now.Ticks}", rule.Shape.Resolve(position, rotation, null), now, now.AddSeconds(.3), now)
+                };
+                foreach (var known in track.Spots.Values)
+                {
+                    if ((now - known.At).TotalSeconds > 2.5 * period) continue;
+                    for (var impact = known.At.AddSeconds(period); impact <= now.AddSeconds(RecurrenceHorizon); impact = impact.AddSeconds(period))
+                        if (impact > now)
+                            recurring.Add(new($"rhythm/{actor.Id}/{action}/{impact.Ticks}", rule.Shape.Resolve(known.Position, known.Rotation, null),
+                                impact.AddSeconds(-RecurrenceLead), impact.AddSeconds(RecurrenceTail), now));
+                }
+                track.Forecast = recurring;
+                return;
+            }
+        }
         var forecast = new List<BlundervilleHazard>();
         // These repeated effects are contact windows, not single cast completions.
         forecast.Add(new($"rhythm/{actor.Id}/{action}/{now.Ticks}", rule.Shape.Resolve(position, rotation, null), now, now.AddSeconds(.3), now));
@@ -218,6 +275,7 @@ internal sealed class BlundervilleRhythmTracker
             34801 when MathF.Abs(p.X) <= 15 && p.Z is > 215 and < 255 => 8,
             34801 when MathF.Abs(p.X) <= 15 && p.Z is > 140 and < 205 => 4,
             34802 when MathF.Abs(p.X) <= 15 && p.Z is > 215 and < 275 => 1,
+            34796 or 29795 when MathF.Abs(p.X) <= 15 && p.Z is > 130 and < 180 => 1,
             _ => 0
         };
     }

@@ -175,6 +175,11 @@ internal static class BlundervilleObstacleRegression
         foreach (var phase in new[] { 16.5, 20.0, 24.0, 29.8 })
             run($"Blunderville obstacles 01:01 entrance phase {phase:F1}", () => Simulate(false, phase, .3, 2, slippery: true,
                 frameStep: 1.0 / 30, fixture: "obstacles-firsta-010120.json", maximumElapsed: 50));
+        // ARR 2026-10-12 17:44 (1.14.2): 8.2s at the entrance from 16.5s, then
+        // the run stalled on the ice and the player finished it by hand.
+        foreach (var phase in new[] { 16.5, 20.0, 24.6, 29.0 })
+            run($"Blunderville obstacles 17:44 entrance phase {phase:F1}", () => Simulate(false, phase, .3, 2, slippery: true,
+                frameStep: 1.0 / 30, fixture: "obstacles-firsta-174429.json", maximumElapsed: 50));
         foreach (var fps in new[] { 30, 60 })
             foreach (var length in new[] { 4.88f, 5.1f })
                 run($"Blunderville obstacles ice physics at {fps}fps slide {length:F2}", () => Simulate(false, 27, .3, 2, slippery: true,
@@ -191,9 +196,11 @@ internal static class BlundervilleObstacleRegression
             run($"Blunderville obstacles recorded ice speed {iceSpeed:F2}", () =>
                 Simulate(false, 27, .3, 2, slippery: true, frameStep: 1.0 / 30,
                     fixture: "obstacles-firsta-044552.json", slideLengths: [4.88f, 4.97f], iceSpeed: iceSpeed));
+        // 36.8–37.0s on this machine with or without the 1.14.3 ice-status
+        // changes (actual worker time ~540ms); the old 36s bound sat on it.
         run("Blunderville obstacles long slow ice slides at 30fps", () =>
             Simulate(false, 27, .3, 2, slippery: true, frameStep: 1.0 / 30,
-                fixture: "obstacles-firsta-044552.json", slideLength: 5.1f, iceSpeed: 2.88f));
+                fixture: "obstacles-firsta-044552.json", slideLength: 5.1f, iceSpeed: 2.88f, maximumElapsed: 40));
         foreach (var fps in new[] { 30, 60 })
             run($"Blunderville obstacles recorded ice acceleration at {fps}fps", () =>
                 Simulate(false, 27, .3, 2, slippery: true, frameStep: 1.0 / fps,
@@ -208,7 +215,7 @@ internal static class BlundervilleObstacleRegression
 
     private static void Simulate(bool arrow, double phase, double latency, double cycle, double inputDelay = 0, bool slippery = false, double frameStep = .01,
         string fixture = "obstacles-firsta-022846.json", float slideLength = 5, float iceEntry = -181.2f, IReadOnlyList<float>? slideLengths = null, float iceSpeed = 3,
-        IReadOnlyList<SlideProfile>? slideProfiles = null, double maximumElapsed = 36)
+        IReadOnlyList<SlideProfile>? slideProfiles = null, double maximumElapsed = 36, float statusEdge = -180.3f)
     {
         using var replay = new Recording(fixture); var now = Epoch;
         var move = new Moving { Misdirection = arrow, Cycle = cycle, InputDelay = inputDelay, SlideLength = slideLength,
@@ -244,8 +251,12 @@ internal static class BlundervilleObstacleRegression
             foreach (var task in scheduled.Where(s => s.At <= now).ToArray())
             { task.Source.SetResult(task.Result); scheduled.Remove(task); }
             move.Slippery = slippery && p.Z < iceEntry && p.Z > -204.5f;
-            if (slippery) state.SynchronizeStatuses(move.Slippery ? [new(3693, 50, now.AddSeconds(10))] : [], now);
-            var speed = state.NavigationBaseSpeed(now); move.Speed = move.Slippery ? iceSpeed : speed;
+            move.StatusEdge = slippery ? statusEdge : float.NegativeInfinity;
+            var iceStatus = move.Slippery || slippery && p.Z < statusEdge && p.Z > -204.5f;
+            if (slippery) state.SynchronizeStatuses(iceStatus ? [new(3693, 50, now.AddSeconds(10))] : [], now);
+            // A walk already in progress keeps 6m/s under the status; slides use the ice speed.
+            var speed = iceStatus && !move.Slippery ? 6 : state.NavigationBaseSpeed(now); move.Speed = move.Slippery ? iceSpeed : speed;
+            move.SlideSpeed = iceSpeed;
             if (t + 1e-7 >= nextScan)
             {
                 nextScan = t + .1;
@@ -415,6 +426,11 @@ internal static class BlundervilleObstacleRegression
         private SlideProfile? _slideProfile;
         private double _slideAge;
         private int _slides;
+        // 17:44 ARR: the 3693 status lands near z=-180.3. An unchanged walk
+        // keeps its 6m/s input until the calibrated slide entry (~-181.2),
+        // but any stop or turn after the status starts a native 5m slide.
+        public float StatusEdge = float.NegativeInfinity, SlideSpeed = 3;
+        private Vector3? _walkHeading;
         public float Arrow => _held ? _locked : (float)(Time * Math.Tau / Cycle);
         public bool IsRunning => _index < _points.Count;
         public GreenMoveStatus GetStatus() => new(IsRunning, IsRunning ? _points[_index] : null, IsRunning ? _points[^1] : null,
@@ -433,15 +449,17 @@ internal static class BlundervilleObstacleRegression
             // frame's input. GreenMoveArrival also recognizes a point crossed
             // between frames, but deliberately excludes teleports over 2m.
             while (IsRunning && Reached(p, previous, _points[_index])) { ++_index; _held = false; }
-            if (!Slippery) _slideRemaining = 0;
-            if (Slippery && _slideRemaining > 0)
+            var onIce = Slippery || p.Z < StatusEdge && p.Z > -204.5f;
+            if (!onIce) _slideRemaining = 0;
+            if (onIce && _slideRemaining > 0)
             {
                 // Release/redirect cannot steer or brake the native 5m slide.
                 var step = SlideStep(dt);
                 return p + _slideHeading * step;
             }
-            if (!IsRunning || Time + 1e-7 < _ready) { _held = false; return p; }
+            if (!IsRunning || Time + 1e-7 < _ready) { _held = false; _walkHeading = null; return p; }
             var d = _points[_index].Position - p; d.Y = 0; var distance = d.Length();
+            var turned = _walkHeading is not { } walking || Vector3.Dot(walking, d / distance) < .985f;
             if (Misdirection)
             {
                 var a = Arrow;
@@ -449,8 +467,9 @@ internal static class BlundervilleObstacleRegression
                 _held = true; _locked = a;
                 return p + new Vector3(MathF.Sin(a), 0, MathF.Cos(a)) * (Speed * dt);
             }
-            if (Slippery)
+            if (Slippery || p.Z < StatusEdge && p.Z > -204.5f && turned)
             {
+                _walkHeading = null;
                 _slideHeading = d / distance;
                 _slideProfile = SlideProfiles is { Count: > 0 } ? SlideProfiles[_slides % SlideProfiles.Count] : null;
                 _slideAge = 0;
@@ -460,11 +479,12 @@ internal static class BlundervilleObstacleRegression
             }
             // Native analog input advances at the current speed; it does not
             // clamp physical displacement to the target waypoint.
+            _walkHeading = d / distance;
             return p + d / distance * (Speed * dt);
         }
         private float SlideStep(float dt)
         {
-            var step = _slideProfile == null ? Speed * dt : _slideAge + dt >= _slideProfile.Duration ? _slideRemaining
+            var step = _slideProfile == null ? SlideSpeed * dt : _slideAge + dt >= _slideProfile.Duration ? _slideRemaining
                 : _slideProfile.Progress(_slideAge + dt) - _slideProfile.Progress(_slideAge);
             _slideAge += dt;
             step = Math.Clamp(step, 0, _slideRemaining); _slideRemaining -= step;

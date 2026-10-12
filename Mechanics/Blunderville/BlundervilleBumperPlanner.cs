@@ -8,6 +8,8 @@ namespace MasterPlayer.Mechanics.Blunderville;
 internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlanner.Step[]>, Task<BlundervilleBumperPlanner.Step[]>>? schedule = null, double publicationDelay = .2)
 {
     internal const double PublicationWindow = 1;
+    // Recorded 3693 gains while walking south across the platform: z=-180.2..-180.45.
+    internal const float IceStatusEdge = -180.3f;
     internal const double EscapeTrigger = 2.5, EscapeMinimumHold = 1.5, EscapeMaximumHold = 4;
     // ARR 01:01 replay: a committed ice endpoint clear for only 1.5s became a
     // dead end when its preview continuation failed. Falling back to such an
@@ -276,7 +278,8 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             // Use one absolute launch time within the existing publication
             // deadline. Actual CPU time must not shift an already timed route.
             var departure = _plannedDeparture = now.AddSeconds(PublicationWindow);
-            _pending = (schedule ?? (work => Task.Run(work)))(() => Search(floor, hazards, origin, speed, departure));
+            var onIce = state.IsSlippery;
+            _pending = (schedule ?? (work => Task.Run(work)))(() => Search(floor, hazards, origin, speed, departure, onIce: onIce));
             _searchInFlight = _pending;
         }
         void RequestSuffix(int anchor, bool required = false)
@@ -393,7 +396,7 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
     }
 
     private static Step[] Search(IGeometryShape floor, BlundervilleHazard[] hazards, Vector3 player, float speed, DateTime now,
-        double horizon = 20.5, Step? anchor = null, bool allowInitialWait = true)
+        double horizon = 20.5, Step? anchor = null, bool allowInitialWait = true, bool onIce = false)
     {
         var ground = new Dictionary<(Vector3 From, Vector3 To, bool Sliding), bool>();
         var obstacles = new ObstacleIndex(hazards, now, .25);
@@ -452,28 +455,24 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             if (endangered) firstLayer ??= [.. layer];
             if (z == entry) break;
         }
+        // 17:44 ARR: there is no dry strip between the bridge holes (ending at
+        // -180.475) and the ice: the 3693 status lands near -180.3, so the old
+        // lateral platform walk along -180.75 became uncontrolled 5m slides.
+        // Only an unchanged walk keeps 6m/s past the status edge; any lateral
+        // alignment there is planned as a slide (StartsSlide).
         if (player.Z > entry || player.Z >= -181.2f && anchor is { Sliding: false })
+            layer = SelectLayer(layer, 24, 48, true);
+        // Any new input after the status edge is a native slide: a standing
+        // start (the root while slippery) or a turn at a walked node there.
+        bool StartsSlide(Node node, Vector3 target)
         {
-            // The ordinary bridge holes end at -180.475. Cross the wide
-            // platform only after clearing them, and before ice can engage.
-            // A diagonal from the preceding row cuts through the old hole.
-            var platformTurns = new Dictionary<(int X, int Time), Node>();
-            foreach (var previous in layer)
-                foreach (var x in Enumerable.Range(0, 29).Select(i => -214f + i))
-                {
-                    var turn = new Vector3(x,player.Y,entry);
-                    var time = previous.Time + Distance(previous.Position,turn)/speed;
-                    var late = (previous.LongTime ?? previous.Time) + time - previous.Time + WalkingCornerDelay(previous, turn);
-                    if (late + 8.4 < horizon && CanGo(previous.Position,turn,previous.Time,time,0,timingSpread:late-time))
-                    {
-                        var n = Distance(previous.Position,turn) > .01f ? new Node(turn,time,0,previous,speed,
-                            ShortTime:time,LongTime:late) : previous;
-                        var key = ((int)MathF.Round(x*2),(int)(time/.05));
-                        if (!platformTurns.TryGetValue(key,out var old) || (old.LongTime ?? old.Time) > late) platformTurns[key] = n;
-                    }
-                }
-            var platformLayer = layer.Concat(SelectLayer(platformTurns.Values,24,240,false)).ToArray();
-            layer = SelectLayer(platformLayer, 24, 48, true);
+            if (node.Position.Z < -204.5f) return false;
+            if (node.Parent == null) return onIce || node.Position.Z <= IceStatusEdge;
+            if (node.Position.Z > IceStatusEdge) return false;
+            var walked = node.Position - node.Parent.Position; walked.Y = 0;
+            var next = target - node.Position; next.Y = 0;
+            return walked.LengthSquared() < 1e-4f || next.LengthSquared() < 1e-4f
+                || Vector3.Dot(Vector3.Normalize(walked), Vector3.Normalize(next)) < .985f;
         }
         // 3693 extra=50: two complete recorded slides are 4.88/4.97m,
         // and two consecutive slides are 9.83m. Turns belong at these seams,
@@ -524,7 +523,7 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             foreach (var previous in layer)
                 foreach (var target in SlideTargets(previous.Position,refinement==0 ? .25f : .05f))
                 {
-                    var startedOnIce = previous.Sliding || player.Z < -181.2f;
+                    var startedOnIce = previous.Sliding || player.Z < -181.2f || StartsSlide(previous, target);
                     if (!startedOnIce && target.Z >= previous.Position.Z - .5f) continue;
                     if (startedOnIce && target.Z > -181.7f) continue;
                     // A lateral detour must leave its row before reversing.

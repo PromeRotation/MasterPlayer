@@ -118,15 +118,27 @@ internal sealed class BlundervilleRaceState
     public bool CanJump(DateTime now)
         => CanMove(now) && !HasStatus(3703, now);
 
-    public float NavigationBaseSpeed(DateTime now)
-        => !IsRacing || Qualified ? 6f : HasStatus(3702, now) ? 3.6f : HasStatus(3693, now) ? 3f : HasStatus(3703, now) ? 3.6f : HasStatus(1548, now) ? 7.8f : 6f;
+    // 3703 is only applied on the FirstB final ramp (z -338..-367); five ARRs
+    // climb it at 1.8–2.1m/s (p90 2.0). The old 3.6m/s timed pusher rows at
+    // half their real crossing time (15:10:49 ARR push at z=-355).
+    internal const float SlidingSlopeSpeed = 2f;
 
-    public bool MustStopForAccelerationBomb(DateTime now, float marginSeconds = 0.6f)
+    public float NavigationBaseSpeed(DateTime now)
+        => !IsRacing || Qualified ? 6f : HasStatus(3702, now) ? 3.6f : HasStatus(3693, now) ? 3f : HasStatus(3703, now) ? SlidingSlopeSpeed : HasStatus(1548, now) ? 7.8f : 6f;
+
+    // 19 recorded 3802 expiries: the last movement 0.56–1.33s before expiry
+    // never exploded, 0.29–0.61s exploded (0.56–0.61s overlap). The old 0.6s
+    // stop sat on that border (01:01 and 02:33 ARRs exploded); stop at 1.2s.
+    public const float AccelerationBombStopMargin = 1.2f;
+    // Within this window a stop is taken early wherever it is safe to stand.
+    public const float AccelerationBombSafeStopWindow = 2.5f;
+
+    public bool MustStopForAccelerationBomb(DateTime now, float marginSeconds = AccelerationBombStopMargin)
     {
         if (!_statuses.TryGetValue(3802, out var bomb)) return false;
         if (bomb.ExpiresAt == DateTime.MaxValue) return true;
         var remaining = (bomb.ExpiresAt - now).TotalSeconds;
-        var margin = float.IsFinite(marginSeconds) ? Math.Clamp(marginSeconds, 0, 5) : 0.6f;
+        var margin = float.IsFinite(marginSeconds) ? Math.Clamp(marginSeconds, 0, 5) : AccelerationBombStopMargin;
         return remaining >= -0.3 && remaining <= margin;
     }
 

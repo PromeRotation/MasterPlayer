@@ -140,10 +140,10 @@ internal static class BlundervilleRacePlannerRegression
         {
             var state = Start(0x4E31);
             var planner = new BlundervilleRacePlanner();
-            var pos = new Vector3(6, 31.5f, 153.8f);
+            var pos = new Vector3(BlundervilleRoutes.FinalStairLane, 31.5f, 153.8f);
             var approach = planner.Update(state, Epoch, pos, true, false, false, null);
             Check(!approach.Jump, "The base route jumped before reaching its measured takeoff.");
-            var jump = new BlundervilleJumpPlanner().Plan(state.Course, Epoch, new(6, 31.5f, 153), approach.Target!.Value, true, false);
+            var jump = new BlundervilleJumpPlanner().Plan(state.Course, Epoch, new(BlundervilleRoutes.FinalStairLane, 31.5f, 153), approach.Target!.Value, true, false);
             Check(jump is { Jump: true } && jump.Target.Z == 149, "The measured final stair takeoff lost its landing.");
             Check(!planner.Update(state, Epoch.AddSeconds(0.1), pos + Vector3.UnitY, false, true, true, null).Jump, "The airborne player requested another jump.");
             state.SynchronizeStatuses([new(3737, 0, Epoch.AddSeconds(2))], Epoch.AddSeconds(0.2));

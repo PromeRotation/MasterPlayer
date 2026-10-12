@@ -131,7 +131,7 @@ internal static class BlundervilleRaceStateRegression
         {
             var s = Started(0x4E2D);
             Sync(s, new BlundervilleRaceStatus(3802, 0, Epoch.AddSeconds(5)));
-            Check(s.CanMove(Epoch.AddSeconds(4)) && !s.CanMove(Epoch.AddSeconds(4.5)), "The bomb stopping margin was not applied.");
+            Check(s.CanMove(Epoch.AddSeconds(3.7)) && !s.CanMove(Epoch.AddSeconds(3.9)), "The bomb stopping margin was not applied.");
             Check(s.MustStopForAccelerationBomb(Epoch.AddSeconds(5.2)) && !s.MustStopForAccelerationBomb(Epoch.AddSeconds(5.4)), "Bomb expiry grace was not bounded.");
             Sync(s, new BlundervilleRaceStatus(3802, 0, DateTime.MaxValue));
             Check(!s.CanMove(Epoch), "An acceleration bomb with unknown expiry accepted movement.");

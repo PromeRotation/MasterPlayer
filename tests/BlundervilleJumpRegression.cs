@@ -253,10 +253,10 @@ internal static class BlundervilleJumpRegression
         {
             yield return new($"FirstB {side} entry", BlundervilleCourse.FirstB, new(side * 10.25f, 10.03f, -134.2f), new(side * 11.9f, 10.03f, -138.4f), 0.8f);
             yield return new($"FirstB {side} second", BlundervilleCourse.FirstB, new(side * 8, 10.03f, -151.5f), new(side * 8, 10.03f, -155.9f), 0.8f);
-            yield return new($"Final {side} 153-149", BlundervilleCourse.Final, new(side * 6, 31.5f, 153), new(side * 6, 32.6f, 149), 0.4f);
-            yield return new($"Final {side} 149-145", BlundervilleCourse.Final, new(side * 6, 32.6f, 149), new(side * 6, 33.5f, 145), 0.4f);
-            yield return new($"Final {side} 145-141", BlundervilleCourse.Final, new(side * 6, 33.5f, 145), new(side * 6, 34.4f, 141), 0.4f);
-            yield return new($"Final {side} 141-137", BlundervilleCourse.Final, new(side * 6, 34.4f, 141), new(side * 6, 35.8f, 137), 0.4f);
+            yield return new($"Final {side} 153-149", BlundervilleCourse.Final, new(side * BlundervilleRoutes.FinalStairLane, 31.5f, 153), new(side * BlundervilleRoutes.FinalStairLane, 32.6f, 149), 0.4f);
+            yield return new($"Final {side} 149-145", BlundervilleCourse.Final, new(side * BlundervilleRoutes.FinalStairLane, 32.6f, 149), new(side * BlundervilleRoutes.FinalStairLane, 33.5f, 145), 0.4f);
+            yield return new($"Final {side} 145-141", BlundervilleCourse.Final, new(side * BlundervilleRoutes.FinalStairLane, 33.5f, 145), new(side * BlundervilleRoutes.FinalStairLane, 34.4f, 141), 0.4f);
+            yield return new($"Final {side} 141-137", BlundervilleCourse.Final, new(side * BlundervilleRoutes.FinalStairLane, 34.4f, 141), new(side * BlundervilleRoutes.FinalStairLane, 35.8f, 137), 0.4f);
         }
         yield return new("Ring west southwest", BlundervilleCourse.Ring, new(183.8f, 10, -138.6f), new(185.6f, 10, -142.8f), 0.8f);
         yield return new("Ring east southeast", BlundervilleCourse.Ring, new(209.5f, 10, -147.7f), new(210.3f, 10, -143.3f), 0.8f);

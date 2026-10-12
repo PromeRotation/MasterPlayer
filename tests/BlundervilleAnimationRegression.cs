@@ -124,22 +124,31 @@ internal static class BlundervilleAnimationRegression
         });
         run("Blunderville animation Final learning cache and invalidation", () =>
         {
+            // 15:10:49: Final spots repeat on a measured fixed period (5.08s for
+            // 29795), so each effect forecasts only its own spot whole periods on.
+            const double period = 5.08;
             var engine = new BlundervilleEncounter(_ => { });
             var a = new BlundervilleActor(1, 16338, new(-6.782f, 36.106f, 136.908f));
             var b = a with { Position = new(-3.218f, 36.302f, 135.092f) };
+            bool Forecast(DateTime now, Vector3 spot, double at)
+                => engine.Hazards(now).Any(h => h.From > now && h.Geometry.Contains(spot) && Math.Abs((h.From - Epoch).TotalSeconds + BlundervilleRhythmTracker.RecurrenceLead - at) < .1);
             engine.Synchronize([a], Epoch); engine.Effect(1, 29795, 1, a.Position, 0, Epoch);
-            Check(!engine.Hazards(Epoch).Any(), "A single effect invented a period.");
+            var single = engine.Hazards(Epoch).Where(h => h.From > Epoch).ToArray();
+            Check(single.Length > 0 && single.All(h => h.Geometry.Contains(a.Position) && !h.Geometry.Contains(b.Position)), "A single effect forecast another spot.");
+            Check(Forecast(Epoch, a.Position, period), "A single effect missed its measured recurrence.");
             engine.Synchronize([b], Epoch.AddSeconds(2.15)); engine.Effect(1, 29795, 2, b.Position, 0, Epoch.AddSeconds(2.5));
-            Check(!engine.Hazards(Epoch.AddSeconds(2.5)).Any(), "One interval invented a reliable alternating cycle.");
+            Check(Forecast(Epoch.AddSeconds(2.5), a.Position, period) && Forecast(Epoch.AddSeconds(2.5), b.Position, 2.5 + period),
+                "The alternate endpoint dropped the first spot or missed its own recurrence.");
             engine.Synchronize([a], Epoch.AddSeconds(4.65)); engine.Effect(1, 29795, 3, a.Position, 0, Epoch.AddSeconds(5));
+            Check(Forecast(Epoch.AddSeconds(5), a.Position, 5 + period), "An on-period revisit lost the recurrence.");
             var first = engine.Hazards(Epoch.AddSeconds(5)).First();
             engine.Synchronize([a], Epoch.AddSeconds(5.1));
             Check(ReferenceEquals(first, engine.Hazards(Epoch.AddSeconds(5.1)).First()), "Stable Final scans rebuilt forecasts.");
-            Check(!engine.Hazards(Epoch.AddSeconds(20)).Any(), "A lost helper signal kept danger forever.");
-            engine.Synchronize([a with { Position = new(-8, 36, 136) }], Epoch.AddSeconds(20.1));
-            Check(!engine.Hazards(Epoch.AddSeconds(20.1)).Any(), "A third endpoint reused an invalid period.");
+            Check(!engine.Hazards(Epoch.AddSeconds(26)).Any(), "A lost helper signal kept danger past the forecast horizon.");
+            engine.Synchronize([a], Epoch.AddSeconds(7.6)); engine.Effect(1, 29795, 4, a.Position, 0, Epoch.AddSeconds(8));
+            Check(!Forecast(Epoch.AddSeconds(8), a.Position, 5 + period), "An off-period revisit kept the measured recurrence.");
             engine.Reset();
-            Check(!engine.Hazards(Epoch.AddSeconds(21)).Any(), "Reset retained learned Final endpoints.");
+            Check(!engine.Hazards(Epoch.AddSeconds(9)).Any(), "Reset retained learned Final endpoints.");
         });
         foreach (var action in new[] { 34716u, 34718u })
             run($"Blunderville animation {action} lifecycle and stable scan cache", () =>

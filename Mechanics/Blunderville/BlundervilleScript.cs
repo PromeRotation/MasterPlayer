@@ -28,6 +28,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleJumpExecution _jumpExecution = new();
     private readonly BlundervilleArrowPlanner _arrowPlanner = new();
     private readonly BlundervilleBumperPlanner _bumperPlanner = new();
+    private readonly BlundervilleFinalPlanner _finalPlanner = new();
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -77,7 +78,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _output = null; _encounter = null; _player = null; _nextScan = default;
         _jumpExecution.Clear();
         _arrowPlanner.Reset();
-        _bumperPlanner.Reset();
+        _bumperPlanner.Reset(); _finalPlanner.Reset();
     }
 
     private unsafe void Scan(DateTime now)
@@ -85,7 +86,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _nextScan = now.AddSeconds(0.1);
         if (_encounter == null) return;
         if (_lastTick != default && now < _lastTick)
-        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
+        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
         _lastTick = now;
         if (ReplayWorld is { } world)
         {
@@ -169,7 +170,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         {
             _navigation?.Clear(); _native?.Apply(now, false, false, null, null);
             _planner.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _recoveryCorridor = null;
-            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); return;
+            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); return;
         }
         var replay = ReplayWorld != null;
         var motion = default(BlundervilleNativeState);
@@ -192,8 +193,20 @@ public abstract class BlundervilleScript : MasterPlayerScript
             else _arrowPlanner.Reset();
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
+            if (_race.Course == BlundervilleCourse.Final)
+                _decision = _finalPlanner.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
+                    _navigation?.GetDirectTraversalExecution(now));
+            else _finalPlanner.Reset();
         }
-        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); }
+        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); _finalPlanner.Reset(); }
+        if (_race.IsRacing && !_decision.Hold && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
+            _decision = _decision with { Hold = true, Jump = false, Hint = "加速度炸弹：在安全处提前停步" };
+        if (automatic && !replay && _race.Course == BlundervilleCourse.Final && !_decision.DirectTraversal)
+        {
+            var solution = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution;
+            _decision = BlundervilleRefuge.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
+                solution is not { IsSuccess: true });
+        }
         IGeometryShape? crossing = null;
         if (_race.Course == BlundervilleCourse.FirstA && _decision.Target is { } bridgeForward && _bridges != null)
         {

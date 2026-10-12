@@ -12,11 +12,19 @@ internal static class PluginUi
     private static readonly Func<string, IReadOnlyList<string>, int, int>? HostTabBar =
         typeof(PromeUi).GetMethod("TabBar", [typeof(string), typeof(IReadOnlyList<string>), typeof(int)])
             ?.CreateDelegate<Func<string, IReadOnlyList<string>, int, int>>();
+    // SectionHeader gained optional parameters in the modern theme (3 → 5).
+    // A direct call binds one exact signature and the JIT throws
+    // MissingMethodException for the whole caller on the other PR build.
+    private static readonly System.Reflection.MethodInfo? HostSectionHeader =
+        typeof(PromeUi).GetMethods().Where(m => m.Name == "SectionHeader" && m.GetParameters() is [{ ParameterType: var first }, ..] && first == typeof(string)
+            && m.GetParameters().Skip(1).All(p => p.HasDefaultValue)).MinBy(m => m.GetParameters().Length);
 
     public static void PageHeader(string title)
     {
         if (HostPageHeader != null) HostPageHeader(title, null, null, null, 132f, true, 0f);
-        else PromeUi.SectionHeader(title);
+        else if (HostSectionHeader != null)
+            HostSectionHeader.Invoke(null, [title, .. HostSectionHeader.GetParameters().Skip(1).Select(p => p.DefaultValue)]);
+        else Section(title);
     }
 
     public static int TabBar(string id, IReadOnlyList<string> labels, int active)

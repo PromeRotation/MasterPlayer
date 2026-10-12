@@ -22,15 +22,20 @@ internal static class BlundervilleRegression
 
     public static void Run(Action<string, Action> run)
     {
-        run("Blunderville animated charge occupies its announced traversal before actor movement", () =>
+        run("Blunderville ramp charge pushes with its packet and forecasts the next step", () =>
         {
             var encounter = new BlundervilleEncounter(_ => { });
             var start = new Vector3(-6.874f, 18.15f, -363.8f); var end = new Vector3(-3.525f, 18.14f, -363.821f);
             encounter.Synchronize([new(1, 16350, start)], Epoch);
             encounter.Effect(1, 34774, 1, start, 0, Epoch, end);
-            var hazard = encounter.Hazards(Epoch.AddSeconds(.1)).Single();
-            Check(hazard.Geometry.Contains((start + end) / 2) && hazard.Until >= Epoch.AddSeconds(1.6), "Charge had only a historical route outline.");
-            Check(!encounter.Hazards(Epoch.AddSeconds(2)).Any(), "A completed charge remained an obstacle.");
+            // 15:10:49 ARR: a ramp pusher pushes with its packet, then steps on
+            // every 1.606s (BlundervilleRampPushers forecasts the next steps).
+            var hazard = encounter.Hazards(Epoch.AddSeconds(.1)).Single(h => h.Id == "charge/1");
+            Check(hazard.Geometry.Contains((start + end) / 2) && hazard.Until <= Epoch.AddSeconds(.5), "The announced ramp step stayed blocked after its push.");
+            var next = encounter.Hazards(Epoch.AddSeconds(.1)).Single(h => h.Id == "ramp/1/1");
+            Check(next.Geometry.Contains(end with { X = end.X + 3.45f / 2 }) && Math.Abs((next.From - Epoch).TotalSeconds - 1.406) < .05,
+                "The next ramp step was not forecast from the announced one.");
+            Check(!encounter.Hazards(Epoch.AddSeconds(30)).Any(), "A lost pusher signal kept danger forever.");
         });
         run("Blunderville rolling ball forecasts its sweep and rejects teleports", () =>
         {
