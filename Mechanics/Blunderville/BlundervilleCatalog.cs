@@ -35,8 +35,11 @@ internal static class BlundervilleCatalog
         [BeamAction] = new(Devices, RayRectangleTemplate.Symmetric(8, 100)),
         [35409] = new(Routes, null, true),
         [VisualWave] = new(Waves, null),
-        [WaveStep] = new(Waves, RayRectangleTemplate.Symmetric(6, 6)),
-        [WaveStart] = new(Waves, RayRectangleTemplate.Symmetric(6, 6)),
+        // 6x6 centred on the source: the cast's own location sits 3m behind it
+        // (190.4 vs 187.396) and 192 recorded hits fall at dz -4..+2.3 around
+        // the effect, not in the 6m ahead of it (17:44 Final: 4 wave hits).
+        [WaveStep] = new(Waves, new RectangleTemplate(6, 6)),
+        [WaveStart] = new(Waves, new RectangleTemplate(6, 6)),
     }.ToFrozenDictionary();
 
     public static IEnumerable<uint> ClaimedActions => Rules.Keys;

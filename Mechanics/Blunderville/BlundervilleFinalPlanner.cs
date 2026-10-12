@@ -18,7 +18,7 @@ internal sealed class BlundervilleFinalPlanner
     // rim at x=5.725 (z 262.8–268.2). Lane 7 is a 1.45s chord through the
     // 2.54s x=10 circle and never fits (23:23 replay side -1 idled 18s).
     internal const float Top = 286, Bottom = 155.4f, Exit = 156, RunupZ = 155.2f, LayerStep = 2, MaxLateral = 2, Clearance = .3f, FloorClearance = .25f;
-    internal const float Horizon = 40, ArrivalTolerance = .35f, OffPath = 1f;
+    internal const float Horizon = 60, ArrivalTolerance = .35f, OffPath = 1f;
     // |x|=16 is a 0.55m strip behind the z=178–182 pillars that dead-ends
     // (2026.10.07 19:51 replay side -1 idled there for 20s).
     private const int MaxLane = 15;
@@ -28,8 +28,18 @@ internal sealed class BlundervilleFinalPlanner
     // same shape as the Final slope (timed rows, uphill = -Z), so the same
     // layered lane search runs there: x -6.5..6.5, goal row -368, then the
     // ordinary route takes the flat finish. Speed is the measured 2.0m/s.
-    internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name);
-    internal static readonly Profile Final = new(BlundervilleCourse.Final, Top, Bottom, Exit, MaxLane, 2, null, true, "决赛");
+    internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
+        (float From, float To)[]? Strips = null)
+    {
+        // An intermediate plan may only stop where standing is not a gamble.
+        public bool Rest(float z) => Strips == null || Strips.Any(s => z >= s.From && z <= s.To);
+    }
+    // Hazard-free strips of the Final (32 ARRs): above 272.5, 257–262.5,
+    // 235.3–237 and 180.7–187.4. 2026-10-13: with the corrected wave boxes a
+    // plan ending mid wave zone (z 206 north of the pit) found no way on for
+    // 27s; humans cross each zone in one go and only wait on these strips.
+    internal static readonly Profile Final = new(BlundervilleCourse.Final, Top, Bottom, Exit, MaxLane, 2, null, true, "决赛",
+        [(272.5f, 290), (257, 262.5f), (235.3f, 237), (180.7f, 187.4f)]);
     internal static readonly Profile FirstBRamp = new(BlundervilleCourse.FirstB, -336, -367.5f, -368, 6, 9.5f,
         BlundervilleRaceState.SlidingSlopeSpeed, false, "终点坡");
     private readonly Profile _profile;
@@ -185,7 +195,7 @@ internal sealed class BlundervilleFinalPlanner
             // survives next to the fastest one.
             layer = next.Values.GroupBy(n => n.Lane).SelectMany(g => g.OrderBy(n => n.Time).Take(2)).ToList();
             foreach (var node in layer.OrderBy(n => n.Time))
-                if (index.Stand(node.Position, node.Time, node.Time + StandAfterGoal)) { refuge = node; break; }
+                if (profile.Rest(node.Position.Z) && index.Stand(node.Position, node.Time, node.Time + StandAfterGoal)) { refuge = node; break; }
         }
         // An end inside a forecast is a dead end once the next plan cannot
         // leave it; only an end that stays clear for a while is published.

@@ -287,7 +287,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 if (now > impact.AddSeconds(0.25)) continue;
                 var pos = wave.Origin + new Vector3(0, -StepHeight * i, 6 * i);
                 yield return new($"wave/{wave.Source}/{i}", BlundervilleCatalog.Waves,
-                    new RayRectangleGeometry(pos, wave.Rotation, 6, 6), now < impact.AddSeconds(-0.2),
+                    new RectangleGeometry(pos, wave.Rotation, 6, 6), now < impact.AddSeconds(-0.2),
                     (float)Math.Clamp(1 - (impact - now).TotalSeconds / 3, 0.25, 1));
             }
     }
@@ -325,7 +325,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 var impact = wave.Impact.AddSeconds(i * StepSeconds);
                 if (now > impact.AddSeconds(0.2)) continue;
                 var pos = wave.Origin + new Vector3(0, -StepHeight * i, 6 * i);
-                yield return new($"wave/{wave.Source}/{i}", new RayRectangleGeometry(pos, wave.Rotation, 6, 6),
+                yield return new($"wave/{wave.Source}/{i}", new RectangleGeometry(pos, wave.Rotation, 6, 6),
                     impact, impact.AddSeconds(0.2), wave.StartedAt);
             }
         foreach (var actor in _actors.Values.Where(a => a.Oid == BlundervilleCatalog.Ball))
@@ -372,7 +372,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 {
                     var step = impact.AddSeconds(i * StepSeconds);
                     var spread = .1 * i;
-                    yield return new($"wave/cycle/{source}/{k}/{i}", new RayRectangleGeometry(cycle.Origin + new Vector3(0, -StepHeight * i, 6 * i), cycle.Rotation, 6, 6),
+                    yield return new($"wave/cycle/{source}/{k}/{i}", new RectangleGeometry(cycle.Origin + new Vector3(0, -StepHeight * i, 6 * i), cycle.Rotation, 6, 6),
                         step.AddSeconds(-.2 - spread), step.AddSeconds(.3 + spread), impact.AddSeconds(-cycle.CastSeconds));
                 }
             }
