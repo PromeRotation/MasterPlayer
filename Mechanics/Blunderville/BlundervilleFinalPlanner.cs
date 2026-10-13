@@ -17,7 +17,9 @@ internal sealed class BlundervilleFinalPlanner
     // FloorClearance .25: the right walkway lane x=6 is 0.275m from the moat
     // rim at x=5.725 (z 262.8–268.2). Lane 7 is a 1.45s chord through the
     // 2.54s x=10 circle and never fits (23:23 replay side -1 idled 18s).
-    internal const float Top = 286, Bottom = 155.4f, Exit = 156, RunupZ = 155.2f, LayerStep = 2, MaxLateral = 2, Clearance = .3f, FloorClearance = .25f;
+    // Top 321: from the start line (2026-10-14 sims: the race-route hand-over
+    // at z=290 stopped 0.67s in every run, live 0.2-0.3s at z=284).
+    internal const float Top = 321, Bottom = 155.4f, Exit = 156, RunupZ = 155.2f, LayerStep = 2, MaxLateral = 2, Clearance = .3f, FloorClearance = .25f;
     internal const float Horizon = 60, ArrivalTolerance = .35f, OffPath = 1f;
     // |x|=16 is a 0.55m strip behind the z=178–182 pillars that dead-ends
     // (2026.10.07 19:51 replay side -1 idled there for 20s).
@@ -25,7 +27,7 @@ internal sealed class BlundervilleFinalPlanner
     internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
         (float From, float To)[]? Strips = null, Vector3[]? Spoke = null, ushort Colour = 0,
         float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance, bool Bomb = false,
-        double WaitSlip = 0)
+        double WaitSlip = 0, double HazardLead = Lead, double HazardWaveLead = WaveLead, double HazardWaveTail = WaveTail)
     {
         // An intermediate plan may only stop where standing is not a gamble.
         public bool Rest(float z) => Strips == null || Strips.Any(s => z >= s.From && z <= s.To);
@@ -35,7 +37,8 @@ internal sealed class BlundervilleFinalPlanner
     // plan ending mid wave zone (z 206 north of the pit) found no way on for
     // 27s; humans cross each zone in one go and only wait on these strips.
     internal static readonly Profile Final = new(BlundervilleCourse.Final, Top, Bottom, Exit, MaxLane, 2, null, true, "决赛",
-        [(272.5f, 290), (257, 262.5f), (235.3f, 237), (180.7f, 187.4f)]);
+        [(272.5f, Top + 4), (257, 262.5f), (235.3f, 237), (180.7f, 187.4f)],
+        HazardLead: FinalLead, HazardWaveLead: FinalWaveLead, HazardWaveTail: FinalWaveTail);
     // Delivery carries (2026-10-13 route research, 21 rounds): the generic
     // solver walked onto the E bridge, where one of two charger lines along
     // the bridge fires about every 2s, and then found no departure and stood
@@ -78,6 +81,11 @@ internal sealed class BlundervilleFinalPlanner
     private readonly Profile _profile;
     public BlundervilleFinalPlanner(Profile? profile = null) => _profile = profile ?? Final;
     internal const double Lag = .35, StandAfterGoal = 2.5, Lead = .15, Tail = .1, WaveLead = .4, WaveTail = .3;
+    // The runtime re-validates a published stretch against the raw windows
+    // widened by 0.2s/0.1s at the actual (up to Lag late) time and stops the
+    // player when it fails, mid-slope. Final leads must stay above its 0.2s.
+    // Wave cycle forecasts carry their own (measured) step spread.
+    internal const double FinalLead = .21, FinalWaveLead = .25, FinalWaveTail = .1;
     private static readonly double[] Waits = [0, .5, 1, 1.5, 2, 3];
     // Delivery pendulum cells fire twice per 4.2s: a hold must reach the next gap.
     private static readonly double[] CorridorWaits = [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
@@ -125,7 +133,7 @@ internal sealed class BlundervilleFinalPlanner
         if (!Active(state, player, now) || normal.Hold) { Reset(); return normal; }
         var floor = BlundervilleRoutes.NavigationBoundary(state.Course, player);
         var speed = _profile.Speed ?? state.NavigationBaseSpeed(now);
-        var index = new HazardIndex(hazards, now, _profile.HazardClearance, _profile.ExecutionLag, _profile.StandClearance);
+        var index = new HazardIndex(hazards, now, _profile);
         // A newly gained (or refreshed) bomb needs its stand-still in the plan.
         var bomb = _profile.Bomb && state.AccelerationBombExpiresAt is { } expires && expires != DateTime.MaxValue ? expires : (DateTime?)null;
         if (_plan != null)
@@ -151,7 +159,12 @@ internal sealed class BlundervilleFinalPlanner
             }
         }
         var current = _plan[_next - 1];
-        if (now < current.Departure)
+        // Every window tolerates the player up to Tail early. ArrivalTolerance
+        // advances onto a pass-through point a few ms before its arrival, and
+        // holding there stopped the run inside the next window; the runtime
+        // then refused the restart (151049 replays: 6 hits in 420 runs). A real
+        // wait also releases one 10Hz scan early to absorb the start latency.
+        if (current.Departure - now > TimeSpan.FromSeconds(_profile.Course == BlundervilleCourse.Final ? Tail : 0))
         {
             _stretch = null;
             if (Distance(player, current.Position) <= ArrivalTolerance)
@@ -453,16 +466,18 @@ internal sealed class BlundervilleFinalPlanner
         private readonly Dictionary<int, List<Window>> _rows = [];
         private readonly float _clearance, _standClearance;
         private readonly double _lag;
-        public HazardIndex(IReadOnlyList<BlundervilleHazard> hazards, DateTime now, float clearance, double lag, float standClearance)
+        private readonly bool _continuous;
+        public HazardIndex(IReadOnlyList<BlundervilleHazard> hazards, DateTime now, Profile profile)
         {
-            _clearance = clearance; _lag = lag; _standClearance = standClearance;
+            _clearance = profile.HazardClearance; _lag = profile.ExecutionLag; _standClearance = profile.StandClearance;
+            _continuous = profile.Course == BlundervilleCourse.Final;
             foreach (var h in hazards)
             {
                 var wave = h.Id.StartsWith("wave/", StringComparison.Ordinal) || h.Id.StartsWith("cast/", StringComparison.Ordinal);
                 // The Delivery schedule windows already carry their calibrated +-0.45s.
                 var calibrated = h.Id.StartsWith("delivery/", StringComparison.Ordinal);
-                var window = new Window(h.Geometry, h.Geometry.GetBounds(), (h.From - now).TotalSeconds - (calibrated ? 0 : wave ? WaveLead : Lead),
-                    (h.Until - now).TotalSeconds + (calibrated ? 0 : wave ? WaveTail : Tail));
+                var window = new Window(h.Geometry, h.Geometry.GetBounds(), (h.From - now).TotalSeconds - (calibrated ? 0 : wave ? profile.HazardWaveLead : profile.HazardLead),
+                    (h.Until - now).TotalSeconds + (calibrated ? 0 : wave ? profile.HazardWaveTail : Tail));
                 if (window.Until < 0 || !float.IsFinite(window.Bounds.MinZ) || !float.IsFinite(window.Bounds.MaxZ)) continue;
                 for (var row = (int)MathF.Floor((window.Bounds.MinZ - 1) / 2); row <= (int)MathF.Floor((window.Bounds.MaxZ + 1) / 2); ++row)
                 {
@@ -484,6 +499,10 @@ internal sealed class BlundervilleFinalPlanner
         public bool Segment(Vector3 from, Vector3 to, double start, double end)
         {
             var samples = Math.Max(2, (int)MathF.Ceiling(Distance(from, to) / .5f) + 1);
+            // Clearance covers the 0.25m between samples in space; cover it in
+            // time too (the runtime refused stretches that missed a window by
+            // less than one sample step).
+            var half = _continuous ? (end - start) / (samples - 1) / 2 : 0;
             for (var i = 0; i < samples; ++i)
             {
                 var s = i / (float)(samples - 1);
@@ -491,7 +510,7 @@ internal sealed class BlundervilleFinalPlanner
                 var at = start + s * (end - start);
                 if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var list)) continue;
                 foreach (var w in list)
-                    if (w.Until >= at && w.From <= at + _lag && w.Geometry.Contains(p, _clearance)) return false;
+                    if (w.Until >= at - half && w.From <= at + _lag + half && w.Geometry.Contains(p, _clearance)) return false;
             }
             return true;
         }

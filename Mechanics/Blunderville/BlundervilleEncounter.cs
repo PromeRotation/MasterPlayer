@@ -389,7 +389,10 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     }
 
     // Next cycles of each observed wave column, beyond the cast in flight.
-    // Windows widen with the 0.38–0.56s step spread recorded per segment.
+    // 32 ARRs (route research): steps land +0.488/0.939/1.389/1.837s after the
+    // origin (p95 0.07s after the run offset), the column period is 5.976s.
+    // The old 0.2/0.3s + 0.1s per step windows plus the planner's wave margins
+    // blocked ~2.3s of every 6s column cycle; humans cross the zone in ~5s.
     private IEnumerable<BlundervilleHazard> WaveCycleForecasts(DateTime now)
     {
         if (!BlundervilleCatalog.TryGet(BlundervilleCatalog.WaveStart, out var origin) || origin.Shape == null) yield break;
@@ -405,9 +408,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 for (var i = 1; i <= 4; ++i)
                 {
                     var step = impact.AddSeconds(i * StepSeconds);
-                    var spread = .1 * i;
+                    var spread = .03 * i;
                     yield return new($"wave/cycle/{source}/{k}/{i}", new RectangleGeometry(cycle.Origin + new Vector3(0, -StepHeight * i, 6 * i), cycle.Rotation, 6, 6),
-                        step.AddSeconds(-.2 - spread), step.AddSeconds(.3 + spread), impact.AddSeconds(-cycle.CastSeconds));
+                        step.AddSeconds(-.1 - spread), step.AddSeconds(.2 + spread), impact.AddSeconds(-cycle.CastSeconds));
                 }
             }
         }
