@@ -68,12 +68,14 @@ internal static class BlundervilleRingRegression
             var clean = outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0);
             Console.WriteLine($"RING clean rounds {clean}/{outcomes.Length}, falls {outcomes.Count(o => o.Fall != null)},"
                 + $" beam hits {outcomes.Sum(o => o.BeamHits.Count)}, cast hits {outcomes.Sum(o => o.CastHits.Count)}");
-            // 2026-10-13 (fixed 0.12s solve latency): 1.14.8 16/21 clean, no falls,
-            // 11 beam and 12 cast snapshots, all in the four rounds past 69s
-            // (1.14.6: 9/21, 20 and 21; 1.14.7: 11/21, 9 and 15). Raise as it improves.
+            // 2026-10-13 (fixed 0.12s solve latency), 22 rounds with the live 11:19
+            // elimination: 1.14.10 17/22 clean, no falls, 14 beam and 9 cast
+            // snapshots (1.14.8: 16/22, 11 and 13; the 11:19 round hit at 66.6s).
             Check(outcomes.All(o => o.Fall == null), "A Ring replay fell off the course.");
-            Check(outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0) >= 15
-                && outcomes.Sum(o => o.BeamHits.Count) <= 14 && outcomes.Sum(o => o.CastHits.Count) <= 15,
+            Check(outcomes.Where(o => o.Name.StartsWith("2026.10.13 11.19")).All(o => o is { BeamHits.Count: 0, CastHits.Count: 0 }),
+                "The 11:19 NE corner circle elimination came back.");
+            Check(outcomes.Count(o => o.Fall == null && o.BeamHits.Count == 0 && o.CastHits.Count == 0) >= 16
+                && outcomes.Sum(o => o.BeamHits.Count) <= 17 && outcomes.Sum(o => o.CastHits.Count) <= 12,
                 "The Ring replays fell below their recorded baseline.");
         });
     }
@@ -144,6 +146,9 @@ internal static class BlundervilleRingRegression
                 }
                 else { gate.Clear(); nav.ReleaseJump(); }
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false, crossing);
+                if (double.TryParse(Environment.GetEnvironmentVariable("RING_DUMP"), out var dumpAt) && Math.Abs(t - dumpAt) < .05)
+                    foreach (var h in replay.Encounter.Hazards(now))
+                        Console.WriteLine($"DUMP {h.Id} {h.Geometry.GetType().Name} at ({h.Geometry.Position.X:F1},{h.Geometry.Position.Z:F1}) from {(h.From - Epoch).TotalSeconds:F2} until {(h.Until - Epoch).TotalSeconds:F2} contains={h.Geometry.Contains(p)}");
                 if (Debug && t >= DebugFrom && t <= DebugTo)
                     Console.WriteLine($"DBG t={t:F2} p=({p.X:F2},{p.Z:F2}) air={air} hint={decision.Hint} target={decision.Target} hold={decision.Hold} flight={gate.InFlight} speed={gate.MeasuredSpeed:F2} moving={move.GetStatus().IsRunning} point={move.GetStatus().CurrentPoint?.Position} final={move.GetStatus().FinalPoint?.Position} solve={accepted?.Status} path={accepted?.ExecutablePath.Count} beam={BlundervilleRingBeam.Model(t):F2}");
             }

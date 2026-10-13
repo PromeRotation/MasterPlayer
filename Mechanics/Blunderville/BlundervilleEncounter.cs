@@ -344,7 +344,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
-                yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt,
+                yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt.AddSeconds(-RingLead(cast.Cast.Action, cast.Geometry.Position)),
                     cast.Cast.FinishAt.AddSeconds(0.2), cast.Cast.StartedAt);
         foreach (var wave in _waves.Values)
             for (var i = Math.Max(1, wave.Consumed + 1); i <= 4; i++)
@@ -418,6 +418,16 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (Math.Max(ap, bp) > 40) { _routes[source] = new(position, position, now); return; }
         _routes[source] = ap > ab && ap >= bp ? new(route.A, position, now) : bp > ab ? new(position, route.B, now) : route with { LastSeen = now };
     }
+
+    // Ring 2026-10-13 11:19: MP entered the NE inner circle 1.9s before it
+    // resolved, was blocked ahead by two charges and waited inside it; the hit
+    // knocked it off the ring. The inner circle covers the line MP runs and its
+    // edge is ~4m (0.7s) away, so it counts from 0.75s earlier; the outer half
+    // stays open meanwhile. Longer leads (or all circles) block whole corners
+    // until the beam arrives (22 replays: 1.0s inner 15/22 clean, 0.75s 17/22).
+    internal const double InnerCircleLead = .75;
+    internal static double RingLead(uint action, Vector3 source)
+        => action == 34805 && BlundervilleRingCycles.Inner(source) ? InnerCircleLead : 0;
 
     // Whether the schedule supplies this cylinder's body sweep ("bumper/") or
     // endpoint pulse ("rhythm/.../34717/") instead of the learned trackers.

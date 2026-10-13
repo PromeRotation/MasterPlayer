@@ -57,15 +57,19 @@ internal sealed class BlundervilleRingCycles
                 var cast = circle.At.AddSeconds(k * CirclePeriod);
                 if (cast.AddSeconds(CircleCast + Late) < now) continue;
                 var spot = circle.Spot ^ k % 2;
-                yield return Window($"ring/circle/{corner}/{cast.Ticks}", new CircleGeometry(Corners[corner][spot], 6), cast, CircleCast, circle.At);
+                yield return Window($"ring/circle/{corner}/{cast.Ticks}", new CircleGeometry(Corners[corner][spot], 6), cast, CircleCast, circle.At,
+                    BlundervilleEncounter.RingLead(34805, Corners[corner][spot]));
             }
         }
     }
 
     // The live cast window is [end + 0.3, end + 0.5]; a projected cycle starts
-    // a little earlier for its timing spread.
-    private static BlundervilleHazard Window(string id, IGeometryShape shape, DateTime cast, double duration, DateTime anchor)
-        => new(id, shape, cast.AddSeconds(duration - Early), cast.AddSeconds(duration + Late), anchor);
+    // a little earlier for its timing spread, or with the live cast's lead.
+    private static BlundervilleHazard Window(string id, IGeometryShape shape, DateTime cast, double duration, DateTime anchor, double lead = 0)
+        => new(id, shape, cast.AddSeconds(duration - Math.Max(Early, lead - .3)), cast.AddSeconds(duration + Late), anchor);
+
+    // The inner spot of each corner (NWi/NEi, 16m from the centre).
+    internal static bool Inner(Vector3 source) => Near(source, Corners[0][1]) || Near(source, Corners[1][1]);
 
     private static bool Near(Vector3 a, Vector3 b) => Vector2.DistanceSquared(new(a.X, a.Z), new(b.X, b.Z)) < .25f;
 }
