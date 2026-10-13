@@ -77,7 +77,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             }
             else { if (_goal.IsValid) safeZone.Remove(_goal); _goal = default; }
         }
-        var desired = encounter.TraversalHazards(now).Where(h => Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
+        var desired = encounter.TraversalHazards(now, !decision.SpinRowsOwned).Where(h => Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
         foreach (var id in _dangers.Keys.Where(id => !desired.ContainsKey(id)).ToArray())
         { safeZone.Remove(_dangers[id].Handle); _dangers.Remove(id); }
         foreach (var (id, hazard) in desired)

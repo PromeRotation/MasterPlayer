@@ -110,26 +110,9 @@ internal static class BlundervilleFirstBFeedbackRegression
                 run($"Blunderville FirstB latest rotating section speed {speed} latency {latency}", () => Simulate(false, speed, latency));
                 run($"Blunderville FirstB latest third section speed {speed} latency {latency}", () => Simulate(true, speed, latency));
             }
-        run("Blunderville FirstB spin weave stays clear of every row box", () =>
-        {
-            var route = BlundervilleSpinWeave.Route;
-            for (var i = 0; i + 1 < route.Count; ++i)
-                Check(BlundervilleSpinWeave.Clear(route[i], route[i + 1]), $"The spin weave segment {route[i]} -> {route[i + 1]} touches a row box.");
-            Check(!BlundervilleSpinWeave.Clear(new(4, 10.03f, -279), new(4, 10.03f, -283)), "A path through a right row was accepted.");
-        });
-        // The timing-free weave as the script publishes it: 3.6m/s under 3702.
-        foreach (var latency in new[] { .08, .3 })
-            run($"Blunderville FirstB spin weave third section latency {latency}", () =>
-            {
-                var weave = Simulate(true, 3.6f, latency, weave: true); var solver = Simulate(true, 3.6f, latency);
-                Console.WriteLine($"FIRSTB spin weave {weave:F2}s, solver {solver:F2}s");
-                // 2026-10-13: 25.0/25.7s against 27.8/30.1s for the solver (live ~28s);
-                // the ~84m line itself takes 23.3s at 3.6m/s.
-                Check(weave < solver - 2 && weave < 26.5, "The timing-free weave was not clearly faster than the solver's detours.");
-            });
     }
 
-    private static double Simulate(bool bridge, float speed, double latency, bool weave = false)
+    private static double Simulate(bool bridge, float speed, double latency)
     {
         using var replay = new BlundervilleAnimationRegression.Recording(Fixture);
         var phase = bridge ? 188.0 : 166.0;
@@ -149,8 +132,6 @@ internal static class BlundervilleFirstBFeedbackRegression
             {
                 replay.Advance(t); api.UtcNowForTest = now;
                 var decision = planner.Update(state, now, p, true, false, false, null);
-                // Mirrors BlundervilleScript: the timing-free spin weave.
-                if (weave) decision = BlundervilleSpinWeave.Apply(decision, state, p, planner.Recovering);
                 direct = decision.DirectTraversal;
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
             }
@@ -188,7 +169,7 @@ internal static class BlundervilleFirstBFeedbackRegression
             }
             if (p.Z < finish) break;
         }
-        Console.WriteLine($"FIRSTB bridge={bridge} weave={weave} speed={speed} latency={latency} end={p} elapsed={t - phase:F2} dispatch={move.Count} stops={move.Stops} reverse={reverse:F2} maxSolve={maxMs:F1}ms contacts={checks}");
+        Console.WriteLine($"FIRSTB bridge={bridge} speed={speed} latency={latency} end={p} elapsed={t - phase:F2} dispatch={move.Count} stops={move.Stops} reverse={reverse:F2} maxSolve={maxMs:F1}ms contacts={checks}");
         Check(p.Z < finish, "The actual navigation never crossed this FirstB section.");
         Check(move.Count < 100 && reverse < 5, "The route repeatedly restarted or reversed.");
         return t - phase;

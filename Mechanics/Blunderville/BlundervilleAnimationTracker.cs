@@ -62,9 +62,9 @@ internal sealed class BlundervilleAnimationTracker
         _devices[source] = device with { Forecast = Forecast(device) };
     }
 
-    public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
+    public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool spinRows = true)
     {
-        foreach (var device in _devices.Values)
+        foreach (var device in _devices.Values.Where(d => spinRows || d.Action != 34775))
             foreach (var hazard in device.Forecast)
                 if (now <= hazard.Until) yield return hazard;
     }

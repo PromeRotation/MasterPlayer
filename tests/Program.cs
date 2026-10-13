@@ -373,6 +373,7 @@ BlundervilleFeedback151049Regression.Run(Run);
 BlundervilleDeliveryScheduleRegression.Run(Run);
 BlundervilleRingRegression.Run(Run);
 BlundervilleSwingerRampRegression.Run(Run);
+BlundervilleSpinBridgeRegression.Run(Run);
 NavigationTemporalContinuationRegression.Run(Run);
 NavigationDirectTraversalRegression.Run(Run);
 NavigationCacheRegression.Run(Run);

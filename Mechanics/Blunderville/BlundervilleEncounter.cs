@@ -44,6 +44,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleRampPushers _rampPushers = new();
     public BlundervilleDeliverySchedule DeliverySchedule { get; } = new();
     public BlundervilleRingBeam RingBeam { get; } = new();
+    public BlundervilleSpinSchedule SpinBlades { get; } = new();
     private readonly BlundervilleRingCycles _ringCycles = new();
     private readonly BlundervilleCylinderSchedule _cylinders = new();
     // Cylinders whose learned clocks have both been ready once: from then on
@@ -208,6 +209,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (action == 34776 || rule.Shape == null) return;
         if (rule.Shape is not CircleTemplate && (rotation is not { } facing || !float.IsFinite(facing))) return;
         if (rotation is { } animationFacing) _animations.Effect(source, action, pos, animationFacing, now);
+        if (action == 34775) SpinBlades.Effect(pos, rotation!.Value, now);
         _alternatingPulses.Effect(source, action, pos, now);
         if (_actors.TryGetValue(source, out var rhythmActor)) _rhythms.Effect(rhythmActor, action, pos, rotation ?? 0, now);
         if (action == BlundervilleCatalog.BeamAction)
@@ -315,10 +317,10 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Reset();
         _bumpers.Reset(); _cylinders.Reset(); _learnedCylinders.Clear();
         _deliveryCharges.Reset();
-        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset();
+        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset(); SpinBlades.Reset();
     }
 
-    public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
+    public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool spinRows = true)
     {
         Tick(now);
         // On the Delivery clock the calibrated schedule is the only source
@@ -331,7 +333,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                     yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt, cast.Cast.FinishAt.AddSeconds(0.2), cast.Cast.StartedAt);
             yield break;
         }
-        foreach (var hazard in _animations.Hazards(now)) yield return hazard;
+        foreach (var hazard in _animations.Hazards(now, spinRows)) yield return hazard;
         foreach (var hazard in _alternatingPulses.Hazards(now)) yield return hazard;
         // Until a cylinder's trackers have learned, its cast-anchored schedule
         // replaces their cold body sweep and pulse rhythm.
@@ -375,9 +377,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (RingBeam.Active) foreach (var hazard in _ringCycles.Hazards(now)) yield return hazard;
     }
 
-    public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now)
+    public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now, bool spinRows = true)
     {
-        foreach (var hazard in Hazards(now)) yield return hazard;
+        foreach (var hazard in Hazards(now, spinRows)) yield return hazard;
         foreach (var actor in _actors.Values.Where(a => a.Oid == 16339))
             if (Learned(actor.Id, now) ? !_bumpers.Ready(actor.Id) || !_rhythms.Ready(actor.Id, 34717, now) : !_cylinders.Ready(actor.Id, now))
                 yield return _bumpers.UnknownTraversalHazard(actor, now);

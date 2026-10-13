@@ -7,6 +7,9 @@ internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool
     public IReadOnlyList<Vector3>? ContinuousPath { get; init; }
     public float HeadingTolerance { get; init; }
     public Spatial.DirectTraversalMotion? TraversalMotion { get; init; }
+    // The spin bridge planner checks the 34775 blades itself, at their impact
+    // instants; the tracker's wide windows must not veto its route.
+    public bool SpinRowsOwned { get; init; }
 }
 
 internal sealed class BlundervilleRacePlanner

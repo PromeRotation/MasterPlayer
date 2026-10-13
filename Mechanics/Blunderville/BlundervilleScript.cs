@@ -15,6 +15,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private DateTime _nextScan;
     private long _replayVersion;
     private Vector3? _player;
+    private float? _facing;
     private BlundervilleRaceState? _race;
     private BlundervilleRacePlanner? _planner;
     private BlundervilleNavigation? _navigation;
@@ -28,6 +29,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleJumpExecution _jumpExecution = new();
     private readonly BlundervilleArrowPlanner _arrowPlanner = new();
     private readonly BlundervilleBumperPlanner _bumperPlanner = new();
+    private readonly BlundervilleSpinBridge _spinBridge = new();
     private readonly BlundervilleFinalPlanner _finalPlanner = new();
     private readonly BlundervilleFinalPlanner _rampPlanner = new(BlundervilleFinalPlanner.FirstBRamp);
     private readonly BlundervilleFinalPlanner _swingerPlanner = new(BlundervilleFinalPlanner.FirstARamp);
@@ -85,7 +87,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _output = null; _encounter = null; _player = null; _nextScan = default;
         _jumpExecution.Clear();
         _arrowPlanner.Reset();
-        _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset();
+        _bumperPlanner.Reset(); _spinBridge.Reset(); foreach (var lane in LanePlanners) lane.Reset();
     }
 
     private unsafe void Scan(DateTime now)
@@ -93,12 +95,13 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _nextScan = now.AddSeconds(0.1);
         if (_encounter == null) return;
         if (_lastTick != default && now < _lastTick)
-        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
+        { _race?.Reset(); _planner?.Reset(); _navigation?.Clear(); _bridges?.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); foreach (var lane in LanePlanners) lane.Reset(); _decision = null; _recoveryCorridor = null; _jumpExecution.Clear(); }
         _lastTick = now;
         if (ReplayWorld is { } world)
         {
             _replayVersion = world.Version;
             _player = world.LocalPlayer is { Dead: false } player ? player.Position : null;
+            _facing = world.LocalPlayer is { Dead: false } facingPlayer ? facingPlayer.Rotation : null;
             _race?.SynchronizeStatuses(world.LocalPlayer?.Statuses.Select(s => new BlundervilleRaceStatus(s.Id, s.Param, s.ExpiresAt)) ?? [], now);
             _encounter.Synchronize(world.Actors.Values.Where(a => BlundervilleCatalog.IsActor(a.Oid)).Select(a =>
                 new BlundervilleActor(a.Id, a.Oid, a.Position, a.Dead,
@@ -124,6 +127,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             actors.Add(new(id, obj.BaseId, obj.Position, obj.IsDead, cast, obj.Rotation, obj.HitboxRadius));
         }
         _player = Svc.Objects.LocalPlayer is { IsDead: false } livePlayer ? livePlayer.Position : null;
+        _facing = Svc.Objects.LocalPlayer is { IsDead: false } liveFacing ? liveFacing.Rotation : null;
         _race?.SynchronizeStatuses(Svc.Objects.LocalPlayer?.StatusList.Select(s => new BlundervilleRaceStatus(s.StatusId, s.Param,
             Replay.ReplayStatus.Expiration(now, s.RemainingTime))) ?? [], now);
         _encounter.Synchronize(actors, now);
@@ -181,7 +185,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         {
             _navigation?.Clear(); _native?.Apply(now, false, false, null, null);
             _planner.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _recoveryCorridor = null;
-            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); return;
+            _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); foreach (var lane in LanePlanners) lane.Reset(); return;
         }
         var replay = ReplayWorld != null;
         var motion = default(BlundervilleNativeState);
@@ -204,7 +208,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             else _arrowPlanner.Reset();
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
-            _decision = BlundervilleSpinWeave.Apply(_decision, _race, player, _planner.Recovering);
+            _decision = _spinBridge.Apply(_decision, _race, _encounter.SpinBlades, player, _facing, now, _planner.Recovering);
             // Timed lane search on the Final slope, the FirstB pusher ramp, the
             // FirstA swinger ramp and the Delivery carry corridor of the
             // crystal's colour.
@@ -222,7 +226,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
                     _navigation?.GetDirectTraversalExecution(now));
             foreach (var lane in LanePlanners) if (lane != lanePlanner) lane.Reset();
         }
-        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
+        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
         // The slope corridor plans its own stand-still clear of the sweeps.
         if (_race.IsRacing && !_decision.Hold && !(_slopePlanner.HoldsBomb && !_race.MustStopForAccelerationBomb(now))
             && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
