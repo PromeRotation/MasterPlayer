@@ -3,238 +3,153 @@ using System.Numerics;
 namespace MasterPlayer.Mechanics.Blunderville;
 
 // FirstB final ramp (slime, status 3703, z -338..-367) and its three 34774
-// pushers on rows z -347.83/-355.82/-363.82. 2026-10-13 19:04 ARR: MP spent
-// 66s on it and was eliminated. The 1.14.4 lane planner waited for pusher gaps
-// standing, and on the slime a stop is a 4m/s slide back down: once from -354
-// to the bottom without any push, then three pushes. ARR fits (MP, every
-// FirstB round): the input runs at 6m/s and the slime adds 4m/s straight down
-// the ramp, so straight up nets 2m/s, 48° off up holds the height while
-// strafing at 4.5m/s, and releasing slides back at 4m/s.
+// pushers on rows z -347.83/-355.82/-363.82. Slime physics (MP and human ARR
+// fits): input runs at 6m/s and the slime adds 4m/s down the ramp, so straight
+// up nets 2m/s.
 //
-// So the input always points up the ramp, at most 48° off (W held, A/D to
-// steer). Below each row the plan picks a lane and the moment to cross; an
-// early arrival strafes to and fro at the hold angle, and the row is crossed
-// straight up while that lane's segment is not swept. The rows' lane/entry
-// times come from a DP over the pusher clock (BlundervilleRampPushers), redone
-// from the actual position every scan.
+// 2026-10-14 02:08 and 04:10 ARRs: the slide state (server move state, pid 277
+// = 3: about a second without control, often down to the foot) hit MP 0.25 times
+// per second of climbing against 0.027 for the humans on the same ramps, 0.2/s
+// against 0.008/s far from any pusher. MP climbed this ramp straight along its
+// route in 11 rounds (10/07-10/11) without a single slide; every version since
+// that steered sideways, held height or switched lanes on the slime slid. So
+// the slime is climbed straight up only, like holding W: the pusher timing is
+// chosen on the flat floor before it, where standing is safe. A lane and a
+// departure are picked so one straight climb at 2m/s crosses every row between
+// its pusher steps; the aim point stays fixed, and a slide or push back onto the
+// floor plans again from there.
 internal sealed class BlundervilleSlimeRamp
 {
     internal const float Run = 6, Drift = 4, Climb = Run - Drift;
-    internal static readonly float Hold = MathF.Acos(Drift / Run);
-    // The slime runs from -338 (flat floor before it: standing is fine) to the top at -367.
-    internal const float Begin = -335, Bottom = -338, Top = -367;
+    // Flat floor before the slime: standing is fine. The slime status starts
+    // between -338.6 and -339.8 (ARR gains); climb times count from -338.6.
+    internal const float Begin = -335, Bottom = -338, SlimeEdge = -338.6f, Wait = -337.2f, Top = -367;
     internal static readonly float[] Rows = [-347.83f, -355.82f, -363.82f];
-    // Lanes inside the outer stops, leaving room to strafe at the floor edge (±6.3).
-    internal static readonly float[] Lanes = [.. Enumerable.Range(-9, 19).Select(i => i * .5f)];
-    private const float Swing = 1, Edge = 5.6f;
-    internal const double Horizon = 30;
+    // Straight lanes inside the floor (the edge is +-6.3..6.8 along the slime).
+    internal static readonly float[] Lanes = [.. Enumerable.Range(-11, 23).Select(i => i * .5f)];
+    internal const double Horizon = 30, DepartureStep = .05, MaxDeparture = 12;
+    private const float AimBeyond = 2;
 
     // Push: within 1.5m of the row and the step's x range 0.1–0.2s before its
     // packet. Windows around the scheduled packet, lane reach past the swept
     // range, band margin; the narrow set only when the wide one has no way up.
-    internal readonly record struct Margins(double Before, double After, float Side, float Along);
-    internal static readonly Margins[] Tiers = [new(.45, .2, .45f, .3f), new(.3, .1, .25f, .15f)];
+    // Speed: the climb rate may differ by this fraction (MP measured 2.00–2.01m/s;
+    // humans 1.8–2.1), which grows into a timing error up the ramp: +-5% is
+    // over a second at the top row.
+    internal readonly record struct Margins(double Before, double After, float Side, float Along, float Speed);
+    internal static readonly Margins[] Tiers = [new(.45, .2, .45f, .3f, .04f), new(.3, .1, .25f, .15f, .02f), new(.3, .1, .25f, .15f, 0)];
 
-    internal readonly record struct Crossing(int Row, float Lane, double Entry);
-    internal sealed record Plan(Crossing[] Crossings, double Finish, int Tier);
+    // Depart: seconds from now when the climb leaves the slime edge (z -338.6).
+    internal sealed record Plan(float Lane, double Depart, double Finish, int Tier);
 
-    private float _side = 1;
+    private Plan? _plan;
+    private DateTime _planned, _waitingSince;
+    // Without a pusher clock, or with no clear climb in sight, the floor wait
+    // ends after these many seconds and the climb goes straight anyway.
+    internal const double ClockWait = 6, GapWait = 15;
     private Vector3? _aim;
-    private float _aimAngle;
-    public Plan? Current { get; private set; }
+    public Plan? Current => _plan;
 
-    public void Reset() { Current = null; _side = 1; _aim = null; }
+    public void Reset() { _plan = null; _aim = null; _waitingSince = default; }
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state, BlundervilleRampPushers pushers,
         Vector3 player, DateTime now, bool recovering)
     {
         if (state.Course != BlundervilleCourse.FirstB || !state.IsRacing || state.Qualified || normal.Hold || recovering
             || player.Y < 9.5f || player.Z > Begin || player.Z < Top || MathF.Abs(player.X) > 7.5f)
-        { Current = null; _aim = null; return normal; }
-        // Without a pusher clock a solver would stop, and on the slime that is
-        // a slide to the bottom: climb straight instead.
-        if (!pushers.Ready(now))
+        { Reset(); return normal; }
+        var slime = player.Z < Bottom;
+        if (slime)
         {
-            Current = null;
-            return player.Z > Bottom ? normal : Publish(normal, [Aim(player, 0)], "终点坡：推板时钟未就绪，直接上坡");
+            // On the slime: straight up from where the player is, never sideways.
+            _plan = null; _waitingSince = default;
+            return Publish(normal, [Straight(player)], "终点坡：粘液上直线上坡");
         }
+        _aim = null;
+        if (_waitingSince == default) _waitingSince = now;
+        var waited = (now - _waitingSince).TotalSeconds;
+        if (!pushers.Ready(now))
+            return waited < ClockWait ? Publish(normal, [new(player.X, player.Y, Wait)], "终点坡：坡下等待推板时钟")
+                : Publish(normal, [new(player.X, player.Y, Top - AimBeyond)], "终点坡：推板时钟未就绪，直接上坡");
         var steps = pushers.Steps(now.AddSeconds(Horizon));
-        Plan? plan = null;
-        foreach (var tier in Enumerable.Range(0, Tiers.Length))
-            if ((plan = Schedule(steps, now, player, tier)) != null) break;
-        Current = plan;
-        var angle = Steer(plan, player, out var stand, out var hint);
-        if (stand) { _aim = null; return Publish(normal, [player], hint); }
-        return Publish(normal, [Aim(player, angle)], hint);
+        // Keep a committed plan while its straight climb still clears; a new
+        // plan every scan would wander between equal lanes on the floor.
+        if (_plan is { } kept)
+        {
+            var elapsed = (now - _planned).TotalSeconds;
+            var shifted = kept with { Depart = kept.Depart - elapsed, Finish = kept.Finish - elapsed };
+            _plan = shifted.Depart > -.3 && Clear(steps, now, shifted.Lane, Math.Max(0, shifted.Depart), Tiers[shifted.Tier])
+                && shifted.Depart >= Walk(player, shifted.Lane) - .05 ? shifted : null;
+        }
+        if (_plan == null)
+            for (var tier = 0; tier < Tiers.Length && _plan == null; ++tier)
+                _plan = Schedule(steps, now, player, tier);
+        _planned = now;
+        if (_plan is not { } plan)
+            return waited < GapWait ? Publish(normal, [new(player.X, player.Y, Wait)], "终点坡：坡下等待推板间隙")
+                : Publish(normal, [new(player.X, player.Y, Top - AimBeyond)], "终点坡：等待过久，直接上坡");
+        var start = new Vector3(plan.Lane, player.Y, Wait);
+        var walk = Walk(player, plan.Lane);
+        if (plan.Depart - walk > .1)
+        {
+            if (Vector2.Distance(new(player.X, player.Z), new(start.X, start.Z)) > .15f)
+                return Publish(normal, [start], $"终点坡：到车道{plan.Lane:0.#}坡下等待");
+            return Publish(normal, [player], $"终点坡：车道{plan.Lane:0.#}坡下等待{plan.Depart - walk:F1}s后直上");
+        }
+        // Reach the lane on the floor first: entering the slime diagonally
+        // would climb a different lane than the one timed.
+        Vector3[] path = MathF.Abs(player.X - plan.Lane) > .15f ? [start, start with { Z = Top - AimBeyond }] : [start with { Z = Top - AimBeyond }];
+        return Publish(normal, path, $"终点坡：车道{plan.Lane:0.#}出发直上");
     }
 
-    // 2026-10-14 02:08 ARR: a new aim point every scan re-dispatched GreenMove
-    // ~8 times a second, and a frame without input on the slime starts the
-    // native slide (server move state 3): seven slides back down in 30s. The
-    // aim stays fixed while the input angle stays within AimSlack and the
-    // point is still ahead, so the native input runs on uninterrupted.
-    private const float AimSlack = 5 * MathF.PI / 180, AimReach = 6;
-    private Vector3 Aim(Vector3 player, float angle)
+    // A fixed aim straight up the ramp (re-dispatch only when the lane drifts).
+    private Vector3 Straight(Vector3 player)
     {
-        if (_aim is { } aim && MathF.Abs(MathF.IEEERemainder(angle - _aimAngle, MathF.Tau)) <= AimSlack)
-        {
-            var ahead = aim - player; ahead.Y = 0;
-            var direction = new Vector3(MathF.Sin(_aimAngle), 0, -MathF.Cos(_aimAngle));
-            if (Vector3.Dot(ahead, direction) > 1.2f) return aim;
-        }
-        var heading = new Vector3(MathF.Sin(angle), 0, -MathF.Cos(angle));
-        // Keep the aim point on the ramp floor (|x| <= 6, at most 2m past the top).
-        var reach = AimReach;
-        if (MathF.Abs(heading.X) > 1e-3f)
-            reach = MathF.Min(reach, (MathF.Sign(heading.X) * 6 - player.X) / heading.X);
-        if (heading.Z < -1e-3f) reach = MathF.Min(reach, (Top - 2 - player.Z) / heading.Z);
-        _aimAngle = angle;
-        _aim = player + heading * Math.Clamp(reach, .6f, AimReach);
+        if (_aim is { } aim && MathF.Abs(aim.X - player.X) < .3f && aim.Z < player.Z - 1) return aim;
+        _aim = new Vector3(Math.Clamp(player.X, -5.8f, 5.8f), player.Y, Top - AimBeyond);
         return _aim.Value;
     }
 
-    // The input angle (0 straight up the ramp, + toward +x).
-    private float Steer(Plan? plan, Vector3 player, out bool stand, out string hint)
-    {
-        stand = false;
-        var next = plan?.Crossings.FirstOrDefault(c => player.Z > Rows[c.Row] - Band(plan.Tier));
-        if (plan == null || next is not { } crossing)
-        {
-            hint = plan == null ? "终点坡：没有推板间隙，直接上坡" : "终点坡：已过最后一排，直接上坡";
-            return 0;
-        }
-        var band = Band(plan.Tier);
-        var entry = Rows[crossing.Row] + band;
-        // Crossing a row: straight up.
-        if (player.Z <= entry)
-        {
-            hint = $"终点坡：第{crossing.Row + 1}排推板，车道{crossing.Lane:0.#}直上";
-            return 0;
-        }
-        var rise = player.Z - entry;
-        var lateral = crossing.Lane - player.X;
-        var slack = crossing.Entry - Travel(lateral, rise);
-        if (slack <= .1)
-        {
-            hint = $"终点坡：赶往第{crossing.Row + 1}排车道{crossing.Lane:0.#}";
-            return Toward(lateral, rise);
-        }
-        // Early: stand on the flat floor, or climb to just below the row and strafe there.
-        if (player.Z > Bottom && slack > .25)
-        {
-            stand = true;
-            hint = $"终点坡：坡下等待{slack:F1}s";
-            return 0;
-        }
-        var hold = entry + .6f;
-        if (player.Z > hold + .4f && MathF.Abs(lateral) < 2)
-        {
-            hint = $"终点坡：上到第{crossing.Row + 1}排下方";
-            return Toward(lateral, player.Z - hold);
-        }
-        // To and fro around the lane, never toward the floor edge.
-        if (player.X < crossing.Lane - Swing || player.X < -Edge) _side = 1;
-        else if (player.X > crossing.Lane + Swing || player.X > Edge) _side = -1;
-        // Height correction while strafing: above the hold line drift back, below climb.
-        var up = Math.Clamp((player.Z - hold) * 2, -1.5f, 1.5f);
-        hint = $"终点坡：第{crossing.Row + 1}排下方横移等待{slack:F1}s";
-        return _side * MathF.Acos(Math.Clamp((up + Drift) / Run, -1, 1));
-    }
+    // Seconds to walk the flat floor to the lane's slime edge.
+    private static double Walk(Vector3 player, float lane)
+        => Vector2.Distance(new(player.X, player.Z), new(lane, Wait)) / Run + (Wait - SlimeEdge) / Run;
 
-    private static float Band(int tier) => BlundervilleRampPushers.Half + Tiers[tier].Along;
-
-    // The fastest constant input to cover `lateral` while rising `rise`: the
-    // slime's velocities form a 6m/s circle centred 4m/s down the ramp.
-    internal static double Travel(float lateral, float rise)
-    {
-        var length = MathF.Sqrt(lateral * lateral + rise * rise);
-        if (length < 1e-4f) return 0;
-        var down = -rise / length;
-        return length / (MathF.Sqrt(16 * down * down + 20) + 4 * down);
-    }
-
-    private static float Toward(float lateral, float rise)
-    {
-        var length = MathF.Sqrt(lateral * lateral + rise * rise);
-        if (length < 1e-4f) return 0;
-        var ux = lateral / length; var uz = -rise / length;
-        var speed = MathF.Sqrt(16 * uz * uz + 20) + 4 * uz;
-        // Input = (net velocity - drift) / run speed, drift +4 along z.
-        var ix = ux * speed / Run; var iz = (uz * speed - Drift) / Run;
-        return Math.Clamp(MathF.Atan2(ix, -iz), -Hold, Hold);
-    }
-
-    // Earliest lane/entry per remaining row (waiting is free: strafing holds).
+    // The earliest departure from the slime edge (and the lane) whose straight
+    // climb crosses every row between its pusher steps.
     internal static Plan? Schedule(IReadOnlyList<BlundervilleRampStep> steps, DateTime now, Vector3 player, int tier)
     {
-        var m = Tiers[tier];
-        var band = BlundervilleRampPushers.Half + m.Along;
-        var occupy = 2 * band / Climb;
-        var gap = Rows[0] - Rows[1] - 2 * band;
-        // Danger windows per row and lane, in seconds after now.
-        var windows = new List<(double From, double To)>[Rows.Length, Lanes.Length];
-        for (var r = 0; r < Rows.Length; ++r)
-            for (var i = 0; i < Lanes.Length; ++i) windows[r, i] = [];
+        var margins = Tiers[tier];
+        Plan? best = null;
+        foreach (var lane in Lanes.OrderBy(l => MathF.Abs(l - player.X)))
+        {
+            var earliest = Walk(player, lane);
+            for (var depart = earliest; depart <= MaxDeparture; depart += DepartureStep)
+            {
+                if (best != null && depart >= best.Depart - 1e-6) break;
+                if (!Clear(steps, now, lane, depart, margins)) continue;
+                best = new(lane, depart, depart + (SlimeEdge - Top) / Climb, tier);
+                break;
+            }
+        }
+        return best;
+    }
+
+    // Whether a straight climb up `lane`, leaving the slime edge `depart`
+    // seconds from now, stays out of every pusher step window.
+    internal static bool Clear(IReadOnlyList<BlundervilleRampStep> steps, DateTime now, float lane, double depart, Margins margins)
+    {
+        var band = BlundervilleRampPushers.Half + margins.Along;
         foreach (var step in steps)
         {
             var r = Array.FindIndex(Rows, z => MathF.Abs(z - step.Z) < .5f);
             if (r < 0) continue;
+            if (lane < MathF.Min(step.FromX, step.ToX) - margins.Side || lane > MathF.Max(step.FromX, step.ToX) + margins.Side) continue;
+            var enter = depart + (SlimeEdge - (Rows[r] + band)) / (Climb * (1 + margins.Speed));
+            var leave = depart + (SlimeEdge - (Rows[r] - band)) / (Climb * (1 - margins.Speed));
             var at = (step.At - now).TotalSeconds;
-            float lo = MathF.Min(step.FromX, step.ToX) - m.Side, hi = MathF.Max(step.FromX, step.ToX) + m.Side;
-            for (var i = 0; i < Lanes.Length; ++i)
-                if (Lanes[i] >= lo && Lanes[i] <= hi) windows[r, i].Add((at - m.Before, at + m.After));
+            if (at + margins.After >= enter && at - margins.Before <= leave) return false;
         }
-        double Next(int r, int i, double t)
-        {
-            foreach (var (from, to) in windows[r, i])
-            {
-                if (to < t) continue;
-                if (from > t + occupy) break;
-                t = to + .01;
-            }
-            return t;
-        }
-        var first = Array.FindIndex(Rows, z => player.Z > z - band);
-        if (first < 0) return new([], (player.Z - Top) / Climb, tier);
-        var entry = new double[Rows.Length, Lanes.Length];
-        var from = new int[Rows.Length, Lanes.Length];
-        var inside = player.Z <= Rows[first] + band;
-        var start = first;
-        if (inside)
-        {
-            // Mid-crossing: the lane is where the player is; the next row follows its exit.
-            var lane = Array.IndexOf(Lanes, Lanes.MinBy(l => MathF.Abs(l - player.X)));
-            var exit = (player.Z - (Rows[first] - band)) / Climb;
-            if (first == Rows.Length - 1) return new([new(first, player.X, -(Rows[first] + band - player.Z) / Climb)], exit + (Rows[first] - band - Top) / Climb, tier);
-            start = first + 1;
-            for (var j = 0; j < Lanes.Length; ++j)
-            {
-                entry[start, j] = Next(start, j, exit + Travel(Lanes[j] - Lanes[lane], gap));
-                from[start, j] = lane;
-            }
-        }
-        else
-            for (var j = 0; j < Lanes.Length; ++j)
-                entry[start, j] = Next(start, j, Travel(Lanes[j] - player.X, player.Z - (Rows[start] + band)));
-        for (var r = start + 1; r < Rows.Length; ++r)
-            for (var j = 0; j < Lanes.Length; ++j)
-            {
-                entry[r, j] = double.MaxValue;
-                for (var i = 0; i < Lanes.Length; ++i)
-                {
-                    var t = Next(r, j, entry[r - 1, i] + occupy + Travel(Lanes[j] - Lanes[i], gap));
-                    if (t < entry[r, j] - 1e-6) { entry[r, j] = t; from[r, j] = i; }
-                }
-            }
-        var last = Rows.Length - 1;
-        var best = Enumerable.Range(0, Lanes.Length).MinBy(j => entry[last, j]);
-        var finish = entry[last, best] + occupy + (Rows[last] - band - Top) / Climb;
-        if (finish > Horizon - 2) return null;
-        var crossings = new List<Crossing>();
-        for (int r = last, j = best; r >= start; j = from[r, j], --r) crossings.Add(new(r, Lanes[j], entry[r, j]));
-        if (inside) crossings.Add(new(first, player.X, -(Rows[first] + band - player.Z) / Climb));
-        crossings.Reverse();
-        return new([.. crossings], finish, tier);
+        return true;
     }
 
     private static BlundervilleRaceDecision Publish(BlundervilleRaceDecision normal, IReadOnlyList<Vector3> path, string hint)

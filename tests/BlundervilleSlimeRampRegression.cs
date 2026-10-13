@@ -56,6 +56,12 @@ internal static class BlundervilleSlimeRampRegression
             // packets jitter ±0.1–0.3s (01:20 also has no destinations at all).
             Check(checks > 14000 && misses < checks / 40, "The pusher schedule no longer forecasts the recorded steps.");
         });
+        if (Environment.GetEnvironmentVariable("SLIME_TRACK") is { Length: > 0 } trackPath)
+            run("Blunderville slime ramp recorded track diagnostic", () =>
+            {
+                foreach (var (name, effects) in recordings)
+                    if (name.Contains(Environment.GetEnvironmentVariable("SLIME_ONLY") ?? "")) ReplayTrack(name, effects, trackPath);
+            });
         run("Blunderville slime ramp climbs every recorded round without a push", () =>
         {
             var outcomes = new List<Outcome>();
@@ -82,6 +88,55 @@ internal static class BlundervilleSlimeRampRegression
             Console.WriteLine($"SLIME slides {outcomes.Sum(o => o.Slides)}, GreenMove dispatch mean {outcomes.Average(o => o.DispatchRate):F1}/s max {outcomes.Max(o => o.DispatchRate):F1}/s");
             Check(outcomes.All(o => o.Slides == 0), "Input dropped on the slime (native slide).");
         });
+    }
+
+    // SLIME_TRACK=<json [[t,x,y,z],...]> SLIME_ONLY=<recording>: drive the live
+    // pipeline along MP's recorded positions and log what it publishes and
+    // whether the runtime keeps GreenMove running (diagnostic, no checks).
+    internal static void ReplayTrack(string name, IReadOnlyList<Effect> effects, string path)
+    {
+        var track = JsonSerializer.Deserialize<double[][]>(File.ReadAllText(path))!;
+        var encounter = new BlundervilleEncounter(_ => { });
+        var now = Epoch; var move = new Slime();
+        using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
+        using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
+        var nav = new BlundervilleNavigation(runtime, api, new());
+        var state = new BlundervilleRaceState();
+        state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20014, 0, 0, 0, Epoch);
+        var planner = new BlundervilleRacePlanner(); var slime = new BlundervilleSlimeRamp();
+        var next = 0; uint sequence = 0; var previous = Vector3.Zero; var dispatches = 0; var wasRunning = false;
+        var nextScan = 0.0; BlundervilleRaceDecision? decision = null;
+        for (var i = 0; i < track.Length; ++i)
+        {
+            var t = track[i][0]; now = Epoch.AddSeconds(t); move.Now = now;
+            var p = new Vector3((float)track[i][1], (float)track[i][2], (float)track[i][3]);
+            if (p.Z > -334 || p.Z < -368) { previous = p; continue; }
+            while (next < effects.Count && effects[next].T <= t)
+            {
+                var e = effects[next++];
+                encounter.Effect(0x40002000UL + (ulong)e.Source, 34774, ++sequence, Row(e.X, e.Z), 0, Epoch.AddSeconds(e.T),
+                    e.To is { } to ? Row(to, e.Z) : new Vector3(-1000, -1000, -1000));
+            }
+            var slick = p.Z <= BlundervilleSlimeRamp.Bottom;
+            if (t >= nextScan)
+            {
+                nextScan = t + .1;
+                api.UtcNowForTest = now;
+                state.SynchronizeStatuses(slick ? [new(3703, 0, now.AddSeconds(30))] : [], now);
+                decision = planner.Update(state, now, p, true, false, false, null);
+                decision = slime.Apply(decision, state, encounter.RampPushers, p, now, planner.Recovering);
+                nav.Apply(state, decision, encounter, now, p, true, false, false);
+            }
+            var snapshot = runtime.Manager.BuildSnapshot(now);
+            var speed = slick ? 2f : 6f;
+            var player = new PlayerState(p, 0, speed, Vector3.DistanceSquared(previous, p) > 1e-6f, false, 0, true, snapshot.Version);
+            ((SafeZoneRebornMovementSystem)runtime.MovementStatus).Update(player, new MovementCapability(speed, speed, 0, false, speed, speed), now);
+            var running = move.IsRunning;
+            if (move.Dispatches != dispatches || running != wasRunning)
+                Console.WriteLine($"SLIMETRACK t={t:F2} p=({p.X:F2},{p.Z:F2}) running={running} dispatch={move.Dispatches} phase={runtime.MovementStatus.PhaseText} {decision?.Hint}"
+                    + $" target={decision?.ContinuousPath?.LastOrDefault()}");
+            dispatches = move.Dispatches; wasRunning = running; previous = p;
+        }
     }
 
     internal static Outcome Simulate(string name, IReadOnlyList<Effect> effects, double arrive, float lane)
@@ -198,6 +253,7 @@ internal static class BlundervilleSlimeRampRegression
     // without input it slides down at Drift m/s.
     private sealed class Slime : IGreenMoveSystem
     {
+        private static readonly float SlideAngle = float.TryParse(Environment.GetEnvironmentVariable("SLIME_ANGLE"), out var degrees) ? degrees * MathF.PI / 180 : 20 * MathF.PI / 180;
         private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready, _slideUntil;
         public DateTime Now; public bool Slick; public float Rotation; public int Dispatches, Slides;
         public bool IsRunning => _index < _points.Count;
@@ -218,9 +274,11 @@ internal static class BlundervilleSlimeRampRegression
                 var d = Flat(_points[_index].Position - p);
                 if (d.LengthSquared() > 1e-6f) { input = Vector3.Normalize(d); Rotation = MathF.Atan2(input.X, input.Z); }
             }
-            // 02:08 ARR (server move state 3): any frame without input on the
-            // slime starts a slide that ignores input for about a second.
-            if (Slick && input == Vector3.Zero && Now >= _slideUntil) { _slideUntil = Now.AddSeconds(1); ++Slides; }
+            // 02:08/04:10 ARRs (server move state 3): a frame without input, or
+            // steering well off straight up, starts a slide that ignores input
+            // for about a second (MP slid 10x as often as humans while doing so).
+            var sideways = input != Vector3.Zero && -input.Z < MathF.Cos(SlideAngle);
+            if (Slick && (input == Vector3.Zero || sideways) && Now >= _slideUntil) { _slideUntil = Now.AddSeconds(1); ++Slides; }
             if (Slick && Now < _slideUntil) input = Vector3.Zero;
             if (Slick) return p + (input * 6 + new Vector3(0, 0, Drift)) * dt;
             if (input == Vector3.Zero) return p;
