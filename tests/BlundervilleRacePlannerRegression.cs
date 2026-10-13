@@ -151,6 +151,32 @@ internal static class BlundervilleRacePlannerRegression
             Check(locked.Hold && !locked.Jump, "Forced displacement allowed ordinary stair jumping.");
         });
 
+        // 01:39 ARR: the race started at x=0.47 (right route); the Final lane
+        // planner handed over at the left stair run-up. The base route must
+        // continue on the left stairs instead of pulling back to node 1.
+        run("Blunderville race final hand-over on the other stair side continues to its takeoff", () =>
+        {
+            var state = Start(0x4E31);
+            var planner = new BlundervilleRacePlanner();
+            // MP's 0.5–1s samples from the ARR (the lane planner drove the slope).
+            Vector3[] track = [new(0.47f, 4.23f, 322.99f), new(.23f, 3.22f, 305.35f), new(.05f, 3.22f, 293.29f), new(1.18f, 3.68f, 284.47f),
+                new(-3.68f, 5.63f, 274.71f), new(-6, 6, 266.93f), new(-5.02f, 9.05f, 252.03f), new(-5.02f, 13.54f, 236.9f),
+                new(-9.54f, 14.97f, 220.97f), new(-13.63f, 17.32f, 212.76f), new(-8.77f, 19.91f, 205.74f), new(-1.94f, 23.55f, 195.91f),
+                new(4.01f, 26.66f, 187.43f), new(3.07f, 29.25f, 176.72f), new(1.42f, 30.47f, 164.87f), new(-1.27f, 31.02f, 159.47f)];
+            for (var i = 0; i < track.Length; ++i) planner.Update(state, Epoch.AddSeconds(i), track[i], true, false, false, null);
+            var handOver = new Vector3(-3.86f, 31.45f, 155.32f);
+            var decision = planner.Update(state, Epoch.AddSeconds(35), handOver, true, false, false, null);
+            Check(decision.Target is { } target && target.X < 0 && target.Z < 155.32f && target.Z > 150,
+                $"The hand-over target {decision.Target} is not the left stair ahead.");
+            var approach = planner.Update(state, Epoch.AddSeconds(35.3), new(-BlundervilleRoutes.FinalStairLane, 31.5f, 153.8f), true, false, false, null);
+            var jump = new BlundervilleJumpPlanner().Plan(state.Course, Epoch.AddSeconds(35.4),
+                new(-BlundervilleRoutes.FinalStairLane, 31.5f, 153), approach.Target!.Value, true, false);
+            Check(jump is { Jump: true } && jump.Target.X < 0 && jump.Target.Z == 149, "The left stair takeoff did not jump to its landing.");
+            // Lane changes across the centre on the slope keep the route usable.
+            var slope = planner.Update(state, Epoch.AddSeconds(20), new(5, 25.6f, 200), true, false, false, null);
+            Check(slope.Target is { } ahead && ahead.Z < 200 && ahead.X > 0, $"Switching back to the right side lost the forward route ({slope.Target}).");
+        });
+
         run("Blunderville race course geometry preserves measured voids", () =>
         {
             Check(!BlundervilleRoutes.Boundary(BlundervilleCourse.FirstA).Contains(new(-200, 14, -140)), "FirstA's split approach was filled over its central void.");

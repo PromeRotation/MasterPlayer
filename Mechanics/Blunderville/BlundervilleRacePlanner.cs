@@ -101,6 +101,19 @@ internal sealed class BlundervilleRacePlanner
                 RecoveryCorridor = new([position, .. recovery.Select(n => n.Position)], 1);
                 _cursor = 0; _recovering = true;
             }
+            // The Final route side is fixed by the start x, but the Final lane
+            // planner picks either stair (x=±4) by its hazard timing. 01:39 ARR:
+            // start x=0.47 (right route), hand-over at the left run-up
+            // (-3.9,155.3); the 2.5m rejoin never matched, the cursor stayed at
+            // node 1 (z=278), the jump planner saw a target behind it and the
+            // player shuttled across the planner boundary for 25s. Follow the
+            // side the player committed to (mirrored route, nearest segment).
+            if (state.Course == BlundervilleCourse.Final && !_recovering && _nodes.Count > 1
+                && MathF.Abs(position.X) > 2 && MathF.Sign(position.X) != MathF.Sign(_nodes[1].Position.X))
+            {
+                _nodes = BlundervilleRoutes.Nodes(state.Course, position);
+                _cursor = NearestSegment(position);
+            }
             if (!_recovering && grounded && !jumping && !BlundervilleRoutes.IsLoop(state.Course))
                 RejoinForwardSegment(position);
             while (_cursor < _nodes.Count && (!_recovering || grounded && !jumping) && Reached(position, _cursor))
