@@ -24,7 +24,8 @@ internal sealed class BlundervilleFinalPlanner
     private const int MaxLane = 15;
     internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
         (float From, float To)[]? Strips = null, Vector3[]? Spoke = null, ushort Colour = 0,
-        float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance, bool Bomb = false)
+        float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance, bool Bomb = false,
+        double WaitSlip = 0)
     {
         // An intermediate plan may only stop where standing is not a gamble.
         public bool Rest(float z) => Strips == null || Strips.Any(s => z >= s.From && z <= s.To);
@@ -72,13 +73,22 @@ internal sealed class BlundervilleFinalPlanner
     // Final margins the E bridge pendulum row (gaps 0.36–0.79s between 11
     // windows per 10s) never opened. Half-metre lanes find the slivers.
     private static Profile Corridor(string name, ushort colour, Vector3[] spoke)
-        => new(BlundervilleCourse.Delivery, 0, 0, 0, 3, 5, null, false, name, null, spoke, colour, .5f, 0, Lag, .4f);
+        => new(BlundervilleCourse.Delivery, 0, 0, 0, 3, 5, null, false, name, null, spoke, colour, .5f, 0, Lag, .4f,
+            WaitSlip: DeliveryWaitSlip);
     private readonly Profile _profile;
     public BlundervilleFinalPlanner(Profile? profile = null) => _profile = profile ?? Final;
     internal const double Lag = .35, StandAfterGoal = 2.5, Lead = .15, Tail = .1, WaveLead = .4, WaveTail = .3;
     private static readonly double[] Waits = [0, .5, 1, 1.5, 2, 3];
     // Delivery pendulum cells fire twice per 4.2s: a hold must reach the next gap.
     private static readonly double[] CorridorWaits = [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5];
+    // 2026-10-14 02:08 ARR / Delivery replays: the east carry waited 0.5s at
+    // (-171.7,266.9), 0.3m off the last charger lane. The departure slipped
+    // (runtime start + its stricter check), no plan left that lane and the
+    // charge took the crystal (all 3 replay losses). A Delivery wait point
+    // must stay clear this long past its departure: a pocket, not a lane.
+    // 15 replays: 0.6s with the retreat below delivers all three in every
+    // round (before 11/15, 3 crystals lost); 1.0s stalls the east carry.
+    internal const double DeliveryWaitSlip = .6;
 
     internal sealed record Waypoint(Vector3 Position, DateTime Arrival, DateTime Departure);
     private sealed record Node(Vector3 Position, double Time, double Wait, Node? Parent, int Lane);
@@ -127,7 +137,7 @@ internal sealed class BlundervilleFinalPlanner
         }
         if (_plan == null)
         {
-            if (now < _retry) return Fallback(index, floor, hazards, player, now);
+            if (now < _retry) return Fallback(index, floor, hazards, player, now, speed);
             _planBomb = bomb;
             _plan = Search(_profile, index, floor, player, now, speed, bomb is { } b ? ((b - now).TotalSeconds - BombLead, (b - now).TotalSeconds + BombTail) : null);
             _next = 1; _stretch = null;
@@ -137,7 +147,7 @@ internal sealed class BlundervilleFinalPlanner
                 // In a dead end no forward layer is reachable by floor; hand
                 // back to the race route, whose solver can walk back out.
                 if (!CanAdvance(_profile, floor, player)) return normal with { Hint = $"{_profile.Name}：退出死角，改走常规路线" };
-                return Fallback(index, floor, hazards, player, now);
+                return Fallback(index, floor, hazards, player, now, speed);
             }
         }
         var current = _plan[_next - 1];
@@ -165,13 +175,43 @@ internal sealed class BlundervilleFinalPlanner
 
     // Inside the Final hazard slope the ordinary solver re-creates the
     // stop-and-go: hold where standing stays clear, otherwise step aside.
-    private BlundervilleRaceDecision Fallback(HazardIndex index, IGeometryShape floor, IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now)
+    private BlundervilleRaceDecision Fallback(HazardIndex index, IGeometryShape floor, IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, float speed)
     {
         _stretch = null;
         if (index.Stand(player, 0, 1.5)) return new(player, true, false, null, $"{_profile.Name}：等待可通行的机关时序", false);
+        // Delivery only: the FirstA corridors include the bomb stand-still.
+        if (_profile.Course == BlundervilleCourse.Delivery && _profile.Spoke is { } spoke
+            && Retreat(_profile, spoke, index, floor, player, speed) is { } pocket)
+            return new(pocket, false, false, null, $"{_profile.Name}：退到机关够不到的位置", true) { ContinuousPath = [pocket] };
         if (BlundervilleRefuge.Find(floor, hazards, player, now) is { } refuge)
             return new(refuge, false, false, null, $"{_profile.Name}：先避开即将判定的机关", true) { ContinuousPath = [refuge] };
         return new(player, true, false, null, $"{_profile.Name}：无可行避让，原地等待", false);
+    }
+
+    // 2026-10-14 02:08 ARR: with no way on, the east carry stood in the last
+    // charger lane ("无可行避让，原地等待") until the charge took the crystal;
+    // the generic refuge found nothing. Step back along the corridor (or
+    // across it) to the nearest station that stays clear for a while.
+    internal const double RetreatHold = 1.5;
+    private static Vector3? Retreat(Profile profile, Vector3[] spoke, HazardIndex index, IGeometryShape floor, Vector3 player, float speed)
+    {
+        var (along, _, _, _) = Along(spoke, player);
+        var width = (int)MathF.Round(profile.Lanes / profile.LaneWidth);
+        Vector3? best = null; var bestTime = double.MaxValue;
+        foreach (var (station, point, lateral) in Stations(spoke))
+        {
+            if (station > along + LayerStep + .01f || station < along - 10) continue;
+            for (var lane = -width; lane <= width; ++lane)
+            {
+                var to = point + lateral * (lane * profile.LaneWidth);
+                var travel = Distance(player, to) / speed;
+                if (travel < .05 || travel >= bestTime) continue;
+                if (!ArenaBoundaryTraversal.ContainsTube(floor, player, to, FloorClearance)) continue;
+                if (!index.Segment(player, to, 0, travel) || !index.Stand(to, travel, travel + RetreatHold)) continue;
+                best = to; bestTime = travel;
+            }
+        }
+        return best;
     }
 
     // The runtime releases a plain direct path it judges unsafe without
@@ -477,7 +517,7 @@ internal sealed class BlundervilleFinalPlanner
                 var found = new List<((int Lane, int Bucket) Key, Node Node)>();
                 foreach (var wait in CorridorWaits)
                 {
-                    if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait)) break;
+                    if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait + profile.WaitSlip)) break;
                     var depart = node.Time + wait;
                     for (var lane = Math.Max(node.Lane - reach, -lanes); lane <= Math.Min(node.Lane + reach, lanes); ++lane)
                     {

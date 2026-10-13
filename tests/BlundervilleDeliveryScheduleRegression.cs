@@ -43,14 +43,16 @@ internal static class BlundervilleDeliveryScheduleRegression
             Console.WriteLine($"DELIVERY schedule coverage {covered}/{total}");
             Check(total > 5000 && covered >= total * .995, "A recorded Delivery hit fell outside its scheduled window.");
         });
-        // 2026-10-13 baseline of the timed carry corridors: 9 of 14 replays
-        // deliver all three crystals and at most 2 lose one. Raise as it improves.
+        // Baseline of the timed carry corridors: 2026-10-13 9 of 14 replays
+        // delivered all three, at most 2 lost one; 2026-10-14 (wait slip and
+        // retreat) 15 of 15 with none lost. Raise as it improves.
         run("Blunderville delivery schedule rounds deliver with the carry corridors", () =>
         {
             int complete = 0, lost = 0;
             for (var i = 0; i < names.Length; ++i)
             {
-                var name = names[i]; var order = Orders[i % Orders.Length];
+                var name = names[i]; var order = Environment.GetEnvironmentVariable("DELIVERY_ORDER") ?? Orders[i % Orders.Length];
+                if (Environment.GetEnvironmentVariable("DELIVERY_ONLY") is { Length: > 0 } only && !name.Contains(only)) continue;
                 try { Simulate(name, order); ++complete; }
                 catch (InvalidOperationException e)
                 {
@@ -60,7 +62,7 @@ internal static class BlundervilleDeliveryScheduleRegression
                 }
             }
             Console.WriteLine($"DELIVERY rounds complete {complete}/{names.Length}, crystals lost {lost}");
-            Check(complete >= 9 && lost <= 2, "The Delivery carry corridors fell below their recorded baseline.");
+            Check(complete >= 15 && lost == 0, "The Delivery carry corridors fell below their recorded baseline.");
         });
     }
 
@@ -100,6 +102,9 @@ internal static class BlundervilleDeliveryScheduleRegression
                     decision = corridor.Apply(decision, state, replay.Encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
                 foreach (var other in corridors) if (other != corridor) other.Reset();
                 direct = decision.DirectTraversal;
+                if (Environment.GetEnvironmentVariable("DELIVERY_DEBUG") == "1")
+                    Console.WriteLine($"DLVDBG t={t:F2} p=({p.X:F2},{p.Z:F2}) {decision.Hint} path={string.Join(" ", decision.ContinuousPath?.Select(q => $"({q.X:F1},{q.Z:F1})") ?? [])}"
+                        + (corridor?.Plan is { } plan ? $" plan={string.Join(" ", plan.Select(w => $"({w.Position.X:F1},{w.Position.Z:F1})@{(w.Arrival - now).TotalSeconds:F1}-{(w.Departure - now).TotalSeconds:F1}"))}" : ""));
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
             }
             var speed = state.NavigationBaseSpeed(now); move.Speed = speed;

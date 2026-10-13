@@ -26,7 +26,7 @@ internal sealed class BlundervilleSlimeRamp
     internal static readonly float[] Rows = [-347.83f, -355.82f, -363.82f];
     // Lanes inside the outer stops, leaving room to strafe at the floor edge (±6.3).
     internal static readonly float[] Lanes = [.. Enumerable.Range(-9, 19).Select(i => i * .5f)];
-    private const float Swing = 1, Edge = 5.6f, Step = 2;
+    private const float Swing = 1, Edge = 5.6f;
     internal const double Horizon = 30;
 
     // Push: within 1.5m of the row and the step's x range 0.1–0.2s before its
@@ -39,22 +39,24 @@ internal sealed class BlundervilleSlimeRamp
     internal sealed record Plan(Crossing[] Crossings, double Finish, int Tier);
 
     private float _side = 1;
+    private Vector3? _aim;
+    private float _aimAngle;
     public Plan? Current { get; private set; }
 
-    public void Reset() { Current = null; _side = 1; }
+    public void Reset() { Current = null; _side = 1; _aim = null; }
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state, BlundervilleRampPushers pushers,
         Vector3 player, DateTime now, bool recovering)
     {
         if (state.Course != BlundervilleCourse.FirstB || !state.IsRacing || state.Qualified || normal.Hold || recovering
             || player.Y < 9.5f || player.Z > Begin || player.Z < Top || MathF.Abs(player.X) > 7.5f)
-        { Current = null; return normal; }
+        { Current = null; _aim = null; return normal; }
         // Without a pusher clock a solver would stop, and on the slime that is
         // a slide to the bottom: climb straight instead.
         if (!pushers.Ready(now))
         {
             Current = null;
-            return player.Z > Bottom ? normal : Publish(normal, [player + new Vector3(0, 0, -Step)], "终点坡：推板时钟未就绪，直接上坡");
+            return player.Z > Bottom ? normal : Publish(normal, [Aim(player, 0)], "终点坡：推板时钟未就绪，直接上坡");
         }
         var steps = pushers.Steps(now.AddSeconds(Horizon));
         Plan? plan = null;
@@ -62,13 +64,33 @@ internal sealed class BlundervilleSlimeRamp
             if ((plan = Schedule(steps, now, player, tier)) != null) break;
         Current = plan;
         var angle = Steer(plan, player, out var stand, out var hint);
-        if (stand) return Publish(normal, [player], hint);
-        var direction = new Vector3(MathF.Sin(angle), 0, -MathF.Cos(angle));
-        // Keep the aim point on the floor; it only sets the input direction.
-        var reach = Step;
-        if (MathF.Abs(direction.X) > 1e-3f)
-            reach = Math.Clamp((MathF.Sign(direction.X) * 6 - player.X) / direction.X, .6f, Step);
-        return Publish(normal, [player + direction * reach], hint);
+        if (stand) { _aim = null; return Publish(normal, [player], hint); }
+        return Publish(normal, [Aim(player, angle)], hint);
+    }
+
+    // 2026-10-14 02:08 ARR: a new aim point every scan re-dispatched GreenMove
+    // ~8 times a second, and a frame without input on the slime starts the
+    // native slide (server move state 3): seven slides back down in 30s. The
+    // aim stays fixed while the input angle stays within AimSlack and the
+    // point is still ahead, so the native input runs on uninterrupted.
+    private const float AimSlack = 5 * MathF.PI / 180, AimReach = 6;
+    private Vector3 Aim(Vector3 player, float angle)
+    {
+        if (_aim is { } aim && MathF.Abs(MathF.IEEERemainder(angle - _aimAngle, MathF.Tau)) <= AimSlack)
+        {
+            var ahead = aim - player; ahead.Y = 0;
+            var direction = new Vector3(MathF.Sin(_aimAngle), 0, -MathF.Cos(_aimAngle));
+            if (Vector3.Dot(ahead, direction) > 1.2f) return aim;
+        }
+        var heading = new Vector3(MathF.Sin(angle), 0, -MathF.Cos(angle));
+        // Keep the aim point on the ramp floor (|x| <= 6, at most 2m past the top).
+        var reach = AimReach;
+        if (MathF.Abs(heading.X) > 1e-3f)
+            reach = MathF.Min(reach, (MathF.Sign(heading.X) * 6 - player.X) / heading.X);
+        if (heading.Z < -1e-3f) reach = MathF.Min(reach, (Top - 2 - player.Z) / heading.Z);
+        _aimAngle = angle;
+        _aim = player + heading * Math.Clamp(reach, .6f, AimReach);
+        return _aim.Value;
     }
 
     // The input angle (0 straight up the ramp, + toward +x).

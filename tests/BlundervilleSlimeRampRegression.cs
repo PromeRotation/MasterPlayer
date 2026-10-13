@@ -23,7 +23,7 @@ internal static class BlundervilleSlimeRampRegression
     private static readonly float Drift = float.TryParse(Environment.GetEnvironmentVariable("SLIME_DRIFT"), out var drift) ? drift : 4;
 
     internal sealed record Effect(double T, int Source, float X, float Z, float? To);
-    internal sealed record Outcome(string Name, double Arrive, double Climb, double Stand, List<string> Pushes, string? Fall, double MaxMs, double Steered = 1);
+    internal sealed record Outcome(string Name, double Arrive, double Climb, double Stand, List<string> Pushes, string? Fall, double MaxMs, double Steered = 1, int Slides = 0, double DispatchRate = 0);
 
     public static void Run(Action<string, Action> run)
     {
@@ -64,11 +64,12 @@ internal static class BlundervilleSlimeRampRegression
                 if (Environment.GetEnvironmentVariable("SLIME_ONLY") is { Length: > 0 } only && !name.Contains(only)) continue;
                 for (var k = 0; k < Phases; ++k)
                 {
-                    var arrive = 20 + k * 12.85 / Phases;
-                    if (arrive + 45 > effects[^1].T) continue;
-                    var outcome = Simulate(name, effects, arrive, k % 2 == 0 ? 1.5f : -1.5f);
+                    // SLIME_ARRIVE/SLIME_LANE replay one recorded arrival (e.g. 02:08: 59.7s at x=-4.2).
+                    var arrive = double.TryParse(Environment.GetEnvironmentVariable("SLIME_ARRIVE"), out var fixedArrive) ? fixedArrive + k * .1 : 20 + k * 12.85 / Phases;
+                    if (arrive + (Environment.GetEnvironmentVariable("SLIME_ARRIVE") != null ? 25 : 45) > effects[^1].T) continue;
+                    var outcome = Simulate(name, effects, arrive, float.TryParse(Environment.GetEnvironmentVariable("SLIME_LANE"), out var fixedLane) ? fixedLane : k % 2 == 0 ? 1.5f : -1.5f);
                     outcomes.Add(outcome);
-                    Console.WriteLine($"SLIME {name} arrive {arrive:F2}: {(outcome.Fall ?? "climbed")} {outcome.Climb:F2}s (stood {outcome.Stand:F2}s) pushes {outcome.Pushes.Count}"
+                    Console.WriteLine($"SLIME {name} arrive {arrive:F2}: {(outcome.Fall ?? "climbed")} {outcome.Climb:F2}s (stood {outcome.Stand:F2}s) slides {outcome.Slides} dispatch {outcome.DispatchRate:F1}/s pushes {outcome.Pushes.Count}"
                         + $"{(outcome.Pushes.Count > 0 ? " [" + string.Join("; ", outcome.Pushes) + "]" : "")} search {outcome.MaxMs:F0}ms");
                 }
             }
@@ -78,6 +79,8 @@ internal static class BlundervilleSlimeRampRegression
             Console.WriteLine($"SLIME input held on the slime: mean {outcomes.Average(o => o.Steered):P1}, min {outcomes.Min(o => o.Steered):P1}");
             Check(outcomes.All(o => o.Fall == null), "A slime ramp climb fell or stalled.");
             Check(outcomes.All(o => o.Pushes.Count == 0), "A slime ramp climb was pushed by a recorded pusher.");
+            Console.WriteLine($"SLIME slides {outcomes.Sum(o => o.Slides)}, GreenMove dispatch mean {outcomes.Average(o => o.DispatchRate):F1}/s max {outcomes.Max(o => o.DispatchRate):F1}/s");
+            Check(outcomes.All(o => o.Slides == 0), "Input dropped on the slime (native slide).");
         });
     }
 
@@ -153,7 +156,8 @@ internal static class BlundervilleSlimeRampRegression
                 }
             }
             if (p.Z is < BlundervilleSlimeRamp.Bottom and > BlundervilleSlimeRamp.Top && MathF.Abs(p.X) > 6.4f) { fall = $"fell at t={t:F2} ({p.X:F2},{p.Z:F2})"; break; }
-            if (p.Z <= BlundervilleSlimeRamp.Top) return new(name, arrive, t - (onSlime ?? arrive), stand, pushes, null, maxMs, steeredTicks / (double)Math.Max(1, slickTicks));
+            if (p.Z <= BlundervilleSlimeRamp.Top) return new(name, arrive, t - (onSlime ?? arrive), stand, pushes, null, maxMs, steeredTicks / (double)Math.Max(1, slickTicks),
+                move.Slides, move.Dispatches / Math.Max(1, t - arrive));
         }
         return new(name, arrive, t - (onSlime ?? arrive), stand, pushes, fall ?? $"stalled at ({p.X:F2},{p.Z:F2})", maxMs);
     }
@@ -194,12 +198,12 @@ internal static class BlundervilleSlimeRampRegression
     // without input it slides down at Drift m/s.
     private sealed class Slime : IGreenMoveSystem
     {
-        private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready;
-        public DateTime Now; public bool Slick; public float Rotation;
+        private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready, _slideUntil;
+        public DateTime Now; public bool Slick; public float Rotation; public int Dispatches, Slides;
         public bool IsRunning => _index < _points.Count;
         public GreenMoveStatus GetStatus() => new(IsRunning, IsRunning ? _points[_index] : null, _points.LastOrDefault(), _index, _points.Count, Math.Max(0, _points.Count - _index - 1));
         public void MoveTo(GreenMovePoint p) => MoveTo([p]);
-        public void MoveTo(IReadOnlyList<GreenMovePoint> p) { var running = IsRunning; _points = p; _index = 0; if (!running) _ready = Now.AddSeconds(.08); }
+        public void MoveTo(IReadOnlyList<GreenMovePoint> p) { var running = IsRunning; _points = p; _index = 0; ++Dispatches; if (!running) _ready = Now.AddSeconds(.08); }
         public void Stop() { _points = []; _index = 0; }
         public void Append(GreenMovePoint p) => Append([p]);
         public void Append(IReadOnlyList<GreenMovePoint> p) => _points = _points.Concat(p).ToArray();
@@ -214,6 +218,10 @@ internal static class BlundervilleSlimeRampRegression
                 var d = Flat(_points[_index].Position - p);
                 if (d.LengthSquared() > 1e-6f) { input = Vector3.Normalize(d); Rotation = MathF.Atan2(input.X, input.Z); }
             }
+            // 02:08 ARR (server move state 3): any frame without input on the
+            // slime starts a slide that ignores input for about a second.
+            if (Slick && input == Vector3.Zero && Now >= _slideUntil) { _slideUntil = Now.AddSeconds(1); ++Slides; }
+            if (Slick && Now < _slideUntil) input = Vector3.Zero;
             if (Slick) return p + (input * 6 + new Vector3(0, 0, Drift)) * dt;
             if (input == Vector3.Zero) return p;
             var distance = Flat(_points[_index].Position - p).Length();
