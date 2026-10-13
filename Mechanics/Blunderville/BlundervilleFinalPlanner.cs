@@ -239,25 +239,27 @@ internal sealed class BlundervilleFinalPlanner
         var z = MathF.Floor((player.Z - .5f) / LayerStep) * LayerStep;
         for (; z >= goal - 1e-3f && layer.Count > 0; z -= LayerStep)
         {
-            var next = new Dictionary<(int Lane, int Bucket), Node>();
-            foreach (var node in layer)
+            var row = z;
+            var next = Expand(layer, node =>
+            {
+                var found = new List<((int Lane, int Bucket) Key, Node Node)>();
                 foreach (var wait in Waits)
                 {
                     if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait)) break;
                     var depart = node.Time + wait;
                     for (var lane = Math.Max(node.Lane - (int)MaxLateral, -profile.Lanes); lane <= Math.Min(node.Lane + (int)MaxLateral, profile.Lanes); ++lane)
                     {
-                        var to = new Vector3(lane, node.Position.Y, z);
-                        if (!Viable(profile, lane, z)) continue;
+                        var to = new Vector3(lane, node.Position.Y, row);
+                        if (!Viable(profile, lane, row)) continue;
                         var arrival = depart + Distance(node.Position, to) / speed;
                         if (arrival > 30) continue;
                         if (!ArenaBoundaryTraversal.ContainsTube(floor, node.Position, to, FloorClearance)) continue;
                         if (!index.Segment(node.Position, to, depart, arrival)) continue;
-                        var key = (lane, (int)(arrival / .2));
-                        if (!next.TryGetValue(key, out var old) || old.Time > arrival)
-                            next[key] = new(to, arrival, wait, node, lane);
+                        found.Add(((lane, (int)(arrival / .2)), new(to, arrival, wait, node, lane)));
                     }
                 }
+                return found;
+            });
             // Keep the two earliest histories per lane so a later safe window
             // survives next to the fastest one.
             layer = next.Values.GroupBy(n => n.Lane).SelectMany(g => g.OrderBy(n => n.Time).Take(2)).ToList();
@@ -276,6 +278,20 @@ internal sealed class BlundervilleFinalPlanner
         // still hand over (20:42 replay idled at z=156 inside an R5 circle).
         if (best == null || player.Z - best.Position.Z < LayerStep - .01f && !(profile.Stairs && MathF.Abs(best.Position.Z - RunupZ) < .01f)) return null;
         return ToPlan(best, now);
+    }
+
+    // 23:48 ARR: this search ran on the game thread (frames up to ~70ms). Each
+    // node of a layer expands on its own core; candidates merge in the
+    // sequential order, so the plan is unchanged.
+    private static Dictionary<(int Lane, int Bucket), Node> Expand(List<Node> layer, Func<Node, List<((int Lane, int Bucket) Key, Node Node)>> expand)
+    {
+        var results = new List<((int Lane, int Bucket) Key, Node Node)>[layer.Count];
+        Parallel.For(0, layer.Count, i => results[i] = expand(layer[i]));
+        var next = new Dictionary<(int Lane, int Bucket), Node>();
+        foreach (var found in results)
+            foreach (var (key, node) in found)
+                if (!next.TryGetValue(key, out var old) || old.Time > node.Time) next[key] = node;
+        return next;
     }
 
     private static List<Waypoint> ToPlan(Node best, DateTime now)
@@ -456,8 +472,9 @@ internal sealed class BlundervilleFinalPlanner
             var (_, point, lateral) = stations[k];
             var last = k == stations.Count - 1;
             var lanes = last ? 0 : width;
-            var next = new Dictionary<(int Lane, int Bucket), Node>();
-            foreach (var node in layer)
+            var next = Expand(layer, node =>
+            {
+                var found = new List<((int Lane, int Bucket) Key, Node Node)>();
                 foreach (var wait in CorridorWaits)
                 {
                     if (wait > 0 && !index.Stand(node.Position, node.Time, node.Time + wait)) break;
@@ -471,11 +488,11 @@ internal sealed class BlundervilleFinalPlanner
                         if (hold is { } h && depart < h.Until && arrival > h.From) continue;
                         if (!ArenaBoundaryTraversal.ContainsTube(floor, node.Position, to, FloorClearance)) continue;
                         if (!index.Segment(node.Position, to, depart, arrival)) continue;
-                        var key = (lane, (int)(arrival / .2));
-                        if (!next.TryGetValue(key, out var old) || old.Time > arrival)
-                            next[key] = new(to, arrival, wait, node, lane);
+                        found.Add(((lane, (int)(arrival / .2)), new(to, arrival, wait, node, lane)));
                     }
                 }
+                return found;
+            });
             layer = next.Values.GroupBy(n => n.Lane).SelectMany(g => g.OrderBy(n => n.Time).Take(2)).ToList();
             foreach (var node in layer.OrderBy(n => n.Time))
                 if (index.Stand(node.Position, node.Time, node.Time + StandAfterGoal)) { refuge = node; break; }

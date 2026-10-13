@@ -25,6 +25,8 @@ internal static class BlundervilleSwingerRampRegression
     {
         run("Blunderville swinger ramp corridor crosses the recorded rows without stopping", () =>
         {
+            // The script compiles its planners on a worker when it starts.
+            BlundervilleWarmup.Run();
             var results = new List<(string Fixture, double Phase, double Corridor, int CorridorHits, double Solver, int SolverHits)>();
             foreach (var (fixture, first) in Fixtures)
                 for (var phase = first; phase < first + 4.2; phase += .35)
@@ -33,6 +35,7 @@ internal static class BlundervilleSwingerRampRegression
                     results.Add((fixture, phase, corridor.Elapsed, corridor.Hits, solver.Elapsed, solver.Hits));
                     Console.WriteLine($"SWINGER {fixture[10..]} phase {phase:F2}: corridor {corridor.Elapsed:F2}s hits {corridor.Hits}, solver {solver.Elapsed:F2}s hits {solver.Hits}");
                 }
+            Console.WriteLine($"SWINGER slowest lane planner scan {LaneMs:F1}ms; after warm-up {Spread()}; first {string.Join(" ", LaneScans.Take(8).Select(x => x.ToString("F1")))}; top {string.Join(" ", LaneScans.Select((x, i) => (x, i)).OrderByDescending(v => v.x).Take(5).Select(v => $"{v.x:F1}@{v.i}"))}");
             Console.WriteLine($"SWINGER corridor mean {results.Average(r => r.Corridor):F2}s max {results.Max(r => r.Corridor):F2}s hits {results.Sum(r => r.CorridorHits)};"
                 + $" solver mean {results.Average(r => r.Solver):F2}s max {results.Max(r => r.Solver):F2}s hits {results.Sum(r => r.SolverHits)}");
             // 2026-10-13: corridor mean 6.1s (max 7.2s), the solver alone 11.8s
@@ -52,6 +55,7 @@ internal static class BlundervilleSwingerRampRegression
                 Console.WriteLine($"SLOPE phase {phase:F2}: corridor {corridor.Elapsed:F2}s hits {corridor.Hits} bomb {(corridor.Exploded ? "EXPLODED" : "ok")},"
                     + $" solver {solver.Elapsed:F2}s hits {solver.Hits} bomb {(solver.Exploded ? "EXPLODED" : "ok")}");
             }
+            Console.WriteLine($"SLOPE slowest lane planner scan {LaneMs:F1}ms; after warm-up {Spread()}");
             Console.WriteLine($"SLOPE corridor mean {results.Average(r => r.Corridor.Elapsed):F2}s max {results.Max(r => r.Corridor.Elapsed):F2}s hits {results.Sum(r => r.Corridor.Hits)}"
                 + $" explosions {results.Count(r => r.Corridor.Exploded)}; solver mean {results.Average(r => r.Solver.Elapsed):F2}s max {results.Max(r => r.Solver.Elapsed):F2}s"
                 + $" hits {results.Sum(r => r.Solver.Hits)} explosions {results.Count(r => r.Solver.Exploded)}");
@@ -61,6 +65,11 @@ internal static class BlundervilleSwingerRampRegression
             Check(results.Average(r => r.Corridor.Elapsed) < 10, "The slope corridor no longer crosses the rows without long holds.");
         });
     }
+
+    // Slowest main-thread lane planner scan in the runs so far.
+    internal static double LaneMs;
+    internal static readonly List<double> LaneScans = [];
+    private static string Spread() { var v = LaneScans.Skip(5).OrderBy(x => x).ToArray(); return v.Length == 0 ? "" : $"p50 {v[v.Length / 2]:F1}ms p95 {v[v.Length * 95 / 100]:F1}ms p99 {v[v.Length * 99 / 100]:F1}ms max {v[^1]:F1}ms"; }
 
     private static (double Elapsed, int Hits) Simulate(string fixture, double phase, bool corridor)
     {
@@ -92,7 +101,9 @@ internal static class BlundervilleSwingerRampRegression
                 state.SynchronizeStatuses(bomb is { } b && now < b ? [new(3802, 0, b)] : [], now);
                 var decision = planner.Update(state, now, p, true, false, false, null);
                 // Mirrors BlundervilleScript: the FirstA lane planner, then the bomb stop.
+                var laneWatch = System.Diagnostics.Stopwatch.StartNew();
                 if (corridor) decision = lanes.Apply(decision, state, replay.Encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
+                LaneMs = Math.Max(LaneMs, laneWatch.Elapsed.TotalMilliseconds); if (corridor) LaneScans.Add(laneWatch.Elapsed.TotalMilliseconds);
                 if (!decision.Hold && !(corridor && lanes.HoldsBomb && !state.MustStopForAccelerationBomb(now))
                     && BlundervilleBombStop.StopEarly(state, replay.Encounter.TraversalHazards(now), p, now))
                     decision = decision with { Hold = true, Jump = false };

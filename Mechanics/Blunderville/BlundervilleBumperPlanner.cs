@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using MasterPlayer.Spatial;
 using MasterPlayer.Spatial.Geometry;
@@ -398,7 +399,8 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
     private static Step[] Search(IGeometryShape floor, BlundervilleHazard[] hazards, Vector3 player, float speed, DateTime now,
         double horizon = 20.5, Step? anchor = null, bool allowInitialWait = true, bool onIce = false)
     {
-        var ground = new Dictionary<(Vector3 From, Vector3 To, bool Sliding), bool>();
+        // Shared by the parallel layer expansion below.
+        var ground = new ConcurrentDictionary<(Vector3 From, Vector3 To, bool Sliding), bool>();
         var obstacles = new ObstacleIndex(hazards, now, .25);
         // Initial departure is now absolute, independent of worker latency.
         // Reserve one 100ms policy scan plus 100ms native input acquisition.
@@ -428,29 +430,36 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
         var endangered = anchor == null && allowInitialWait && player.Z < -158.5f
             && !CanGo(player, player, 0, EscapeTrigger, 0);
         List<Node>? firstLayer = null;
-        var refuges = new Dictionary<Node, bool>(ReferenceEqualityComparer.Instance);
+        var refuges = new ConcurrentDictionary<Node, bool>(ReferenceEqualityComparer.Instance);
         const float entry = -180.75f;
         for (var z = player.Z - 2; player.Z > entry && layer.Count != 0; z -= 2)
         {
             z = MathF.Max(entry, z);
             var next = new Dictionary<(int X, int Time), Node>();
-            foreach (var previous in layer)
-                for (var wait = 0.0; wait <= (allowInitialWait && player.Z > -163 && previous.Parent == null ? 6 : 0); wait += .25)
+            // Expanded per node and wait in parallel, merged in the sequential order.
+            var expansions = layer.SelectMany(previous => Enumerable.Range(0, (int)Math.Round((allowInitialWait && player.Z > -163 && previous.Parent == null ? 6 : 0) / .25) + 1)
+                .Select(k => (Previous: previous, Wait: k * .25))).ToArray();
+            var walked = new List<((int X, int Time) Key, Node Node, double Late)>[expansions.Length];
+            Parallel.For(0, expansions.Length, index =>
+            {
+                var (previous, wait) = expansions[index];
+                var found = new List<((int X, int Time) Key, Node Node, double Late)>();
+                walked[index] = found;
+                if (wait > 0 && !CanGo(previous.Position, previous.Position, previous.Time, previous.Time + wait + .1, 0)) return;
+                var lastX = z <= -180 ? 29 : 10;
+                for (var x = -6; x <= lastX+2; ++x)
                 {
-                    if (wait > 0 && !CanGo(previous.Position, previous.Position, previous.Time, previous.Time + wait + .1, 0)) continue;
-                    var lastX = z <= -180 ? 29 : 10;
-                    for (var x = -6; x <= lastX+2; ++x)
-                    {
-                        var p = new Vector3(x == lastX+1 ? -207.4f : x == lastX+2 ? -214.4f : -211 + x * .5f, player.Y, z);
-                        var start = previous.Time + wait + (wait > 0 ? .1 : 0); var time = start + Distance(previous.Position, p) / speed;
-                        var cornerDelay = WalkingCornerDelay(previous, p);
-                        var late = (previous.LongTime ?? previous.Time) + time - previous.Time + cornerDelay;
-                        if (late > horizon || !CanGo(previous.Position, p, start, time, 0, timingSpread: late - time)) continue;
-                        var key = (x, (int)(time / .05));
-                        if (!next.TryGetValue(key, out var old) || (old.LongTime ?? old.Time) > late) next[key] = new(p, time, wait, previous, speed,
-                            ShortTime: time, LongTime: late);
-                    }
+                    var p = new Vector3(x == lastX+1 ? -207.4f : x == lastX+2 ? -214.4f : -211 + x * .5f, player.Y, z);
+                    var start = previous.Time + wait + (wait > 0 ? .1 : 0); var time = start + Distance(previous.Position, p) / speed;
+                    var cornerDelay = WalkingCornerDelay(previous, p);
+                    var late = (previous.LongTime ?? previous.Time) + time - previous.Time + cornerDelay;
+                    if (late > horizon || !CanGo(previous.Position, p, start, time, 0, timingSpread: late - time)) continue;
+                    found.Add(((x, (int)(time / .05)), new(p, time, wait, previous, speed, ShortTime: time, LongTime: late), late));
                 }
+            });
+            foreach (var found in walked)
+                foreach (var (key, node, late) in found)
+                    if (!next.TryGetValue(key, out var old) || (old.LongTime ?? old.Time) > late) next[key] = node;
             layer = SelectLayer(next.Values, 24, z > -180 ? 120 : 240, false);
             if (endangered) firstLayer ??= [.. layer];
             if (z == entry) break;
@@ -520,7 +529,18 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             // gap. The coarse quarter-metre headings can straddle both safe
             // tangents even though a fully checked ray exists between them.
             for(var refinement=0;refinement<2 && next.Count==0;++refinement)
-            foreach (var previous in layer)
+            {
+            // 23:48 ARR: one search took 0.5–0.6s on a single core while the
+            // player waited for it. Each node of a layer expands on its own
+            // core; the merge keeps the sequential order and pruning, so the
+            // result does not depend on thread timing.
+            var snapshot = bestScore;
+            // In generation order: an exit (Key null) or a node with the bound it was pruned by.
+            var expanded = new List<((int, int, int, int, int, int, int, int, int)? Key, Node Node, double Bound)>[layer.Count];
+            Parallel.For(0, layer.Count, index =>
+            {
+                var previous = layer[index];
+                var found = new List<((int, int, int, int, int, int, int, int, int)? Key, Node Node, double Bound)>();
                 foreach (var target in SlideTargets(previous.Position,refinement==0 ? .25f : .05f))
                 {
                     var startedOnIce = previous.Sliding || player.Z < -181.2f || StartsSlide(previous, target);
@@ -545,7 +565,8 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
                     if (!OnFloor(floor,previous.Position,p,.2f)) continue;
                     if (startedOnIce && previous.Position.Z <= -181.4f && p.Z >= -204.5f
                         && !obstacles.Avoids(previous.Position,p,previous.Time,previous.Time+5.0/3,0,acquisitionDelay)) continue;
-                    if(time+MinimumRemainingTime(p.Z)>=bestScore) continue;
+                    var bound = time+MinimumRemainingTime(p.Z);
+                    if(bound>=snapshot) continue;
                     if (slide >= committedSlides)
                     {
                         // Estimate the continuation after observing its live
@@ -565,12 +586,11 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
                             p-outgoing*.12f,p+outgoing*.12f,time,time,.02f,q,true);
                         if (Exit(preview) is { } previewExit)
                         {
-                            if (previewExit.Time < bestScore && Standable(previous, RefugeHold))
-                            { last = previewExit; bestScore = previewExit.Time; }
+                            if (previewExit.Time < snapshot && Standable(previous, RefugeHold)) found.Add((null, previewExit, 0));
                             continue;
                         }
                         var previewKey = ((int)MathF.Round(p.X/.25f),(int)MathF.Round(p.Z/.25f),(int)(time/.05),0,0,0,0,0,0);
-                        if (!next.TryGetValue(previewKey,out var existing) || existing.Time>time) next[previewKey]=preview;
+                        found.Add((previewKey, preview, bound));
                         continue;
                     }
                     // Re-aim only at a native slide seam. A 5.1m slide overshoots
@@ -597,7 +617,7 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
                         Math.Min(shortStart,longStart), Math.Max(shortStart,longStart), p.Z < -208 ? .4 : 0,
                         acquisitionDelay, previous.Radius, radius, startedOnIce)) continue;
                     var n = new Node(p, time, 0, previous, 3, true, shortTo, longTo, shortTime, longTime, radius, q);
-                    if (Exit(n) is { } exit) { if (exit.Time < bestScore) { last = exit; bestScore = exit.Time; } continue; }
+                    if (Exit(n) is { } exit) { if (exit.Time < snapshot) found.Add((null, exit, 0)); continue; }
                     // Landing displacement changes the following locked ray.
                     // Nominal position and arrival alone do not describe a
                     // complete state, even when the nominal target is equal.
@@ -605,18 +625,25 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
                         (int)MathF.Round((shortTo.X - p.X) / .1f), (int)MathF.Round((shortTo.Z - p.Z) / .1f),
                         (int)MathF.Round((longTo.X - p.X) / .1f), (int)MathF.Round((longTo.Z - p.Z) / .1f),
                         (int)Math.Round((shortTime - time) / .025), (int)Math.Round((longTime - time) / .025));
-                    if (!next.TryGetValue(key, out var old) || old.Time > time) next[key] = n;
+                    found.Add((key, n, bound));
                 }
+                expanded[index] = found;
+            });
+            foreach (var found in expanded)
+                foreach (var (key, candidate, bound) in found)
+                    if (key is not { } k) { if (candidate.Time < bestScore) { last = candidate; bestScore = candidate.Time; } }
+                    else if (bound < bestScore && (!next.TryGetValue(k, out var old) || old.Time > candidate.Time)) next[k] = candidate;
+            }
             layer = SelectLayer(next.Values, 24, slide >= committedSlides ? 16 : 32, true);
             if (endangered && slide == 0) firstLayer ??= [.. layer];
         }
         var endpointSafety = 0.0;
-        if (last == null && endangered && firstLayer != null)
+        if (last == null && endangered)
         {
             // Escape only: one validated move to the landing that stays clear
             // longest, preferring progress. The next fresh plan restarts there.
             Node? refuge = null; var refugeHold = 0.0;
-            foreach (var n in firstLayer)
+            foreach (var n in firstLayer ?? [])
             {
                 if (n.Preview || n.Parent == null) continue;
                 var hold = 0.0;
@@ -624,6 +651,28 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
                     if (CanStand(n, h)) { hold = h; break; }
                 if (hold > refugeHold || hold > 0 && hold == refugeHold && n.Position.Z < refuge!.Position.Z)
                 { refuge = n; refugeHold = hold; }
+            }
+            // 23:48 ARR / phase-40 replay: mid-bridge at -176.4 the live check
+            // dropped the route, every forward landing was blocked and the
+            // player stood in the next pulse. Dodge sideways or back as well.
+            if (refuge == null && player.Z > entry)
+            {
+                var root = new Node(player, 0, 0, null, speed);
+                for (var dz = -3f; dz <= 4f; dz += .5f)
+                    for (var dx = -4f; dx <= 4f; dx += .5f)
+                    {
+                        var to = new Vector3(player.X + dx, player.Y, MathF.Min(-158.25f, player.Z + dz));
+                        var distance = Distance(player, to);
+                        if (distance < .5f || distance > 4.5f) continue;
+                        var n = new Node(to, distance / speed, 0, root, speed);
+                        if (!CanGo(player, to, 0, n.Time, 0)) continue;
+                        var hold = 0.0;
+                        for (var h = EscapeMaximumHold; h >= EscapeMinimumHold - 1e-6; h -= .5)
+                            if (CanStand(n, h)) { hold = h; break; }
+                        if (hold > refugeHold || hold > 0 && hold == refugeHold && (to.Z < refuge!.Position.Z - .01f
+                            || MathF.Abs(to.Z - refuge.Position.Z) <= .01f && distance < Distance(player, refuge.Position)))
+                        { refuge = n; refugeHold = hold; }
+                    }
             }
             if (refuge != null) { last = refuge; endpointSafety = refugeHold - .5; }
         }
@@ -777,7 +826,12 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
         if (sliding) return Distance(from,to) < .001f
             ? hazards.Avoids(from,to,start,end,settle,delay,.1f + radius)
             : hazards.AvoidsSlide(from, to, start, settle, delay, .1f, radius);
-        return hazards.Avoids(from, physicalTo, start, end + (overrun > 0 ? 1.0 / 30 : 0), settle, delay, .1f + radius);
+        // Live check of a cylinder-bridge walk: the phase-40 replay planned a
+        // pass .1m from a parked cylinder; 5mm of drift failed this check
+        // mid-bridge, dropped the route and the player stood in the next
+        // pulse. Planning keeps .1m (more changes the ice entries).
+        var clearance = settle <= 0 && to.Z > -180.76f ? .05f : .1f;
+        return hazards.Avoids(from, physicalTo, start, end + (overrun > 0 ? 1.0 / 30 : 0), settle, delay, clearance + radius);
     }
 
     private static bool AnimationEnvelope(BlundervilleHazard hazard)
@@ -791,7 +845,7 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
     private sealed class ObstacleIndex
     {
         private readonly Dictionary<int, List<Obstacle>> _rows = [];
-        private readonly Dictionary<(Vector3 From, Vector3 To), BlundervilleIceTiming.IceTraversalClock> _slides = [];
+        private readonly ConcurrentDictionary<(Vector3 From, Vector3 To), BlundervilleIceTiming.IceTraversalClock> _slides = [];
         public ObstacleIndex(BlundervilleHazard[] hazards, DateTime now, double earlyPadding)
         {
             foreach (var hazard in hazards)

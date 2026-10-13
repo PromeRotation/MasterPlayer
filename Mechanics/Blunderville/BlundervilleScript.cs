@@ -56,6 +56,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         OnLogEvent(HandleEvent);
         Scan(CurrentTime);
         Render(CurrentTime);
+        _ = Task.Run(BlundervilleWarmup.Run);
     }
 
     protected override void OnUpdate(float deltaTime)
