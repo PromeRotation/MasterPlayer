@@ -10,6 +10,8 @@ internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool
     // The spin bridge planner checks the 34775 blades itself, at their impact
     // instants; the tracker's wide windows must not veto its route.
     public bool SpinRowsOwned { get; init; }
+    // Likewise the slime ramp planner and the 34774 pushers on the final ramp.
+    public bool RampOwned { get; init; }
 }
 
 internal sealed class BlundervilleRacePlanner

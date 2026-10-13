@@ -108,85 +108,10 @@ internal static class BlundervilleFeedback151049Regression
                     Console.WriteLine($"RAMP forecast {recording.Name}: {covered}/{checkedSteps}, player pushes {playerHits}");
                     Check(checkedSteps > 200 && covered >= checkedSteps - 2, "A FirstB ramp pusher step was not forecast one second ahead.");
                 });
-        // FirstB ramp climb at the measured 2.0m/s through the recorded pushers,
-        // entering at several phases of their 12.85s ping-pong.
-        using (var ramp = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", "firstb-ramp-pushers.json"))))
-            foreach (var (name, rows) in ramp.RootElement.GetProperty("recordings").EnumerateObject().Take(4).Select(p => (p.Name, p.Value.Clone().EnumerateArray().ToArray())).ToArray())
-                foreach (var entry in new[] { 20.0, 23.2, 26.4, 29.6 })
-                    run($"Blunderville 151049 FirstB ramp climb without pushes {name} at {entry:F1}", () => SimulateRamp(name, rows, entry));
+        // The FirstB ramp climb itself: BlundervilleSlimeRampRegression (slime physics).
         foreach (var recording in Recordings)
             foreach (var side in new[] { -1f, 1f })
                 run($"Blunderville 151049 Final run to the stairs without contact {recording} side {side}", () => Simulate(recording, side, .3));
-    }
-
-    private static void SimulateRamp(string recording, JsonElement[] rows, double entry)
-    {
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        var encounter = new BlundervilleEncounter(_ => { }); var now = Epoch;
-        var move = new Moving { Speed = BlundervilleRaceState.SlidingSlopeSpeed };
-        using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
-        using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
-        var nav = new BlundervilleNavigation(runtime, api, new()); var state = new BlundervilleRaceState();
-        state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20014, 0, 0, 0, Epoch);
-        var planner = new BlundervilleRacePlanner(); var rampPlanner = new BlundervilleFinalPlanner(BlundervilleFinalPlanner.FirstBRamp); var direct = false;
-        var p = new Vector3(0, BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstB, -338), -338); var previous = p;
-        SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 0.0; var nextScan = 0.0;
-        const double frame = 1.0 / 30; var index = 0;
-        for (var tick = 0; tick * frame < entry + 40; ++tick)
-        {
-            var t = tick * frame; now = Epoch.AddSeconds(t); move.Now = now;
-            var started = index;
-            while (index < rows.Length && rows[index][0].GetDouble() <= t)
-            {
-                var e = rows[index++];
-                encounter.Effect((ulong)e[1].GetInt32() + 1, 34774, 0, Vec(e[2]), 0, Epoch.AddSeconds(e[0].GetDouble()), Vec(e[3]));
-            }
-            if (t < entry) { nextScan = t; continue; }
-            state.SynchronizeStatuses([new(3703, 0, Epoch.AddSeconds(entry + 60))], now);
-            if (t + 1e-7 >= nextScan)
-            {
-                nextScan = t + .1; api.UtcNowForTest = now;
-                // Mirrors BlundervilleScript: the ramp lane planner over the race route.
-                var decision = rampPlanner.Apply(planner.Update(state, now, p, true, false, false, null, false), state,
-                    encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
-                direct = decision.DirectTraversal;
-                nav.Apply(state, decision, encounter, now, p, true, false, false);
-            }
-            var snapshot = runtime.Manager.BuildSnapshot(now);
-            var player = new PlayerState(p, 0, move.Speed, Vector3.DistanceSquared(previous, p) > 1e-6f, false, 0, true, snapshot.Version);
-            var limits = new MovementCapability(move.Speed, move.Speed, 0, false, move.Speed, move.Speed);
-            if (direct) ((SafeZoneRebornMovementSystem)runtime.MovementStatus).Update(player, limits, now);
-            else
-            {
-                if (pending != null && t >= ready) { accepted = pending; pending = null; }
-                if (pending == null && t >= nextSolve)
-                {
-                    var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!.Invoke(runtime.MovementStatus, null)!;
-                    var watch = System.Diagnostics.Stopwatch.StartNew();
-                    pending = new SafeZoneSolver().Solve(snapshot, player, limits, options, now);
-                    ready = t + Math.Max(.3, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
-                }
-                runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
-            }
-            previous = p; p = move.Advance(p, (float)frame);
-            p.Y = BlundervilleRoutes.HeightHint(BlundervilleCourse.FirstB, p.Z);
-            // Pushes land on the announced step at its packet.
-            for (var i = started; i < index; ++i)
-            {
-                var e = rows[i]; var from = Vec(e[2]); var to = Vec(e[3]);
-                if (!BlundervilleRampPushers.OnRamp(from, to)) continue;
-                var delta = to - from; delta.Y = 0;
-                var body = new RectangleGeometry((from + to) / 2, MathF.Atan2(delta.X, delta.Z), 3, delta.Length() + 3);
-                Check(!body.Contains(previous, .1f), $"FirstB ramp push at t={e[0].GetDouble():F2} p={previous} ({recording} entry {entry:F1}).");
-            }
-            if (p.Z <= -367)
-            {
-                Console.WriteLine($"RAMP {recording} entry {entry:F1}: climbed in {t - entry:F2}s, dispatch {move.Count}");
-                Check(t - entry < 22, "The FirstB ramp climb waited far longer than its 14.5s walk.");
-                return;
-            }
-        }
-        throw new InvalidOperationException($"The FirstB ramp climb stalled at {p} ({recording} entry {entry:F1}).");
     }
 
     private static void Simulate(string recording, float side, double latency)

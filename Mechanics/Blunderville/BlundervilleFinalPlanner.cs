@@ -22,12 +22,6 @@ internal sealed class BlundervilleFinalPlanner
     // |x|=16 is a 0.55m strip behind the z=178–182 pillars that dead-ends
     // (2026.10.07 19:51 replay side -1 idled there for 20s).
     private const int MaxLane = 15;
-    // ARR 2026-10-12 18:27 FirstB: the generic solver on the 3703 ramp walked
-    // back 5m three times below the first pusher row (z -347.8), then side-
-    // stepped into the top row and was pushed down twice. The ramp has the
-    // same shape as the Final slope (timed rows, uphill = -Z), so the same
-    // layered lane search runs there: x -6.5..6.5, goal row -368, then the
-    // ordinary route takes the flat finish. Speed is the measured 2.0m/s.
     internal sealed record Profile(BlundervilleCourse Course, float Top, float Bottom, float Exit, int Lanes, float MinY, float? Speed, bool Stairs, string Name,
         (float From, float To)[]? Strips = null, Vector3[]? Spoke = null, ushort Colour = 0,
         float LaneWidth = 1, float HazardClearance = Clearance, double ExecutionLag = Lag, float StandClearance = Clearance, bool Bomb = false)
@@ -41,8 +35,6 @@ internal sealed class BlundervilleFinalPlanner
     // 27s; humans cross each zone in one go and only wait on these strips.
     internal static readonly Profile Final = new(BlundervilleCourse.Final, Top, Bottom, Exit, MaxLane, 2, null, true, "决赛",
         [(272.5f, 290), (257, 262.5f), (235.3f, 237), (180.7f, 187.4f)]);
-    internal static readonly Profile FirstBRamp = new(BlundervilleCourse.FirstB, -336, -367.5f, -368, 6, 9.5f,
-        BlundervilleRaceState.SlidingSlopeSpeed, false, "终点坡");
     // Delivery carries (2026-10-13 route research, 21 rounds): the generic
     // solver walked onto the E bridge, where one of two charger lines along
     // the bridge fires about every 2s, and then found no departure and stood

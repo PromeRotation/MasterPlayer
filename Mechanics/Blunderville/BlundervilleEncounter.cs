@@ -42,6 +42,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleBumperTracker _bumpers = new();
     private readonly BlundervilleChargeTracker _deliveryCharges = new();
     private readonly BlundervilleRampPushers _rampPushers = new();
+    public BlundervilleRampPushers RampPushers => _rampPushers;
     public BlundervilleDeliverySchedule DeliverySchedule { get; } = new();
     public BlundervilleRingBeam RingBeam { get; } = new();
     public BlundervilleSpinSchedule SpinBlades { get; } = new();
@@ -320,7 +321,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset(); SpinBlades.Reset();
     }
 
-    public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool spinRows = true)
+    public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool spinRows = true, bool ramp = true)
     {
         Tick(now);
         // On the Delivery clock the calibrated schedule is the only source
@@ -342,8 +343,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var hazard in _cylinders.Hazards(now))
             if (Scheduled(hazard.Id, hazard.Id.StartsWith("bumper/", StringComparison.Ordinal) ? "bumper/" : "rhythm/", now)) yield return hazard;
         foreach (var hazard in _deliveryCharges.Hazards(now)) yield return hazard;
-        foreach (var hazard in _charges.Values) yield return hazard;
-        foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;
+        foreach (var hazard in _charges.Values)
+            if (ramp || !OnRamp(hazard.Geometry.Position)) yield return hazard;
+        if (ramp) foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
                 yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt.AddSeconds(-RingLead(cast.Cast.Action, cast.Geometry.Position)),
@@ -377,9 +379,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (RingBeam.Active) foreach (var hazard in _ringCycles.Hazards(now)) yield return hazard;
     }
 
-    public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now, bool spinRows = true)
+    public IEnumerable<BlundervilleHazard> TraversalHazards(DateTime now, bool spinRows = true, bool ramp = true)
     {
-        foreach (var hazard in Hazards(now, spinRows)) yield return hazard;
+        foreach (var hazard in Hazards(now, spinRows, ramp)) yield return hazard;
         foreach (var actor in _actors.Values.Where(a => a.Oid == 16339))
             if (Learned(actor.Id, now) ? !_bumpers.Ready(actor.Id) || !_rhythms.Ready(actor.Id, 34717, now) : !_cylinders.Ready(actor.Id, now))
                 yield return _bumpers.UnknownTraversalHazard(actor, now);
@@ -427,6 +429,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     // edge is ~4m (0.7s) away, so it counts from 0.75s earlier; the outer half
     // stays open meanwhile. Longer leads (or all circles) block whole corners
     // until the beam arrives (22 replays: 1.0s inner 15/22 clean, 0.75s 17/22).
+    // The FirstB final ramp between its pusher rows (BlundervilleSlimeRamp).
+    private static bool OnRamp(Vector3 p) => p.Z is > -370 and < -340 && MathF.Abs(p.X) < 9;
+
     internal const double InnerCircleLead = .75;
     internal static double RingLead(uint action, Vector3 source)
         => action == 34805 && BlundervilleRingCycles.Inner(source) ? InnerCircleLead : 0;
