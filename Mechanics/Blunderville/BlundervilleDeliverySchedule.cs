@@ -17,7 +17,7 @@ internal sealed class BlundervilleDeliverySchedule
     internal const double HitLead = .40, Window = .45, Horizon = 15, Memory = 15;
     internal const float Growth = .15f, Height = 6;
 
-    private sealed record Device(uint Action, IGeometryShape Footprint, Vector3[] Anchors, (double First, double Period)[] Beats);
+    internal sealed record Device(uint Action, IGeometryShape Footprint, Vector3[] Anchors, (double First, double Period)[] Beats);
 
     private static Device Box(uint action, float x, float z, float rotation, float along0, float along1, float halfWidth, (double, double)[] beats)
     {
@@ -114,8 +114,51 @@ internal sealed class BlundervilleDeliverySchedule
                     // equal across scans, or navigation re-registers it and every
                     // pending solve goes stale (the player then stands still).
                     yield return new($"delivery/{i}/{k}/{first}", device.Footprint, hit.AddSeconds(-Window), hit.AddSeconds(Window), start);
+                    if (device.Anchors.Length == 2 && Bodies)
+                        foreach (var (zone, from, until, part) in Body(device, Array.IndexOf(device.Beats, (first, period))))
+                        {
+                            var packet = hit.AddSeconds(HitLead);
+                            if (packet.AddSeconds(until) >= now)
+                                yield return new($"{BodyPrefix}{i}/{k}/{first}/{part}", zone, packet.AddSeconds(from), packet.AddSeconds(until), start);
+                        }
                 }
         }
+    }
+
+    // 2026-10-14 02:08 ARR: the west charger stunned MP 0.9s after its packet,
+    // 4.3m along its 10m segment, outside the packet window; stunned, it then
+    // lost the crystal to 34799. 24 Delivery rounds, every player position
+    // near a charger (stunned within 0.5s or not): a 20m charge stuns only
+    // 16m on to its end, 0.4–1.3s after the packet (up to ~25% of samples
+    // there) and less to 2.0s; a 10m charge 3.5–6.5m along at 0.3–1.0s, then
+    // 3.5m to its end at 1.3–2.0s. Elsewhere along the segments, never.
+    // Beat 0 runs from the second anchor to the first, beat 1 back (all
+    // recorded packets, all 8 segments).
+    internal const bool Bodies = true;
+    // Planner-only: navigation does not register these with the runtime.
+    internal const string BodyPrefix = "delivery/body/";
+    internal static IEnumerable<(IGeometryShape Zone, double From, double Until, int Part)> Body(Device device, int beat)
+    {
+        var (from, to) = beat == 0 ? (device.Anchors[1], device.Anchors[0]) : (device.Anchors[0], device.Anchors[1]);
+        foreach (var (near, far, start, end, part) in BodyZones(DistanceXZ(from, to)))
+            yield return (Zone(from, to, near, far, ((RectangleGeometry)device.Footprint).Width), start, end, part);
+    }
+
+    // Planned around only (BlundervilleFinalPlanner falls back without them):
+    // the high-rate core of each zone. Avoiding the whole stun map, or making
+    // it a hard limit, left the corridors without any way (0–3 of 15 replays).
+    internal static IEnumerable<(float Near, float Far, double From, double Until, int Part)> BodyZones(float length)
+        => length > 12 ? [(length - 2.5f, length + .5f, .5, 1.1, 0)] : [(3.5f, 6, .4, .9, 0)];
+    // The full recorded stun map, for the replays.
+    internal static IEnumerable<(float Near, float Far, double From, double Until, int Part)> TruthZones(float length)
+        => length > 12
+            ? [(length - 4, length + 1, .4, 1.3, 0), (length - 4, length + 1, 1.3, 2, 1)]
+            : [(3.5f, 6.5f, .3, 1, 0), (3.5f, length + .5f, 1.3, 2, 1)];
+
+    internal static RectangleGeometry Zone(Vector3 from, Vector3 to, float near, float far, float width)
+    {
+        var direction = Vector3.Normalize((to - from) with { Y = 0 });
+        return new(from + direction * ((near + far) / 2), MathF.Atan2(direction.X, direction.Z), width, far - near);
     }
 
     // The same calibrated footprint, for replays and tests.

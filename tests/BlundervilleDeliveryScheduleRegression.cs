@@ -80,9 +80,13 @@ internal static class BlundervilleDeliveryScheduleRegression
         // Humans pick up the first crystal 3.5–3.9s after the start.
         var p = new Vector3(-200.3f, 6, 255.5f); var previous = p;
         var history = new List<(double T, Vector3 P)>();
-        var carrying = true; var score = 0; var colour = 0; var sprint = false;
+        var carrying = true; var score = 0; var colour = 0; var sprint = false; var stuns = 0;
+        var picked = 3.8; var carries = new List<string>();
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 0.0; var nextScan = 0.0;
         var impacts = replay.Events.Where(e => e[1].GetString() == "hit" && e[3].GetUInt32() is 34716 or 34774 or 34799).ToArray(); var hitIndex = 0;
+        // Charger body stuns after the recorded packets (24-round stun map).
+        var charges = replay.Events.Where(e => e[1].GetString() == "hit" && e[3].GetUInt32() == 34774 && e[6].ValueKind == JsonValueKind.Array)
+            .Select(e => (T: e[0].GetDouble(), From: Vec(e[4]), To: Vec(e[6]))).ToArray();
         const double frame = 1.0 / 30, begin = 3.8;
         for (var tick = 0; begin + tick * frame < 100; ++tick)
         {
@@ -137,19 +141,28 @@ internal static class BlundervilleDeliveryScheduleRegression
                 Check(!BlundervilleDeliverySchedule.Hits(e[3].GetUInt32(), Vec(e[4]), at),
                     $"Crystal lost to {e[3].GetUInt32()} from {Vec(e[4])} at t={instant:F2} p={at} carrying {order[colour]} ({recording} {order}).");
             }
+            foreach (var (packet, from, to) in charges)
+            {
+                if (t < packet || t > packet + 2 || t < begin + 1) continue;
+                var length = Vector2.Distance(new(from.X, from.Z), new(to.X, to.Z));
+                foreach (var (near, far, start, end, _) in BlundervilleDeliverySchedule.TruthZones(length))
+                    if (t >= packet + start && t <= packet + end && BlundervilleDeliverySchedule.Zone(from, to, near, far, 4f).Contains(p with { Y = from.Y }))
+                        ++stuns;
+            }
             if (carrying && Delivered(order[colour], p))
             {
+                carries.Add($"{order[colour]}{t - picked:F1}");
                 carrying = false; sprint = true;
                 state.Director(BlundervilleRaceState.DirectorInstance, 3, (uint)++score, 0, 0, 0, now);
                 if (score == 3)
                 {
-                    Console.WriteLine($"DELIVERY {recording} {order}: three crystals at {t:F2}s, dispatch {move.Count}");
+                    Console.WriteLine($"DELIVERY {recording} {order}: three crystals at {t:F2}s, dispatch {move.Count}, body frames {stuns}, carries {string.Join(" ", carries)}");
                     Check(t < 75, "The Delivery round was slower than the human median (75s).");
                     return;
                 }
                 ++colour;
             }
-            else if (!carrying && Vector2.Distance(new(p.X, p.Z), new(-200, 252)) <= 3.15f) { carrying = true; sprint = false; }
+            else if (!carrying && Vector2.Distance(new(p.X, p.Z), new(-200, 252)) <= 3.15f) { carrying = true; sprint = false; picked = t; }
         }
         throw new InvalidOperationException($"Delivered {score}/3 by 100s; stopped at {p} ({recording} {order}).");
     }

@@ -133,7 +133,10 @@ internal sealed class BlundervilleFinalPlanner
         if (!Active(state, player, now) || normal.Hold) { Reset(); return normal; }
         var floor = BlundervilleRoutes.NavigationBoundary(state.Course, player);
         var speed = _profile.Speed ?? state.NavigationBaseSpeed(now);
-        var index = new HazardIndex(hazards, now, _profile);
+        // Charger body zones (delivery/body/) are a preference: plan around
+        // them when a way exists, never block or drop a plan on them alone.
+        var soft = hazards.Any(h => h.Id.StartsWith(BlundervilleDeliverySchedule.BodyPrefix, StringComparison.Ordinal));
+        var index = new HazardIndex(soft ? hazards.Where(h => !h.Id.StartsWith(BlundervilleDeliverySchedule.BodyPrefix, StringComparison.Ordinal)).ToArray() : hazards, now, _profile);
         // A newly gained (or refreshed) bomb needs its stand-still in the plan.
         var bomb = _profile.Bomb && state.AccelerationBombExpiresAt is { } expires && expires != DateTime.MaxValue ? expires : (DateTime?)null;
         if (_plan != null)
@@ -147,7 +150,9 @@ internal sealed class BlundervilleFinalPlanner
         {
             if (now < _retry) return Fallback(index, floor, hazards, player, now, speed);
             _planBomb = bomb;
-            _plan = Search(_profile, index, floor, player, now, speed, bomb is { } b ? ((b - now).TotalSeconds - BombLead, (b - now).TotalSeconds + BombTail) : null);
+            (double, double)? hold = bomb is { } b ? ((b - now).TotalSeconds - BombLead, (b - now).TotalSeconds + BombTail) : null;
+            _plan = (soft ? Search(_profile, new HazardIndex(hazards, now, _profile), floor, player, now, speed, hold) : null)
+                ?? Search(_profile, index, floor, player, now, speed, hold);
             _next = 1; _stretch = null;
             if (_plan is not { Count: >= 2 })
             {
