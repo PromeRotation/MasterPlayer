@@ -71,7 +71,7 @@ internal static class BlundervilleObstacleRegression
         // 2026-10-13: the known half cycles anchor every cylinder from one
         // cast. The entrance opens by the earliest human arrival (~8s), not
         // after two learned cycles (17:44: 8.2s wait from 16.5s; 01:01: 13.3s).
-        foreach (var fx in new[] { "obstacles-firsta-174429.json", "obstacles-firsta-010120.json", "obstacles-firsta-044552.json" })
+        foreach (var fx in new[] { "obstacles-firsta-174429.json", "obstacles-firsta-010120.json", "obstacles-firsta-044552.json", "obstacles-firsta-175428.json" })
             run($"Blunderville obstacles cylinder schedule opens early and covers pulses and bodies {fx}", () =>
             {
                 using var replay = new Recording(fx);
@@ -261,9 +261,14 @@ internal static class BlundervilleObstacleRegression
             run($"Blunderville obstacles arrow at {fps}fps", () => Simulate(true, 28, .3, 1.2, .02, frameStep: 1.0 / fps));
     }
 
+    internal static void Simulate175428(int fps, double latency, float slideLength)
+        => Simulate(false, 11.572, latency, 2, slippery: true, frameStep: 1.0 / fps,
+            fixture: "obstacles-firsta-175428.json", slideLength: slideLength, maximumElapsed: 40,
+            startPosition: new(-209.4f, 17.441f, -158.282f));
+
     private static void Simulate(bool arrow, double phase, double latency, double cycle, double inputDelay = 0, bool slippery = false, double frameStep = .01,
         string fixture = "obstacles-firsta-022846.json", float slideLength = 5, float iceEntry = -181.2f, IReadOnlyList<float>? slideLengths = null, float iceSpeed = 3,
-        IReadOnlyList<SlideProfile>? slideProfiles = null, double maximumElapsed = 36, float statusEdge = -180.3f)
+        IReadOnlyList<SlideProfile>? slideProfiles = null, double maximumElapsed = 36, float statusEdge = -180.3f, Vector3? startPosition = null)
     {
         using var replay = new Recording(fixture); var now = Epoch;
         var move = new Moving { Misdirection = arrow, Cycle = cycle, InputDelay = inputDelay, SlideLength = slideLength,
@@ -286,10 +291,11 @@ internal static class BlundervilleObstacleRegression
             scheduled.Add((completion, value, now.AddSeconds(FixedWorker ?? Math.Max(latency, milliseconds / 1000))));
             return completion.Task;
         }, latency);
-        var p = arrow ? new Vector3(-200, 10.03f, -248.2f) : new Vector3(-210.25f, 17.47f, -158);
+        var p = startPosition ?? (arrow ? new Vector3(-200, 10.03f, -248.2f) : new Vector3(-210.25f, 17.47f, -158));
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = phase;
         var hitIndex = 0; var impacts = replay.Events.Where(e => e[1].GetString() == "hit").ToArray();
         var moving = false; var elapsed = 0.0; var maxMs = 0.0; BlundervilleRaceDecision? lastDecision = null;
+        double? firstMovement = null; var idle = 0.0; var longestIdle = 0.0; var idleRun = 0.0;
         var nextScan = phase;
         var previousPosition = p;
         var scanTimes = new List<double>(); var frameTimes = new List<double>();
@@ -297,6 +303,7 @@ internal static class BlundervilleObstacleRegression
         {
             var frameWatch = System.Diagnostics.Stopwatch.StartNew(); var workerBefore = workerTotal;
             var t = phase + tick * frameStep; elapsed = t - phase; now = Epoch.AddSeconds(t); move.Time = t;
+            move.PlayerPosition = p;
             foreach (var task in scheduled.Where(s => s.At <= now).ToArray())
             { task.Source.SetResult(task.Result); scheduled.Remove(task); }
             move.Slippery = slippery && p.Z < iceEntry && p.Z > -204.5f;
@@ -340,7 +347,7 @@ internal static class BlundervilleObstacleRegression
                 {
                     var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", Private)!.Invoke(runtime.MovementStatus, null)!;
                     pending = new SafeZoneSolver().Solve(snapshot, player, new(6, 6, 0, false, 6, 6), options, now);
-                    ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                    ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
                 }
                 runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             }
@@ -359,21 +366,24 @@ internal static class BlundervilleObstacleRegression
                 Check(!shape.Contains(atImpact, .1f), $"Animation hit t={effect[0].GetDouble():F3} p={atImpact} source={effect[2]} action={action}.");
             }
             var next = move.Advance(p, (float)frameStep); moving = Vector3.DistanceSquared(next, p) > .0001f;
+            if (moving) { firstMovement ??= elapsed; idleRun = 0; }
+            else { idle += frameStep; idleRun += frameStep; longestIdle = Math.Max(longestIdle, idleRun); }
             previousPosition = p; p = next;
             Check(BlundervilleRoutes.Boundary(BlundervilleCourse.FirstA).Contains(p), $"Left floor t={t + frameStep:F2} p={p}.");
             if (p.Z < (arrow ? -288.5 : slippery ? -209 : -180.9)) break;
         }
         Console.WriteLine($"OBSTACLES arrow={arrow} slippery={slippery} phase={phase} cycle={cycle} end={p} elapsed={elapsed:F2} dispatch={move.Count} amendments={move.Amendments} stops={move.Stops} slideStops={move.SlideStops} movementMax={maxMs:F1}ms workerMax={workerMax:F1}ms");
+        Console.WriteLine($"OBSTACLES waiting: firstMove={firstMovement:F2}s totalIdle={idle:F2}s longestIdle={longestIdle:F2}s");
         scanTimes.Sort(); frameTimes.Sort();
         Console.WriteLine($"OBSTACLES CPU scan p95={scanTimes[(int)(scanTimes.Count * .95)]:F2}ms max={scanTimes[^1]:F2}ms frame p95={frameTimes[(int)(frameTimes.Count * .95)]:F2}ms max={frameTimes[^1]:F2}ms (replay sampling + navigation + dispatch; excludes background search/native input/render)");
         Check(phase + elapsed <= replay.Events[^1][0].GetDouble(), "Simulation exceeded the available recording.");
         Check(p.Z < (arrow ? -288.5 : slippery ? -209 : -180.9), "Course section never finished.");
         Check(elapsed < maximumElapsed, "Repeated reacquisition/stops made the section too slow.");
         Check(move.Count + move.Amendments < 45, "Repeated queue changes destabilized a safe traversal.");
-        if (!arrow) Check(move.SlideStops == 0 && move.Stops == 0, "The controller interrupted continuous bridge traversal.");
+        if (!arrow) Check(move.SlideStops == 0 && move.InterruptedStops == 0, "The controller interrupted continuous bridge traversal.");
     }
 
-    private sealed class Recording : IDisposable
+    internal sealed class Recording : IDisposable
     {
         public JsonDocument Data;
         public JsonElement[] Events;
@@ -471,6 +481,8 @@ internal static class BlundervilleObstacleRegression
         private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private double _ready; private bool _held; private float _locked;
         private Vector3? _previous;
         public bool Misdirection, Slippery; public double Cycle, Time, InputDelay; public int Count, Stops, SlideStops, Amendments;
+        public Vector3 PlayerPosition;
+        public int InterruptedStops;
         private float _slideRemaining; private Vector3 _slideHeading;
         public float Speed = 6, SlideLength = 5;
         public IReadOnlyList<float>? SlideLengths;
@@ -489,7 +501,19 @@ internal static class BlundervilleObstacleRegression
             IsRunning ? _index : 0, _points.Count, IsRunning ? Math.Max(0, _points.Count - _index - 1) : 0);
         public void MoveTo(GreenMovePoint p) => MoveTo([p]);
         public void MoveTo(IReadOnlyList<GreenMovePoint> p) { var running = IsRunning; _points = p; _index = 0; _previous = null; ++Count; if (!running) _ready = Time + (Misdirection ? InputDelay : .08); }
-        public void Stop() { ++Stops; if (Slippery && _slideRemaining > .1f) ++SlideStops; _points = []; _index = 0; _previous = null; _held = false; }
+        public void Stop()
+        {
+            ++Stops;
+            if (Slippery && _slideRemaining > .1f) ++SlideStops;
+            // A certified refuge is allowed to finish its queue. Distinguish
+            // that completion from interrupting an unfinished native segment.
+            if (IsRunning && !Reached(PlayerPosition, _previous, _points[_index]))
+            {
+                ++InterruptedStops;
+                if (Trace) Console.WriteLine($"INTERRUPTED t={Time:F3} p={PlayerPosition} target={_points[_index].Position}");
+            }
+            _points = []; _index = 0; _previous = null; _held = false;
+        }
         public void Append(GreenMovePoint p) => Append([p]);
         public void Append(IReadOnlyList<GreenMovePoint> p) => _points = _points.Concat(p).ToArray();
         public void ClearQueue() { _points = _points.Take(_index + 1).ToArray(); ++Amendments; }

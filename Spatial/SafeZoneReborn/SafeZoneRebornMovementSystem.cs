@@ -676,7 +676,16 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         if (!float.IsFinite(speed) || speed is < 4.8f or > 8.5f) return false;
         var snapshot = _manager.BuildSnapshot(now);
         var player = new PlayerState(position, 0, speed, false, false, 0, true, snapshot.Version);
-        if (!IsTemporalPhaseSafe(_dispatchedSolution, player, snapshot, now)) return false;
+        // A straight direct traversal was admitted with its own 0.2/0.1s
+        // cushions. Revalidate it with that same contract at launch; the
+        // general route's 0.5s end cushion otherwise rejects an already safe
+        // stair run and forces a late standing restart before each riser.
+        var direct = _directTarget == landing && _directMotion == null && _directPath.Count == 1
+            && _directGeneration == _directDispatchedGeneration;
+        if (direct
+            ? !IsDirectSegmentSafe(snapshot, null, 0, position, landing, speed, now,
+                now.AddSeconds(GeometryHelper.DistanceXZ(position, landing) / speed), .1)
+            : !IsTemporalPhaseSafe(_dispatchedSolution, player, snapshot, now)) return false;
         _jumpLanding = landing; _jumpCommittedAt = now;
         return true;
     }

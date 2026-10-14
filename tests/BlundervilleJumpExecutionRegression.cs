@@ -157,7 +157,7 @@ internal static class BlundervilleJumpExecutionRegression
                 var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", Private)!.Invoke(runtime.MovementStatus, null)!;
                 var watch = Stopwatch.StartNew();
                 pending = new SafeZoneSolver().Solve(snapshot, Player(p, snapshot), new(6, 6, 0, false, 6, 6), options, now);
-                ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
             }
             // In flight, deliberately invalidate the ground solution to prove
             // that ordinary solver churn cannot remove the committed input.
@@ -223,7 +223,7 @@ internal static class BlundervilleJumpExecutionRegression
                 var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", Private)!.Invoke(runtime.MovementStatus, null)!;
                 var watch = Stopwatch.StartNew();
                 pending = new SafeZoneSolver().Solve(snapshot, Player(p, snapshot), new(6, 6, 0, false, 6, 6), options, now);
-                ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
             }
             if (!runtime.Setting.RuntimeMovementHeld)
                 runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, Player(p, snapshot), snapshot, now]);

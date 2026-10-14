@@ -12,9 +12,10 @@ internal readonly record struct BlundervilleRampStep(DateTime At, float Z, float
 // between five stops x≈-6.9/-3.5/0/3.5/6.9, reversing at the ends.
 internal sealed class BlundervilleRampPushers
 {
-    // The push is the effect packet itself: six ARRs show players inside a
-    // step's sweep 0.4–1.4s after its packet without a push. Late packets
-    // (up to ~0.5s past the phase) stay covered by the late margin.
+    // The swept action hits near its effect packet. Its whole sweep does not
+    // remain dangerous, but the moving/resting body can separately stun on
+    // contact (20:57 ARR); RampAscent models that body throughout the step.
+    // Late action packets stay covered by the late margin.
     internal const double StepSeconds = 1.606, Occupied = .3, Horizon = 6;
     internal const float EndX = 6.9f, StepLength = 3.45f, Half = 1.5f;
     private sealed class Track
@@ -93,7 +94,7 @@ internal sealed class BlundervilleRampPushers
     public bool Ready(DateTime now)
         => _tracks.Values.Count(t => t.Anchor != default && (now - t.Anchor).TotalSeconds < 4 * Period) >= 3;
 
-    // The coming steps of every pusher at their scheduled packet times (the
+    // The current and coming steps at their scheduled packet times (the
     // earliest projection; packets only arrive late). A push catches a player
     // inside the step's x range and 1.5m of its row 0.1–0.2s before the packet
     // (all 10 of MP's recorded pushes, none of ~5000 other steps).
@@ -104,9 +105,11 @@ internal sealed class BlundervilleRampPushers
         {
             if (track.Anchor == default) continue;
             var a = track.From; var b = track.To;
-            for (var k = 1; k < 64; ++k)
+            // Include the current step: its body stays at the destination after
+            // the action effect and can still apply environmental stun.
+            for (var k = 0; k < 64; ++k)
             {
-                (a, b) = (b, Next(a, b));
+                if (k > 0) (a, b) = (b, Next(a, b));
                 var at = track.Anchor.AddSeconds(k * Period);
                 if (at > until) break;
                 result.Add(new(at, a.Z, a.X, b.X));

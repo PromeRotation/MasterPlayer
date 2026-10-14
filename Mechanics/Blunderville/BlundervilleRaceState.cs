@@ -23,6 +23,9 @@ internal sealed class BlundervilleRaceState
     public bool StartedByDirector { get; private set; }
     public long RoundVersion { get; private set; }
     public ushort CarryCrystalParam => ActiveStatus(3704, _lastTime)?.Param ?? 0;
+    public ushort LastCrystalParam { get; private set; }
+    private int _pickupScore;
+    public bool FailedDelivery => NeedsPickup && LastCrystalParam != 0 && Score == _pickupScore;
     public Vector3? DeliveryTarget => CarryCrystalParam switch
     {
         35 => new(-240.2991f, 6, 275.4989f),
@@ -47,6 +50,8 @@ internal sealed class BlundervilleRaceState
         _ => null
     };
     public DateTime? AccelerationBombExpiresAt => ActiveStatus(3802, _lastTime)?.ExpiresAt;
+    public DateTime? ObstacleImmunityExpiresAt(DateTime now)
+        => ActiveStatus(529, now) is { ExpiresAt: var until } && until != DateTime.MaxValue ? until : null;
 
     public void Director(uint instance, uint command, uint param1, uint param2, uint param3, uint param4, DateTime now)
     {
@@ -67,6 +72,7 @@ internal sealed class BlundervilleRaceState
                 Qualified = false;
                 _ended = false;
                 Score = 0;
+                LastCrystalParam = 0;
                 StartedAt = now; StartedByDirector = true;
                 RoundVersion++;
                 break;
@@ -91,12 +97,24 @@ internal sealed class BlundervilleRaceState
     public void SynchronizeStatuses(IEnumerable<BlundervilleRaceStatus> statuses, DateTime now)
     {
         Advance(now);
+        var previousCrystal = CarryCrystalParam;
+        var previousImmunity = ActiveStatus(529, now);
         _statuses.Clear();
-        foreach (var status in statuses)
+        foreach (var sampledStatus in statuses)
         {
-            if (status.Id is not (149 or 1548 or 3693 or 3694 or 3698 or 3699 or 3700 or 3701 or 3702 or 3703 or 3704 or 3708 or 3737 or 3782 or 3802)) continue;
+            var status = sampledStatus;
+            if (status.Id is not (149 or 529 or 1548 or 3693 or 3694 or 3698 or 3699 or 3700 or 3701 or 3702 or 3703 or 3704 or 3708 or 3737 or 3782 or 3802)) continue;
             if (status.ExpiresAt < now) continue;
+            // RemainingTime is sampled each frame. Keep the same absolute end
+            // through small sampling jitter so the navigation window stays stable.
+            if (status.Id == 529 && previousImmunity != null && Math.Abs((status.ExpiresAt - previousImmunity.ExpiresAt).TotalSeconds) < .1)
+                status = status with { ExpiresAt = previousImmunity.ExpiresAt };
             if (!_statuses.TryGetValue(status.Id, out var old) || status.ExpiresAt > old.ExpiresAt) _statuses[status.Id] = status;
+            if (status.Id == 3704 && status.Param is 35 or 36 or 37)
+            {
+                LastCrystalParam = status.Param;
+                if (previousCrystal == 0 || previousCrystal != status.Param) _pickupScore = Score;
+            }
         }
     }
 
@@ -165,6 +183,7 @@ internal sealed class BlundervilleRaceState
         IsPrepared = false;
         Qualified = false;
         Score = 0;
+        LastCrystalParam = 0;
         StartedAt = default;
         _ended = false;
         _lastTime = default;
@@ -179,6 +198,7 @@ internal sealed class BlundervilleRaceState
         IsPrepared = true;
         Qualified = false;
         Score = 0;
+        LastCrystalParam = 0;
         StartedAt = default;
         _ended = false;
         _statuses.Clear();

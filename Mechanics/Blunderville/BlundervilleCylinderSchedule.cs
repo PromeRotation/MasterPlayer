@@ -52,7 +52,15 @@ internal sealed class BlundervilleCylinderSchedule
         // slot on the known half cycle is the clock.
         var latest = track.Casts[^1].At;
         var anchor = latest.AddSeconds(track.Casts.Min(c =>
-            (c.At - latest).TotalSeconds + Math.Round((latest - c.At).TotalSeconds / kind.Half) * kind.Half));
+        {
+            // Endpoint identity determines odd/even half cycles. In 17:54 ARR
+            // the first ice cast arrived almost four seconds late: rounding
+            // time alone assigned opposite endpoints to the same beat and
+            // inverted their future body/pulse phase for several cycles.
+            var parity = MathF.Abs(c.Position.X - position.X) < 1 ? 0 : 1;
+            var halves = 2 * Math.Round(((latest - c.At).TotalSeconds / kind.Half - parity) / 2) + parity;
+            return (c.At - latest).TotalSeconds + Math.Max(parity, halves) * kind.Half;
+        }));
         // Like the learned sweeps, each endpoint refreshes the slices: near
         // slices then shed the growth they were published with far ahead.
         track.Slices.Clear();

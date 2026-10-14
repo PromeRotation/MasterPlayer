@@ -430,11 +430,16 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
         var endangered = anchor == null && allowInitialWait && player.Z < -158.5f
             && !CanGo(player, player, 0, EscapeTrigger, 0);
         List<Node>? firstLayer = null;
+        var progressRefuges = new List<Node>();
         var refuges = new ConcurrentDictionary<Node, bool>(ReferenceEqualityComparer.Instance);
         const float entry = -180.75f;
-        for (var z = player.Z - 2; player.Z > entry && layer.Count != 0; z -= 2)
+        for (var z = player.Z - 2; !onIce && player.Z > IceStatusEdge && layer.Count != 0; z -= 2)
         {
             z = MathF.Max(entry, z);
+            // A dry waypoint just before the status edge can be consumed one
+            // input frame beyond it. Turning there starts an unintended slide
+            // before the planned ice seam. Keep that final approach straight.
+            if (z < IceStatusEdge + speed / 30 + .05f) z = entry;
             var next = new Dictionary<(int X, int Time), Node>();
             // Expanded per node and wait in parallel, merged in the sequential order.
             var expansions = layer.SelectMany(previous => Enumerable.Range(0, (int)Math.Round((allowInitialWait && player.Z > -163 && previous.Parent == null ? 6 : 0) / .25) + 1)
@@ -464,6 +469,16 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             if (endangered) firstLayer ??= [.. layer];
             if (z == entry) break;
         }
+        if (player.Z > IceStatusEdge && !onIce)
+            foreach (var n in layer.Where(n => n.Parent != null && n.Position.Z == entry))
+            {
+                var overrun = n.Position + Vector3.Normalize(n.Position - n.Parent!.Position) * (speed / 30);
+                // The queue may stop before native ice sliding begins. Include
+                // one input frame of walking overrun in the standing envelope.
+                if (overrun.Z > -181 && OnFloor(floor, n.Position, overrun, .1f))
+                    progressRefuges.Add(n with { ShortLanding = n.Position, LongLanding = overrun,
+                        LongTime = (n.LongTime ?? n.Time) + 1.0 / 30 });
+            }
         // 17:44 ARR: there is no dry strip between the bridge holes (ending at
         // -180.475) and the ice: the 3693 status lands near -180.3, so the old
         // lateral platform walk along -180.75 became uncontrolled 5m slides.
@@ -636,8 +651,24 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
             }
             layer = SelectLayer(next.Values, 24, slide >= committedSlides ? 16 : 32, true);
             if (endangered && slide == 0) firstLayer ??= [.. layer];
+            // A distant blocked row must not veto safe progress. Keep only
+            // physically complete committed slides, never preview nodes or a
+            // point halfway through an uncontrollable slide.
+            if (slide < committedSlides)
+                progressRefuges.AddRange(next.Values.Where(n => n.Position.Z < player.Z - .5f));
         }
         var endpointSafety = 0.0;
+        if (last == null)
+        {
+            // Validate a generous standing window as well as the complete
+            // arrival envelope. Continue searching while approaching this
+            // refuge; a blocked distant ice lane must not strand us at entry.
+            const double progressHold = 6;
+            last = progressRefuges.Where(n => (n.LongTime ?? n.Time) + progressHold + acquisitionDelay <= horizon
+                    && CanStand(n, progressHold) && HasFloorExit(n.Position))
+                .MinBy(n => (n.LongTime ?? n.Time) + MinimumRemainingTime(n.Position.Z));
+            if (last != null) endpointSafety = progressHold;
+        }
         if (last == null && endangered)
         {
             // Escape only: one validated move to the landing that stays clear
@@ -678,7 +709,7 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
         }
         if (last != null)
         {
-            var estimatedFinish = last.Time;
+            var estimatedFinish = endpointSafety > 0 ? double.PositiveInfinity : last.Time;
             while (last.Preview) last = last.Parent!;
             var nodes = new List<Node>();
             for (var n = last; n.Parent != null; n = n.Parent) nodes.Add(n);
@@ -708,6 +739,17 @@ internal sealed class BlundervilleBumperPlanner(Func<Func<BlundervilleBumperPlan
         static double MinimumRemainingTime(float z)
             => Math.Max(0, z + 181.2f) / 6 + Math.Max(0, Math.Min(z, -181.2f) + 204.5f) / 3
                 + Math.Max(0, Math.Min(z, -204.5f) + 209.2f) / 6;
+
+        bool HasFloorExit(Vector3 from)
+        {
+            // Waiting can clear a timed obstacle, never a missing bridge.
+            // Require a continuous geometric corridor toward the dry exit;
+            // this check grants no authorization through its future hazards.
+            for (var dx = 0f; dx <= 6; dx += .5f)
+                foreach (var sign in new[] { -1, 1 })
+                    if (OnFloor(floor, from, new(from.X + sign * dx, from.Y, -209.2f), .2f)) return true;
+            return false;
+        }
 
         bool CanStand(Node n, double hold)
         {

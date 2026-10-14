@@ -16,7 +16,7 @@ using PromeRotation.GreenMoveSystem;
 // jumps included, and scores the snapshots that would have hit the player.
 internal static class BlundervilleRingRegression
 {
-    private static readonly DateTime Epoch = new(2026, 10, 13, 4, 0, 0, DateTimeKind.Utc);
+    internal static readonly DateTime Epoch = new(2026, 10, 13, 4, 0, 0, DateTimeKind.Utc);
     private static readonly Vector3 Center = new(200, 10, -125);
     private const float Body = .5f;
     private static readonly bool Debug = Environment.GetEnvironmentVariable("RING_DEBUG") == "1";
@@ -59,7 +59,8 @@ internal static class BlundervilleRingRegression
         });
         run("Blunderville ring rounds survive the recorded hazards", () =>
         {
-            var outcomes = names.Select(Simulate).ToArray();
+            // Rounds are independent simulations: run them on every core.
+            var outcomes = names.AsParallel().AsOrdered().WithDegreeOfParallelism(Environment.ProcessorCount).Select(n => Simulate(n)).ToArray();
             foreach (var o in outcomes)
                 Console.WriteLine($"RING {o.Name}: {(o.Fall ?? "survived")} {o.Survived:F1}/{o.End:F1}s, beam hits {o.BeamHits.Count}"
                     + $"{(o.BeamHits.Count > 0 ? " [" + string.Join("; ", o.BeamHits.Take(3)) + "]" : "")}, cast hits {o.CastHits.Count}"
@@ -80,10 +81,10 @@ internal static class BlundervilleRingRegression
         });
     }
 
-    private static Outcome Simulate(string recording)
+    internal static Outcome Simulate(string recording, string file = "ring-recorded.json", double start = 0, Vector3? origin = null, double? latency = null)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
-        using var replay = new Recording(recording); var now = Epoch;
+        using var replay = new Recording(recording, file); var now = Epoch;
         var move = new Moving();
         using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
         using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
@@ -91,7 +92,7 @@ internal static class BlundervilleRingRegression
         state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20015, 0, 0, 0, Epoch);
         var planner = new BlundervilleRacePlanner(); var jumper = new BlundervilleJumpPlanner(); var gate = new BlundervilleJumpExecution();
         var floor = BlundervilleRoutes.Boundary(BlundervilleCourse.Ring);
-        var p = new Vector3(215.4f, 10, -136.7f); var previous = p;
+        var p = origin ?? new Vector3(215.4f, 10, -136.7f); var previous = p;
         var history = new List<(double T, Vector3 P, bool Air)>();
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 0.0; var nextScan = 0.0;
         double? launch = null; var launchSpeed = 6f; var lastSpeed = 0f;
@@ -100,7 +101,7 @@ internal static class BlundervilleRingRegression
         var impacts = replay.Events.Where(e => e[1].GetString() == "hit").ToArray(); var hitIndex = 0;
         const double frame = 1.0 / 30;
         var t = 0.0;
-        for (var tick = 0; (t = tick * frame) < replay.End; ++tick)
+        for (var tick = 0; (t = start + tick * frame) < replay.End; ++tick)
         {
             now = Epoch.AddSeconds(t); move.Now = now;
             var air = launch is { } at && t - at < .75;
@@ -109,7 +110,7 @@ internal static class BlundervilleRingRegression
                 if (Debug) Console.WriteLine($"DBG launch t={t:F2} p=({p.X:F2},{p.Z:F2}) speed={gate.MeasuredSpeed:F2} last={lastSpeed:F2}");
                 if (nav.CommitJump(gate.Landing!.Value, p, gate.MeasuredSpeed, now))
                 {
-                    gate.ConfirmLaunch(now); launch = t; air = true; launchSpeed = lastSpeed >= 4.8f ? 6 : 2.5f;
+                    gate.ConfirmLaunch(now); jumper.ConfirmLaunch(gate.Corridor!); launch = t; air = true; launchSpeed = lastSpeed >= 4.8f ? 6 : 2.5f;
                 }
                 else { nav.ReleaseJump(); gate.RejectLaunch(); }
             }
@@ -162,7 +163,7 @@ internal static class BlundervilleRingRegression
                 pending = new SafeZoneSolver().Solve(snapshot, player, capability, options, now);
                 // Live logs: ~24 async solves per 5s on the Ring (one per ~0.21s).
                 // A fixed latency keeps the replay deterministic across machines.
-                ready = t + Latency; nextSolve = ready + .1;
+                ready = t + (latency ?? Latency); nextSolve = ready + .1;
             }
             if (!runtime.Setting.RuntimeMovementHeld)
                 runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [air ? null : accepted, player, snapshot, now]);
@@ -230,7 +231,7 @@ internal static class BlundervilleRingRegression
         return MathF.Abs(offset.X * heading.Y - offset.Y * heading.X) - 4;
     }
 
-    private sealed class Recording : IDisposable
+    internal sealed class Recording : IDisposable
     {
         private readonly JsonDocument _data;
         public readonly JsonElement[] Events;
@@ -239,9 +240,9 @@ internal static class BlundervilleRingRegression
         private readonly Dictionary<ulong, (uint Action, float Rotation, Vector3 Location)> _lastCast = [];
         public readonly BlundervilleEncounter Encounter = new(_ => { });
         private int _index; private double _sample = -1;
-        public Recording(string name)
+        public Recording(string name, string file = "ring-recorded.json")
         {
-            _data = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", "ring-recorded.json")));
+            _data = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", file)));
             var recording = _data.RootElement.GetProperty("recordings").GetProperty(name);
             Events = recording.GetProperty("events").EnumerateArray().ToArray();
             End = recording.GetProperty("end").GetDouble();
@@ -295,7 +296,7 @@ internal static class BlundervilleRingRegression
         public void Dispose() => _data.Dispose();
     }
 
-    private sealed class Moving : IGreenMoveSystem
+    internal sealed class Moving : IGreenMoveSystem
     {
         private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready;
         public DateTime Now;

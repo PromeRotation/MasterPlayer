@@ -37,7 +37,10 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleFinalPlanner _deliveryWest = new(BlundervilleFinalPlanner.DeliveryWest);
     private readonly BlundervilleFinalPlanner _deliveryEast = new(BlundervilleFinalPlanner.DeliveryEast);
     private readonly BlundervilleFinalPlanner _deliveryNorth = new(BlundervilleFinalPlanner.DeliveryNorth);
-    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _swingerPlanner, _slopePlanner, _deliveryWest, _deliveryEast, _deliveryNorth];
+    private readonly BlundervilleFinalPlanner _returnWest = new(BlundervilleFinalPlanner.ReturnWest);
+    private readonly BlundervilleFinalPlanner _returnEast = new(BlundervilleFinalPlanner.ReturnEast);
+    private readonly BlundervilleFinalPlanner _returnNorth = new(BlundervilleFinalPlanner.ReturnNorth);
+    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _swingerPlanner, _slopePlanner, _deliveryWest, _deliveryEast, _deliveryNorth, _returnWest, _returnEast, _returnNorth];
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -219,7 +222,12 @@ public abstract class BlundervilleScript : MasterPlayerScript
                 BlundervilleCourse.Final => _finalPlanner,
                 // The cylinder/ice planner owns z -158..-208.
                 BlundervilleCourse.FirstA => player.Z > -180 ? _swingerPlanner : player.Z < -209 ? _slopePlanner : null,
-                BlundervilleCourse.Delivery => _race.CarryCrystalParam switch { 35 => _deliveryWest, 36 => _deliveryEast, 37 => _deliveryNorth, _ => null },
+                BlundervilleCourse.Delivery => _race.CarryCrystalParam switch
+                {
+                    35 => _deliveryWest, 36 => _deliveryEast, 37 => _deliveryNorth,
+                    0 when _race.NeedsPickup => _race.LastCrystalParam switch { 35 => _returnWest, 36 => _returnEast, 37 => _returnNorth, _ => null },
+                    _ => null
+                },
                 _ => null
             };
             if (lanePlanner != null)
@@ -296,18 +304,34 @@ public abstract class BlundervilleScript : MasterPlayerScript
         if (_jumpExecution.Corridor == null) return;
         var runtime = MasterPlayerPlugin.Instance!.SafeZone;
         var motion = _native?.Capture(now, (_jumpExecution.Landing ?? player.Position) - player.Position) ?? default;
-        if (_jumpExecution.Sample(now, player.Position, motion.Grounded, motion.Jumping, runtime.MovementStatus.HasControl,
-                PromeRotation.Plugin.Instance.GreenMoveSystem.GetStatus()) && _jumpExecution.Landing is { } landing)
+        // At low FPS a separate scan/frame between steps consumes the next
+        // tread. Its goal is already the same validated ascent: hand over on
+        // confirmed floor contact, retaining native cooldown and speed checks.
+        for (var attempt = 0; attempt < 2; ++attempt)
         {
-            if (_navigation?.CommitJump(landing, player.Position, _jumpExecution.MeasuredSpeed, now) == true
-                && _native?.Apply(now, true, true, _decision.Facing, null) == true)
+            var wasInFlight = _jumpExecution.InFlight;
+            if (_jumpExecution.Sample(now, player.Position, motion.Grounded, motion.Jumping, runtime.MovementStatus.HasControl,
+                    PromeRotation.Plugin.Instance.GreenMoveSystem.GetStatus()) && _jumpExecution.Landing is { } landing)
             {
-                Log($"糖豆人起跳：{player.Position} → {landing}，实测助跑{_jumpExecution.MeasuredSpeed:F2}m/s");
-                _jumpExecution.ConfirmLaunch(now);
+                if (_navigation?.CommitJump(landing, player.Position, _jumpExecution.MeasuredSpeed, now) == true
+                    && _native?.Apply(now, true, true, _decision.Facing, null) == true)
+                {
+                    Log($"糖豆人起跳：{player.Position} → {_jumpExecution.Corridor!.Landing}，实测助跑{_jumpExecution.MeasuredSpeed:F2}m/s");
+                    _jumpExecution.ConfirmLaunch(now);
+                    _jumpPlanner?.ConfirmLaunch(_jumpExecution.Corridor!);
+                }
+                else { _navigation?.ReleaseJump(); _jumpExecution.RejectLaunch(); }
             }
-            else { _navigation?.ReleaseJump(); _jumpExecution.RejectLaunch(); }
+            if (!_jumpExecution.InFlight) _navigation?.ReleaseJump();
+            if (wasInFlight && _jumpExecution.Landed && motion.Grounded && !motion.Jumping
+                && _jumpExecution.Corridor is { Stairs: true })
+            {
+                _nextScan = now;
+                if (_jumpPlanner?.Plan(_race.Course, now, player.Position, _decision.Target ?? player.Position, true, false) is { } next)
+                { _jumpExecution.Prepare(next.Corridor, player.Position); continue; }
+            }
+            break;
         }
-        if (!_jumpExecution.InFlight) _navigation?.ReleaseJump();
         if (_jumpExecution.NeedsRunupRetry)
         { _navigation?.StopForRunup(); _nextScan = now; }
     }

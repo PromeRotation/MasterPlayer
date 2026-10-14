@@ -10,6 +10,27 @@ internal static class NavigationDirectTraversalRegression
     private static readonly DateTime Epoch = new(2026, 10, 9, 0, 0, 0, DateTimeKind.Utc);
     public static void Run(Action<string, Action> run)
     {
+        run("Direct traversal jump revalidates the admitted timing and rejects changed hazards", () =>
+        {
+            var move = new Move(); using var runtime = new SafeZoneRuntime(move, () => false, () => false);
+            runtime.Setting.EnableSafeZone = true; var owner = new object();
+            var landing = new Vector3(0, 0, 4);
+            runtime.RequestAutomaticMovement(owner, true);
+            // This pulse has cleared with the direct traversal's .1s end
+            // cushion. Ordinary path dispatch uses a longer .5s cushion.
+            runtime.Manager.AddDangerArea(new CircleTemplate(.4f), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch.AddSeconds(-1), Epoch.AddSeconds(-.2))]);
+            runtime.RequestDirectTraversal(owner, landing, Epoch);
+            Tick(runtime, Vector3.Zero, Epoch, true);
+            Check(move.IsRunning && runtime.CommitJumpMovement(owner, landing, Vector3.Zero, 6, Epoch),
+                "The verified direct run was rejected under a different timing contract.");
+            runtime.ReleaseCommittedMovement(owner);
+            var danger = runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(landing, 0), [new(Epoch, null)]);
+            Check(!runtime.CommitJumpMovement(owner, landing, Vector3.Zero, 6, Epoch), "A changed landing hazard authorized flight.");
+            runtime.Manager.RemoveArea(danger);
+            runtime.Manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 2));
+            Check(!runtime.CommitJumpMovement(owner, landing, Vector3.Zero, 6, Epoch), "An unsupported landing authorized flight.");
+        });
         foreach (var locked in new[] { false, true })
         foreach (var reason in new[] { "owner", "second owner", "hold", "expiry", "clear", "host" })
             run($"Direct traversal releases on {reason} locked={locked}", () =>

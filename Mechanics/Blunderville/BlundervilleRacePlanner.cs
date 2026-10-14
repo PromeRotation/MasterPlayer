@@ -12,6 +12,8 @@ internal sealed record BlundervilleRaceDecision(Vector3? Target, bool Hold, bool
     public bool SpinRowsOwned { get; init; }
     // Likewise the slime ramp planner and the 34774 pushers on the final ramp.
     public bool RampOwned { get; init; }
+    public Spatial.Geometry.IGeometryShape? RecoveryFloor { get; init; }
+    public bool BelowDeliveryMechanisms { get; init; }
 }
 
 internal sealed class BlundervilleRacePlanner
@@ -32,6 +34,8 @@ internal sealed class BlundervilleRacePlanner
     private Vector3 _forcedPosition;
     private (float Heading, bool Safe) _forcedHeading;
     private float? _forcedFacing;
+    private bool _rejoinCircles;
+    private readonly BlundervilleDeliveryRecovery _deliveryRecovery = new();
     public int Cursor => _cursor;
     public bool Recovering => _recovering;
     public BlundervilleRecoveryCorridor? RecoveryCorridor { get; private set; }
@@ -46,6 +50,7 @@ internal sealed class BlundervilleRacePlanner
         }
         if (_version != state.RoundVersion || _previous is { } previous && Vector3.DistanceSquared(previous, position) > 40 * 40)
         {
+            _deliveryRecovery.Reset();
             _nodes = BlundervilleRoutes.Nodes(state.Course, position);
             _version = state.RoundVersion;
             _cursor = NearestSegment(position);
@@ -53,8 +58,12 @@ internal sealed class BlundervilleRacePlanner
             _deliveryTarget = null; _recovering = false; RecoveryCorridor = null;
             _forcedExpiry = default;
             _forcedFacing = null;
+            _rejoinCircles = false;
         }
         _previous = position;
+        var onCircles = state.Course == BlundervilleCourse.FirstB && position.Y is >= 9.8f and <= 10.8f
+            && position.Z is < -194 and > -250;
+        if (onCircles && state.HasStatus(149, now)) _rejoinCircles = true;
         if (state.Course == BlundervilleCourse.FirstA && position.Y < 12
             && position.X is > -224 and < -176 && position.Z is > -355 and < -322)
             return new(null, true, false, null, "已跌落消失桥，等待回到桥面或手动恢复");
@@ -70,6 +79,12 @@ internal sealed class BlundervilleRacePlanner
         Vector3? target;
         if (state.Course == BlundervilleCourse.Delivery)
         {
+            BlundervilleDeliverySearch.Prepare();
+            if (_deliveryRecovery.Apply(state, position, now, grounded, jumping) is { } recovery)
+            {
+                _deliveryTarget = null;
+                return recovery;
+            }
             var finalTarget = state.Score >= 3 ? null : state.CarryCrystalParam == 0
                 ? (Vector3?)BlundervilleRaceState.PickupCenter : state.DeliveryTarget;
             if (finalTarget is { } delivery)
@@ -101,6 +116,19 @@ internal sealed class BlundervilleRacePlanner
                 RecoveryCorridor = new([position, .. recovery.Select(n => n.Position)], 1);
                 _cursor = 0; _recovering = true;
             }
+            // 20:32 ARR: circle knockbacks crossed the centre and later pushed
+            // backwards around the diamond. Rejoin the actual landing, including
+            // its side and progress, once stun/airborne movement has ended. The
+            // normal 2.5m forward-only rejoin cannot reach the opposite lane.
+            if (onCircles && !_recovering && grounded && !jumping && state.CanMove(now)
+                && (_rejoinCircles || MathF.Abs(position.X) > 2 && _nodes.Count > 10
+                    && MathF.Sign(position.X) != MathF.Sign(_nodes[10].Position.X)))
+            {
+                _nodes = BlundervilleRoutes.Nodes(state.Course, position);
+                _cursor = NearestSegment(position);
+                _rejoinCircles = false;
+            }
+            if (!onCircles && grounded && !jumping && state.CanMove(now)) _rejoinCircles = false;
             // The Final route side is fixed by the start x, but the Final lane
             // planner picks either stair (x=±4) by its hazard timing. 01:39 ARR:
             // start x=0.47 (right route), hand-over at the left run-up
@@ -130,7 +158,7 @@ internal sealed class BlundervilleRacePlanner
 
         var distance = DistanceXZ(position, destination);
         if (state.Course == BlundervilleCourse.Delivery && _cursor == _nodes.Count - 1
-            && distance <= (state.CarryCrystalParam == 0 ? PickupRadius : 1.3f))
+            && distance <= (state.CarryCrystalParam == 0 ? PickupRadius : .25f))
         {
             if (_arrivalTarget != destination) { _arrivalTarget = destination; _arrival = now; }
             // Pickup and delivery are automatic EventRange triggers; status/score confirms success.
@@ -173,8 +201,10 @@ internal sealed class BlundervilleRacePlanner
 
     public void Reset()
     {
+        _deliveryRecovery.Reset();
         _forcedExpiry = default;
         _forcedFacing = null;
+        _rejoinCircles = false;
         _nodes = []; _version = -1; _cursor = 0; _arrival = default; _arrivalTarget = null; _previous = null;
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }

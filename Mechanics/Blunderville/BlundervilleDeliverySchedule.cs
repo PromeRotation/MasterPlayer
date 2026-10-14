@@ -14,8 +14,25 @@ namespace MasterPlayer.Mechanics.Blunderville;
 // independently by up to +-0.55s after 60s.
 internal sealed class BlundervilleDeliverySchedule
 {
-    internal const double HitLead = .40, Window = .45, Horizon = 15, Memory = 15;
+    internal const double HitLead = .40, Window = .45, Horizon = 30, Memory = 15;
     internal const float Growth = .15f, Height = 6;
+    // 25 grounded north-lane contacts: stun arrives 0.186–1.593s after
+    // 34799, including 22:38's +0.435s. The early sweep reaches z=219.84;
+    // later contacts remain in the core footprint. Keep the animation hard,
+    // unlike the optional charger-body preference, and retain an early band
+    // for packet jitter (execution additionally allows 0.35s of lateness).
+    // 239 human north carries (all ARRs, 0 stuns): the band z 219→214 is
+    // entered from 1.8s after a packet and left up to 0.3s after the next one
+    // (3.7s period). The stun is only ever after the packet, so the lead before
+    // it can be short: 0.65 left a 1.3s gap and MP waited 8s at z=224 (02:32).
+    // 16 replayed rounds: 0.35 brings the north carry median from 21.4s to
+    // 16.2s (humans 15.9s) with no north loss; the west rows keep 0.65 (0.35
+    // lost a west crystal).
+    // West at 0.35 lost a crystal in 16 replays; keep 0.65 there.
+    internal const double NorthHammerLead = .35, WestHammerLead = .65;
+    internal const double NorthHammerTail = 1.75, NorthHammerTipTail = .65;
+    private static readonly RectangleGeometry[] NorthHammerTips =
+        [new(new(-204, Height, 217.15f), 0, 4.3f, 6), new(new(-196, Height, 217.15f), 0, 4.3f, 6)];
 
     internal sealed record Device(uint Action, IGeometryShape Footprint, Vector3[] Anchors, (double First, double Period)[] Beats);
 
@@ -34,8 +51,7 @@ internal sealed class BlundervilleDeliverySchedule
             delta.Length() + 2 * extension + 2 * Growth), [a, b], beats);
     }
 
-    // Wind 34800 is deliberately absent: it cannot be avoided on the north
-    // carry (118 of 119 human carries were hit) and never drops the crystal.
+    // Wind 34800 has its own displacement window and barrier pockets below.
     private static readonly Device[] Devices =
     [
         Box(34799, -228.6f, 263.9f, 2.094f, -2.5f, 2.5f, 2f, [(0.198, 4.1015)]),
@@ -67,6 +83,7 @@ internal sealed class BlundervilleDeliverySchedule
 
     private readonly List<(DateTime At, double Residual)>[] _residuals = Devices.Select(_ => new List<(DateTime, double)>()).ToArray();
     private DateTime? _start;
+    private readonly Queue<double> _windOffsets = new();
 
     public bool Active => _start != null;
 
@@ -75,11 +92,23 @@ internal sealed class BlundervilleDeliverySchedule
     {
         if (start == _start) return;
         _start = start;
+        _windOffsets.Clear();
         foreach (var list in _residuals) list.Clear();
     }
 
     public void Observe(uint action, Vector3 position, DateTime at)
     {
+        if (_start is { } windStart && action == 34800 && DistanceXZ(position, new(-200, 6, 212)) < 1.5f)
+        {
+            var elapsed = (at - windStart).TotalSeconds;
+            var residual = elapsed - (BlundervilleDeliveryWind.First + Math.Round((elapsed - BlundervilleDeliveryWind.First) / BlundervilleDeliveryWind.Period) * BlundervilleDeliveryWind.Period);
+            if (Math.Abs(residual) <= 1)
+            {
+                _windOffsets.Enqueue(residual);
+                while (_windOffsets.Count > 3) _windOffsets.Dequeue();
+            }
+            return;
+        }
         if (_start is not { } start || action is not (34716 or 34774 or 34799)) return;
         for (var i = 0; i < Devices.Length; ++i)
         {
@@ -96,24 +125,67 @@ internal sealed class BlundervilleDeliverySchedule
         }
     }
 
-    public IEnumerable<BlundervilleHazard> Hazards(DateTime now)
+    public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool northHammersOnly = false)
     {
         if (_start is not { } start) yield break;
         var elapsed = (now - start).TotalSeconds;
+        var windOffset = _windOffsets.Count > 0 ? _windOffsets.Order().ElementAt(_windOffsets.Count / 2) : 0;
+        for (var k = Math.Max(0, (int)Math.Floor((elapsed - BlundervilleDeliveryWind.First - 2) / BlundervilleDeliveryWind.Period)); !northHammersOnly; ++k)
+        {
+            var packet = start.AddSeconds(BlundervilleDeliveryWind.First + k * BlundervilleDeliveryWind.Period + windOffset);
+            if (packet > now.AddSeconds(Horizon)) break;
+            if (packet.AddSeconds(BlundervilleDeliveryWind.LaunchUntil) < now) continue;
+            for (var part = 0; part < BlundervilleDeliveryWind.Exposed.Length; ++part)
+                yield return new($"delivery/wind/{k}/{part}", BlundervilleDeliveryWind.Exposed[part],
+                    packet.AddSeconds(BlundervilleDeliveryWind.LaunchFrom), packet.AddSeconds(BlundervilleDeliveryWind.LaunchUntil), start);
+        }
         for (var i = 0; i < Devices.Length; ++i)
         {
             var device = Devices[i];
+            if (northHammersOnly && (device.Action != 34799 || device.Anchors[0].Z >= 220)) continue;
             var recent = _residuals[i].Select(r => r.Residual).Order().ToArray();
             var offset = recent.Length > 0 ? recent[recent.Length / 2] : 0;
             foreach (var (first, period) in device.Beats)
-                for (var k = Math.Max(0, Math.Floor((elapsed - first - 1) / period)); first + k * period - HitLead + offset <= elapsed + Horizon; ++k)
+                for (var k = Math.Max(0, Math.Floor((elapsed - first - 2) / period)); first + k * period - HitLead + offset <= elapsed + Horizon; ++k)
                 {
                     var hit = start.AddSeconds(first + k * period + offset - HitLead);
-                    if (hit.AddSeconds(Window) < now) continue;
                     // Telegraphed at the course start: an unchanged forecast must stay
                     // equal across scans, or navigation re-registers it and every
                     // pending solve goes stale (the player then stands still).
-                    yield return new($"delivery/{i}/{k}/{first}", device.Footprint, hit.AddSeconds(-Window), hit.AddSeconds(Window), start);
+                    // 2026-10-15 01:12 ARR: the west 34799 rows stunned 0.37–1.37s
+                    // after their packets (8 stuns, 4 crystals lost), outside the
+                    // packet window, exactly like the north row. Use the measured
+                    // animation window for every hammer; tips stay north-only.
+                    var northHammer = device.Action == 34799 && device.Anchors[0].Z < 220;
+                    if (device.Action == 34799)
+                    {
+                        var packet = hit.AddSeconds(HitLead);
+                        if (packet.AddSeconds(NorthHammerTail) >= now)
+                            yield return new($"delivery/hammer/{i}/{k}", device.Footprint,
+                                packet.AddSeconds(-(northHammer ? NorthHammerLead : WestHammerLead)), packet.AddSeconds(NorthHammerTail), start);
+                        if (northHammer && packet.AddSeconds(NorthHammerTipTail) >= now)
+                            yield return new($"delivery/hammer-tip/{i}/{k}",
+                                NorthHammerTips[device.Anchors[0].X < -200 ? 0 : 1],
+                                packet, packet.AddSeconds(NorthHammerTipTail), start);
+                    }
+                    else if (hit.AddSeconds(Window) >= now)
+                        yield return new($"delivery/{i}/{k}/{first}", device.Footprint, hit.AddSeconds(-Window), hit.AddSeconds(Window), start);
+                    if (device.Anchors.Length == 2 && RestingBodies)
+                    {
+                        // 2026-10-15 02:32 ARR: the east charger finished its 20m charge
+                        // at (-188.53,260.37) 0.65s after the packet and stunned MP on
+                        // arrival there 1.5s after it (1.0m from the resting body); the
+                        // crystal was then lost. The resting body is hard until the
+                        // charger leaves on its return beat.
+                        var beat = Array.IndexOf(device.Beats, (first, period));
+                        var packet = hit.AddSeconds(HitLead);
+                        var other = device.Beats[1 - beat];
+                        var after = (packet - start).TotalSeconds + offset;
+                        var leave = start.AddSeconds(other.First + Math.Ceiling((after - other.First) / other.Period) * other.Period + offset);
+                        if (leave >= now && leave > packet)
+                            yield return new($"delivery/rest/{i}/{k}/{first}", new CircleGeometry(beat == 0 ? device.Anchors[0] : device.Anchors[1], RestRadius),
+                                packet.AddSeconds(RestFrom), leave, start);
+                    }
                     if (device.Anchors.Length == 2 && Bodies)
                         foreach (var (zone, from, until, part) in Body(device, Array.IndexOf(device.Beats, (first, period))))
                         {
@@ -135,6 +207,9 @@ internal sealed class BlundervilleDeliverySchedule
     // Beat 0 runs from the second anchor to the first, beat 1 back (all
     // recorded packets, all 8 segments).
     internal const bool Bodies = true;
+    internal const bool RestingBodies = true;
+    internal const float RestRadius = 1f;
+    internal const double RestFrom = .5;
     // Planner-only: navigation does not register these with the runtime.
     internal const string BodyPrefix = "delivery/body/";
     internal static IEnumerable<(IGeometryShape Zone, double From, double Until, int Part)> Body(Device device, int beat)

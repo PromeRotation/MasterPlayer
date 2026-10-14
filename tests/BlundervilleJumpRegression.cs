@@ -51,7 +51,10 @@ internal static class BlundervilleJumpRegression
                     link.Takeoff + perpendicular * 0.5f, link.Landing, true, false);
                 Check(beside is { Jump: false }, "The planner launched from outside the recorded takeoff lane.");
                 var passed = new BlundervilleJumpPlanner().Plan(link.Course, Epoch,
-                    link.Takeoff + direction * 0.8f, link.Landing, true, false);
+                    // Stair treads extend ~1.8m past their nominal takeoff.
+                    // The continuous runner may use 1.2m of that support;
+                    // still reject a point beyond that band, before the riser.
+                    link.Takeoff + direction * (link.Course == BlundervilleCourse.Final ? 1.6f : .8f), link.Landing, true, false);
                 Check(passed == null || !passed.Jump && Vector3.Dot(passed.Target - link.Takeoff, direction) >= 0.55f,
                     "Passing the takeoff launched a late jump or steered backward to an already passed point.");
             });

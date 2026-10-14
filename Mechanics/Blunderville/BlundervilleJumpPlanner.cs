@@ -50,15 +50,16 @@ internal sealed class BlundervilleJumpPlanner
         // A nearby gap does not supersede a corner still ahead of the base
         // route. In FirstB the second takeoff is visible before the turn onto
         // its board; selecting it there strands the base cursor at that turn.
-        if (_corridor == null && Vector2.Dot(new(forwardTarget.X - start.X, forwardTarget.Z - start.Z), forward) < -.3f)
+        if (_corridor == null && Vector2.Dot(new(forwardTarget.X - start.X, forwardTarget.Z - start.Z), forward) < -.3f
+            && !(course == BlundervilleCourse.Final && forwardTarget.Z <= 154.1f))
             return null;
         var offset = new Vector2(player.X - start.X, player.Z - start.Z);
         var progress = Vector2.Dot(offset, forward);
-        if (progress > 0.45f) { ClearJump(); return null; }
+        if (progress > (course == BlundervilleCourse.Final ? 1.4f : .45f)) { ClearJump(); return null; }
         if (_takeoff != start)
         {
             _takeoff = start;
-            _corridor = new(start, end);
+            _corridor = new(start, end, stairs: course == BlundervilleCourse.Final);
         }
         if (progress >= -0.25f && MathF.Abs(offset.X * forward.Y - offset.Y * forward.X) <= 0.4f)
         {
@@ -75,6 +76,15 @@ internal sealed class BlundervilleJumpPlanner
         ClearJump(); _previous = null; _lastTime = default; _course = BlundervilleCourse.None;
     }
 
+    public void ConfirmLaunch(BlundervilleJumpCorridor corridor)
+    {
+        if (!ReferenceEquals(_corridor, corridor)) return;
+        // The per-frame gate can launch between 10Hz planner scans. Bind the
+        // flight to that exact step now; an airborne height must not select
+        // the following stair before the current landing is observed.
+        _takeoff = corridor.Takeoff; _landing = corridor.Landing; _airborne = false;
+    }
+
     private void ClearJump() { _takeoff = _landing = null; _corridor = null; _airborne = false; _nextJumpRetry = default; }
 
     private static (Vector3 Start, Vector3 End)? Link(BlundervilleCourse course, Vector3 player, Vector3 target)
@@ -87,7 +97,7 @@ internal sealed class BlundervilleJumpPlanner
             if (player.Z is <= -145f and > -155.2f)
                 return (new(side * 8, 10.03f, -151.5f), new(side * 8, 10.03f, -155.9f));
         }
-        if (course == BlundervilleCourse.Final && player.Z is <= 154.5f and > 137.7f)
+        if (course == BlundervilleCourse.Final && player.Z <= BlundervilleFinalPlanner.Bottom && player.Z > 137.7f)
         {
             var x = side * BlundervilleRoutes.FinalStairLane;
             if (player.Z > 149.5f && player.Y < 32.2f) return (new(x, 31.5f, 153), new(x, 32.6f, 149));
@@ -95,9 +105,9 @@ internal sealed class BlundervilleJumpPlanner
             if (player.Z > 141.5f && player.Y < 34f) return (new(x, 33.5f, 145), new(x, 34.4f, 141));
             return (new(x, 34.4f, 141), new(x, 35.8f, 137));
         }
-        if (course == BlundervilleCourse.Ring && player.X < 187 && player.Z is <= -135.5f and > -142.1f)
+        if (course == BlundervilleCourse.Ring && player.X < 187 && player.Z is <= -134f and > -142.1f)
             return (new(183.8f, 10, -138.6f), new(185.6f, 10, -142.8f));
-        if (course == BlundervilleCourse.Ring && player.X > 208 && player.Z is >= -150.5f and < -144f)
+        if (course == BlundervilleCourse.Ring && player.X > 208 && player.Z is >= -152f and < -144f)
             return (new(209.5f, 10, -147.7f), new(210.3f, 10, -143.3f));
         if (course == BlundervilleCourse.Ring && player.X > 208 && player.Z is >= -144f and < -139.4f)
             return (new(210.8f, 10, -142.6f), new(213.2f, 10, -138.7f));
@@ -111,14 +121,21 @@ internal sealed class BlundervilleJumpCorridor : IGeometryShape
     private readonly RectangleGeometry _rectangle;
     public Vector3 Takeoff { get; }
     public Vector3 Landing { get; }
+    // Continuous input through all four treads. Each physical landing still
+    // ends the flight lease; it is not the movement goal of the next hop.
+    // Mesh risers are z~151/147/143/139: the nominal takeoffs have 1.8m of
+    // supported tread, so a grounded hop up to 1.2m later retains clearance.
+    public bool Stairs { get; }
+    public Vector3 MovementTarget => Stairs ? new(Landing.X, 35.8f, 137) : Landing;
     // A vanishing-bridge lane switch lands anywhere on a 5m-wide lane, so the
     // run-up need not sit on the exact axis (see BlundervilleJumpExecution).
     public bool LaneSwitch { get; init; }
-    public BlundervilleJumpCorridor(Vector3 takeoff, Vector3 landing, float width = 3, float padding = 2)
+    public BlundervilleJumpCorridor(Vector3 takeoff, Vector3 landing, float width = 3, float padding = 2, bool stairs = false)
     {
-        Takeoff = takeoff; Landing = landing;
-        var delta = landing - takeoff; delta.Y = 0;
-        _rectangle = new((takeoff + landing) / 2, MathF.Atan2(delta.X, delta.Z), width, delta.Length() + padding);
+        Takeoff = takeoff; Landing = landing; Stairs = stairs;
+        var end = MovementTarget;
+        var delta = end - takeoff; delta.Y = 0;
+        _rectangle = new((takeoff + end) / 2, MathF.Atan2(delta.X, delta.Z), width, delta.Length() + padding);
     }
     public GeometryKind Kind => _rectangle.Kind;
     public Vector3 Position => _rectangle.Position;

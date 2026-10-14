@@ -147,7 +147,7 @@ internal static class BlundervilleFirstBFeedbackRegression
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 pending = new SafeZoneSolver().Solve(snapshot, Player(p, snapshot, speed), new(speed, speed, 0, false, speed, speed), options, now);
                 watch.Stop(); maxMs = Math.Max(maxMs, watch.Elapsed.TotalMilliseconds);
-                ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
             }
             runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, Player(p, snapshot, speed), snapshot, now]);
             }
@@ -175,7 +175,7 @@ internal static class BlundervilleFirstBFeedbackRegression
         return t - phase;
     }
 
-    private sealed class Moving(float speed) : IGreenMoveSystem
+    internal sealed class Moving(float speed) : IGreenMoveSystem
     {
         private IReadOnlyList<GreenMovePoint> _points = []; private int _index; private DateTime _ready;
         public DateTime Now; public int Count, Stops;

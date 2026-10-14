@@ -218,7 +218,7 @@ internal static class BlundervilleAnimationRegression
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 pending = new SafeZoneSolver().Solve(snapshot, Player(p, snapshot), new(6, 6, 0, false, 6, 6), options, now);
                 watch.Stop(); maxMs = Math.Max(maxMs, watch.Elapsed.TotalMilliseconds);
-                ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
             }
             runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!.Invoke(runtime.MovementStatus, [accepted, Player(p, snapshot), snapshot, now]);
             var next = move.Advance(p, .01f); reverse += MathF.Max(0, next.Z - p.Z);
@@ -250,7 +250,7 @@ internal static class BlundervilleAnimationRegression
         {
             Data = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", fixture)));
             Events = Data.RootElement.GetProperty("events").EnumerateArray().ToArray();
-            Actors = Data.RootElement.GetProperty("devices").EnumerateArray().Select(d => new BlundervilleActor(d.GetProperty("id").GetUInt64(), 16338,
+            Actors = Data.RootElement.GetProperty("devices").EnumerateArray().Select(d => new BlundervilleActor(d.GetProperty("id").GetUInt64(), d.TryGetProperty("oid", out var oid) ? oid.GetUInt32() : 16338,
                 Vec(d.GetProperty("position")), Rotation: d.GetProperty("rotation").GetSingle())).ToDictionary(a => a.Id);
             Encounter.Synchronize(Actors.Values, Epoch.AddSeconds(-1));
         }
@@ -273,7 +273,8 @@ internal static class BlundervilleAnimationRegression
                 {
                     var id = e[2].GetUInt64(); var actor = Actors[id];
                     if (kind == "turn") Actors[id] = actor with { Rotation = e[3].GetSingle(), Position = e.GetArrayLength() > 4 ? Vec(e[4]) : actor.Position };
-                    else Encounter.Effect(id, e[3].GetUInt32(), (uint)_index, actor.Position, e[4].GetSingle(), at);
+                    else Encounter.Effect(id, e[3].GetUInt32(), (uint)_index, actor.Position, e[4].GetSingle(), at,
+                        e.GetArrayLength() > 5 && e[5].ValueKind != JsonValueKind.Null ? Vec(e[5]) : null);
                 }
                 // Object packets update the next main-thread sample. Grouped rows
                 // are scanned together below; no prediction reads future events.

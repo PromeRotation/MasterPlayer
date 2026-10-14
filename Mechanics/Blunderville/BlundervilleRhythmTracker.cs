@@ -12,7 +12,7 @@ internal sealed class BlundervilleRhythmTracker
         public readonly List<Beat> Beats = [];
         public readonly List<DateTime> BurstStarts = [];
         public IReadOnlyList<BlundervilleHazard> Forecast = [];
-        public readonly Dictionary<(int X, int Z), Beat> Spots = [];
+        public readonly Dictionary<(int X, int Z), List<Beat>> Spots = [];
         public bool RecurrenceBroken;
     }
 
@@ -24,7 +24,25 @@ internal sealed class BlundervilleRhythmTracker
     // ~0.05s; 0.1s missed jittered packets in the 19:51 recording. Execution
     // lag is added by the consumer (Final planner / solver), not here.
     // The 4-step 34801 rows (one 1.86s step per cycle) revisit spots ±0.2s.
-    internal const double RecurrenceLead = .25, RecurrenceTail = .3, RecurrenceHorizon = 20, RecurrenceTolerance = .4;
+    // 23:45 ARR (lagging connection): revisits of one 34801 spot arrived
+    // 4.50–7.51s apart for the 6.03s period. Packets are only ever late, so a
+    // spot's impact is the earliest projection of its recent packets; anchoring
+    // on the latest packet (or dropping the forecast on such a gap) left the
+    // z=198.7 row unforecast and the slope walked into its sweep.
+    internal const double RecurrenceLead = .25, RecurrenceTail = .3, RecurrenceHorizon = 20;
+    // Up to 30% of the period (1.8s for 6.03s, never more than 2s).
+    internal static double RecurrenceTolerance(double period) => Math.Min(2, period * .3);
+    private const int RecurrenceVisits = 4;
+    // 2026-10-15 03:36 ARR: a 1.5s tail was hit three times at the x=10
+    // circle (z=-212); the whole 3.45s spin stays avoided.
+    internal const double RotatingTail = 3.45;
+    // 2026-10-15 01:32 ARR: a 34796 circle at the stair run-up stunned 0.85s
+    // after its packet (the race was lost to that stun); 10-09 00:03 0.6s.
+    // The circle's contact outlasts the packet like the Delivery hammers.
+    // 2026-10-15 03:55 ARR: two more stuns 1.46s and 1.51s after the packet
+    // at 4.5m (z=170 circle); 1.0 left them unprotected.
+    internal const double EndCircleTail = 1.9;
+    internal static double RecurrenceTailFor(uint action) => action == 34796 ? EndCircleTail : RecurrenceTail;
     internal static double? FinalRecurrence(uint action, Vector3 p)
     {
         if (MathF.Abs(p.X) > 15) return null;
@@ -80,28 +98,38 @@ internal sealed class BlundervilleRhythmTracker
         if (FinalRecurrence(action, position) is { } period && !track.RecurrenceBroken)
         {
             var spot = ((int)MathF.Round(position.X), (int)MathF.Round(position.Z * 2));
-            if (track.Spots.TryGetValue(spot, out var previous))
+            if (track.Spots.TryGetValue(spot, out var visits) && visits.Count > 0)
             {
-                var gap = (now - previous.At).TotalSeconds;
+                var gap = (now - visits[^1].At).TotalSeconds;
                 var cycles = Math.Round(gap / period);
-                // A revisit off the verified period means this is not the
+                // A revisit far off the verified period means this is not the
                 // recorded layout; fall back to the generic pattern learner.
-                if (cycles < 1 || Math.Abs(gap - cycles * period) > RecurrenceTolerance) track.RecurrenceBroken = true;
+                if (cycles < 1 || Math.Abs(gap - cycles * period) > RecurrenceTolerance(period)) track.RecurrenceBroken = true;
             }
             if (!track.RecurrenceBroken)
             {
-                track.Spots[spot] = new(now, position, rotation);
+                if (visits == null) track.Spots[spot] = visits = [];
+                visits.Add(new(now, position, rotation));
+                if (visits.Count > RecurrenceVisits) visits.RemoveAt(0);
+                var tail = RecurrenceTailFor(action);
                 var recurring = new List<BlundervilleHazard>
                 {
-                    new($"rhythm/{actor.Id}/{action}/{now.Ticks}", rule.Shape.Resolve(position, rotation, null), now, now.AddSeconds(.3), now)
+                    new($"rhythm/{actor.Id}/{action}/{now.Ticks}", rule.Shape.Resolve(position, rotation, null), now, now.AddSeconds(Math.Max(.3, tail)), now)
                 };
-                foreach (var known in track.Spots.Values)
+                foreach (var seen in track.Spots.Values)
                 {
+                    var known = seen[^1];
                     if ((now - known.At).TotalSeconds > 2.5 * period) continue;
-                    for (var impact = known.At.AddSeconds(period); impact <= now.AddSeconds(RecurrenceHorizon); impact = impact.AddSeconds(period))
+                    var anchor = known.At;
+                    foreach (var visit in seen)
+                    {
+                        var projected = visit.At.AddSeconds(Math.Round((known.At - visit.At).TotalSeconds / period) * period);
+                        if (projected < anchor) anchor = projected;
+                    }
+                    for (var impact = anchor.AddSeconds(period); impact <= now.AddSeconds(RecurrenceHorizon); impact = impact.AddSeconds(period))
                         if (impact > now)
                             recurring.Add(new($"rhythm/{actor.Id}/{action}/{impact.Ticks}", rule.Shape.Resolve(known.Position, known.Rotation, null),
-                                impact.AddSeconds(-RecurrenceLead), impact.AddSeconds(RecurrenceTail), now));
+                                impact.AddSeconds(-RecurrenceLead), impact.AddSeconds(tail), now));
                 }
                 track.Forecast = recurring;
                 return;
@@ -211,7 +239,7 @@ internal sealed class BlundervilleRhythmTracker
         for (var i = 0; i < count; ++i)
         {
             var at = phase.AddSeconds(i * period);
-            result.Add(new($"rhythm/{source}/34773/{at.Ticks}", geometry, at.AddSeconds(-.35), at.AddSeconds(3.45), now));
+            result.Add(new($"rhythm/{source}/34773/{at.Ticks}", geometry, at.AddSeconds(-.35), at.AddSeconds(RotatingTail), now));
         }
         return result;
     }

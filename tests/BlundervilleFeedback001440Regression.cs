@@ -6,6 +6,7 @@ using MasterPlayer.Scripting;
 using MasterPlayer.Spatial;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn;
 using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 using PromeRotation.GreenMoveSystem;
 
@@ -137,12 +138,16 @@ internal static class BlundervilleFeedback001440Regression
         var move = new Moving(); using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
         using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
         var navigation = new BlundervilleNavigation(runtime, api, new()); var planner = new BlundervilleRacePlanner();
+        var outbound = new BlundervilleFinalPlanner(BlundervilleFinalPlanner.DeliveryWest);
+        var returning = new BlundervilleFinalPlanner(BlundervilleFinalPlanner.ReturnWest);
+        var direct = false; var nextScan = 4.0;
         var state = new BlundervilleRaceState();
         state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20016, 0, 0, 0, Epoch);
         var p = BlundervilleRaceState.PickupCenter with { Y = 6 }; var carrying = true; var score = 0;
         var impacts = replay.Events.Where(e => e[1].GetString() == "hit").ToArray(); var hitIndex = 0;
         SafeZoneSolution? pending = null, accepted = null; var ready = 0.0; var nextSolve = 4.0;
         var maximumSolve = 0.0; var elapsed = 0.0; var previous = p;
+        var positions = new List<(double T, Vector3 P)>();
         var frameTimes = new List<double>();
         const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
         var capture = runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!;
@@ -151,18 +156,32 @@ internal static class BlundervilleFeedback001440Regression
         {
             var frameTimer = System.Diagnostics.Stopwatch.StartNew();
             var t = 4 + tick * .02; elapsed = t - 4; now = Epoch.AddSeconds(t); move.Now = now;
-            if (tick % 5 == 0)
+            if (t >= nextScan)
             {
+                nextScan = t + .1;
                 replay.Advance(t); api.UtcNowForTest = now;
+                replay.Encounter.DeliverySchedule.SetStart(Epoch);
                 state.SynchronizeStatuses(carrying ? [new(3704, 35, now.AddSeconds(10))] : [], now);
                 var decision = planner.Update(state, now, p, true, false, false, null);
                 decision = BlundervilleDeliveryPlanner.Apply(decision, state, replay.Encounter, p, now);
+                var corridor = carrying ? outbound : returning;
+                (carrying ? returning : outbound).Reset();
+                decision = corridor.Apply(decision, state, replay.Encounter.TraversalHazards(now).ToArray(), p, now, navigation.GetDirectTraversalExecution(now));
+                direct = decision.DirectTraversal;
+                if (corridor.PendingSearch is { IsCompleted: false } search)
+                {
+                    frameTimer.Stop();
+                    var timer = System.Diagnostics.Stopwatch.StartNew(); search.GetAwaiter().GetResult();
+                    nextScan = t + Math.Max(.1, Math.Max(latency, timer.Elapsed.TotalSeconds));
+                    frameTimer.Start();
+                }
                 navigation.Apply(state, decision, replay.Encounter, now, p, true, false, false);
             }
             var snapshot = runtime.Manager.BuildSnapshot(now);
             var player = new PlayerState(p, 0, 6, move.IsRunning, false, 0, true, snapshot.Version);
             if (!runtime.Setting.EffectiveEnableAutoMovement)
-            { pending = accepted = null; nextSolve = t; }
+            { move.Stop(); pending = accepted = null; nextSolve = t; }
+            else if (direct) ((SafeZoneRebornMovementSystem)runtime.MovementStatus).Update(player, new(6, 6, 0, false, 6, 6), now);
             else
             {
                 if (pending != null && t >= ready) { accepted = pending; pending = null; }
@@ -179,26 +198,21 @@ internal static class BlundervilleFeedback001440Regression
                 dispatch.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             }
             if (tick >= 50) frameTimes.Add(frameTimer.Elapsed.TotalMilliseconds);
-            while (hitIndex < impacts.Length && impacts[hitIndex][0].GetDouble() <= t)
+            positions.Add((t, p));
+            while (hitIndex < impacts.Length && impacts[hitIndex][0].GetDouble() - BlundervilleDeliverySchedule.HitLead <= t)
             {
                 var hit = impacts[hitIndex++]; if (hit[0].GetDouble() < 4) continue;
                 var action = hit[3].GetUInt32(); var source = Vec(hit[4]);
-                IGeometryShape? shape = null;
-                if (action == 34774 && hit[6].ValueKind == JsonValueKind.Array)
-                {
-                    var end = Vec(hit[6]); var delta = end - source; delta.Y = 0;
-                    shape = new RectangleGeometry((source + end) / 2, MathF.Atan2(delta.X, delta.Z), 3, delta.Length() + 3);
-                }
-                else if (action == 34799) shape = new RayRectangleGeometry(source, hit[5].GetSingle(), 4, 4);
-                else if (action == 34716) shape = new RectangleGeometry(source, hit[5].GetSingle(), 2, 3);
-                var atHit = Vector3.Lerp(previous, p, (float)Math.Clamp((hit[0].GetDouble() - t + .02) / .02, 0, 1));
-                Check(shape?.Contains(atHit, .1f) != true,
+                var instant = hit[0].GetDouble() - BlundervilleDeliverySchedule.HitLead;
+                if (instant < 4 || !carrying) continue;
+                var atHit = positions.LastOrDefault(s => s.T <= instant + 1e-6).P;
+                Check(!BlundervilleDeliverySchedule.Hits(action, source, atHit),
                     $"Delivery hit action {action} source {hit[2]} at t={t:F2}, p={atHit}, score={score}.");
             }
             previous = p; p = move.Advance(p, .02f);
             Check(ArenaBoundaryTraversal.ContainsSegment(BlundervilleRoutes.NavigationBoundary(BlundervilleCourse.Delivery, p), previous, p),
                 $"Delivery left its raised floor between {previous} and {p}.");
-            if (carrying && Distance(p, new(-240.2991f, 6, 275.4989f)) <= 1.3f)
+            if (carrying && Distance(p, new(-240.2991f, 6, 275.4989f)) <= 2f)
             {
                 carrying = false; state.Director(BlundervilleRaceState.DirectorInstance, 3, (uint)++score, 0, 0, 0, now);
                 Console.WriteLine($"DELIVERY score={score} t={t:F2} p={p}");

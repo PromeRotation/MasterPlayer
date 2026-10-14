@@ -65,15 +65,21 @@ internal static class BlundervilleFeedback010120Regression
             {
                 var events = Events(recording);
                 var last = events[^1].Time;
-                var results = new List<double>();
                 // 00:17 recorded the live switch turning within ~0.1s of the
                 // neighbour's appearance; 0.08s background dispatch matches it.
                 const double latency = .08;
-                var failures = new List<string>(); var unavoidable = 0;
-                for (var start = 30.0; start + 20 < last; start += .7)
-                    try { results.Add(SimulateCrossing(events, start, latency)); }
-                    catch (UnavoidableCollapse) { ++unavoidable; }
-                    catch (InvalidOperationException e) { failures.Add(e.Message); }
+                var starts = new List<double>();
+                for (var start = 30.0; start + 20 < last; start += .7) starts.Add(start);
+                // Independent phases: run them on every core, report in phase order.
+                var outcomes = starts.AsParallel().AsOrdered().WithDegreeOfParallelism(Environment.ProcessorCount).Select(start =>
+                {
+                    try { return (Time: (double?)SimulateCrossing(events, start, latency), Unavoidable: false, Failure: (string?)null); }
+                    catch (UnavoidableCollapse) { return (null, true, null); }
+                    catch (InvalidOperationException e) { return (null, false, e.Message); }
+                }).ToArray();
+                var results = outcomes.Where(o => o.Time != null).Select(o => o.Time!.Value).ToList();
+                var failures = outcomes.Where(o => o.Failure != null).Select(o => o.Failure!).ToList();
+                var unavoidable = outcomes.Count(o => o.Unavoidable);
                 foreach (var failure in failures.Take(8)) Console.WriteLine($"BRIDGE fail {failure}");
                 Console.WriteLine($"BRIDGE crossing {recording}: {results.Count} passed, {unavoidable} without any visible neighbour before the collapse");
                 Check(failures.Count == 0, $"{failures.Count} of {failures.Count + results.Count + unavoidable} recorded arrival phases failed.");

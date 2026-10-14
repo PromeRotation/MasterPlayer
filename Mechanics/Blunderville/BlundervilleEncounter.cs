@@ -49,9 +49,6 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public BlundervilleSpinSchedule SpinBlades { get; } = new();
     private readonly BlundervilleRingCycles _ringCycles = new();
     private readonly BlundervilleCylinderSchedule _cylinders = new();
-    // Cylinders whose learned clocks have both been ready once: from then on
-    // they behave exactly as before the schedule existed.
-    private readonly HashSet<ulong> _learnedCylinders = [];
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
 
@@ -64,7 +61,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         return bands.Any(a => a.Position.Z is > -205 and < -185)
             && (player.Z <= -181 || bands.Any(a => a.Position.Z is > -180 and < -164))
             && bands.Where(a => player.Z > -181 || a.Position.Z < -185)
-                .All(a => Learned(a.Id, _lastTime) ? _bumpers.Ready(a.Id) && _rhythms.Ready(a.Id, 34717, _lastTime) : _cylinders.Ready(a.Id, _lastTime));
+                .All(a => CylinderReady(a.Id, _lastTime));
     }
 
     public bool DeliveryReady(Vector3 destination, DateTime now)
@@ -254,7 +251,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Remove(source);
         _bumpers.Remove(source);
         _deliveryCharges.Remove(source);
-        _ballMotion.Remove(source); _charges.Remove(source); _rampPushers.Remove(source); _cylinders.Remove(source); _learnedCylinders.Remove(source);
+        _ballMotion.Remove(source); _charges.Remove(source); _rampPushers.Remove(source); _cylinders.Remove(source);
         _actors.Remove(source); _casts.Remove(source); _lastCasts.Remove(source); _waves.Remove(source); _routes.Remove(source); _beams.Remove(source);
         _waveCycles.Remove(source);
         foreach (var id in _pulses.Where(p => p.Value.Source == source).Select(p => p.Key).ToArray()) _pulses.Remove(id);
@@ -275,7 +272,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public IEnumerable<BlundervillePreview> Previews(DateTime now)
     {
         Tick(now);
-        foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now))
+        foreach (var hazard in _animations.Hazards(now).Concat(_alternatingPulses.Hazards(now)).Concat(_rhythms.Hazards(now)
+                .Where(h => !DeliverySchedule.Active || !h.Id.Contains("/34799/", StringComparison.Ordinal) || h.Geometry.Position.Z >= 220))
+            .Concat(DeliverySchedule.Hazards(now, northHammersOnly: true))
             .Concat(_deliveryCharges.Hazards(now)).Concat(_rampPushers.Hazards(now)).Where(h => h.From <= now.AddSeconds(2)))
             yield return new(hazard.Id, BlundervilleCatalog.Devices, hazard.Geometry, now < hazard.From,
                 (float)Math.Clamp(1 - (hazard.From - now).TotalSeconds / 2, .25, 1));
@@ -318,7 +317,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _animations.Reset();
         _alternatingPulses.Reset();
         _rhythms.Reset();
-        _bumpers.Reset(); _cylinders.Reset(); _learnedCylinders.Clear();
+        _bumpers.Reset(); _cylinders.Reset();
         _deliveryCharges.Reset();
         _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); RampBalls.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset(); SpinBlades.Reset();
     }
@@ -338,8 +337,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         }
         foreach (var hazard in _animations.Hazards(now, spinRows)) yield return hazard;
         foreach (var hazard in _alternatingPulses.Hazards(now)) yield return hazard;
-        // Until a cylinder's trackers have learned, its cast-anchored schedule
-        // replaces their cold body sweep and pulse rhythm.
+        // Keep the cast-calibrated clock while fresh. Switching to the learner
+        // mid-crossing can publish its full-lane fallback or a shifted pulse,
+        // discarding a valid route (17:54 ARR). Stale schedules still expire.
         foreach (var hazard in _rhythms.Hazards(now)) if (!Scheduled(hazard.Id, "rhythm/", now)) yield return hazard;
         foreach (var hazard in _bumpers.Hazards) if (!Scheduled(hazard.Id, "bumper/", now)) yield return hazard;
         foreach (var hazard in _cylinders.Hazards(now))
@@ -363,6 +363,9 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             }
         foreach (var actor in _actors.Values.Where(a => a.Oid == BlundervilleCatalog.Ball))
         {
+            // The slime planner times the whole climb against ball bodies. The
+            // wider rolling preview must not release forward input mid-climb.
+            if (!ramp && OnRamp(actor.Position)) continue;
             yield return new($"ball/{actor.Id}", new CircleGeometry(actor.Position, 2), now, now.AddSeconds(0.3), now);
             if (!_ballMotion.TryGetValue(actor.Id, out var motion) || motion.Velocity.LengthSquared() < .1f) continue;
             // Each interval covers the whole swept ball, not just a future center.
@@ -385,7 +388,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     {
         foreach (var hazard in Hazards(now, spinRows, ramp)) yield return hazard;
         foreach (var actor in _actors.Values.Where(a => a.Oid == 16339))
-            if (Learned(actor.Id, now) ? !_bumpers.Ready(actor.Id) || !_rhythms.Ready(actor.Id, 34717, now) : !_cylinders.Ready(actor.Id, now))
+            if (!CylinderReady(actor.Id, now))
                 yield return _bumpers.UnknownTraversalHazard(actor, now);
         foreach (var hazard in WaveCycleForecasts(now)) yield return hazard;
     }
@@ -448,19 +451,11 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (!id.StartsWith(prefix, StringComparison.Ordinal) || prefix == "rhythm/" && !id.Contains("/34717/", StringComparison.Ordinal)) return false;
         var end = id.IndexOf('/', prefix.Length);
         return end > prefix.Length && ulong.TryParse(id.AsSpan(prefix.Length, end - prefix.Length), out var source)
-            && !Learned(source, now) && _cylinders.Ready(source, now);
+            && _cylinders.Ready(source, now);
     }
 
-    // The bumper planner's ice search reacts to the slightest input change:
-    // swapping equivalent clocks under a learned lane changed which slides it
-    // found (04:45/17:44 replays), so the schedule only covers the cold start.
-    private bool Learned(ulong id, DateTime now)
-    {
-        if (_learnedCylinders.Contains(id)) return true;
-        if (!_bumpers.Ready(id) || !_rhythms.Ready(id, 34717, now)) return false;
-        _learnedCylinders.Add(id);
-        return true;
-    }
+    private bool CylinderReady(ulong id, DateTime now)
+        => _cylinders.Ready(id, now) || _bumpers.Ready(id) && _rhythms.Ready(id, 34717, now);
 
     private static float DistanceXZ(Vector3 a, Vector3 b) => Vector2.Distance(new(a.X, a.Z), new(b.X, b.Z));
     internal static bool Finite(Vector3 p) => float.IsFinite(p.X) && float.IsFinite(p.Y) && float.IsFinite(p.Z);

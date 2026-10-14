@@ -284,8 +284,12 @@ public sealed class SafeZoneSolver
                     var p = map.CellCenter(x, z);
                     if (GeometryHelper.DistanceXZ(player, p) <= radius) candidates.Add(p);
                 }
+        // A fine race grid can put its first legal cell only a few centimetres
+        // away. A 0.1m tolerance consumes it without input (20:57 FirstB ARR).
+        var tolerance = MathF.Min(.1f, map.Resolution * .25f);
         foreach (var target in candidates.OrderBy(p => GeometryHelper.DistanceXZ(player, p)))
         {
+            if (GeometryHelper.DistanceXZ(player, target) <= tolerance) continue;
             if (!ArenaBoundaryTraversal.ContainsSegment(boundary, player, target)) continue;
             if (snapshot.HardObstacles.Any(o => o.Geometry.Contains(player) || o.Geometry.Contains(target)
                 || o.Geometry.IntersectsSegment(player, target))) continue;
@@ -297,7 +301,7 @@ public sealed class SafeZoneSolver
                     options.DangerEndSafetyTime).OverlapsInterval(now, arrival.AddSeconds(.1))))) continue;
             return new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
                 [TimedWaypoint.Pass(player, departure), TimedWaypoint.Pass(target, arrival)], null)
-                { UsesTemporalPlanning = true, MaxArrivalTolerance = .1f };
+                { UsesTemporalPlanning = true, MaxArrivalTolerance = tolerance };
         }
         return null;
     }

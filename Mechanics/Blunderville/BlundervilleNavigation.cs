@@ -33,7 +33,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             Clear(); return;
         }
         var recovery = crossing is BlundervilleRecoveryCorridor;
-        var preciseRoute = decision.DirectTraversal || state.Course == BlundervilleCourse.FirstB && player.Y >= 8.5f
+        var preciseRoute = decision.DirectTraversal || decision.RecoveryFloor != null || state.Course == BlundervilleCourse.FirstB && player.Y >= 8.5f
                 && (player.Z is < -118 and > -158 || decision.Target is { Z: < -118 and > -158 })
             || state.Course == BlundervilleCourse.Ring && (player.Z < -137 || decision.Target is { Z: < -137 })
             || state.Course == BlundervilleCourse.Final && player.Y >= 35 && (player.Z < 129 || decision.Target is { Z: < 129 });
@@ -52,14 +52,15 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         var middle = decision.Target is { } destinationPoint ? (destinationPoint + player) * 0.5f : player;
         var center = new Vector3(MathF.Round(middle.X / 10) * 10, player.Y, MathF.Round(middle.Z / 10) * 10);
         var tightCrossing = crossing != null && state.Course == BlundervilleCourse.FirstA || crossing is BlundervilleJumpCorridor;
-        var source = BlundervilleRoutes.NavigationBoundary(state.Course, player);
+        var source = decision.RecoveryFloor ?? BlundervilleRoutes.NavigationBoundary(state.Course, player);
         if (_boundary == null || !ReferenceEquals(_sourceBoundary, source) || _course != state.Course || DistanceXZ(center, _regionCenter) > 0.1f || !ReferenceEquals(_crossing, crossing) || _preciseRoute != preciseRoute)
         {
             _course = state.Course; _regionCenter = center; _crossing = crossing; _preciseRoute = preciseRoute;
             _sourceBoundary = source;
             // Lower-floor recovery must not union in the high bridge: in X/Z that
             // would authorize shortcuts through its wall before reaching the ramp.
-            _boundary = new LocalCorridor(recovery ? crossing! : crossing == null ? source : new CrossingCorridor(source, crossing), center, tightCrossing ? 8 : preciseRoute ? 16 : 28);
+            _boundary = new LocalCorridor(recovery ? crossing! : crossing == null ? source : new CrossingCorridor(source, crossing), center,
+                crossing is BlundervilleJumpCorridor { Stairs: true } ? 16 : tightCrossing ? 8 : preciseRoute ? 16 : 28);
             runtime.Manager.SetArenaBoundary(_boundary);
         }
         var closeWaypoints = state.Course == BlundervilleCourse.FirstB && player.Z is < -194 and > -336;
@@ -79,7 +80,10 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         }
         // Charger body zones only steer the Delivery corridor plan (soft).
         var desired = encounter.TraversalHazards(now, !decision.SpinRowsOwned, !decision.RampOwned)
-            .Where(h => !h.Id.StartsWith(BlundervilleDeliverySchedule.BodyPrefix, StringComparison.Ordinal)
+            .Select(h => CircleImmunityWindow(h, state, player, now))
+            .Where(h => h.From <= h.Until)
+            .Where(h => !(delivery && decision.BelowDeliveryMechanisms && h.Geometry.Position.Y > player.Y + 1.5f)
+                && !h.Id.StartsWith(BlundervilleDeliverySchedule.BodyPrefix, StringComparison.Ordinal)
                 && Radar.RadarLocalGeometry.Intersects(h.Geometry.GetBounds(), player, 48)).ToDictionary(h => h.Id);
         foreach (var id in _dangers.Keys.Where(id => !desired.ContainsKey(id)).ToArray())
         { safeZone.Remove(_dangers[id].Handle); _dangers.Remove(id); }
@@ -110,7 +114,11 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             safeZone.SetNavigationOnly(handle, true);
             _dangers[id] = new(hazard, handle);
         }
-        runtime.RequestDirectTraversal(this, automatic && !replay && decision.DirectTraversal ? decision.Target : null, now,
+        // A stair flight must keep running across the next tread. Validate the
+        // complete straight ascent with the runtime's timed traversal checks;
+        // subdividing it into solver waypoints cannot authorize a running hop.
+        var stairRun = crossing is BlundervilleJumpCorridor { Stairs: true } stairs && decision.Target == stairs.MovementTarget;
+        runtime.RequestDirectTraversal(this, automatic && !replay && (decision.DirectTraversal || stairRun) ? decision.Target : null, now,
             decision.ContinuousPath, decision.HeadingTolerance, decision.TraversalMotion);
     }
 
@@ -120,6 +128,19 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         runtime.RequestAutomaticMovement(this, false);
         ClearAreas();
         draw.Remove("race/route"); draw.Remove("race/goal");
+    }
+
+    private static BlundervilleHazard CircleImmunityWindow(BlundervilleHazard hazard, BlundervilleRaceState state, Vector3 player, DateTime now)
+    {
+        // 20:32 ARR: 149 wears off ~2s before 529. During that remaining
+        // protection, 34773 contacts contain only a miss (0x01), with no stun
+        // or knockback. Plan the exit now, retaining the obstacle's real window
+        // after protection ends. Other actions and all floor/wall checks stay active.
+        if (state.Course == BlundervilleCourse.FirstB && player.Y is >= 9.8f and <= 10.8f && player.Z is < -194 and > -250
+            && hazard.Id.StartsWith("rhythm/", StringComparison.Ordinal) && hazard.Id.Contains("/34773/", StringComparison.Ordinal)
+            && state.ObstacleImmunityExpiresAt(now) is { } until && until > hazard.From)
+            return hazard with { From = until };
+        return hazard;
     }
 
     public void ApplyDirectFrame(BlundervilleRaceState state, BlundervilleRaceDecision decision, DateTime now)
@@ -169,7 +190,7 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
         }
     }
 
-    private sealed class CrossingCorridor(IGeometryShape source, IGeometryShape crossing) : IGeometryShape
+    internal sealed class CrossingCorridor(IGeometryShape source, IGeometryShape crossing) : IGeometryShape
     {
         public GeometryKind Kind => source.Kind;
         public Vector3 Position => source.Position;

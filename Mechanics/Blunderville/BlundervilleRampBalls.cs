@@ -12,34 +12,39 @@ internal sealed class BlundervilleRampBalls
 {
     internal const float SpawnZ = -366.81f, RestZ = -344.81f, Roll = 3.78f;
     internal const double Hold = 2, Despawn = 9.3, Period = 5.2;
-    internal static readonly float[][] Pairs = [[-1.8f, 5.5f], [-5.5f, 1.8f]];
+    internal static readonly float[][] Pairs = [[-1.8333f, 5.5f], [-5.5f, 1.8333f]];
 
     internal readonly record struct Ball(DateTime Spawn, float X);
-    private readonly Dictionary<ulong, Ball> _seen = [];
-    private readonly List<Ball> _spawns = [];
+    private sealed record Track(Ball Ball, float Z, DateTime Wave);
+    private readonly Dictionary<ulong, Track> _seen = [];
 
-    public void Reset() { _seen.Clear(); _spawns.Clear(); }
+    public void Reset() => _seen.Clear();
 
-    // A ball first seen near the top spawned now (actors refresh every scan).
+    // Actor scans can begin during a hold or halfway down the ramp.
     public void Observe(BlundervilleActor actor, DateTime now)
     {
-        if (actor.Oid != BlundervilleCatalog.Ball || _seen.ContainsKey(actor.Id)) return;
+        if (actor.Oid != BlundervilleCatalog.Ball) return;
         var p = actor.Position;
-        if (p.Z > -360 || p.Z < -370 || MathF.Abs(p.X) > 7) { _seen[actor.Id] = default; return; }
+        if (p.Z > -344 || p.Z < -370 || MathF.Abs(p.X) > 7) return;
+        if (_seen.TryGetValue(actor.Id, out var old)
+            && (MathF.Abs(old.Z - p.Z) < .1f || p.Z <= SpawnZ + .3f || p.Z >= RestZ - .3f)) return;
+        // A late first observation can be anywhere in the initial hold. Once
+        // the ball moves, correct its age from the observed position rather
+        // than keeping that uncertain spawn time for the entire descent.
         var ball = new Ball(now - TimeSpan.FromSeconds(Math.Clamp((p.Z - SpawnZ) / Roll + (p.Z > SpawnZ + .3f ? Hold : 0), 0, Despawn)), p.X);
-        _seen[actor.Id] = ball;
-        _spawns.Add(ball);
-        _spawns.RemoveAll(b => (now - b.Spawn).TotalSeconds > 60);
+        _seen[actor.Id] = new(ball, p.Z, old?.Wave ?? ball.Spawn);
+        foreach (var id in _seen.Where(b => (now - b.Value.Ball.Spawn).TotalSeconds > 60).Select(b => b.Key).ToArray()) _seen.Remove(id);
     }
 
-    public bool Ready => _spawns.Count > 0;
+    public bool Ready(DateTime now) => _seen.Values.Any(b => (now - b.Ball.Spawn).TotalSeconds < 2 * Period);
 
     // Seen balls plus the next pairs on the 5.2s alternation.
     public IReadOnlyList<Ball> Forecast(DateTime now, double horizon)
     {
-        var result = _spawns.Where(b => (now - b.Spawn).TotalSeconds < Despawn).ToList();
-        if (_spawns.Count == 0) return result;
-        var last = _spawns.MaxBy(b => b.Spawn);
+        var result = _seen.Values.Select(b => b.Ball).Where(b => (now - b.Spawn).TotalSeconds < Despawn).ToList();
+        if (!Ready(now)) return result;
+        var latest = _seen.Values.MaxBy(b => b.Wave)!;
+        var last = latest.Ball with { Spawn = latest.Wave };
         var pair = Array.FindIndex(Pairs, p => p.Any(x => MathF.Abs(x - last.X) < .5f));
         if (pair < 0) return result;
         for (var k = 1; last.Spawn.AddSeconds(k * Period) < now.AddSeconds(horizon); ++k)

@@ -157,7 +157,7 @@ internal static class BlundervilleFeedback151049Regression
                     var options = (SolveOptions)runtime.MovementStatus.GetType().GetMethod("CaptureSolveOptions", flags)!.Invoke(runtime.MovementStatus, null)!;
                     var watch = System.Diagnostics.Stopwatch.StartNew();
                     pending = new SafeZoneSolver().Solve(snapshot, player, new(6, 6, 0, false, 6, 6), options, now);
-                    ready = t + Math.Max(latency, watch.Elapsed.TotalSeconds); nextSolve = ready + .1;
+                    ready = t + Math.Max(latency, SimClock.Solve(watch)); nextSolve = ready + .1;
                 }
                 runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [accepted, player, snapshot, now]);
             }

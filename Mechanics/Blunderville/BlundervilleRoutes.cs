@@ -187,10 +187,10 @@ internal static partial class BlundervilleRoutes
             N(side * FinalStairLane, 33.5f, 145, .3f, true), N(side * FinalStairLane, 34.4f, 141, .3f, true), N(side * FinalStairLane, 35.8f, 137, .3f),
             N(side * FinalStairLane, 35.8f, 136.6f), N(side * 8.5f, 39.597f, 128), N(side * 8.5f, 39.597f, 123.8f, .3f));
 
-    // The stair steps are flat across |x|≈1.5–14. The 34801 row over z≈140–152
-    // cycles 12m boxes centred x=-12/-4/4/12 every 6.03s: x=±6 lies in two of
-    // them (one on the edge), x=±4 in one, and x=-4 also misses the z=156
-    // 34796 circles. The blind stair climb (~5.5s) fits only the longer gap.
+    // The stair steps are flat across |x|≈1.5–14. The 34801 R6 circles centred
+    // x=-12/-4/4/12, z=145.7 cycle every 6.03s. x=±4 isolates one circle and
+    // x=-4 also misses the z=156 34796 circles. Continuous hops now take ~3s;
+    // navigation validates the complete ascent before acquiring input.
     internal const float FinalStairLane = 4;
 
     // Away from the jumps a node hands over 2.5m early: the next route takes

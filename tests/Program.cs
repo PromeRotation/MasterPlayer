@@ -8,6 +8,7 @@ using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 
 var passed = 0;
+var shardCounter = 0;
 var failures = new List<string>();
 if (args.Contains("--radar-performance"))
 {
@@ -354,9 +355,12 @@ BlundervilleJumpExecutionRegression.Run(Run);
 BlundervilleRacePlannerRegression.Run(Run);
 BlundervilleRampRegression.Run(Run);
 BlundervilleFirstBFeedbackRegression.Run(Run);
+BlundervilleFeedback203254Regression.Run(Run);
+BlundervilleFeedback205734Regression.Run(Run);
 BlundervilleAnimationRegression.Run(Run);
 BlundervilleObstacleRegression.Run(Run);
 BlundervilleBumperPlannerRegression.Run(Run);
+BlundervilleFeedback175428Regression.Run(Run);
 BlundervilleIceMotionRegression.Run(Run);
 BlundervilleSlideObservationRegression.Run(Run);
 BlundervilleIceContinuationRegression.Run(Run);
@@ -371,7 +375,11 @@ BlundervilleFeedback010120Regression.Run(Run);
 BlundervilleFeedback023325Regression.Run(Run);
 BlundervilleFeedback151049Regression.Run(Run);
 BlundervilleDeliveryScheduleRegression.Run(Run);
+BlundervilleDeliveryRecoveryRegression.Run(Run);
 BlundervilleRingRegression.Run(Run);
+BlundervilleFeedback213132Regression.Run(Run);
+BlundervilleFeedback223811Regression.Run(Run);
+BlundervilleFeedback234521Regression.Run(Run);
 BlundervilleSwingerRampRegression.Run(Run);
 BlundervilleSpinBridgeRegression.Run(Run);
 BlundervilleSlimeRampRegression.Run(Run);
@@ -424,10 +432,14 @@ if (failures.Count > 0)
 void Run(string name, Action test)
 {
     if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
+    // --shard=i/n runs every n-th matching scenario, so n processes cover the suite in parallel.
+    if (args.FirstOrDefault(a => a.StartsWith("--shard=")) is { } shard && shard[8..].Split('/') is [var index, var count]
+        && shardCounter++ % int.Parse(count) != int.Parse(index)) return;
+    var watch = System.Diagnostics.Stopwatch.StartNew();
     try { test(); }
     catch (Exception e)
     {
-        Console.WriteLine($"FAIL {name}");
+        Console.WriteLine($"FAIL {name} [{watch.Elapsed.TotalSeconds:F1}s]");
         // --keep-going records the failure and runs the remaining scenarios.
         if (!args.Contains("--keep-going")) throw;
         Console.WriteLine($"  {e.GetType().Name}: {e.Message}");
@@ -435,7 +447,7 @@ void Run(string name, Action test)
         return;
     }
     passed++;
-    Console.WriteLine($"PASS {name}");
+    Console.WriteLine($"PASS {name} [{watch.Elapsed.TotalSeconds:F1}s]");
 }
 
 static void Check(bool condition, string message)

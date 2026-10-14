@@ -310,8 +310,12 @@ internal static class BlundervilleBumperPlannerRegression
             Check(baseline.Length > 0, "The unobstructed straight ice corridor could not be planned.");
             var pulse = new BlundervilleHazard("rhythm/test/34717/0", new CircleGeometry(origin - Vector3.UnitZ * 5.7f, .08f),
                 Epoch.AddSeconds(1.8), Epoch.AddSeconds(2), Epoch);
-            Check(Search(floor, [pulse], origin).Length == 0,
-                "A pulse on the physical 5.7m landing was ignored because the nominal 5m ray stopped short.");
+            var result = Search(floor, [pulse], origin);
+            // A complete route crosses this pulse, but a full native slide can
+            // stop safely before it and wait. It must remain explicitly partial.
+            Check(result.Length == 0 || result[^1].EndpointSafety >= 6 && double.IsPositiveInfinity(result[^1].RemainingDuration)
+                && result.All(s => (s.LongLanding ?? s.Position).Z - s.LandingRadius > pulse.Geometry.Position.Z + .18f),
+                "A pulse beyond the first landing authorized an unchecked continuation or overshoot.");
         });
         run("Blunderville bumper planner protects only the native current slide and replans the next ray", () =>
         {
