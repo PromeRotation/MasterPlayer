@@ -53,7 +53,7 @@ internal sealed class BlundervilleSlimeRamp
     public void Reset() { _plan = null; _aim = null; _waitingSince = default; }
 
     public BlundervilleRaceDecision Apply(BlundervilleRaceDecision normal, BlundervilleRaceState state, BlundervilleRampPushers pushers,
-        Vector3 player, DateTime now, bool recovering)
+        Vector3 player, DateTime now, bool recovering, BlundervilleRampBalls? balls = null)
     {
         if (state.Course != BlundervilleCourse.FirstB || !state.IsRacing || state.Qualified || normal.Hold || recovering
             || player.Y < 9.5f || player.Z > Begin || player.Z < Top || MathF.Abs(player.X) > 7.5f)
@@ -72,6 +72,7 @@ internal sealed class BlundervilleSlimeRamp
             return waited < ClockWait ? Publish(normal, [new(player.X, player.Y, Wait)], "终点坡：坡下等待推板时钟")
                 : Publish(normal, [new(player.X, player.Y, Top - AimBeyond)], "终点坡：推板时钟未就绪，直接上坡");
         var steps = pushers.Steps(now.AddSeconds(Horizon));
+        var snowballs = balls?.Forecast(now, Horizon) ?? [];
         // Keep a committed plan while its straight climb still clears; a new
         // plan every scan would wander between equal lanes on the floor.
         if (_plan is { } kept)
@@ -79,11 +80,12 @@ internal sealed class BlundervilleSlimeRamp
             var elapsed = (now - _planned).TotalSeconds;
             var shifted = kept with { Depart = kept.Depart - elapsed, Finish = kept.Finish - elapsed };
             _plan = shifted.Depart > -.3 && Clear(steps, now, shifted.Lane, Math.Max(0, shifted.Depart), Tiers[shifted.Tier])
+                && Dodges(snowballs, now, shifted.Lane, Math.Max(0, shifted.Depart), Tiers[shifted.Tier])
                 && shifted.Depart >= Walk(player, shifted.Lane) - .05 ? shifted : null;
         }
         if (_plan == null)
             for (var tier = 0; tier < Tiers.Length && _plan == null; ++tier)
-                _plan = Schedule(steps, now, player, tier);
+                _plan = Schedule(steps, now, player, tier, snowballs);
         _planned = now;
         if (_plan is not { } plan)
             return waited < GapWait ? Publish(normal, [new(player.X, player.Y, Wait)], "终点坡：坡下等待推板间隙")
@@ -116,7 +118,8 @@ internal sealed class BlundervilleSlimeRamp
 
     // The earliest departure from the slime edge (and the lane) whose straight
     // climb crosses every row between its pusher steps.
-    internal static Plan? Schedule(IReadOnlyList<BlundervilleRampStep> steps, DateTime now, Vector3 player, int tier)
+    internal static Plan? Schedule(IReadOnlyList<BlundervilleRampStep> steps, DateTime now, Vector3 player, int tier,
+        IReadOnlyList<BlundervilleRampBalls.Ball>? balls = null)
     {
         var margins = Tiers[tier];
         Plan? best = null;
@@ -126,7 +129,7 @@ internal sealed class BlundervilleSlimeRamp
             for (var depart = earliest; depart <= MaxDeparture; depart += DepartureStep)
             {
                 if (best != null && depart >= best.Depart - 1e-6) break;
-                if (!Clear(steps, now, lane, depart, margins)) continue;
+                if (!Clear(steps, now, lane, depart, margins) || balls != null && !Dodges(balls, now, lane, depart, margins)) continue;
                 best = new(lane, depart, depart + (SlimeEdge - Top) / Climb, tier);
                 break;
             }
@@ -148,6 +151,33 @@ internal sealed class BlundervilleSlimeRamp
             var leave = depart + (SlimeEdge - (Rows[r] - band)) / (Climb * (1 - margins.Speed));
             var at = (step.At - now).TotalSeconds;
             if (at + margins.After >= enter && at - margins.Before <= leave) return false;
+        }
+        return true;
+    }
+
+    // Whether a straight climb up `lane` meets no snowball rolling down it.
+    // 22 rounds of player/ball crossings: knocked 15–23% within 0.75m of the
+    // ball lane, ~4% (the background slide rate) beyond; the 2m telegraph is
+    // not the body. Reach 1.3m in x and z, +-0.3s on the ball's age and the
+    // climb-rate tolerance on the player's height.
+    internal const float BallReach = 1.3f;
+    internal const double BallSlack = .3;
+    internal static bool Dodges(IReadOnlyList<BlundervilleRampBalls.Ball> balls, DateTime now, float lane, double depart, Margins margins)
+    {
+        var finish = depart + (SlimeEdge - Top) / (Climb * (1 - margins.Speed));
+        foreach (var ball in balls)
+        {
+            if (MathF.Abs(ball.X - lane) >= BallReach) continue;
+            var spawn = (ball.Spawn - now).TotalSeconds;
+            for (var t = Math.Max(depart, spawn - BallSlack); t <= Math.Min(finish, spawn + BlundervilleRampBalls.Despawn + BallSlack); t += .05)
+            {
+                if (BlundervilleRampBalls.Z(Math.Clamp(t - spawn - BallSlack, 0, BlundervilleRampBalls.Despawn)) is not { } upper
+                    || BlundervilleRampBalls.Z(Math.Clamp(t - spawn + BallSlack, 0, BlundervilleRampBalls.Despawn)) is not { } lower) continue;
+                // Ball z rises (down the ramp) with age: upper = higher on the ramp.
+                var high = SlimeEdge - Climb * (1 + margins.Speed) * (float)(t - depart);
+                var low = SlimeEdge - Climb * (1 - margins.Speed) * (float)(t - depart);
+                if (high <= lower + BallReach && low >= upper - BallReach) return false;
+            }
         }
         return true;
     }

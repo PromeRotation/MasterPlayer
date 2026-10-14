@@ -154,6 +154,7 @@ internal static class BlundervilleSlimeRampRegression
         var pushIndex = 0; while (pushIndex < effects.Count && effects[pushIndex].T - .15 <= arrive) ++pushIndex;
         var pushes = new List<string>(); string? fall = null; var stand = 0.0; var maxMs = 0.0;
         var hint = ""; var t = arrive; var previous = p; double? onSlime = null; int slickTicks = 0, steeredTicks = 0;
+        var balls = Balls.TryGetValue(name, out var recorded) ? recorded : []; var lastBall = double.NegativeInfinity;
         for (var tick = 0; tick < 9000; ++tick)
         {
             t = arrive + tick * .01; now = Epoch.AddSeconds(t); move.Now = now;
@@ -165,6 +166,16 @@ internal static class BlundervilleSlimeRampRegression
             }
             var slick = p.Z <= BlundervilleSlimeRamp.Bottom && p.Z > BlundervilleSlimeRamp.Top;
             move.Slick = slick;
+            // Snowballs: seen as they spawn; a ball within 2.3m knocks the climber.
+            for (var b = 0; b < balls.Count; ++b)
+            {
+                var (spawned, bx) = balls[b];
+                if (spawned > t) break;
+                if (BlundervilleRampBalls.Z(t - spawned) is { } seen)
+                    encounter.RampBalls.Observe(new(0x40003000UL + (ulong)b, BlundervilleCatalog.Ball, new(bx, 18.5f, seen)), now);
+                if (slick && BlundervilleRampBalls.Z(t - spawned) is { } bz && MathF.Abs(p.X - bx) < 1f && MathF.Abs(p.Z - bz) < 1.2f && t > lastBall + 1)
+                { pushes.Add($"t={t:F2} ({p.X:F1},{p.Z:F1}) snowball x={bx}"); lastBall = t; }
+            }
             if (slick) onSlime ??= t;
             if (tick % 10 == 0)
             {
@@ -173,7 +184,8 @@ internal static class BlundervilleSlimeRampRegression
                 var decision = planner.Update(state, now, p, true, false, false, null);
                 decision = spin.Apply(decision, state, encounter.SpinBlades, p, move.Rotation, now, planner.Recovering);
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                decision = slime.Apply(decision, state, encounter.RampPushers, p, now, planner.Recovering);
+                decision = slime.Apply(decision, state, encounter.RampPushers, p, now, planner.Recovering,
+                    Environment.GetEnvironmentVariable("SLIME_NOBALLS") == "1" ? null : encounter.RampBalls);
                 // Baseline for comparison: straight up the arrival lane, no timing.
                 if (Environment.GetEnvironmentVariable("SLIME_NAIVE") == "1" && p.Z <= BlundervilleSlimeRamp.Begin)
                     decision = decision with { DirectTraversal = true, ContinuousPath = [p with { Z = p.Z - 2 }], Target = p with { Z = p.Z - 2 }, Hint = "naive" };
@@ -237,14 +249,21 @@ internal static class BlundervilleSlimeRampRegression
     private static void Feed(BlundervilleRampPushers pushers, Effect e)
         => pushers.Effect(0x40002000UL + (ulong)e.Source, Row(e.X, e.Z), e.To is { } to ? Row(to, e.Z) : null, Epoch.AddSeconds(e.T));
 
+    // Snowball spawns (course time, lane x) per recording.
+    private static readonly Dictionary<string, List<(double T, float X)>> Balls = [];
+
     private static List<(string Name, List<Effect> Effects)> Load()
     {
         using var data = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "Blunderville", "ramp-recorded.json")));
         var result = new List<(string, List<Effect>)>();
         foreach (var recording in data.RootElement.GetProperty("recordings").EnumerateObject())
+        {
+            if (recording.Value.TryGetProperty("balls", out var balls))
+                Balls[recording.Name] = balls.EnumerateArray().Select(b => (b[0].GetDouble(), b[1].GetSingle())).ToList();
             result.Add((recording.Name, recording.Value.GetProperty("effects").EnumerateArray()
                 .Select(e => new Effect(e[0].GetDouble(), e[1].GetInt32(), e[2].GetSingle(), e[3].GetSingle(),
                     e[4].ValueKind == JsonValueKind.Null ? null : e[4].GetSingle())).ToList()));
+        }
         return result;
     }
 

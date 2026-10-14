@@ -210,7 +210,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             _decision = _bumperPlanner.Apply(_decision, _race, _encounter, player, now, _navigation?.GetDirectTraversalExecution(now));
             _decision = BlundervilleDeliveryPlanner.Apply(_decision, _race, _encounter, player, now);
             _decision = _spinBridge.Apply(_decision, _race, _encounter.SpinBlades, player, _facing, now, _planner.Recovering);
-            _decision = _slimeRamp.Apply(_decision, _race, _encounter.RampPushers, player, now, _planner.Recovering);
+            _decision = _slimeRamp.Apply(_decision, _race, _encounter.RampPushers, player, now, _planner.Recovering, _encounter.RampBalls);
             // Timed lane search on the Final slope, the FirstA swinger ramp and
             // the Delivery carry corridor of the crystal's colour (the FirstB
             // final ramp is BlundervilleSlimeRamp above).

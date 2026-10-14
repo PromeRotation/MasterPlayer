@@ -43,6 +43,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly BlundervilleChargeTracker _deliveryCharges = new();
     private readonly BlundervilleRampPushers _rampPushers = new();
     public BlundervilleRampPushers RampPushers => _rampPushers;
+    public BlundervilleRampBalls RampBalls { get; } = new();
     public BlundervilleDeliverySchedule DeliverySchedule { get; } = new();
     public BlundervilleRingBeam RingBeam { get; } = new();
     public BlundervilleSpinSchedule SpinBlades { get; } = new();
@@ -86,6 +87,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             if (_actors.TryGetValue(id, out var old) && old.Oid != actor.Oid) Remove(id);
             if (actor.Oid == BlundervilleCatalog.Ball)
             {
+                RampBalls.Observe(actor, now);
                 var velocity = Vector3.Zero;
                 if (_ballMotion.TryGetValue(id, out var motion) && now > motion.At && now - motion.At < TimeSpan.FromSeconds(.5))
                 {
@@ -318,7 +320,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _rhythms.Reset();
         _bumpers.Reset(); _cylinders.Reset(); _learnedCylinders.Clear();
         _deliveryCharges.Reset();
-        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset(); SpinBlades.Reset();
+        _ballMotion.Clear(); _charges.Clear(); _rampPushers.Reset(); RampBalls.Reset(); DeliverySchedule.SetStart(null); RingBeam.SetStart(null); _ringCycles.Reset(); SpinBlades.Reset();
     }
 
     public IEnumerable<BlundervilleHazard> Hazards(DateTime now, bool spinRows = true, bool ramp = true)
