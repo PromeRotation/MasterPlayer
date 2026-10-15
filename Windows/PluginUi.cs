@@ -18,6 +18,13 @@ internal static class PluginUi
     private static readonly System.Reflection.MethodInfo? HostSectionHeader =
         typeof(PromeUi).GetMethods().Where(m => m.Name == "SectionHeader" && m.GetParameters() is [{ ParameterType: var first }, ..] && first == typeof(string)
             && m.GetParameters().Skip(1).All(p => p.HasDefaultValue)).MinBy(m => m.GetParameters().Length);
+    private static readonly System.Reflection.MethodInfo? HostToggleRow =
+        typeof(PromeUi).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(m => m.Name == "ToggleRow" && m.ReturnType == typeof(bool)
+                && m.GetParameters() is [{ ParameterType: var id }, { ParameterType: var label }, { ParameterType: var description }, { ParameterType: var value }, ..]
+                && id == typeof(string) && label == typeof(string) && description == typeof(string) && value == typeof(bool).MakeByRefType()
+                && m.GetParameters().Skip(4).All(p => p.HasDefaultValue))
+            .MinBy(m => m.GetParameters().Length);
 
     public static void PageHeader(string title)
     {
@@ -50,10 +57,27 @@ internal static class PluginUi
         // PR's native row does not wrap its description; keep it outside the
         // row when a narrow pane or enlarged font would overlap the switch.
         if (ImGui.CalcTextSize(description).X <= ImGui.GetContentRegionAvail().X - 52)
-            return PromeUi.ToggleRow(id, label, description, ref value);
-        var changed = PromeUi.ToggleRow(id, label, "", ref value);
+            return ToggleRow(id, label, description, ref value);
+        var changed = ToggleRow(id, label, "", ref value);
         Hint(description);
         return changed;
+    }
+
+    private static bool ToggleRow(string id, string label, string description, ref bool value)
+    {
+        if (HostToggleRow == null)
+        {
+            ImGui.PushID(id);
+            var changed = ImGui.Checkbox(label, ref value);
+            if (!string.IsNullOrEmpty(description)) Hint(description);
+            ImGui.PopID();
+            return changed;
+        }
+
+        object?[] arguments = [id, label, description, value, .. HostToggleRow.GetParameters().Skip(4).Select(p => p.DefaultValue)];
+        var result = (bool)HostToggleRow.Invoke(null, arguments)!;
+        value = (bool)arguments[3]!;
+        return result;
     }
 
     public static void Section(string title)

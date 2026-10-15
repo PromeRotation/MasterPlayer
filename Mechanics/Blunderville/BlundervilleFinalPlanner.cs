@@ -587,7 +587,7 @@ internal sealed class BlundervilleFinalPlanner
     internal const float SweepEnd = 137;
     private const int StairWaitSteps = 60;
 
-    private static bool FirstFlightClear(HazardIndex index, Vector3 runup, double arrival)
+    internal static bool FirstFlightClear(HazardIndex index, Vector3 runup, double arrival)
         => index.Segment(runup, runup with { Z = 149 }, arrival, arrival + FirstFlightSeconds);
 
     private static bool StairsClear(HazardIndex index, Vector3 runup, double arrival)
@@ -759,6 +759,35 @@ internal sealed class BlundervilleFinalPlanner
                     .Select(w => w.From).DefaultIfEmpty(double.PositiveInfinity).Min();
 
         // Executed somewhere between the plan and Lag seconds later.
+        private readonly Dictionary<(Vector3, Vector3, double), (double From, double Until)[]> _sampledDepartures = [];
+        internal bool CachedSegment(Vector3 from, Vector3 to, double start, double duration)
+        {
+            var key = (from, to, duration);
+            if (!_sampledDepartures.TryGetValue(key, out var intervals))
+            {
+                var samples = Math.Max(2, (int)MathF.Ceiling(Distance(from, to) / .5f) + 1);
+                var half = _continuous ? duration / (samples - 1) / 2 : 0;
+                var blocked = new List<(double From, double Until)>();
+                for (var i = 0; i < samples; ++i)
+                {
+                    var s = i / (float)(samples - 1); var p = Vector3.Lerp(from, to, s);
+                    if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var windows)) continue;
+                    foreach (var w in windows)
+                        if (w.Geometry.Contains(p, _clearance))
+                            blocked.Add((w.From - s * duration - _lag - half, w.Until - s * duration + half));
+                }
+                var merged = new List<(double From, double Until)>();
+                foreach (var w in blocked.OrderBy(w => w.From))
+                    if (merged.Count > 0 && w.From <= merged[^1].Until)
+                        merged[^1] = (merged[^1].From, Math.Max(merged[^1].Until, w.Until));
+                    else merged.Add(w);
+                _sampledDepartures[key] = intervals = merged.ToArray();
+            }
+            var lo = 0; var hi = intervals.Length;
+            while (lo < hi) { var mid = (lo + hi) / 2; if (intervals[mid].Until < start) lo = mid + 1; else hi = mid; }
+            return lo == intervals.Length || intervals[lo].From > start;
+        }
+
         public bool Segment(Vector3 from, Vector3 to, double start, double end)
         {
             if (_delivery) return Departure(from, to, start, Math.Max(0, end - start), start) <= start;

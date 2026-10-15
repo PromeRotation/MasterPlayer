@@ -31,7 +31,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleBumperPlanner _bumperPlanner = new();
     private readonly BlundervilleSpinBridge _spinBridge = new();
     private readonly BlundervilleSlimeRamp _slimeRamp = new();
-    private readonly BlundervilleFinalPlanner _finalPlanner = new();
+    private readonly BlundervilleGraphPlanner _routeTiming = new();
     private readonly BlundervilleFinalPlanner _swingerPlanner = new(BlundervilleFinalPlanner.FirstARamp);
     private readonly BlundervilleFinalPlanner _slopePlanner = new(BlundervilleFinalPlanner.FirstASlope);
     private readonly BlundervilleFinalPlanner _deliveryWest = new(BlundervilleFinalPlanner.DeliveryWest);
@@ -40,7 +40,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
     private readonly BlundervilleFinalPlanner _returnWest = new(BlundervilleFinalPlanner.ReturnWest);
     private readonly BlundervilleFinalPlanner _returnEast = new(BlundervilleFinalPlanner.ReturnEast);
     private readonly BlundervilleFinalPlanner _returnNorth = new(BlundervilleFinalPlanner.ReturnNorth);
-    private BlundervilleFinalPlanner[] LanePlanners => [_finalPlanner, _swingerPlanner, _slopePlanner, _deliveryWest, _deliveryEast, _deliveryNorth, _returnWest, _returnEast, _returnNorth];
+    private BlundervilleFinalPlanner[] LanePlanners => [_swingerPlanner, _slopePlanner, _deliveryWest, _deliveryEast, _deliveryNorth, _returnWest, _returnEast, _returnNorth];
 
     [UserSetting("自动竞速（走位、跳跃与搬运）")]
     public bool AutomaticRace { get => Settings.GetBool(nameof(AutomaticRace), true); set => Settings.Set(nameof(AutomaticRace), value); }
@@ -82,6 +82,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
 
     protected override void OnStop()
     {
+        _routeTiming.Reset();
         _navigation?.Clear(); _native?.Dispose(); _planner?.Reset(); _race?.Reset();
         _output?.Clear(); _encounter?.Reset();
         _navigation = null; _native = null; _planner = null; _race = null; _decision = null;
@@ -183,10 +184,14 @@ public abstract class BlundervilleScript : MasterPlayerScript
 
     private void Render(DateTime now)
     {
+        var finalRoutes = MasterPlayer.Settings.MasterPlayerSettings.Instance.BlundervilleFinalRoute;
+        _routeTiming.ConfigureCourse(finalRoutes);
+        _planner?.ConfigureFinalRoutes(finalRoutes);
         if (_encounter != null) _output?.Apply(_encounter, now, _player, IsMechanismEnabled);
         if (_race == null || _planner == null || _encounter == null) return;
         if (_player is not { } player)
         {
+            _routeTiming.Reset();
             _navigation?.Clear(); _native?.Apply(now, false, false, null, null);
             _planner.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _recoveryCorridor = null;
             _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset(); foreach (var lane in LanePlanners) lane.Reset(); return;
@@ -219,7 +224,6 @@ public abstract class BlundervilleScript : MasterPlayerScript
             // final ramp is BlundervilleSlimeRamp above).
             var lanePlanner = _race.Course switch
             {
-                BlundervilleCourse.Final => _finalPlanner,
                 // The cylinder/ice planner owns z -158..-208.
                 BlundervilleCourse.FirstA => player.Z > -180 ? _swingerPlanner : player.Z < -209 ? _slopePlanner : null,
                 BlundervilleCourse.Delivery => _race.CarryCrystalParam switch
@@ -230,22 +234,22 @@ public abstract class BlundervilleScript : MasterPlayerScript
                 },
                 _ => null
             };
-            if (lanePlanner != null)
+            if (_race.Course == BlundervilleCourse.Final)
+            {
+                _decision = _routeTiming.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
+                    _navigation?.GetDirectTraversalExecution(now));
+            }
+            else if (lanePlanner != null)
                 _decision = lanePlanner.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
                     _navigation?.GetDirectTraversalExecution(now));
+            if (_race.Course != BlundervilleCourse.Final) _routeTiming.Reset();
             foreach (var lane in LanePlanners) if (lane != lanePlanner) lane.Reset();
         }
-        else { _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
+        else { _routeTiming.Reset(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset(); foreach (var lane in LanePlanners) lane.Reset(); }
         // The slope corridor plans its own stand-still clear of the sweeps.
         if (_race.IsRacing && !_decision.Hold && !(_slopePlanner.HoldsBomb && !_race.MustStopForAccelerationBomb(now))
             && BlundervilleBombStop.StopEarly(_race, _encounter.TraversalHazards(now), player, now))
             _decision = _decision with { Hold = true, Jump = false, Hint = "加速度炸弹：在安全处提前停步" };
-        if (automatic && !replay && _race.Course == BlundervilleCourse.Final && !_decision.DirectTraversal)
-        {
-            var solution = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution;
-            _decision = BlundervilleRefuge.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
-                solution is not { IsSuccess: true });
-        }
         IGeometryShape? crossing = null;
         if (_race.Course == BlundervilleCourse.FirstA && _decision.Target is { } bridgeForward && _bridges != null)
         {
@@ -259,7 +263,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
         else _bridgePlanner?.Reset();
         if (_race.CanJump(now) && !_decision.Hold && !_planner.Recovering && _decision.Target is { } jumpForward)
         {
-            if (_jumpPlanner?.Plan(_race.Course, now, player, jumpForward, motion.Grounded, motion.Jumping) is { } step)
+            if (_jumpPlanner?.Plan(_race.Course, now, player, jumpForward, motion.Grounded, motion.Jumping, _routeTiming.ExitLane,
+                _routeTiming.ExitLane != null ? _encounter.TraversalHazards(now).ToArray() : null) is { } step)
             {
                 _decision = _decision with { Target = step.Target, Hold = step.Hold, Jump = step.Jump, Hint = step.Hint };
                 crossing = step.Corridor;
@@ -291,7 +296,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
             var movement = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
             Log($"糖豆人 {_race.Course}：{_decision.Hint}，节点{_planner.Cursor}，得分{_race.Score}/3，移动：{movement.PhaseText}，"
                 + $"路点{movement.LatestSolution?.ExecutablePath.Count ?? 0}，累计下发{movement.DispatchCount}，"
-                + $"解算{movement.AsyncSolveStartedCount}/接收{movement.AsyncSolveAcceptedCount}/取消{movement.AsyncSolveCancelledCount}");
+                + $"解算{movement.AsyncSolveStartedCount}/接收{movement.AsyncSolveAcceptedCount}/取消{movement.AsyncSolveCancelledCount}"
+                + (_race.Course == BlundervilleCourse.Final
+                    ? $"，位置X={player.X:F2}/Z={player.Z:F2}，路网节点{_routeTiming.CurrentNode}->{_routeTiming.NextNode}，{_routeTiming.Diagnostics}" : ""));
         }
     }
 
@@ -327,7 +334,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
                 && _jumpExecution.Corridor is { Stairs: true })
             {
                 _nextScan = now;
-                if (_jumpPlanner?.Plan(_race.Course, now, player.Position, _decision.Target ?? player.Position, true, false) is { } next)
+                if (_jumpPlanner?.Plan(_race.Course, now, player.Position, _decision.Target ?? player.Position, true, false, _routeTiming.ExitLane,
+                    _routeTiming.ExitLane != null ? _encounter!.TraversalHazards(now).ToArray() : null) is { Hold: false } next)
                 { _jumpExecution.Prepare(next.Corridor, player.Position); continue; }
             }
             break;

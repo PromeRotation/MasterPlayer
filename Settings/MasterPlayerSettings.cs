@@ -57,6 +57,9 @@ public sealed class MasterPlayerSettings
     public float DodgeDangerMargin = 0.5f;
 
     public bool EnableScripts = true;
+    // Retain the previous editor's saved data; current navigation uses FinalRoute.
+    public Mechanics.Blunderville.BlundervilleRouteLibrary BlundervilleRoutes = new();
+    public Mechanics.Blunderville.BlundervilleFinalRouteSettings BlundervilleFinalRoute = new();
     public Dictionary<string, bool> ScriptEnabled = new();
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();
@@ -79,6 +82,8 @@ public sealed class MasterPlayerSettings
                 settings.WorldAoe ??= new AoeViewSettings();
                 settings.RadarAoe ??= AoeViewSettings.CreateRadarDefaults();
                 settings.AoeVisibility ??= new Dictionary<string, AoeVisibility>();
+                settings.BlundervilleRoutes ??= new();
+                settings.BlundervilleFinalRoute ??= new();
                 return settings;
             }
         }
@@ -91,15 +96,20 @@ public sealed class MasterPlayerSettings
     }
 
     public void Save()
+        => TrySave();
+
+    public bool TrySave()
     {
         try
         {
             var json = JsonSerializer.Serialize(this, JsonOptions);
             File.WriteAllText(ConfigFilePath, json);
+            return true;
         }
         catch (Exception ex)
         {
             Svc.Log.Error(ex, "[MasterPlayer] 保存配置失败");
+            return false;
         }
     }
 }

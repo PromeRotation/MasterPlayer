@@ -410,7 +410,10 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var (source, cycle) in _waveCycles)
         {
             if (!_actors.ContainsKey(source) || (now - cycle.LastStart).TotalSeconds > 3 * WaveCyclePeriod) continue;
-            for (var k = 1; k <= 2; ++k)
+            // The graph may compare departures up to 30s ahead. Two cycles
+            // made the later wave zone look empty, then every refreshed
+            // forecast invalidated that attractive but impossible departure.
+            for (var k = 1; k <= 6; ++k)
             {
                 var impact = cycle.LastStart.AddSeconds(k * WaveCyclePeriod + cycle.CastSeconds);
                 if (now > impact.AddSeconds(4 * StepSeconds + .5)) continue;

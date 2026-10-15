@@ -24,6 +24,16 @@ internal static class BlundervilleFeedback213132Regression
         foreach (var fps in new[] { 15, 30, 60 })
             run($"Blunderville 213132 Final continuous raised stairs {latency:F2}s hazards={hazards} {fps}fps", () => Stairs(latency, hazards, fps));
         foreach (var hazards in new[] { false, true })
+            run($"Blunderville route edit assigned stair handoff hazards={hazards}",
+                () => Stairs(.3, hazards, 30, authored: true));
+        foreach (var lane in new[] { -6f, 5.5f })
+            run($"Blunderville graph custom raised stair lane={lane}",
+                () => Stairs(.3, false, 30, start: new(MathF.Sign(lane) * 10.6f, 28, 184), graphLane: lane));
+        run("Blunderville graph custom stair lane recorded hazards",
+            () => Stairs(.3, true, 30, start: new(-4.5f, 31.4f, 155.44f), graphLane: -4.5f));
+        run("Blunderville graph resume custom stair landing",
+            () => Stairs(.3, false, 30, resume: true, start: new(-6, 32.6f, 149.401f), graphLane: -6));
+        foreach (var hazards in new[] { false, true })
             run($"Blunderville 213132 Final resumes from recorded first landing hazards={hazards}",
                 () => Stairs(.3, hazards, 30, true));
         // 14:03/14:13 ARRs: a left-side diagonal approach reached the first
@@ -38,11 +48,12 @@ internal static class BlundervilleFeedback213132Regression
         }
     }
 
-    private static void Stairs(double latency, bool hazards, int fps, bool resume = false, Vector3? start = null, bool stalled = false)
+    internal static double Stairs(double latency, bool hazards, int fps, bool resume = false, Vector3? start = null, bool stalled = false, bool authored = false, float? graphLane = null,
+        BlundervilleRouteGraph? routeGraph = null, double? startTime = null, string file = "feedback-213132.json", bool flexible = false, int? expectedJumps = null)
     {
         const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
         var epoch = BlundervilleRingRegression.Epoch; var now = epoch;
-        using var replay = new BlundervilleRingRegression.Recording("final", "feedback-213132.json");
+        using var replay = new BlundervilleRingRegression.Recording("final", file);
         var move = new BlundervilleRingRegression.Moving();
         using var runtime = new SafeZoneRuntime(move, () => false, () => false) { ReplayClock = () => now };
         using var api = new ScriptSafeZoneApi(); api.ShareManagerForTest(runtime.Manager);
@@ -50,17 +61,33 @@ internal static class BlundervilleFeedback213132Regression
         state.Director(BlundervilleRaceState.DirectorInstance, 0x80000001, 20017, 0, 0, 0, epoch);
         var race = new BlundervilleRacePlanner(); var jumper = new BlundervilleJumpPlanner(); var gate = new BlundervilleJumpExecution();
         var slope = new BlundervilleFinalPlanner();
+        var assigned = new BlundervillePresetPlanner();
+        var graphPlanner = new BlundervilleGraphPlanner();
+        if (routeGraph != null) graphPlanner.ConfigureCourse(new() { Graph = routeGraph });
+        if (graphLane is { } selectedLane)
+        {
+            var graph = BlundervilleRouteGraph.FromSections(new() { Routes = [BlundervillePresetGeometry.Reference(selectedLane < 0 ? -1 : 1)] });
+            graph.Nodes[^1].X = selectedLane;
+            Check(graph.Validate() == null, graph.Validate() ?? "Invalid stair fixture");
+            graphPlanner.ConfigureCourse(new() { Graph = graph });
+        }
+        if (authored)
+        {
+            var settings = BlundervilleFinalRouteSettings.FromEdit(new BlundervilleFinalRouteSettings().Edit());
+            race.ConfigureFinalRoutes(settings); assigned.ConfigureCourse(settings);
+        }
         var empty = new BlundervilleEncounter(_ => { });
         var p = start ?? (resume ? new Vector3(-3.952f, 32.609f, 149.401f) : new Vector3(-3.677f, 31.418f, 155.444f));
-        p.Y = Height(p.Z);
-        var begin = resume ? 34.97 : 32.543;
+        float FloorHeight(float z) => routeGraph != null && z > 155.3f ? BlundervilleRoutes.HeightHint(BlundervilleCourse.Final, z) : Height(z);
+        p.Y = FloorHeight(p.Z);
+        var begin = startTime ?? (resume ? 34.97 : 32.543);
         SafeZoneSolution? accepted = null, pending = null;
         var ready = 0d; var nextSolve = 0d; var scan = 0d; var launches = new List<(double T, Vector3 P)>();
         double? flight = null; var launchY = 0f; var maxBack = 0f; var stand = 0d; var longest = 0d;
         var history = new List<(double T, Vector3 P)>(); var impacts = replay.Events.Where(e => e[1].GetString() == "hit").ToArray();
         var end = 0d; var direct = false;
         var frame = 1d / fps;
-        for (var tick = 0; tick < fps * 12; ++tick)
+        for (var tick = 0; tick < fps * (routeGraph != null ? 80 : graphLane != null ? 25 : 12); ++tick)
         {
             var t = begin + tick * frame; end = t; now = epoch.AddSeconds(t); move.Now = now;
             var air = flight != null;
@@ -70,11 +97,25 @@ internal static class BlundervilleFeedback213132Regression
                 var decision = race.Update(state, now, p, !air, air, false, null);
                 var encounter = hazards ? replay.Encounter : empty;
                 var danger = encounter.TraversalHazards(now).ToArray();
-                decision = slope.Apply(decision, state, danger, p, now, nav.GetDirectTraversalExecution(now));
-                if (!decision.DirectTraversal) decision = BlundervilleRefuge.Apply(decision, state, danger, p, now,
-                    runtime.MovementStatus.LatestSolution is not { IsSuccess: true });
+                if (graphLane != null || routeGraph != null)
+                {
+                    decision = graphPlanner.Apply(decision, state, danger, p, now, nav.GetDirectTraversalExecution(now));
+                    graphPlanner.Pending?.GetAwaiter().GetResult();
+                }
+                else if (authored)
+                {
+                    decision = assigned.Apply(decision, state, danger, p, now, nav.GetDirectTraversalExecution(now));
+                    assigned.Pending?.GetAwaiter().GetResult();
+                }
+                else
+                {
+                    decision = slope.Apply(decision, state, danger, p, now, nav.GetDirectTraversalExecution(now));
+                    if (!decision.DirectTraversal) decision = BlundervilleRefuge.Apply(decision, state, danger, p, now,
+                        runtime.MovementStatus.LatestSolution is not { IsSuccess: true });
+                }
                 if (decision.Hold) { jumper.Reset(); gate.Clear(); nav.ReleaseJump(); }
-                var step = decision.Hold ? null : jumper.Plan(state.Course, now, p, decision.Target ?? p, !air, air);
+                var step = decision.Hold ? null : jumper.Plan(state.Course, now, p, decision.Target ?? p, !air, air, graphPlanner.ExitLane, flexible ? danger : null);
+                if (step is { Hold: true }) { decision = decision with { Hold = true }; gate.Clear(); nav.ReleaseJump(); }
                 var execution = decision.Hold ? null : gate.Prepare(step?.Corridor, p);
                 var target = execution?.Target ?? step?.Target ?? decision.Target;
                 direct = decision.DirectTraversal || execution?.Corridor is { Stairs: true } stairs && target == stairs.MovementTarget;
@@ -97,7 +138,8 @@ internal static class BlundervilleFeedback213132Regression
                 if (wasInFlight && gate.Landed && !air)
                 {
                     scan = t + frame;
-                    if (jumper.Plan(state.Course, now, p, new(-4, 35.8f, 137), true, false) is { } nextStep)
+                    if (jumper.Plan(state.Course, now, p, new(graphPlanner.ExitLane ?? graphLane ?? -4, 35.8f, 137), true, false, graphPlanner.ExitLane,
+                        flexible ? (hazards ? replay.Encounter : empty).TraversalHazards(now).ToArray() : null) is { Hold: false } nextStep)
                     { gate.Prepare(nextStep.Corridor, p); continue; }
                 }
                 break;
@@ -120,10 +162,10 @@ internal static class BlundervilleFeedback213132Regression
             {
                 var elapsed = (float)(t + frame - launch);
                 next.Y = launchY + 10 * elapsed - 13.35f * elapsed * elapsed;
-                if (elapsed > .35f && next.Y <= Height(next.Z)) { flight = null; next.Y = Height(next.Z); }
+                if (elapsed > .35f && next.Y <= FloorHeight(next.Z)) { flight = null; next.Y = FloorHeight(next.Z); }
             }
-            else if (Height(next.Z) > p.Y + .3f) next = p; // A riser cannot be walked through.
-            else next.Y = Height(next.Z);
+            else if (FloorHeight(next.Z) > p.Y + .3f) next = p; // A riser cannot be walked through.
+            else next.Y = FloorHeight(next.Z);
             if (p.Y > 32.2f) maxBack = Math.Max(maxBack, next.Z - p.Z);
             stand = Vector3.DistanceSquared(next, p) < .0001f ? stand + frame : 0; longest = Math.Max(longest, stand);
             p = next; history.Add((t + frame, p));
@@ -144,8 +186,11 @@ internal static class BlundervilleFeedback213132Regression
         }
         Console.WriteLine($"213132 STAIRS {latency:F2}s hazards={hazards} end={p} elapsed={end-begin:F2} jumps={string.Join(';', launches.Select(l => $"{l.T:F2}@{l.P.Z:F2}"))} back={maxBack:F2} stand={longest:F2} hits={string.Join(';', hits)}");
         // A stalled start may back up once for a run-up; it must still climb.
-        Check(p.Z <= 137.3f && launches.Count == (resume ? 3 : 4) && (stalled || maxBack < .05f) && longest < 1, "The raised steps did not chain without reversing or stalling.");
+        Check(p.Z <= 137.3f && launches.Count == (expectedJumps ?? (resume ? 3 : 4)) && (stalled || maxBack < .05f) && longest < (routeGraph != null ? 15 : graphLane != null ? 6 : 1), "The raised steps did not chain without reversing or stalling.");
+        if (graphLane is { } lane) Check(MathF.Abs(p.X - lane) < .15f && launches.All(l => MathF.Abs(l.P.X - lane) < .15f), "Jump execution changed the authored stair lane.");
         Check(hits.Count == 0, "The stair execution intersected a recorded mechanism.");
+        graphPlanner.Reset(); nav.Clear();
+        return end - begin;
     }
 
     // Local crmt6/crmt7 top-surface profiles, checked against the ARR's

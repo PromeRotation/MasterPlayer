@@ -39,6 +39,16 @@ internal sealed class BlundervilleRacePlanner
     public int Cursor => _cursor;
     public bool Recovering => _recovering;
     public BlundervilleRecoveryCorridor? RecoveryCorridor { get; private set; }
+    private BlundervilleFinalRouteSettings? _finalRoutes;
+
+    internal void ConfigureFinalRoutes(BlundervilleFinalRouteSettings settings)
+    {
+        if (ReferenceEquals(_finalRoutes, settings)) return;
+        _finalRoutes = settings; Reset();
+    }
+
+    private IReadOnlyList<BlundervilleRouteNode> CourseNodes(BlundervilleCourse course, Vector3 position)
+        => course == BlundervilleCourse.Final && _finalRoutes != null ? _finalRoutes.Nodes(position) : BlundervilleRoutes.Nodes(course, position);
 
     public BlundervilleRaceDecision Update(BlundervilleRaceState state, DateTime now, Vector3 position,
         bool grounded, bool jumping, bool gapAhead, float? arrowDirection, bool nativeMisdirection = false, Vector3? executionTarget = null)
@@ -51,7 +61,7 @@ internal sealed class BlundervilleRacePlanner
         if (_version != state.RoundVersion || _previous is { } previous && Vector3.DistanceSquared(previous, position) > 40 * 40)
         {
             _deliveryRecovery.Reset();
-            _nodes = BlundervilleRoutes.Nodes(state.Course, position);
+            _nodes = CourseNodes(state.Course, position);
             _version = state.RoundVersion;
             _cursor = NearestSegment(position);
             _arrival = default; _arrivalTarget = null;
@@ -109,7 +119,7 @@ internal sealed class BlundervilleRacePlanner
             {
                 if (!grounded || jumping)
                     return new(null, true, false, null, "等待击飞落地，重新确认回坡起点");
-                var normal = BlundervilleRoutes.Nodes(state.Course, position);
+                var normal = CourseNodes(state.Course, position);
                 var recovery = BlundervilleRoutes.FirstBRecovery(position);
                 _recoveryNodeCount = recovery.Count;
                 _nodes = recovery.Concat(normal.Where(n => n.Position.Z < -271)).ToArray();
@@ -124,7 +134,7 @@ internal sealed class BlundervilleRacePlanner
                 && (_rejoinCircles || MathF.Abs(position.X) > 2 && _nodes.Count > 10
                     && MathF.Sign(position.X) != MathF.Sign(_nodes[10].Position.X)))
             {
-                _nodes = BlundervilleRoutes.Nodes(state.Course, position);
+                _nodes = CourseNodes(state.Course, position);
                 _cursor = NearestSegment(position);
                 _rejoinCircles = false;
             }
@@ -136,10 +146,11 @@ internal sealed class BlundervilleRacePlanner
             // node 1 (z=278), the jump planner saw a target behind it and the
             // player shuttled across the planner boundary for 25s. Follow the
             // side the player committed to (mirrored route, nearest segment).
-            if (state.Course == BlundervilleCourse.Final && !_recovering && _nodes.Count > 1
-                && MathF.Abs(position.X) > 2 && MathF.Sign(position.X) != MathF.Sign(_nodes[1].Position.X))
+            if (state.Course == BlundervilleCourse.Final && _finalRoutes == null && !_recovering && _nodes.Count > 1
+                && position.Z <= BlundervilleFinalPlanner.Bottom + 1
+                && MathF.Abs(position.X) > 2 && MathF.Sign(position.X) != MathF.Sign(_nodes[^1].Position.X))
             {
-                _nodes = BlundervilleRoutes.Nodes(state.Course, position);
+                _nodes = CourseNodes(state.Course, position);
                 _cursor = NearestSegment(position);
             }
             if (!_recovering && grounded && !jumping && !BlundervilleRoutes.IsLoop(state.Course))

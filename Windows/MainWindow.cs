@@ -27,6 +27,7 @@ public sealed class MainWindow : IDisposable
     private string? _selectedScript;
     private static readonly string[] Pages = ["总览", "显示与绘制", "自动走位", "机制脚本", "录制回放", "诊断"];
     private readonly VisualScriptEditor _visualEditor = new();
+    private readonly BlundervilleRouteEditor _routeEditor = new();
 
     public void Toggle()
     {
@@ -39,6 +40,7 @@ public sealed class MainWindow : IDisposable
         if (_disposed)
             return;
         _visualEditor.Draw();
+        _routeEditor.Draw();
         if (!_visible) return;
 
         using var theme = PromeUiTheme.PushWindowStyle();
@@ -343,6 +345,7 @@ public sealed class MainWindow : IDisposable
         if (ImGui.Button("打开目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
         ImGui.SameLine();
         if (ImGui.Button("可视化编辑器")) _visualEditor.Open();
+        if (ImGui.Button("糖豆人第三关路线")) _routeEditor.Open();
         if (!string.IsNullOrEmpty(manager.StatusMessage)) Hint(manager.StatusMessage);
         if (!string.IsNullOrEmpty(manager.ErrorMessage))
         {

@@ -73,10 +73,11 @@ dotnet run --project tests/MasterPlayer.RegressionTests.csproj
 ```
 
 内置脚本编译与实际插件 DLL 的脚本库冒烟检查：
-
 ```powershell
 dotnet run --project tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj -- . bin/Debug/MasterPlayer.dll
 ```
+
+界面开关的 PR 版本兼容检查：`dotnet run --project tests/UiCompatibility/MasterPlayer.UiCompatibility.csproj -- Windows/PluginUi.cs bin/Debug/MasterPlayer.dll "实际PR目录/PromeRotation.dll"`。该检查覆盖不同 ToggleRow 签名、缺失方法回退和布尔值回写，并确认编译产物没有直接绑定该宿主方法。
 
 机制运行库测试还需本机游戏数据，指定真实 `game\sqpack` 目录：
 
@@ -99,6 +100,23 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 仓库 `Scripts/` 下使用 `MasterPlayer.Scripts` 及其子命名空间的机制脚本随 DLL 内置加载，无需复制到配置目录。斗兽奇弈五盘入口已内置；更新并重载插件后，在「机制脚本」页勾选所需脚本，进入对应区域自动启动。详情显示脚本来源，启用状态、设置与机制开关仍保存在 `MasterPlayer.json`。
 
 「金碟巨豆中心（糖豆人）」已内置，区域1165。按娱乐竞速场景运行，无需进入战斗；已核对十二份 ARR 中的两种第一关、搬砖与喷风跑圈第二关及决赛。支持自动走位、消失桥换道跳跃、水晶领取投放、箭头与强制移动处理，并提供读条范围、实时滚动球/旋转长条及五列波浪预测。进本前启用脚本，「自动竞速（走位、跳跃与搬运）」默认开启；测试须使用配套 PR/MP DLL，并关闭 PR 本体自动躲避，避免宿主移动接管。MP 不修改该宿主设置。回放仅绘制和模拟；实机待验项目见 [Blunderville 规格](docs/reference/Blunderville.spec.md)。定向离线验证：`dotnet run --project tests/MasterPlayer.RegressionTests.csproj -- --filter=Blunderville`，测试引用须指向配套 PR DLL。
+
+### 糖豆人第三关：机制路网与手工编辑（1.14.35）
+
+在 `/prmp` →「机制脚本」→「糖豆人第三关路线」打开节点与连线编辑器。你负责定义路网，程序到分叉节点后根据机关预测，从该节点所有已连接的后继中选路；不生成新连线，不跳到旁边分支。可以分叉、汇合、显式回头，线条相交不会自动连通。机制名称只是分组高亮，不把路网限制成一条线。
+
+- 「选择／拖动节点」：左键选择并拖动，右键删除节点及其连线；删除不会补连邻居。
+- 「画连线／分支」：右键节点设为连线起点，左键空白处新增并连接，左键已有节点连到它。回到同一节点可反复画出多个分支，箭头表示行进方向。
+- 「在线上插入节点」：在已有连线上插入节点后，可以从它继续画分支；「删除连线」只删除点中的线。
+- 台阶入口可设多个：在 Z=155.2 新增节点，自定 X；虚线仅示意入口方向。保存时检查入口与首阶支持面，上台阶时逐阶选择同侧起跳和落点，允许横移、斜跳与不同跳跃距离。
+
+可用「载入按机制铺设路网」载入可撤销的草稿：第一窄道内外通道、第二窄道四通道、圆形机关交界、波浪换列及中央缺口两侧、末段交替圆与八个台阶入口。它只是可编辑节点与连线，不会在运行中自动生成新路。
+
+点击「保存路网」生效。旧版已保存的分段路点按原顺序转成节点和连线，保留原几何；没有已保存路线时，只展示可修改底稿。配置为 `MasterPlayer.json/BlundervilleFinalRoute/Graph`，旧字段保留历史数据。编辑草稿不改变当前执行路网。
+
+最多256节点、1024条有向连线，每个节点都须从起点可达，并最终可到达一个有效台阶入口。保存检查整段地形，虚拟等待点只在你画的线内部切分，不连接交叉线。行走中保留当前连线；在当前段结束前3秒开始预计算后续，按实际位置与时间复核后连续行走。无可行分支时等待或提示；坡道路网偏离当前连线约0.4米以上则暂停。台阶按各层实际支持面和危险窗口选择起落点，保留着地确认与跳跃冷却。
+
+定向验证：`dotnet run --project tests/MasterPlayer.RegressionTests.csproj -p:CI=true -- --filter="Blunderville graph"`。覆盖旧数据迁移、分叉改选、汇合/有环图、有界等待、禁止隐式连通、实际移动、新台阶入口及录像危险复核。测试不等于游戏内界面或整局通关验收。
 
 自定义 `.cs`、`.dll` 或 `*.mechanic.json` 仍放在配置目录：
 

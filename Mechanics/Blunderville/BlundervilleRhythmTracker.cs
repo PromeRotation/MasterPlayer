@@ -42,7 +42,9 @@ internal sealed class BlundervilleRhythmTracker
     // 2026-10-15 03:55 ARR: two more stuns 1.46s and 1.51s after the packet
     // at 4.5m (z=170 circle); 1.0 left them unprotected.
     internal const double EndCircleTail = 1.9;
-    internal static double RecurrenceTailFor(uint action) => action == 34796 ? EndCircleTail : RecurrenceTail;
+    // 21:31 recording: the Z229 R6 pulse arrives 0.797s after its projected
+    // beat. Keep that late-contact window instead of entering it after 0.3s.
+    internal static double RecurrenceTailFor(uint action) => action == 34796 ? EndCircleTail : action == 34801 ? 1.0 : RecurrenceTail;
     internal static double? FinalRecurrence(uint action, Vector3 p)
     {
         if (MathF.Abs(p.X) > 15) return null;
@@ -127,7 +129,7 @@ internal sealed class BlundervilleRhythmTracker
                         if (projected < anchor) anchor = projected;
                     }
                     for (var impact = anchor.AddSeconds(period); impact <= now.AddSeconds(RecurrenceHorizon); impact = impact.AddSeconds(period))
-                        if (impact > now)
+                        if (impact.AddSeconds(tail) > now)
                             recurring.Add(new($"rhythm/{actor.Id}/{action}/{impact.Ticks}", rule.Shape.Resolve(known.Position, known.Rotation, null),
                                 impact.AddSeconds(-RecurrenceLead), impact.AddSeconds(tail), now));
                 }

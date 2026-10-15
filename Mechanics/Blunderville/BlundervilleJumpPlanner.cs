@@ -15,7 +15,8 @@ internal sealed class BlundervilleJumpPlanner
     private DateTime _nextJumpRetry;
 
     public BlundervilleJumpDecision? Plan(BlundervilleCourse course, DateTime now, Vector3 player,
-        Vector3 forwardTarget, bool grounded, bool jumping)
+        Vector3 forwardTarget, bool grounded, bool jumping, float? finalLane = null,
+        IReadOnlyList<BlundervilleHazard>? stairHazards = null)
     {
         if (!BlundervilleEncounter.Finite(player) || !BlundervilleEncounter.Finite(forwardTarget)) { Reset(); return null; }
         if (_course != course || _lastTime != default && now < _lastTime
@@ -42,8 +43,16 @@ internal sealed class BlundervilleJumpPlanner
         }
         // Keep the selected step while the executor backs up for its run-up.
         // Otherwise the final stairs can select the previous step by Z alone.
+        if (_corridor == null && course == BlundervilleCourse.Final && stairHazards != null
+            && player.Z <= BlundervilleFinalPlanner.Bottom && player.Z > 137.3f)
+        {
+            _corridor = BlundervilleStairGeometry.Choose(player, now, stairHazards);
+            if (_corridor == null)
+                return new(player, true, false, new(player, player - Vector3.UnitZ, stairs: true), "当前台阶暂无法安全起跳，重新选择落点");
+            _takeoff = _corridor.Takeoff;
+        }
         var link = _corridor is { } prepared
-            ? (prepared.Takeoff, prepared.Landing) : Link(course, player, forwardTarget);
+            ? (prepared.Takeoff, prepared.Landing) : Link(course, player, forwardTarget, finalLane);
         if (link == null) { ClearJump(); return null; }
         var (start, end) = link.Value;
         var forward = Direction(start, end);
@@ -89,7 +98,7 @@ internal sealed class BlundervilleJumpPlanner
 
     private void ClearJump() { _takeoff = _landing = null; _corridor = null; _airborne = false; _nextJumpRetry = default; }
 
-    private static (Vector3 Start, Vector3 End)? Link(BlundervilleCourse course, Vector3 player, Vector3 target)
+    private static (Vector3 Start, Vector3 End)? Link(BlundervilleCourse course, Vector3 player, Vector3 target, float? finalLane)
     {
         var side = (MathF.Abs(target.X) > 1 ? target.X : player.X) < 0 ? -1f : 1f;
         if (course == BlundervilleCourse.FirstB && player.Y >= 8.5f)
@@ -101,7 +110,8 @@ internal sealed class BlundervilleJumpPlanner
         }
         if (course == BlundervilleCourse.Final && player.Z <= BlundervilleFinalPlanner.Bottom && player.Z > 137.7f)
         {
-            var x = side * BlundervilleRoutes.FinalStairLane;
+            var x = finalLane ?? side * BlundervilleRoutes.FinalStairLane;
+            if (finalLane != null && !BlundervilleRouteGraph.ValidStairLane(x)) return null;
             if (player.Z > 149.5f && player.Y < 32.2f) return (new(x, 31.5f, 153), new(x, 32.6f, 149));
             if (player.Z > 145.5f && player.Y < 33.1f) return (new(x, 32.6f, 149), new(x, 33.5f, 145));
             if (player.Z > 141.5f && player.Y < 34f) return (new(x, 33.5f, 145), new(x, 34.4f, 141));
@@ -121,6 +131,7 @@ internal sealed class BlundervilleJumpPlanner
 internal sealed class BlundervilleJumpCorridor : IGeometryShape
 {
     private readonly RectangleGeometry _rectangle;
+    private readonly IGeometryShape? _supportedTread;
     public Vector3 Takeoff { get; }
     public Vector3 Landing { get; }
     // Continuous input through all four treads. Each physical landing still
@@ -128,13 +139,17 @@ internal sealed class BlundervilleJumpCorridor : IGeometryShape
     // Mesh risers are z~151/147/143/139: the nominal takeoffs have 1.8m of
     // supported tread, so a grounded hop up to 1.2m later retains clearance.
     public bool Stairs { get; }
-    public Vector3 MovementTarget => Stairs ? new(Landing.X, 35.8f, 137) : Landing;
+    public bool FlexibleStairs { get; init; }
+    public Vector3 MovementTarget { get; }
     // A vanishing-bridge lane switch lands anywhere on a 5m-wide lane, so the
     // run-up need not sit on the exact axis (see BlundervilleJumpExecution).
     public bool LaneSwitch { get; init; }
-    public BlundervilleJumpCorridor(Vector3 takeoff, Vector3 landing, float width = 3, float padding = 2, bool stairs = false)
+    public BlundervilleJumpCorridor(Vector3 takeoff, Vector3 landing, float width = 3, float padding = 2, bool stairs = false, Vector3? movementTarget = null,
+        IGeometryShape? supportedTread = null)
     {
         Takeoff = takeoff; Landing = landing; Stairs = stairs;
+        _supportedTread = supportedTread;
+        MovementTarget = movementTarget ?? (stairs ? new(landing.X, 35.8f, 137) : landing);
         var end = MovementTarget;
         var delta = end - takeoff; delta.Y = 0;
         _rectangle = new((takeoff + end) / 2, MathF.Atan2(delta.X, delta.Z), width, delta.Length() + padding);
@@ -142,8 +157,14 @@ internal sealed class BlundervilleJumpCorridor : IGeometryShape
     public GeometryKind Kind => _rectangle.Kind;
     public Vector3 Position => _rectangle.Position;
     public float Rotation => _rectangle.Rotation;
-    public bool Contains(Vector3 point, float epsilon = GeometryHelper.DefaultEpsilon) => _rectangle.Contains(point, epsilon);
-    public bool IntersectsSegment(Vector3 start, Vector3 end, float epsilon = GeometryHelper.DefaultEpsilon) => _rectangle.IntersectsSegment(start, end, epsilon);
-    public IReadOnlyList<IReadOnlyList<Vector3>> GetContours(int segments = 64) => _rectangle.GetContours(segments);
-    public GeometryBounds GetBounds() => _rectangle.GetBounds();
+    public bool Contains(Vector3 point, float epsilon = GeometryHelper.DefaultEpsilon) => _rectangle.Contains(point, epsilon) || _supportedTread?.Contains(point, epsilon) == true;
+    public bool IntersectsSegment(Vector3 start, Vector3 end, float epsilon = GeometryHelper.DefaultEpsilon) => _rectangle.IntersectsSegment(start, end, epsilon) || _supportedTread?.IntersectsSegment(start,end,epsilon) == true;
+    public IReadOnlyList<IReadOnlyList<Vector3>> GetContours(int segments = 64) => _supportedTread == null ? _rectangle.GetContours(segments)
+        : _rectangle.GetContours(segments).Concat(_supportedTread.GetContours(segments)).ToArray();
+    public GeometryBounds GetBounds()
+    {
+        var a = _rectangle.GetBounds(); if (_supportedTread == null) return a;
+        var b = _supportedTread.GetBounds();
+        return new(MathF.Min(a.MinX,b.MinX),MathF.Min(a.MinZ,b.MinZ),MathF.Max(a.MaxX,b.MaxX),MathF.Max(a.MaxZ,b.MaxZ));
+    }
 }

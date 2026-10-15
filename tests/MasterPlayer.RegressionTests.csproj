@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />

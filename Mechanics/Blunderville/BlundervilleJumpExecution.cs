@@ -30,7 +30,7 @@ internal sealed class BlundervilleJumpExecution
         {
             var nextLaunch = _nextLaunch;
             var continuing = link.Stairs && _link is { Stairs: true } previous
-                && previous.MovementTarget == link.MovementTarget && _completed;
+                && (previous.MovementTarget == link.MovementTarget || previous.FlexibleStairs && link.FlexibleStairs) && _completed;
             var samples = continuing ? _samples.ToArray() : [];
             var lastSample = _lastSample;
             Clear(); _nextLaunch = nextLaunch; _link = link;
@@ -48,6 +48,8 @@ internal sealed class BlundervilleJumpExecution
         var tolerance = link.LaneSwitch ? LaneSwitchLateral : .3f;
         if (!_running && progress >= -6f && progress <= (link.Stairs && !_stairRunup ? StairBand : -.65f) && lateral.LengthSquared() <= tolerance * tolerance)
         { _running = true; NeedsRunupRetry = false; }
+        if (link.FlexibleStairs && lateral.LengthSquared() > .3f * .3f)
+            return new(link.Takeoff, false, false, link, "沿当前台阶调整起跳位置");
         if (link.Stairs && !_stairRunup) return new(link.MovementTarget, false, false, link, "台阶：按住前进，冷却一到就起跳");
         return new(_running ? link.MovementTarget : link.Takeoff - direction * 1.15f, false, false, link,
             _running ? "助跑中：确认移动速度后起跳" : "对齐跳跃助跑位置");

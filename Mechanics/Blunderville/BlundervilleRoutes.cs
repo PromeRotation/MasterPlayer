@@ -174,12 +174,13 @@ internal static partial class BlundervilleRoutes
     private static IReadOnlyList<BlundervilleRouteNode> FinalNodes(float side)
         // z=262–275: the only walkway is x≈5–15 beside the wall at x=±5 (a pit
         // spans |x|≤5 at z=270), i.e. inside the x=±10 R5 circle. Hug the wall
-        // to shorten that chord (1.1s at x=5.8 vs 1.26s at x=6 off-wall).
+        // x=6 retains the timed traversal's 0.25m terrain clearance; x=5.8
+        // is too close to the modelled moat edge for an executable fixed route.
         // z=256–238: the inner lane x=±3.5 (pits at |x|=6–9, walls at ±1) is
         // only reached by the x=±4 sweeps, twice per 11.07s. The 243 and 229
         // sweep rows leave a strip at z≈236 to cross outward; the outer lane
         // x=±13.5 then meets one 34801 position and the x=±10 34802 circle.
-        => ReadOnly(N(0, 3.22f, 290), N(side * 3.5f, 4.8f, 278), N(side * 5.8f, 5.45f, 273), N(side * 5.8f, 6, 262),
+        => ReadOnly(N(0, 3.22f, 290), N(side * 3.5f, 4.8f, 278), N(side * 6f, 5.45f, 273), N(side * 6f, 6, 262),
             N(side * 3.5f, 8.2f, 256), N(side * 3.5f, 13.3f, 236), N(side * 13.5f, 13.3f, 236),
             N(side * 13, 25.6f, 190),
             N(side * 9, 28.9f, 180), N(side * 6, 30.3f, 167), N(side * FinalStairLane, 31.5f, 154),
