@@ -157,7 +157,10 @@ internal sealed class BlundervilleFinalPlanner
         // from there failed the floor check; the planner reported a dead end
         // and the race route could not leave either, so the player stood until
         // eliminated. Step back onto the modelled floor first.
-        if (_profile.Spoke == null && !floor.Contains(player, 0))
+        // 2026-10-15 12:05 ARR: the north carry stood 16s at (-198.2,211.7),
+        // just inside the modelled hole south of the north hammers; no corridor
+        // vertex was reachable by floor from there. Same rejoin for corridors.
+        if (!floor.Contains(player, 0))
         {
             Reset();
             var outside = new HazardIndex(hazards, now, _profile);

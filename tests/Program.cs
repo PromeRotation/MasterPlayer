@@ -380,6 +380,7 @@ BlundervilleRingRegression.Run(Run);
 BlundervilleFeedback213132Regression.Run(Run);
 BlundervilleFeedback223811Regression.Run(Run);
 BlundervilleFeedback234521Regression.Run(Run);
+BlundervilleFeedback120500Regression.Run(Run);
 BlundervilleSwingerRampRegression.Run(Run);
 BlundervilleSpinBridgeRegression.Run(Run);
 BlundervilleSlimeRampRegression.Run(Run);

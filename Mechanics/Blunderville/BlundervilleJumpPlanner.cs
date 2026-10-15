@@ -55,7 +55,9 @@ internal sealed class BlundervilleJumpPlanner
             return null;
         var offset = new Vector2(player.X - start.X, player.Z - start.Z);
         var progress = Vector2.Dot(offset, forward);
-        if (progress > (course == BlundervilleCourse.Final ? 1.4f : .45f)) { ClearJump(); return null; }
+        // 12:05 ARR: without a run-up the third riser landed 1.4m past the last
+        // takeoff (z=139.6) and this step was dropped; the riser face is 2m on.
+        if (progress > (course == BlundervilleCourse.Final ? BlundervilleJumpExecution.StairBand : .45f)) { ClearJump(); return null; }
         if (_takeoff != start)
         {
             _takeoff = start;
