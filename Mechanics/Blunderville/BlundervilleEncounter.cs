@@ -350,8 +350,14 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         if (ramp) foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;
         foreach (var cast in _casts.Values)
             if (cast.Cast.Action != BlundervilleCatalog.VisualWave)
+            {
                 yield return new($"cast/{cast.Source}", cast.Geometry, cast.Cast.FinishAt.AddSeconds(-RingLead(cast.Cast.Action, cast.Geometry.Position)),
                     cast.Cast.FinishAt.AddSeconds(0.2), cast.Cast.StartedAt);
+                // Ring fans also stun up to 1.1m across their dividing line.
+                if (cast.Cast.Action is 34797 or 34798 && BlundervilleRingCycles.FanSeam)
+                    yield return new($"cast/{cast.Source}/seam", new RectangleGeometry(cast.Geometry.Position, 0, 2 * BlundervilleRingCycles.SeamWidth, 16),
+                        cast.Cast.FinishAt.AddSeconds(-RingLead(cast.Cast.Action, cast.Geometry.Position)), cast.Cast.FinishAt.AddSeconds(0.2), cast.Cast.StartedAt);
+            }
         foreach (var wave in _waves.Values)
             for (var i = Math.Max(1, wave.Consumed + 1); i <= 4; i++)
             {

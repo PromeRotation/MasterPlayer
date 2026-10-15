@@ -19,6 +19,18 @@ internal static class BlundervilleFeedback120500Regression
                 Check(step?.Corridor is { Stairs: true } corridor && corridor.Landing.Z < 138, $"No stair jump offered from z={z}.");
             }
         });
+        run("Blunderville 131852 Ring fan cast also guards its dividing line", () =>
+        {
+            // 13:18 ARR: the 34797 West fan stunned MP at (178.9,-125.3), 1.1m on
+            // the outer side of the line through (180,-125); the half-disc missed it.
+            var epoch = BlundervilleRingRegression.Epoch;
+            var encounter = new BlundervilleEncounter(_ => { });
+            encounter.Synchronize([new(76, 16338, new(180, 10, -125))], epoch);
+            encounter.StartCast(76, new(34797, new(180, 10, -125), 0, epoch, epoch.AddSeconds(1.2)), epoch);
+            var at = epoch.AddSeconds(1.25); var player = new Vector3(178.9f, 10, -125.3f);
+            Check(encounter.Hazards(at).Any(h => h.From <= at && h.Until >= at && h.Geometry.Contains(player, 0)),
+                "The recorded stun position is not covered by the live fan cast.");
+        });
         run("Blunderville 120500 Delivery north carry rejoins the floor from the recorded stand", () =>
         {
             // The real player stood here 16s with no plan: the point is 0.05m

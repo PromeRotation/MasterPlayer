@@ -13,6 +13,12 @@ internal sealed class BlundervilleRingCycles
 {
     internal const double FanPeriod = 4.9511, CirclePeriod = 2.5656, FanCast = 1.2, CircleCast = 2.7;
     internal const double Early = .2, Late = .5;
+    // 2026-10-15 13:18 ARR: two stuns at (179.6,-124.4) and (178.9,-125.3),
+    // 0.4–1.1m on the safe side of the West fan's dividing line. All ARRs:
+    // fan stuns reach 1.1m across that line (both fans), so the seam strip
+    // either side of it is dangerous with every fan.
+    internal const float SeamWidth = 1.5f;
+    internal const bool FanSeam = true;
     private static readonly Vector3 West = new(180, 10, -125), East = new(220, 10, -125);
     private static readonly Vector3[][] Corners =
     [
@@ -46,8 +52,12 @@ internal sealed class BlundervilleRingCycles
                 if (cast.AddSeconds(FanCast + Late) < now) continue;
                 var inner = fan.Inner ^ k % 2 == 1;
                 foreach (var (source, sign) in new[] { (West, 1f), (East, -1f) })
+                {
                     yield return Window($"ring/fan/{cast.Ticks}/{sign}", new FanGeometry(source, sign * (inner ? 1 : -1) * MathF.PI / 2, 8, MathF.PI),
                         cast, FanCast, fan.At);
+                    if (FanSeam)
+                        yield return Window($"ring/fanseam/{cast.Ticks}/{sign}", new RectangleGeometry(source, 0, 2 * SeamWidth, 16), cast, FanCast, fan.At);
+                }
             }
         for (var corner = 0; corner < 2; ++corner)
         {
