@@ -43,6 +43,25 @@ internal static class BlundervilleGraphRegression
             foreach (var phase in new[] { 0d, 2, 4 })
                 RecordedNavigation(BlundervilleMechanismGraph.Create(), phase);
         });
+        run("Blunderville graph speed benchmark", () => Benchmark(BlundervilleMechanismGraph.Create()));
+        if (Environment.GetEnvironmentVariable("MP_GRAPH_CASE") is { Length: > 0 } single)
+            run("Blunderville graph single case", () =>
+            {
+                var parts = single.Split('@'); var file = parts[0]; var phase = double.Parse(parts[1]);
+                var spawn = file == "feedback-234521.json" ? new Vector3(-1.511f, 4.227f, 322.988f) : new Vector3(.473f, 4.227f, 322.988f);
+                Traverse(BlundervilleMechanismGraph.Create(), phase, file, spawn);
+            });
+        if (Environment.GetEnvironmentVariable("MP_GRAPH_HAZ") is { Length: > 0 } hazCase)
+            run("Blunderville graph hazard dump", () =>
+            {
+                var parts = hazCase.Split('@'); using var replay = new BlundervilleRingRegression.Recording("final", parts[0]);
+                var t = double.Parse(parts[1]); replay.Advance(t); var now = BlundervilleRingRegression.Epoch.AddSeconds(t);
+                var probe = new Vector3(float.Parse(parts[2]), 0, float.Parse(parts[3]));
+                foreach (var h in replay.Encounter.TraversalHazards(now).Where(h => h.Geometry.Contains(probe with { Y = h.Geometry.Position.Y }, .3f)).OrderBy(h => h.From))
+                    Console.WriteLine($"HAZ {h.Id} {(h.From - now).TotalSeconds:F2}..{(h.Until - now).TotalSeconds:F2} at {h.Geometry.Position}");
+            });
+        run("Blunderville graph 043407 recorded traversal", () =>
+            RecordedNavigation(BlundervilleMechanismGraph.Create(), 0, "graph-feedback-043407.json", new(.473f,4.227f,322.988f)));
         run("Blunderville graph latest recorded traversal", () =>
             RecordedNavigation(BlundervilleMechanismGraph.Create(), 0, "graph-feedback-194307.json", new(.5f,4.245f,323)));
         run("Blunderville graph latest complete course", () =>
@@ -265,6 +284,42 @@ internal static class BlundervilleGraphRegression
 
     private static void RecordedNavigation(BlundervilleRouteGraph graph, double phase, string file = "feedback-213132.json", Vector3? start = null, float heightOffset = 0)
     {
+        var run = Traverse(graph, phase, file, start, heightOffset);
+        Check(run.Finished, "Mechanism graph failed recorded traversal.");
+        Check(run.Hits.Count == 0, "Graph contacted a recorded impact.");
+    }
+
+    internal static readonly string[] SpeedFixtures = ["feedback-213132.json", "feedback-234521.json", "graph-feedback-043407.json", "graph-feedback-194307.json", "graph-feedback-202148.json"];
+
+    // Spawn-to-stair-entrance time across every recorded Final and three
+    // start offsets. Prints the totals that speed work is judged by; any
+    // recorded contact or unfinished run fails.
+    internal static (double Total, int Runs) Benchmark(BlundervilleRouteGraph graph, bool quiet = true)
+    {
+        var total = 0d; var runs = 0; var failures = new List<string>();
+        var jobs = SpeedFixtures.SelectMany(f => new[] { 0d, 1.5, 3 }.Select(phase => (File: f, Phase: phase))).ToArray();
+        var results = new TraversalRun[jobs.Length];
+        Parallel.For(0, jobs.Length, i =>
+        {
+            var spawn = jobs[i].File == "feedback-234521.json" ? new Vector3(-1.511f, 4.227f, 322.988f) : new Vector3(.473f, 4.227f, 322.988f);
+            results[i] = Traverse(graph, jobs[i].Phase, jobs[i].File, spawn, quiet: true);
+        });
+        for (var i = 0; i < jobs.Length; ++i)
+        {
+            var r = results[i];
+            Console.WriteLine($"BENCH {jobs[i].File} phase={jobs[i].Phase} finished={r.Finished} elapsed={r.Elapsed:F2} stopped={r.Stopped:F2} hits={string.Join(';', r.Hits)}");
+            if (!r.Finished || r.Hits.Count > 0) failures.Add($"{jobs[i].File}@{jobs[i].Phase}");
+            total += r.Elapsed; ++runs;
+        }
+        Console.WriteLine($"BENCH TOTAL {total:F2}s over {runs} runs, mean {total / runs:F2}s, failures={string.Join(',', failures)}");
+        Check(failures.Count == 0, "Benchmark run failed: " + string.Join(',', failures));
+        return (total, runs);
+    }
+
+    internal sealed record TraversalRun(bool Finished, double Elapsed, double Stopped, List<string> Hits);
+
+    internal static TraversalRun Traverse(BlundervilleRouteGraph graph, double phase, string file = "feedback-213132.json", Vector3? start = null, float heightOffset = 0, bool quiet = false)
+    {
         using var replay = new BlundervilleRingRegression.Recording("final", file);
         var now = BlundervilleRingRegression.Epoch;
         var move = new BlundervilleRingRegression.Moving();
@@ -277,6 +332,7 @@ internal static class BlundervilleGraphRegression
         double ready = 0, scan = 0, stopped = 0; Task? pending = null; var histories = new Dictionary<string, int>();
         var end = 0d; var history = new List<(double T, Vector3 P)>();
         BlundervilleGraphPlanner.Result? tracedPlan = null;
+        (double T, Vector3 P, string Status)? stopStart = null; var stops = new List<string>();
         for (var tick = 0; tick < 1800; ++tick)
         {
             var t = phase + tick / 30d; end = t-phase; now = BlundervilleRingRegression.Epoch.AddSeconds(t);
@@ -291,12 +347,17 @@ internal static class BlundervilleGraphRegression
                     Console.WriteLine($"PLAN {t:F3} " + string.Join(";", plan.Steps.Select(s => $"{s.Node} {s.Position.X:F2}/{s.Position.Z:F2} {(s.Arrival-BlundervilleRingRegression.Epoch).TotalSeconds:F4}/{(s.Departure-BlundervilleRingRegression.Epoch).TotalSeconds:F4}")));
                 }
                 if (planner.Pending is { } job && job != pending) { pending = job; job.GetAwaiter().GetResult(); ready = t + .08; }
+                if (planner.WakeAt is { } wake) scan = Math.Min(scan, (wake - BlundervilleRingRegression.Epoch).TotalSeconds);
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
                 if (decision.Hold) histories[decision.Hint] = histories.GetValueOrDefault(decision.Hint) + 1;
+                if (Environment.GetEnvironmentVariable("MP_GRAPH_SCAN") == "1")
+                    Console.WriteLine($"SCAN {t-phase:F2} p=({p.X:F1},{p.Z:F1}) hold={decision.Hold} target={decision.Target} hint={decision.Hint} at={planner.CurrentNode} to={planner.NextNode} inv={planner.LastInvalidation} diag={planner.Diagnostics}");
             }
             var snapshot = runtime.Manager.BuildSnapshot(now);
             ((SafeZoneRebornMovementSystem)runtime.MovementStatus).Update(new(p, 0, 6, true, false, 0, true, snapshot.Version), new(6,6,0,false,6,6), now);
-            var next = move.Advance(p, 1f/30, 6); if (Distance(next,p) < .01) stopped += 1d/30;
+            var next = move.Advance(p, 1f/30, 6);
+            if (Distance(next,p) < .01) { stopped += 1d/30; stopStart ??= (t, p, planner.Status); }
+            else if (stopStart is { } s0) { if (t - s0.T >= .1) stops.Add($"{s0.T-phase:F2}+{t-s0.T:F2}s z={s0.P.Z:F1} x={s0.P.X:F1} {s0.Status}"); stopStart = null; }
             if (Environment.GetEnvironmentVariable("MP_GRAPH_TRACE") == "1" && tick % 30 == 0)
                 Console.WriteLine($"TRACE {t:F1} p={p} status={planner.Status} invalid={planner.LastInvalidation} exec={runtime.MovementStatus.PhaseText} direct={nav.GetDirectTraversalExecution(now)}");
             if (move.GetStatus().CurrentPoint is { } movingPoint) Check(movingPoint.IgnoreY, "Graph dispatch must ignore rendering Y.");
@@ -314,12 +375,15 @@ internal static class BlundervilleGraphRegression
             var sample = history.MinBy(h => Math.Abs(h.T-t));
             if (shape?.Contains(sample.P,.3f) == true) hits.Add($"{e[3]}@{t:F2} p={sample.P} center={shape.Position}");
         }
-        Console.WriteLine($"HITS {string.Join(';',hits)}");
-        Console.WriteLine($"MECHANISM RUN phase={phase} elapsed={end:F2} stop={stopped:F2} p={p} dispatch={runtime.MovementStatus.DispatchCount} status={planner.Status}");
-        if (p.Z > EndZ+.12f) foreach (var h in histories.OrderByDescending(h=>h.Value).Take(6)) Console.WriteLine($"HOLD {h}");
+        if (!quiet)
+        {
+            foreach (var stop in stops) Console.WriteLine($"STOP {stop}");
+            Console.WriteLine($"HITS {string.Join(';',hits)}");
+            Console.WriteLine($"MECHANISM RUN phase={phase} elapsed={end:F2} stop={stopped:F2} p={p} dispatch={runtime.MovementStatus.DispatchCount} status={planner.Status}");
+            if (p.Z > EndZ+.12f) foreach (var h in histories.OrderByDescending(h=>h.Value).Take(6)) Console.WriteLine($"HOLD {h}");
+        }
         planner.Reset(); nav.Clear();
-        Check(p.Z <= EndZ+.12f, "Mechanism graph failed recorded traversal.");
-        Check(hits.Count == 0, "Graph contacted a recorded impact.");
+        return new(p.Z <= EndZ+.12f, end, stopped, hits);
     }
 
     private static void Navigation()

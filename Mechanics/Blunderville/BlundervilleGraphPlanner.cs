@@ -42,7 +42,11 @@ internal sealed class BlundervilleGraphPlanner
     private long _requestedClock;
     private bool _searchStarted, _pendingCold, _pendingSampled;
     private double _pollSeconds = .1;
+    private Vector3[]? _escape; private int _escapeNode;
     internal Task? Pending => _pending ?? _ahead?.Work;
+    // When the script should scan next: a planned departure or a finished
+    // search must not wait for the 10Hz scan (each cost 0.1-0.2s standing).
+    internal DateTime? WakeAt { get; private set; }
     internal string Status { get; private set; } = "等待路网";
     internal string LastInvalidation { get; private set; } = "";
     internal string Diagnostics { get; private set; } = "路网尚未计算";
@@ -58,6 +62,7 @@ internal sealed class BlundervilleGraphPlanner
 
     private void ClearPlan(bool keepAhead = false)
     {
+        _escape = null;
         _cancel?.Cancel(); _cancel?.Dispose(); _cancel = null;
         _pending = null; _plan = null; _stretch = null; _next = 0;
         if (!keepAhead) { _ahead?.Cancel.Cancel(); _ahead?.Cancel.Dispose(); _ahead = null; }
@@ -118,6 +123,15 @@ internal sealed class BlundervilleGraphPlanner
             if (_plan != null && _next == _plan.Steps.Count) { ClearPlan(keepAhead: true); _retry = default; }
             if (_plan != null) _to = _plan.Steps[_next].Node;
             if (_stretch != null && _next >= _stretchStart + _stretch.Length) _stretch = null;
+        }
+        if (_escape != null)
+        {
+            if (Distance(player, _escape[^1]) < .03f) { _at = _escapeNode; _to = null; _escape = null; _retry = default; }
+            else
+            {
+                Status = $"避险：沿连线退到节点{_escapeNode}";
+                return new(_escape[^1], false, false, null, Status, true) { ContinuousPath = _escape };
+            }
         }
         if (!OnCurrentEdge(player)) { ClearPlan(); return Hold(player, "已偏离当前连线，请手动回线；不能跳到另一分支"); }
         if (_graph.Exits.Contains(_at!.Value)) return AtExit(normal, state, hazards, player, now);
@@ -200,6 +214,7 @@ internal sealed class BlundervilleGraphPlanner
                 _cancel = new(); var token = _cancel.Token;
                 _pending = Search(graph, at, to, captured, player, now, speed, token);
             }
+            if (_pending != null) WakeAt = now.AddSeconds(.02);
             // A changed forecast farther ahead must not stop the player inside
             // the current mechanism. Finish only the already committed edge,
             // with fresh segment/arrival checks, while its successors are planned.
@@ -216,12 +231,28 @@ internal sealed class BlundervilleGraphPlanner
                     return new(target, false, false, null, Status, true) { ContinuousPath = [target] };
                 }
             }
+            if (!index.Stand(player, 0, 1.5) && (Escape(_graph, _at.Value, _to, player, speed, index)
+                // Staying is a certain hit: accept an escape that is clear
+                // only when the input is not delayed.
+                ?? Escape(_graph, _at.Value, _to, player, speed,
+                    new(hazards, now, BlundervilleFinalPlanner.Final with { ExecutionLag = 0 }))) is { } escape)
+            {
+                // Standing here is hit. Leave along any authored line, either
+                // direction, to the nearest node that stays clear: never a
+                // shortcut off the lines, never a stand inside the footprint.
+                _plan = null; _escape = escape.Path; _escapeNode = escape.Node; _to = null;
+                Status = $"避险：沿连线退到节点{_escapeNode}";
+                return new(_escape[^1], false, false, null, Status, true) { ContinuousPath = _escape };
+            }
             return Hold(player, _pending != null ? $"正在计算节点{_at}的连通路线"
                 : index.Stand(player, 0, 1.5) ? $"节点{_at}：连通分支暂无安全窗口" : "当前连通分支暂不可走，站位有危险，请手动处理");
         }
         var previous = _plan.Steps[_next - 1];
         if (previous.Departure > now && previous.Departure - previous.Arrival > TimeSpan.FromMilliseconds(1))
-        { _stretch = null; return Hold(player, $"节点{_at}：等待 {(previous.Departure - now).TotalSeconds:F1} 秒"); }
+        {
+            _stretch = null; WakeAt = previous.Departure;
+            return Hold(player, $"节点{_at}：等待 {(previous.Departure - now).TotalSeconds:F1} 秒");
+        }
         if (_stretch == null)
         {
             var end = _next;
@@ -385,13 +416,66 @@ internal sealed class BlundervilleGraphPlanner
 
     private static DateTime Latest(Step step) => step.LatestDeparture == default ? step.Departure.AddSeconds(BlundervilleFinalPlanner.Lag) : step.LatestDeparture;
 
+    internal sealed record EscapeRoute(Vector3[] Path, int Node);
+
+    // Nearest clear node over the authored lines in either direction, timed
+    // with the live windows and allowed to pause wherever standing is clear.
+    // Used only when standing is already unsafe (19:43 ARR at phase 3: the
+    // only clear way off (-6.5,224) waited 0.4s at (-5,228) first).
+    internal static EscapeRoute? Escape(BlundervilleRouteGraph.Compiled graph, int at, int? to, Vector3 player, float speed,
+        BlundervilleFinalPlanner.HazardIndex index)
+    {
+        if (!float.IsFinite(speed) || speed <= 0) return null;
+        var links = graph.Positions.Keys.ToDictionary(id => id, _ => new HashSet<int>());
+        foreach (var (from, targets) in graph.Next)
+            foreach (var target in targets) { links[from].Add(target); links[target].Add(from); }
+        const double Step = .1, Limit = 8;
+        var seen = new HashSet<(int, int)>();
+        var open = new PriorityQueue<(int Node, double Time, int Parent), double>();
+        var labels = new List<(int Node, double Time, int Parent)>();
+        int Add(int node, double time, int parent) { labels.Add((node, time, parent)); return labels.Count - 1; }
+        foreach (var first in to is { } edgeEnd ? new[] { at, edgeEnd } : [at])
+        {
+            var t = Distance(player, graph.Positions[first]) / speed;
+            if (!index.Segment(player, graph.Positions[first], 0, t)) continue;
+            var id = Add(first, t, -1); open.Enqueue((first, t, id), t);
+        }
+        while (open.TryDequeue(out var current, out _))
+        {
+            var (node, time, label) = current;
+            if (time > Limit || !seen.Add((node, (int)Math.Round(time / Step)))) continue;
+            var p = graph.Positions[node];
+            if (index.Stand(p, time, time + 2.5) && Distance(p, player) > .03f)
+            {
+                var path = new List<Vector3>(); var lastNode = -1;
+                for (var i = label; i >= 0; i = labels[i].Parent)
+                    if (labels[i].Node != lastNode) { path.Add(graph.Positions[labels[i].Node]); lastNode = labels[i].Node; }
+                path.Reverse();
+                // A pause inside the escape is executed as a planned wait by
+                // the regular search once the first clear node is reached.
+                return new(path.ToArray(), node);
+            }
+            if (index.Stand(p, time, time + Step))
+            {
+                var id = Add(node, time + Step, label); open.Enqueue((node, time + Step, id), time + Step);
+            }
+            foreach (var next in links[node])
+            {
+                var b = graph.Positions[next]; var arrival = time + Distance(p, b) / speed;
+                if (!index.Segment(p, b, time, arrival)) continue;
+                var id = Add(next, arrival, label); open.Enqueue((next, arrival, id), arrival);
+            }
+        }
+        return null;
+    }
+
     internal static Result? Find(BlundervilleRouteGraph.Compiled graph, int at, int? committedTo,
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, float speed, CancellationToken token = default,
-        Action<SearchInfo>? report = null)
+        Action<SearchInfo>? report = null, BlundervilleFinalPlanner.Profile? profile = null)
     {
         if (!float.IsFinite(speed) || speed <= 0 || !graph.Positions.ContainsKey(at)) return null;
         if (committedTo is { } target && !graph.Next[at].Contains(target)) return null;
-        var index = new BlundervilleFinalPlanner.HazardIndex(hazards, now, BlundervilleFinalPlanner.Final);
+        var index = new BlundervilleFinalPlanner.HazardIndex(hazards, now, profile ?? BlundervilleFinalPlanner.Final);
         // Target the next measured safe strip, including the whole wave zone.
         // A fixed 45m horizon skipped strips and expanded thousands of cyclic states.
         var strips = BlundervilleFinalPlanner.Final.Strips!;

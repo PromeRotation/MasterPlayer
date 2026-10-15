@@ -245,6 +245,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             {
                 _decision = _routeTiming.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,
                     _navigation?.GetDirectTraversalExecution(now));
+                if (_routeTiming.WakeAt is { } wake && wake < _nextScan) _nextScan = wake < now ? now : wake;
             }
             else if (lanePlanner != null)
                 _decision = lanePlanner.Apply(_decision, _race, _encounter.TraversalHazards(now).ToArray(), player, now,

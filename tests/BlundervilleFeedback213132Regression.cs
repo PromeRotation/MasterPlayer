@@ -101,6 +101,7 @@ internal static class BlundervilleFeedback213132Regression
                 {
                     decision = graphPlanner.Apply(decision, state, danger, p, now, nav.GetDirectTraversalExecution(now));
                     graphPlanner.Pending?.GetAwaiter().GetResult();
+                    if (graphPlanner.WakeAt is { } wake) scan = Math.Min(scan, (wake - epoch).TotalSeconds);
                 }
                 else if (authored)
                 {
