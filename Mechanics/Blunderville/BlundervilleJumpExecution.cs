@@ -8,12 +8,12 @@ internal sealed class BlundervilleJumpExecution
     // A queued route is not evidence that the game has started running. The
     // 01:42 ARR has failed standing launches at ~2.5m/s across this same gap.
     private BlundervilleJumpCorridor? _link;
-    private bool _running, _airborne, _completed;
+    private bool _running, _airborne, _completed, _stairRunup;
     private DateTime _launched, _lastSample, _nextLaunch;
     private readonly Queue<(DateTime Time, Vector3 Position)> _samples = new();
     internal const float LaneSwitchLateral = 1.5f;
     // The riser face is 2m past each stair takeoff; the jump may start anywhere up to it.
-    internal const float StairBand = 1.9f;
+    internal const float StairBand = 1.9f, StairLateral = 1.5f, StairSideSpeed = 3f;
     public bool InFlight => _launched != default;
     public bool Landed => _completed && _airborne;
     public bool NeedsRunupRetry { get; private set; }
@@ -46,9 +46,9 @@ internal sealed class BlundervilleJumpExecution
         // player is, never by stepping back. Game speed is instant, so the
         // 4.8m/s gate only needs ~0.1s of forward samples (CommitJump checks it too).
         var tolerance = link.LaneSwitch ? LaneSwitchLateral : .3f;
-        if (!_running && progress >= -6f && progress <= (link.Stairs ? StairBand : -.65f) && lateral.LengthSquared() <= tolerance * tolerance)
+        if (!_running && progress >= -6f && progress <= (link.Stairs && !_stairRunup ? StairBand : -.65f) && lateral.LengthSquared() <= tolerance * tolerance)
         { _running = true; NeedsRunupRetry = false; }
-        if (link.Stairs) return new(link.MovementTarget, false, false, link, "台阶：按住前进，冷却一到就起跳");
+        if (link.Stairs && !_stairRunup) return new(link.MovementTarget, false, false, link, "台阶：按住前进，冷却一到就起跳");
         return new(_running ? link.MovementTarget : link.Takeoff - direction * 1.15f, false, false, link,
             _running ? "助跑中：确认移动速度后起跳" : "对齐跳跃助跑位置");
     }
@@ -71,7 +71,7 @@ internal sealed class BlundervilleJumpExecution
                 Retry();
             return false;
         }
-        if (link.Stairs && !_running && grounded && !jumping) _running = true;
+        if (link.Stairs && !_stairRunup && !_running && grounded && !jumping) _running = true;
         if (!_running || !grounded || jumping) { _samples.Clear(); return false; }
         var ready = Ready(link.MovementTarget, hasControl, movement);
         // Route publication can lag the run-up. Measure the actual owned run
@@ -90,14 +90,23 @@ internal sealed class BlundervilleJumpExecution
         // A lane switch reacts while the player is still walking down the lane
         // (one 100ms scan plus route latency); its run-up line is then offset
         // from the planned axis. The takeoff band and run-up speed still apply.
-        var aligned = (velocity - direction * MeasuredSpeed).Length() < (link.LaneSwitch ? 2f : 1.2f);
-        if (progress >= (link.Stairs ? -.35f : -.18f) && progress <= (link.Stairs ? StairBand : .3f) && lateral <= (link.LaneSwitch ? LaneSwitchLateral : .4f) && ready
+        // 14:03/14:13 ARRs: the left-side approach reached the first riser
+        // 0.44m off the stair lane while still turning onto it; the 0.4m lane
+        // and 1.2m/s side-speed gates refused every takeoff and the player stood
+        // at the riser face. The treads are flat across |x| 1.5–14.
+        var aligned = (velocity - direction * MeasuredSpeed).Length() < (link.LaneSwitch ? 2f : link.Stairs ? StairSideSpeed : 1.2f);
+        if (progress >= (link.Stairs ? -.35f : -.18f) && progress <= (link.Stairs ? StairBand : .3f)
+            && lateral <= (link.LaneSwitch ? LaneSwitchLateral : link.Stairs ? StairLateral : .4f) && ready
             && now >= _nextLaunch
             && MeasuredSpeed is >= 4.8f and <= 8.5f && aligned)
             return true;
         // A missed launch must not turn the flight corridor into walkable floor.
         // On the stairs the riser itself blocks the walk: wait for the cooldown there.
         if (!link.Stairs && progress >= .05f) Retry();
+        // A stair takeoff that was missed and left the player pushing against
+        // the riser (moving input, no forward progress) backs up once for a
+        // run-up rather than standing there until the round ends.
+        else if (link.Stairs && progress > 0 && duration >= .075 && MeasuredSpeed < 1.5f) Retry();
         return false;
     }
 
@@ -105,10 +114,10 @@ internal sealed class BlundervilleJumpExecution
     { _launched = now; _nextLaunch = now.AddSeconds(.7); _airborne = false; if (_link?.Stairs != true) _samples.Clear(); }
     public void RejectLaunch() => Retry();
     private void Retry()
-    { _launched = default; _running = false; _samples.Clear(); NeedsRunupRetry = true; }
+    { _launched = default; _running = false; _samples.Clear(); NeedsRunupRetry = true; _stairRunup = _link?.Stairs == true; }
     public void Clear()
     {
-        _link = null; _running = _airborne = _completed = NeedsRunupRetry = false;
+        _link = null; _running = _airborne = _completed = NeedsRunupRetry = _stairRunup = false;
         _launched = _lastSample = _nextLaunch = default; MeasuredSpeed = 0; _samples.Clear();
     }
 

@@ -26,9 +26,19 @@ internal static class BlundervilleFeedback213132Regression
         foreach (var hazards in new[] { false, true })
             run($"Blunderville 213132 Final resumes from recorded first landing hazards={hazards}",
                 () => Stairs(.3, hazards, 30, true));
+        // 14:03/14:13 ARRs: a left-side diagonal approach reached the first
+        // riser 0.44m off the stair lane and stood against it until the round ended.
+        foreach (var latency in new[] { .08, .3 })
+        foreach (var fps in new[] { 30, 60 })
+        {
+            run($"Blunderville 141311 Final left diagonal stair approach {latency:F2}s {fps}fps",
+                () => Stairs(latency, false, fps, start: new(-9.5f, 31.3f, 157.5f)));
+            run($"Blunderville 141311 Final stalled against first riser {latency:F2}s {fps}fps",
+                () => Stairs(latency, false, fps, start: new(-4.44f, 31.85f, 151.32f), stalled: true));
+        }
     }
 
-    private static void Stairs(double latency, bool hazards, int fps, bool resume = false)
+    private static void Stairs(double latency, bool hazards, int fps, bool resume = false, Vector3? start = null, bool stalled = false)
     {
         const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
         var epoch = BlundervilleRingRegression.Epoch; var now = epoch;
@@ -41,8 +51,9 @@ internal static class BlundervilleFeedback213132Regression
         var race = new BlundervilleRacePlanner(); var jumper = new BlundervilleJumpPlanner(); var gate = new BlundervilleJumpExecution();
         var slope = new BlundervilleFinalPlanner();
         var empty = new BlundervilleEncounter(_ => { });
-        var p = resume ? new Vector3(-3.952f, 32.609f, 149.401f) : new Vector3(-3.677f, 31.418f, 155.444f);
-        var start = resume ? 34.97 : 32.543;
+        var p = start ?? (resume ? new Vector3(-3.952f, 32.609f, 149.401f) : new Vector3(-3.677f, 31.418f, 155.444f));
+        p.Y = Height(p.Z);
+        var begin = resume ? 34.97 : 32.543;
         SafeZoneSolution? accepted = null, pending = null;
         var ready = 0d; var nextSolve = 0d; var scan = 0d; var launches = new List<(double T, Vector3 P)>();
         double? flight = null; var launchY = 0f; var maxBack = 0f; var stand = 0d; var longest = 0d;
@@ -51,7 +62,7 @@ internal static class BlundervilleFeedback213132Regression
         var frame = 1d / fps;
         for (var tick = 0; tick < fps * 12; ++tick)
         {
-            var t = start + tick * frame; end = t; now = epoch.AddSeconds(t); move.Now = now;
+            var t = begin + tick * frame; end = t; now = epoch.AddSeconds(t); move.Now = now;
             var air = flight != null;
             if (t >= scan)
             {
@@ -122,7 +133,7 @@ internal static class BlundervilleFeedback213132Regression
         if (hazards)
         foreach (var e in impacts)
         {
-            var t = e[0].GetDouble(); if (t < start || t > end) continue;
+            var t = e[0].GetDouble(); if (t < begin || t > end) continue;
             if (!BlundervilleCatalog.TryGet(e[3].GetUInt32(), out var rule) || rule.Shape == null) continue;
             var v = e[4]; var shape = rule.Shape.Resolve(new(v[0].GetSingle(), v[1].GetSingle(), v[2].GetSingle()), e[5].GetSingle(), null);
             foreach (var lead in new[] { .3, 0 })
@@ -131,8 +142,9 @@ internal static class BlundervilleFeedback213132Regression
                 if (sample.T != 0 && shape?.Contains(sample.P, .3f) == true) { hits.Add($"{e[3]}@{t:F2}"); break; }
             }
         }
-        Console.WriteLine($"213132 STAIRS {latency:F2}s hazards={hazards} end={p} elapsed={end-start:F2} jumps={string.Join(';', launches.Select(l => $"{l.T:F2}@{l.P.Z:F2}"))} back={maxBack:F2} stand={longest:F2} hits={string.Join(';', hits)}");
-        Check(p.Z <= 137.3f && launches.Count == (resume ? 3 : 4) && maxBack < .05f && longest < 1, "The raised steps did not chain without reversing or stalling.");
+        Console.WriteLine($"213132 STAIRS {latency:F2}s hazards={hazards} end={p} elapsed={end-begin:F2} jumps={string.Join(';', launches.Select(l => $"{l.T:F2}@{l.P.Z:F2}"))} back={maxBack:F2} stand={longest:F2} hits={string.Join(';', hits)}");
+        // A stalled start may back up once for a run-up; it must still climb.
+        Check(p.Z <= 137.3f && launches.Count == (resume ? 3 : 4) && (stalled || maxBack < .05f) && longest < 1, "The raised steps did not chain without reversing or stalling.");
         Check(hits.Count == 0, "The stair execution intersected a recorded mechanism.");
     }
 
