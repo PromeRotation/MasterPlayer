@@ -46,7 +46,9 @@ internal sealed class BlundervilleRacePlanner
     internal IReadOnlyList<BlundervilleHazard> Hazards { get; set; } = [];
     private BlundervilleCourseGraph.Compiled? _graph;
     private List<int>? _routeIds;
-    private int _forkCursor = -1;
+    private int _forkCursor = -1, _rerouteCursor = -1;
+    private Task<List<int>>? _reroute;
+    internal const double SwitchGain = .5;
     internal string RouteDescription => _routeIds == null ? "" : string.Join("→", _routeIds);
 
     internal void ConfigureFinalRoutes(BlundervilleFinalRouteSettings settings)
@@ -59,7 +61,7 @@ internal sealed class BlundervilleRacePlanner
     {
         if (course == BlundervilleCourse.Final && _finalRoutes != null) return _finalRoutes.Nodes(position);
         _graph = course is BlundervilleCourse.FirstA or BlundervilleCourse.FirstB or BlundervilleCourse.Ring ? CourseGraphs?.Invoke(course) : null;
-        _routeIds = null; _forkCursor = -1;
+        _routeIds = null; _forkCursor = _rerouteCursor = -1; _reroute = null;
         if (_graph == null) return BlundervilleRoutes.Nodes(course, position);
         var from = course == BlundervilleCourse.Ring ? _graph.Start : BlundervilleCourseRouter.Nearest(_graph, position);
         // A shared start-line node only offers the lanes; the spawn slot fixes
@@ -200,17 +202,44 @@ internal sealed class BlundervilleRacePlanner
                 if (_cursor == _nodes.Count - 1) break;
                 _cursor++;
             }
-            // Reaching a fork re-picks the branch with the current forecast.
-            if (_graph != null && _routeIds != null && !_recovering && _cursor > 0 && _cursor < _routeIds.Count
-                && _forkCursor != _cursor && _graph.Fork(_routeIds[_cursor - 1]))
+            // Look one node ahead: the route onward from the current target is
+            // re-planned on a worker (per-branch searches in parallel) for the
+            // time the player arrives there, and replaces the tail if the
+            // player is still heading to that node when it is ready.
+            if (_graph != null && _routeIds != null && !_recovering && _cursor < _routeIds.Count)
             {
-                _forkCursor = _cursor;
-                var fork = _routeIds[_cursor - 1];
-                var branch = BlundervilleCourseRouter.Route(_graph, fork, Hazards, now, state.NavigationBaseSpeed(now));
-                if (branch.Count > 1 && branch[1] != _routeIds[_cursor])
+                if (_reroute is { IsCompleted: true } done)
                 {
-                    _routeIds = [.. _routeIds.Take(_cursor - 1), .. branch];
-                    _nodes = _routeIds.Select(id => _graph.Nodes[id]).ToArray();
+                    _reroute = null;
+                    if (done.IsCompletedSuccessfully && done.Result is { Count: > 1 } branch
+                        && _rerouteCursor == _cursor && _routeIds[_cursor] == branch[0])
+                    {
+                        _routeIds = [.. _routeIds.Take(_cursor), .. branch];
+                        _nodes = _routeIds.Select(id => _graph.Nodes[id]).ToArray();
+                    }
+                }
+                if (_reroute == null && _forkCursor != _cursor && _graph.Fork(_routeIds[_cursor]))
+                {
+                    _forkCursor = _cursor; _rerouteCursor = _cursor;
+                    var graph = _graph; var ahead = _routeIds[_cursor]; var hazards = Hazards; var speed = state.NavigationBaseSpeed(now);
+                    var arrival = now.AddSeconds(DistanceXZ(position, graph.Nodes[ahead].Position) / MathF.Max(1, speed));
+                    if (hazards.Count == 0)
+                    {
+                        var branch = BlundervilleCourseRouter.Route(graph, ahead, hazards, arrival, speed);
+                        if (branch.Count > 1) { _routeIds = [.. _routeIds.Take(_cursor), .. branch]; _nodes = _routeIds.Select(id => graph.Nodes[id]).ToArray(); }
+                    }
+                    else
+                    {
+                        var current = _routeIds.Skip(_cursor).ToArray();
+                        // Switch only for a clear gain: re-plans that trade
+                        // fractions of a second churn the movement queue.
+                        _reroute = Task.Run(() =>
+                        {
+                            var (branch, score) = BlundervilleCourseRouter.Scored(graph, ahead, hazards, arrival, speed);
+                            var keep = BlundervilleCourseRouter.Evaluate(graph, current, hazards, arrival, speed);
+                            return double.IsFinite(score) && (!double.IsFinite(keep) || score + SwitchGain < keep) ? branch : [];
+                        });
+                    }
                 }
             }
             target = _cursor < _nodes.Count ? _nodes[_cursor].Position : null;
@@ -269,7 +298,7 @@ internal sealed class BlundervilleRacePlanner
         _forcedFacing = null;
         _rejoinCircles = false;
         _nodes = []; _version = -1; _cursor = 0; _arrival = default; _arrivalTarget = null; _previous = null;
-        _graph = null; _routeIds = null; _forkCursor = -1;
+        _graph = null; _routeIds = null; _forkCursor = _rerouteCursor = -1; _reroute = null;
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }
 

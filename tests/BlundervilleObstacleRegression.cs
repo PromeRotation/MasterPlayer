@@ -317,6 +317,7 @@ internal static class BlundervilleObstacleRegression
             {
                 nextScan = t + .1;
                 replay.Advance(t); api.UtcNowForTest = now;
+                if (Environment.GetEnvironmentVariable("MP_COURSE_HAZARDS") != "0") planner.Hazards = replay.Encounter.TraversalHazards(now).ToArray();
                 var decision = planner.Update(state, now, p, true, false, false, arrow ? move.Arrow : null, arrow);
                 if (arrow) decision = arrowPlanner.Apply(decision, state, p, move.Arrow, now, move.IsRunning);
                 else

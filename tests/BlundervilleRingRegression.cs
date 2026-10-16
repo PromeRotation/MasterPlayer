@@ -126,6 +126,7 @@ internal static class BlundervilleRingRegression
                 if (Forecast) replay.Encounter.RingBeam.SetStart(state.StartedByDirector ? state.StartedAt : null);
                 state.SynchronizeStatuses([], now);
                 // Mirrors BlundervilleScript.Render for the Ring.
+                if (Environment.GetEnvironmentVariable("MP_COURSE_HAZARDS") != "0") planner.Hazards = replay.Encounter.TraversalHazards(now).ToArray();
                 var decision = planner.Update(state, now, p, !air, air, false, null, false);
                 IGeometryShape? crossing = null;
                 if (state.CanJump(now) && !decision.Hold && !planner.Recovering && decision.Target is { } forward)
