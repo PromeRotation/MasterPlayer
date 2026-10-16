@@ -59,6 +59,8 @@ public sealed class MasterPlayerSettings
     // Retain the previous editor's saved data; current navigation uses FinalRoute.
     public Mechanics.Blunderville.BlundervilleRouteLibrary BlundervilleRoutes = new();
     public Mechanics.Blunderville.BlundervilleFinalRouteSettings BlundervilleFinalRoute = new();
+    // First/second round route graphs by course name; a missing entry uses the built-in graph.
+    public Dictionary<string, Mechanics.Blunderville.BlundervilleCourseGraph> BlundervilleCourseGraphs = new();
     public Dictionary<string, bool> ScriptEnabled = new();
     public Dictionary<string, System.Text.Json.Nodes.JsonObject> ScriptSettings = new();
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();
@@ -83,6 +85,7 @@ public sealed class MasterPlayerSettings
                 settings.AoeVisibility ??= new Dictionary<string, AoeVisibility>();
                 settings.BlundervilleRoutes ??= new();
                 settings.BlundervilleFinalRoute ??= new();
+                settings.BlundervilleCourseGraphs ??= new();
                 return settings;
             }
         }

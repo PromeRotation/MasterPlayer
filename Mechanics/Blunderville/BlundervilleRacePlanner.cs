@@ -40,6 +40,14 @@ internal sealed class BlundervilleRacePlanner
     public bool Recovering => _recovering;
     public BlundervilleRecoveryCorridor? RecoveryCorridor { get; private set; }
     private BlundervilleFinalRouteSettings? _finalRoutes;
+    // First/second round lane graphs. The script refreshes the source and the
+    // traversal forecast every scan; a fork node re-picks its branch on arrival.
+    internal Func<BlundervilleCourse, BlundervilleCourseGraph.Compiled?>? CourseGraphs { get; set; } = course => BlundervilleCourseGraphs.Assigned(null, course);
+    internal IReadOnlyList<BlundervilleHazard> Hazards { get; set; } = [];
+    private BlundervilleCourseGraph.Compiled? _graph;
+    private List<int>? _routeIds;
+    private int _forkCursor = -1;
+    internal string RouteDescription => _routeIds == null ? "" : string.Join("→", _routeIds);
 
     internal void ConfigureFinalRoutes(BlundervilleFinalRouteSettings settings)
     {
@@ -47,8 +55,31 @@ internal sealed class BlundervilleRacePlanner
         _finalRoutes = settings; Reset();
     }
 
-    private IReadOnlyList<BlundervilleRouteNode> CourseNodes(BlundervilleCourse course, Vector3 position)
-        => course == BlundervilleCourse.Final && _finalRoutes != null ? _finalRoutes.Nodes(position) : BlundervilleRoutes.Nodes(course, position);
+    private IReadOnlyList<BlundervilleRouteNode> CourseNodes(BlundervilleCourse course, Vector3 position, DateTime now = default, float speed = 6)
+    {
+        if (course == BlundervilleCourse.Final && _finalRoutes != null) return _finalRoutes.Nodes(position);
+        _graph = course is BlundervilleCourse.FirstA or BlundervilleCourse.FirstB or BlundervilleCourse.Ring ? CourseGraphs?.Invoke(course) : null;
+        _routeIds = null; _forkCursor = -1;
+        if (_graph == null) return BlundervilleRoutes.Nodes(course, position);
+        var from = course == BlundervilleCourse.Ring ? _graph.Start : BlundervilleCourseRouter.Nearest(_graph, position);
+        // A shared start-line node only offers the lanes; the spawn slot fixes
+        // the side (as the fixed routes did), so start on the nearer lane.
+        if (course != BlundervilleCourse.Ring && from == _graph.Start && _graph.Next[from].Length > 0)
+            from = _graph.Next[from].MinBy(id => Vector2.DistanceSquared(new(position.X, position.Z),
+                new(_graph.Nodes[id].Position.X, _graph.Nodes[id].Position.Z)));
+        _routeIds = BlundervilleCourseRouter.Route(_graph, from, Hazards, now, speed);
+        return _routeIds.Select(id => _graph.Nodes[id]).ToArray();
+    }
+
+    private IReadOnlyList<BlundervilleRouteNode> DeliveryRoute(Vector3 position, Vector3 destination, DateTime now, float speed, bool pickup)
+    {
+        if (CourseGraphs?.Invoke(BlundervilleCourse.Delivery) is not { } graph)
+            return pickup ? BlundervilleRoutes.DeliveryNodes(position, destination).Reverse().ToArray() : BlundervilleRoutes.DeliveryNodes(position, destination);
+        var ids = BlundervilleCourseRouter.Route(graph, BlundervilleCourseRouter.Nearest(graph, position), Hazards, now, speed, destination);
+        var nodes = ids.Select(id => graph.Nodes[id]).ToList();
+        if (!pickup && Vector3.Distance(nodes[^1].Position, destination) > .05f) nodes.Add(new(destination, 1.4f));
+        return nodes;
+    }
 
     public BlundervilleRaceDecision Update(BlundervilleRaceState state, DateTime now, Vector3 position,
         bool grounded, bool jumping, bool gapAhead, float? arrowDirection, bool nativeMisdirection = false, Vector3? executionTarget = null)
@@ -61,7 +92,7 @@ internal sealed class BlundervilleRacePlanner
         if (_version != state.RoundVersion || _previous is { } previous && Vector3.DistanceSquared(previous, position) > 40 * 40)
         {
             _deliveryRecovery.Reset();
-            _nodes = CourseNodes(state.Course, position);
+            _nodes = CourseNodes(state.Course, position, now, state.NavigationBaseSpeed(now));
             _version = state.RoundVersion;
             _cursor = NearestSegment(position, BlundervilleRoutes.IsLoop(state.Course));
             _arrival = default; _arrivalTarget = null;
@@ -102,8 +133,8 @@ internal sealed class BlundervilleRacePlanner
                 if (_deliveryTarget != delivery)
                 {
                     _nodes = state.CarryCrystalParam == 0 && _deliveryTarget is { } previousDelivery
-                        ? BlundervilleRoutes.DeliveryNodes(position, previousDelivery).Reverse().ToArray()
-                        : state.CarryCrystalParam == 0 ? [new(delivery, PickupRadius)] : BlundervilleRoutes.DeliveryNodes(position, delivery);
+                        ? DeliveryRoute(position, previousDelivery, now, state.NavigationBaseSpeed(now), true)
+                        : state.CarryCrystalParam == 0 ? [new(delivery, PickupRadius)] : DeliveryRoute(position, delivery, now, state.NavigationBaseSpeed(now), false);
                     _deliveryTarget = delivery; _cursor = NearestSegment(position);
                 }
                 while (_cursor + 1 < _nodes.Count && Reached(position, _cursor)) _cursor++;
@@ -157,9 +188,30 @@ internal sealed class BlundervilleRacePlanner
                 RejoinForwardSegment(position);
             while (_cursor < _nodes.Count && (!_recovering || grounded && !jumping) && Reached(position, _cursor))
             {
-                if (_cursor == _nodes.Count - 1 && BlundervilleRoutes.IsLoop(state.Course)) { _cursor = 0; break; }
+                if (_cursor == _nodes.Count - 1 && BlundervilleRoutes.IsLoop(state.Course))
+                {
+                    if (_graph != null && _routeIds != null)
+                    {
+                        _routeIds = BlundervilleCourseRouter.Route(_graph, _graph.Start, Hazards, now, state.NavigationBaseSpeed(now));
+                        _nodes = _routeIds.Select(id => _graph.Nodes[id]).ToArray(); _forkCursor = -1;
+                    }
+                    _cursor = 0; break;
+                }
                 if (_cursor == _nodes.Count - 1) break;
                 _cursor++;
+            }
+            // Reaching a fork re-picks the branch with the current forecast.
+            if (_graph != null && _routeIds != null && !_recovering && _cursor > 0 && _cursor < _routeIds.Count
+                && _forkCursor != _cursor && _graph.Fork(_routeIds[_cursor - 1]))
+            {
+                _forkCursor = _cursor;
+                var fork = _routeIds[_cursor - 1];
+                var branch = BlundervilleCourseRouter.Route(_graph, fork, Hazards, now, state.NavigationBaseSpeed(now));
+                if (branch.Count > 1 && branch[1] != _routeIds[_cursor])
+                {
+                    _routeIds = [.. _routeIds.Take(_cursor - 1), .. branch];
+                    _nodes = _routeIds.Select(id => _graph.Nodes[id]).ToArray();
+                }
             }
             target = _cursor < _nodes.Count ? _nodes[_cursor].Position : null;
         }
@@ -217,6 +269,7 @@ internal sealed class BlundervilleRacePlanner
         _forcedFacing = null;
         _rejoinCircles = false;
         _nodes = []; _version = -1; _cursor = 0; _arrival = default; _arrivalTarget = null; _previous = null;
+        _graph = null; _routeIds = null; _forkCursor = -1;
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }
 

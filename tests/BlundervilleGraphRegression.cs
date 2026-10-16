@@ -44,6 +44,39 @@ internal static class BlundervilleGraphRegression
                 RecordedNavigation(BlundervilleMechanismGraph.Create(), phase);
         });
         run("Blunderville graph speed benchmark", () => Benchmark(BlundervilleMechanismGraph.Create()));
+        run("Blunderville course graphs reproduce the verified lanes", () =>
+        {
+            foreach (var course in BlundervilleCourseGraph.Editable)
+            {
+                var graph = BlundervilleCourseGraph.Default(course);
+                Check(graph.Validate() == null, $"{course}: {graph.Validate()}");
+                var json = JsonSerializer.Deserialize<BlundervilleCourseGraph>(JsonSerializer.Serialize(graph))!;
+                Check(json.Validate() == null && json.Edges.Count == graph.Edges.Count, $"{course}: round trip lost edges");
+                Console.WriteLine($"COURSE GRAPH {course} nodes={graph.Nodes.Count} edges={graph.Edges.Count} forks={graph.Nodes.Count(n => graph.Edges.Count(e => e.From == n.Id) > 1)}");
+            }
+            var a = BlundervilleCourseGraph.Default(BlundervilleCourse.FirstA).Compile();
+            Check(BlundervilleCourseRouter.Route(a, BlundervilleCourseRouter.Nearest(a, new(-204, 11.28f, -112)), [], Epoch, 6).Select(id => a.Nodes[id])
+                .SequenceEqual(BlundervilleRoutes.Nodes(BlundervilleCourse.FirstA, new(-204, 0, 0))), "FirstA graph changed the lane.");
+            var b = BlundervilleCourseGraph.Default(BlundervilleCourse.FirstB).Compile();
+            foreach (var side in new[] { -1f, 1f })
+            {
+                var route = BlundervilleCourseRouter.Route(b, BlundervilleCourseRouter.Nearest(b, new(side * 9, 10.03f, -118)), [], Epoch, 6).Select(id => b.Nodes[id]).ToArray();
+                Check(route.SequenceEqual(BlundervilleRoutes.Nodes(BlundervilleCourse.FirstB, new(side, 0, 0))), $"FirstB side {side} changed: {string.Join(";", route.Select(n => n.Position))}");
+            }
+            var ring = BlundervilleCourseGraph.Default(BlundervilleCourse.Ring).Compile();
+            var loop = BlundervilleCourseRouter.Route(ring, ring.Start, [], Epoch, 6).Select(id => ring.Nodes[id]).ToArray();
+            Check(loop.Take(loop.Length - 1).SequenceEqual(BlundervilleRoutes.Nodes(BlundervilleCourse.Ring, default)) && loop[^1] == loop[0], "Ring graph changed the loop.");
+            var delivery = BlundervilleCourseGraph.Default(BlundervilleCourse.Delivery).Compile();
+            foreach (var pad in new[] { BlundervilleCourseGraph.WestPad, BlundervilleCourseGraph.EastPad, BlundervilleCourseGraph.NorthPad })
+            {
+                var hub = new Vector3(-200, 5.42f, 252);
+                var route = BlundervilleCourseRouter.Route(delivery, BlundervilleCourseRouter.Nearest(delivery, hub), [], Epoch, 6, pad).Select(id => delivery.Nodes[id]);
+                Check(route.Select(n => n.Position).SequenceEqual(BlundervilleRoutes.DeliveryNodes(hub, pad).Select(n => n.Position)),
+                    $"Delivery to {pad} changed: {string.Join(";", route.Select(n => n.Position))} vs {string.Join(";", BlundervilleRoutes.DeliveryNodes(hub, pad).Select(n => n.Position))}");
+                var back = BlundervilleCourseRouter.Route(delivery, BlundervilleCourseRouter.Nearest(delivery, pad), [], Epoch, 6, BlundervilleRaceState.PickupCenter).Select(id => delivery.Nodes[id].Position).ToArray();
+                Check(back.Length >= 2 && back[^1] == BlundervilleRoutes.DeliveryNodes(hub, pad)[0].Position, $"Return from {pad} did not reach the hub.");
+            }
+        });
         if (Environment.GetEnvironmentVariable("MP_GRAPH_CASE") is { Length: > 0 } single)
             run("Blunderville graph single case", () =>
             {

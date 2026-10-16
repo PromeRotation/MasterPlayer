@@ -394,7 +394,7 @@ public sealed class MainWindow : IDisposable
         if (ImGui.Button("打开目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
         ImGui.SameLine();
         if (ImGui.Button("可视化编辑器")) _visualEditor.Open();
-        if (ImGui.Button("糖豆人第三关路线")) _routeEditor.Open();
+        if (ImGui.Button("糖豆人路网（一二三关）")) _routeEditor.Open();
         if (!string.IsNullOrEmpty(manager.StatusMessage)) Hint(manager.StatusMessage);
         if (!string.IsNullOrEmpty(manager.ErrorMessage))
         {

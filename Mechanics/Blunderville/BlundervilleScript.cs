@@ -214,6 +214,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
                 executionTarget = desired = point.Position;
             motion = _native?.Capture(now, desired - player) ?? default;
         }
+        _planner.CourseGraphs = course => BlundervilleCourseGraphs.Assigned(MasterPlayer.Settings.MasterPlayerSettings.Instance.BlundervilleCourseGraphs, course);
+        _planner.Hazards = _race.Course is BlundervilleCourse.FirstA or BlundervilleCourse.FirstB or BlundervilleCourse.Ring or BlundervilleCourse.Delivery
+            ? _encounter.TraversalHazards(now).ToArray() : [];
         _decision = _planner.Update(_race, now, player, motion.Grounded, motion.Jumping, motion.GapAhead, motion.ArrowDirection,
             !replay && _native?.SupportsMisdirection == true, executionTarget);
         var automatic = MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && AutomaticRace && IsMechanismEnabled("竞速路线与机制处理");

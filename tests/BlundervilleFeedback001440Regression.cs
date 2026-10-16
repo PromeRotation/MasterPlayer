@@ -68,6 +68,7 @@ internal static class BlundervilleFeedback001440Regression
                 state.SynchronizeStatuses(statuses, now);
                 var grounded = p.Y <= 10.1f;
                 var decision = race.Update(state, now, p, grounded, !grounded, false, null);
+                if (Environment.GetEnvironmentVariable("MP_RACE_TRACE") == "1") Console.WriteLine($"RT {t:F2} p={p} cursor={race.Cursor} target={decision.Target} route={race.RouteDescription}");
                 if (decision.Target is not { } target) continue;
                 var jump = jumps.Plan(state.Course, now, p, target, grounded, !grounded);
                 if (t > 9 && t < 13.341 && p.Z < -155.9f)
