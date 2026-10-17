@@ -31,7 +31,7 @@ internal static partial class FollowRegression
             run($"Combat range holds ranged attacks without chasing the boss; planner={automatic}", () =>
             {
                 using var scope = new FollowScope { TargetPosition = new(20,0,0) };
-                scope.Settings.EnableAutoDodge = automatic;
+                scope.Settings.EnableSmartMovement = automatic;
                 scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
                 scope.Update();
                 if (automatic)
@@ -46,7 +46,7 @@ internal static partial class FollowRegression
             run($"Combat range returns into ranged skill reach; planner={automatic}", () =>
             {
                 using var scope = new FollowScope { TargetPosition = new(35,0,0) };
-                scope.Settings.EnableAutoDodge = automatic;
+                scope.Settings.EnableSmartMovement = automatic;
                 scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
                 scope.Update();
                 if (automatic)
@@ -58,7 +58,11 @@ internal static partial class FollowRegression
                     Check(result.DebugData?.SearchExpansions < 100, "nearest ranged destination exhausted the grid");
                 }
                 else
-                    Check(scope.MoveCount == 1 && scope.LastPoint?.Tolerance == 29, "direct ranged return has wrong tolerance");
+                {
+                    var result = SolveRange(scope, DateTime.UtcNow);
+                    Check(scope.MoveCount == 0 && result.TargetPosition is { } target && target.X > 5 && target.X < 8,
+                        "drawing-only mode must keep guidance without direct movement");
+                }
             });
         }
 
@@ -68,7 +72,8 @@ internal static partial class FollowRegression
             scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
             scope.Settings.FollowDistance = 2;
             scope.Update();
-            Check(scope.LastPoint?.Tolerance == 2, "ranged mode changed party following");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry.Contains(new(8.1f,0,0))
+                && !scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry.Contains(new(7.9f,0,0)), "ranged mode changed party following");
         });
 
         foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, -10f, 500f })
@@ -78,14 +83,16 @@ internal static partial class FollowRegression
                 scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
                 scope.Settings.RangedAttackRange = invalid;
                 scope.Update();
-                Check(scope.LastPoint is { } point && float.IsFinite(point.Tolerance) && point.Tolerance is >= 9 and <= 29,
+                var goal = scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry;
+                Check(goal.Contains(scope.TargetPosition - Vector3.UnitX * 8.5f)
+                    && !goal.Contains(scope.TargetPosition - Vector3.UnitX * 30) && scope.MoveCount == 0,
                     "invalid range escaped validation");
             });
 
         run("Combat range keeps a narrow melee safe sector under 25 percent", () =>
         {
             using var scope = new FollowScope { TargetPosition = Vector3.Zero, PlayerPosition = new(0,0,-12) };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             var fan = new FanTemplate(30, MathF.PI * 1.8f);
             scope.Manager.AddDangerArea(fan, new StaticTransform(Vector3.Zero,0), [new DangerWindow(now.AddSeconds(3),now.AddSeconds(5))]);
@@ -102,7 +109,7 @@ internal static partial class FollowRegression
             run($"Combat range escapes to the melee side of urgent damage; casting={casting}", () =>
             {
                 using var scope = new FollowScope { TargetPosition = new(7,0,0), PlayerCasting = casting };
-                scope.Settings.EnableAutoDodge = true;
+                scope.Settings.EnableSmartMovement = true;
                 var now = DateTime.UtcNow; scope.Now = now;
                 scope.Manager.AddDangerArea(new CircleTemplate(2), new StaticTransform(Vector3.Zero,0),
                     [new DangerWindow(now.AddSeconds(1.2),now.AddSeconds(3))]);
@@ -117,7 +124,7 @@ internal static partial class FollowRegression
         run("Combat range leaves a full melee circle and returns only after resolution", () =>
         {
             using var scope = new FollowScope { TargetPosition = Vector3.Zero, PlayerPosition = new(5,0,0) };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             var hazard = new CircleGeometry(Vector3.Zero,9);
             scope.Manager.AddDangerArea(new CircleTemplate(9),new StaticTransform(Vector3.Zero,0),
@@ -137,7 +144,7 @@ internal static partial class FollowRegression
         run("Combat range closes into the safe inner ring of a donut", () =>
         {
             using var scope = new FollowScope { TargetPosition = Vector3.Zero, PlayerPosition = new(0,0,-10) };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             scope.Manager.AddDangerArea(new DonutTemplate(6,30),new StaticTransform(Vector3.Zero,0),
                 [new DangerWindow(now.AddSeconds(3),now.AddSeconds(4))]);
@@ -150,7 +157,7 @@ internal static partial class FollowRegression
         run("Combat range respects arena edges while approaching a moving boss", () =>
         {
             using var scope = new FollowScope { TargetPosition = new(18,0,0) };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             var arena = new CircleGeometry(Vector3.Zero,20);
             scope.Manager.SetArenaBoundary(arena);
@@ -170,7 +177,7 @@ internal static partial class FollowRegression
         run("Combat range changes mode without leaking goals or restarting every frame", () =>
         {
             using var scope = new FollowScope { TargetPosition = new(20,0,0) };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             scope.Update();
             Check(SolveRange(scope,now).TargetPosition is not null, "melee did not approach");
@@ -191,7 +198,7 @@ internal static partial class FollowRegression
     private static void RunRangeMovement(string scenario, double delay)
     {
         using var scope = new FollowScope { TargetPosition = Vector3.Zero };
-        scope.Settings.EnableAutoDodge = true;
+        scope.Settings.EnableSmartMovement = true;
         scope.PlayerPosition = scenario switch
         {
             "narrow sector" => new(0,0,-12),

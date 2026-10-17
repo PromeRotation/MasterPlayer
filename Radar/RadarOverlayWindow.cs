@@ -83,7 +83,7 @@ public sealed class RadarOverlayWindow : IDisposable
         ImGui.SetNextWindowSize(new Vector2(fullSize, fullSize + stripHeight), ImGuiCond.Always);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
-        if (!ImGui.Begin("MasterPlayer 雷达", flags))
+        if (!ImGui.Begin("PromeRadar 雷达###MasterPlayer 雷达", flags))
         {
             ImGui.End();
             ImGui.PopStyleVar(2);

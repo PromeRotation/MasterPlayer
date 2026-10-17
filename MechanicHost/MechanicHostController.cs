@@ -25,10 +25,13 @@ public sealed class MechanicHostController : IDisposable
     private ushort _replayTerritory;
     private bool _disposed;
     private string? _lastLoggedError;
+    private bool _liveEnabled = true;
+    private bool _replayEnabled = true;
 
     private MechanicSession? ActiveSession => _replaySession ?? _session;
 
     public bool IsAvailable { get; private set; }
+    public bool IsEnabled => IsAvailable && ModulesEnabled;
     public bool IsSuppressed { get; private set; }
     public bool CaptureActive => _capture?.IsActive == true;
     public string? LastError { get; private set; }
@@ -42,7 +45,11 @@ public sealed class MechanicHostController : IDisposable
     public string? DrawModuleName => _drawBridge?.ActiveDrawModuleName;
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
-    public bool HasActiveModule => ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
+    public bool HasActiveModule => ModulesEnabled && !(_replaySession != null ? IsReplaySuppressed() : IsSuppressed)
+        && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
+    private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
+        && MasterPlayerSettings.Instance.IsTerritoryEnabled(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
+    public IReadOnlyList<MechanicTerritoryEntry> Territories { get; private set; } = [];
     public bool NavigationActive => _navBridge?.NavigationActive == true;
     public int NavDangerZoneCount => _navBridge?.DangerZoneCount ?? 0;
     public int NavGoalZoneCount => _navBridge?.GoalZoneCount ?? 0;
@@ -73,6 +80,7 @@ public sealed class MechanicHostController : IDisposable
             _drawBridge = new MechanicDrawHost(_session);
             SubscribeEvents();
             IsAvailable = true;
+            Territories = MechanicTerritoryCatalog.Build();
         }
         catch (Exception ex)
         {
@@ -134,11 +142,14 @@ public sealed class MechanicHostController : IDisposable
     private void Enqueue(MechanicFeedEvent feedEvent)
     {
         if (CanAcceptEvents)
+        {
+            EnsureLiveSession();
             _feed?.Enqueue(feedEvent);
+        }
     }
 
     private bool CanAcceptEvents
-        => !_disposed && IsAvailable && _feed != null && MasterPlayerSettings.Instance.EnableMechanicModules
+        => !_disposed && IsAvailable && _feed != null && ModulesEnabled
             && !IsSuppressed && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true;
 
     public void Update()
@@ -147,7 +158,19 @@ public sealed class MechanicHostController : IDisposable
             return;
         var settings = MasterPlayerSettings.Instance;
         IsSuppressed = ComputeSuppressed();
-        if (!IsAvailable || _session == null || _feed == null || !settings.EnableMechanicModules || IsSuppressed)
+        if (_replaySession != null)
+        {
+            if (IsReplaySuppressed())
+            {
+                _replayEnabled = false;
+                _navBridge?.Sleep();
+                _drawBridge?.Sleep();
+                CurrentTimeline = null;
+            }
+            _capture?.Drain(null);
+            return;
+        }
+        if (!IsAvailable || _session == null || _feed == null || !ModulesEnabled || IsSuppressed)
         {
             if (_replaySession == null)
             {
@@ -155,6 +178,7 @@ public sealed class MechanicHostController : IDisposable
                 _navBridge?.Sleep();
                 _drawBridge?.Sleep();
                 CurrentTimeline = null;
+                _liveEnabled = false;
             }
             return;
         }
@@ -163,6 +187,7 @@ public sealed class MechanicHostController : IDisposable
 
         try
         {
+            EnsureLiveSession();
             ApplyMaturity(settings.MechanicModuleMinMaturity);
             var now = DateTime.UtcNow;
             var frame = LiveWorldSampler.Capture(_waymarks);
@@ -186,6 +211,17 @@ public sealed class MechanicHostController : IDisposable
         }
     }
 
+    private void EnsureLiveSession()
+    {
+        if (_liveEnabled) return;
+        _session?.Dispose();
+        _session = new MechanicSession(ResolveGameVersion());
+        _feed = new MechanicWorldFeed(_session);
+        _navBridge?.SwitchSession(_session);
+        _drawBridge?.SwitchSession(_session);
+        _liveEnabled = true;
+    }
+
     internal void EnterReplaySession(ushort territory)
     {
         if (!IsAvailable || _session == null || _disposed)
@@ -197,6 +233,8 @@ public sealed class MechanicHostController : IDisposable
             _replaySession = new MechanicSession(ResolveGameVersion());
             _replayFeed = new MechanicWorldFeed(_replaySession);
             _replayAdapter = new ReplayFeedAdapter(territory, LiveWorldSampler.ResolveCfc);
+            _replayEnabled = true;
+            _liveEnabled = false;
             _navBridge?.SwitchSession(_replaySession);
             _drawBridge?.SwitchSession(_replaySession);
         }
@@ -252,6 +290,11 @@ public sealed class MechanicHostController : IDisposable
             return;
         try
         {
+            if (!_replayEnabled)
+            {
+                RestartReplaySession();
+                _replayEnabled = true;
+            }
             if (_replayAdapter.TryConvertEvent(ev) is { } feedEvent)
                 _replayFeed.Enqueue(feedEvent);
         }
@@ -267,6 +310,7 @@ public sealed class MechanicHostController : IDisposable
             return;
         if (IsReplaySuppressed())
         {
+            _replayEnabled = false;
             _navBridge?.Sleep();
             _drawBridge?.Sleep();
             CurrentTimeline = null;
@@ -274,6 +318,11 @@ public sealed class MechanicHostController : IDisposable
         }
         try
         {
+            if (!_replayEnabled)
+            {
+                RestartReplaySession();
+                _replayEnabled = true;
+            }
             _replaySession.BeginFrame(world.CurrentTime);
             _replayFeed.ApplyFrame(_replayAdapter.ConvertFrame(world));
             foreach (var frameEvent in _replayAdapter.DrainFrameEvents())
@@ -294,6 +343,7 @@ public sealed class MechanicHostController : IDisposable
 
     private bool IsReplaySuppressed()
     {
+        if (!ModulesEnabled) return true;
         var scripts = MasterPlayerPlugin.Instance?.Scripts;
         if (scripts == null)
             return false;
@@ -304,6 +354,8 @@ public sealed class MechanicHostController : IDisposable
         }
         return false;
     }
+
+    internal void SuspendMovement() => _navBridge?.SuspendMovement();
 
     private void LogReplayError(string stage, Exception ex)
     {

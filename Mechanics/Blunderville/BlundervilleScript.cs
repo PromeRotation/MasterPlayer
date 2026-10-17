@@ -69,7 +69,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         if (now < _nextScan && _nextScan - now <= TimeSpan.FromSeconds(0.1)
             && (ReplayWorld == null || ReplayWorld.Version == _replayVersion))
         {
-            if (AutomaticRace && ReplayWorld == null && _native?.SupportsMisdirection == true && _decision is { DirectTraversal: true } && _race is { HasMisdirection: true }
+            if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && AutomaticRace && ReplayWorld == null && _native?.SupportsMisdirection == true && _decision is { DirectTraversal: true } && _race is { HasMisdirection: true }
                 && IsMechanismEnabled("竞速路线与机制处理") && Svc.Objects.LocalPlayer is { IsDead: false } player)
             {
                 _decision = _arrowPlanner.Apply(_decision, _race, player.Position, _native?.ReadArrowDirection(), now, _navigation?.HasMovementControl == true);
@@ -93,6 +93,13 @@ public abstract class BlundervilleScript : MasterPlayerScript
         _jumpExecution.Clear();
         _arrowPlanner.Reset();
         _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset(); foreach (var lane in LanePlanners) lane.Reset();
+    }
+
+    protected override void OnMovementDisabled()
+    {
+        _navigation?.SuspendMovement();
+        _native?.Apply(CurrentTime, false, false, null, null);
+        _jumpExecution.Clear();
     }
 
     private unsafe void Scan(DateTime now)
@@ -209,7 +216,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
         }
         _decision = _planner.Update(_race, now, player, motion.Grounded, motion.Jumping, motion.GapAhead, motion.ArrowDirection,
             !replay && _native?.SupportsMisdirection == true, executionTarget);
-        var automatic = AutomaticRace && IsMechanismEnabled("竞速路线与机制处理");
+        var automatic = MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && AutomaticRace && IsMechanismEnabled("竞速路线与机制处理");
         if (automatic && !replay)
         {
             if (_native?.SupportsMisdirection == true)
@@ -304,7 +311,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
 
     private void ApplyPendingJump(DateTime now)
     {
-        if (!AutomaticRace || ReplayWorld != null
+        if (!MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement || !AutomaticRace || ReplayWorld != null
             || !IsMechanismEnabled("竞速路线与机制处理") || _race?.CanJump(now) != true
             || _decision is not { Hold: false } || Svc.Objects.LocalPlayer is not { IsDead: false } player)
         { _jumpExecution.Clear(); _navigation?.ReleaseJump(); return; }

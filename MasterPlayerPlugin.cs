@@ -11,13 +11,14 @@ namespace MasterPlayer;
 
 [PromePlugin(
     id: "masterplayer",
-    name: "MasterPlayer",
+    name: "PromeRadar",
     author: "XSZ",
-    description: "雷达悬浮窗 + 真实世界绘制 + 智能躲避 + 战斗中跟随 + 机制脚本框架",
+    description: "雷达悬浮窗 + 真实世界绘制 + 智能走位 + 机制库 + 录制回放",
     version: "0.1.0.0")]
 public sealed class MasterPlayerPlugin : IPromePlugin
 {
-    private const string PanelCommand = "/prmp";
+    private const string PanelCommand = "/prpr";
+    private const string LegacyPanelCommand = "/prmp";
     private Radar.RadarRenderer? _radar;
     private Dodge.DodgeController? _dodge;
     private Mechanics.MechanicDispatcher? _mechanics;
@@ -31,6 +32,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Windows.ReplayWindow? _replayWindow;
     private SafeZoneActivation? _safeZoneActivation;
     private SafeZoneRuntime? _safeZone;
+    private Integration.SmartMovementIntegration? _integration;
+    private bool _smartMovementEnabled;
     private IDisposable? _safeZoneTerritory, _safeZoneDeath, _safeZoneBattleEnd;
     public SafeZoneRuntime SafeZone => _safeZone ?? throw new InvalidOperationException("MasterPlayer 安全区尚未初始化。");
     internal Radar.AoeVisibilityRegistry? AoeVisibility { get; private set; }
@@ -62,7 +65,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _safeZoneDeath = PromeEventBus.OnPlayerDied(this, ClearLiveSafeZone);
         _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, ClearLiveSafeZone);
         _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
-        _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
+        _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
+        _smartMovementEnabled = settings.EnableSmartMovement;
 
         _radar = new Radar.RadarRenderer();
         _dodge = new Dodge.DodgeController();
@@ -76,6 +80,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _radarOverlay = new Radar.RadarOverlayWindow();
         _follow = new Follow.FollowController();
         _mainWindow = new Windows.MainWindow();
+        _integration = new Integration.SmartMovementIntegration();
 
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
@@ -83,15 +88,17 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         Svc.PluginInterface.UiBuilder.Draw += _replayWindow.Draw;
         Svc.Commands.AddHandler(PanelCommand, new CommandInfo(OnPanelCommand)
         {
-            HelpMessage = "打开/关闭 MasterPlayer 设置面板；/prmp rec 开始或停止机制事件录制；/prmp replay 开关录制回放窗口",
+            HelpMessage = "打开/关闭 PromeRadar；/prpr ai on/off 开关智能走位；/prpr rec 开停录制；/prpr replay 开关回放窗口",
         });
+        Svc.Commands.AddHandler(LegacyPanelCommand, new CommandInfo(OnPanelCommand) { HelpMessage = "PromeRadar 旧指令；请使用 /prpr" });
+        _integration.Update(this);
 
         Svc.Log.Info($"[MasterPlayer] Initialized build={typeof(MasterPlayerPlugin).Module.ModuleVersionId:D}");
     }
 
     public void DrawConfigUI()
     {
-        if (ImGui.Button("打开 MasterPlayer 设置面板"))
+        if (ImGui.Button("打开 PromeRadar 设置面板"))
             _mainWindow?.Toggle();
         ImGui.SameLine();
         ImGui.TextDisabled($"或输入 {PanelCommand}");
@@ -100,6 +107,17 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private void OnPanelCommand(string command, string args)
     {
         var arg = args.Trim();
+        var parts = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 0 && parts[0].Equals("ai", StringComparison.OrdinalIgnoreCase))
+        {
+            if (parts.Length == 2 && (parts[1].Equals("on", StringComparison.OrdinalIgnoreCase) || parts[1].Equals("off", StringComparison.OrdinalIgnoreCase)))
+            {
+                SetSmartMovementEnabled(parts[1].Equals("on", StringComparison.OrdinalIgnoreCase));
+                Svc.Chat.Print($"[PromeRadar] 智能走位已{(MasterPlayerSettings.Instance.EnableSmartMovement ? "开启" : "关闭")}");
+            }
+            else Svc.Chat.Print("[PromeRadar] 用法：/prpr ai on 或 /prpr ai off");
+            return;
+        }
         if (arg.Equals("rec", StringComparison.OrdinalIgnoreCase) || arg.Equals("record", StringComparison.OrdinalIgnoreCase))
         {
             if (_replayRecorder == null)
@@ -122,9 +140,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        _integration?.ApplyRequests(this);
         var settings = MasterPlayerSettings.Instance;
+        ApplyMovementPolicy(settings);
         var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
-        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableAutoDodge, settings.OptimizeDodgeTiming);
+        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
         _mechanicHost?.Update();
         _dodge?.Update();
         _mechanics?.Update();
@@ -136,6 +156,34 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             _scripts?.ReplayModeActive != true);
         AoeVisibility?.Update(SafeZone.Manager);
         _radar?.Update();
+        _integration?.Update(this);
+    }
+
+    public void SetSmartMovementEnabled(bool enabled)
+    {
+        if (_disposed) return;
+        var settings = MasterPlayerSettings.Instance;
+        if (settings.EnableSmartMovement == enabled && _smartMovementEnabled == enabled) return;
+        settings.EnableSmartMovement = enabled;
+        ApplyMovementPolicy(settings);
+        settings.Save();
+    }
+
+    private void ApplyMovementPolicy(MasterPlayerSettings settings)
+    {
+        if (_smartMovementEnabled == settings.EnableSmartMovement) return;
+        _smartMovementEnabled = settings.EnableSmartMovement;
+        if (!_smartMovementEnabled)
+        {
+            if (_safeZone != null) _safeZone.Setting.MovementAllowed = false;
+            try { _scripts?.SuspendMovement(); }
+            catch (Exception ex) { Svc.Log.Error(ex, "[PromeRadar] 撤销脚本移动失败"); }
+            try { _mechanicHost?.SuspendMovement(); }
+            catch (Exception ex) { Svc.Log.Error(ex, "[PromeRadar] 撤销模块朝向失败"); }
+            try { _safeZone?.SuspendMovement(); }
+            catch (Exception ex) { Svc.Log.Error(ex, "[PromeRadar] 停止智能走位失败"); }
+        }
+        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
     }
 
     private void ClearLiveSafeZone()
@@ -157,21 +205,19 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         if (_replayWindow != null)
             Svc.PluginInterface.UiBuilder.Draw -= _replayWindow.Draw;
 
-        try
-        {
-            Svc.Commands.RemoveHandler(PanelCommand);
-        }
-        catch (Exception ex)
+        foreach (var panelCommand in new[] { PanelCommand, LegacyPanelCommand })
         {
             try
             {
-                Svc.Log.Warning(ex, "[MasterPlayer] 移除聊天指令失败");
+                Svc.Commands.RemoveHandler(panelCommand);
             }
-            catch
+            catch (Exception ex)
             {
+                Svc.Log.Warning(ex, $"[PromeRadar] 移除聊天指令 {panelCommand} 失败");
             }
         }
 
+        SafeDispose(ref _integration);
         SafeDispose(ref _replayWindow);
         SafeDispose(ref _mainWindow);
         SafeDispose(ref _follow);

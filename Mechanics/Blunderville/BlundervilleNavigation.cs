@@ -124,10 +124,15 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
 
     public void Clear()
     {
-        runtime.RequestDirectTraversal(this, null, runtime.CurrentTime);
-        runtime.RequestAutomaticMovement(this, false);
+        SuspendMovement();
         ClearAreas();
         draw.Remove("race/route"); draw.Remove("race/goal");
+    }
+
+    public void SuspendMovement()
+    {
+        runtime.RequestDirectTraversal(this, null, runtime.CurrentTime);
+        runtime.RequestAutomaticMovement(this, false);
     }
 
     private static BlundervilleHazard CircleImmunityWindow(BlundervilleHazard hazard, BlundervilleRaceState state, Vector3 player, DateTime now)

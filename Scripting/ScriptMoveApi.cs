@@ -1,5 +1,6 @@
 using ECommons.DalamudServices;
 using MasterPlayer.Spatial;
+using MasterPlayer.Settings;
 using PromeRotation.GreenMoveSystem;
 
 namespace MasterPlayer.Scripting;
@@ -121,8 +122,11 @@ public sealed class ScriptMoveApi
     private bool TryTakeControl()
     {
         var safeZoneHasControl = SafeZoneHasControl;
-        if (MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        if (!MasterPlayerSettings.Instance.EnableSmartMovement || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        {
+            Cleanup();
             return false;
+        }
         if (!HostMovement.AutomaticMovementEnabled && !MasterPlayerPlugin.Instance!.SafeZone.Setting.EffectiveEnableAutoMovement &&
             !MasterPlayerPlugin.Instance.SafeZone.Setting.RuntimeMovementHeld &&
             !safeZoneHasControl)

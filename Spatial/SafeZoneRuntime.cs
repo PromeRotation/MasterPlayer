@@ -35,6 +35,7 @@ public sealed class SafeZoneRuntime : IDisposable
     internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null)
     {
         if (_disposed) return;
+        enabled &= Setting.MovementAllowed;
         if (!enabled && ReferenceEquals(_directOwner, owner)) RequestDirectTraversal(owner, null, CurrentTime);
         if ((!enabled || hold) && ReferenceEquals(_committedOwner, owner)) ReleaseCommittedMovement(owner);
         var wasHeld = Setting.RuntimeMovementHeld;
@@ -68,7 +69,7 @@ public sealed class SafeZoneRuntime : IDisposable
     // route. This short lease does not create a second movement controller.
     internal bool CommitJumpMovement(object owner, Vector3 landing, Vector3 player, float speed, DateTime now)
     {
-        if (_disposed || !_movementRequests.Contains(owner) || _movementHolds.Count != 0
+        if (_disposed || !Setting.MovementAllowed || !_movementRequests.Contains(owner) || _movementHolds.Count != 0
             || !_movement.CommitJumpRoute(landing, player, speed, now)) return false;
         _committedOwner = owner;
         return true;
@@ -92,7 +93,7 @@ public sealed class SafeZoneRuntime : IDisposable
         float headingTolerance = 0, DirectTraversalMotion? motion = null)
     {
         if (_disposed) return;
-        if (target.HasValue && _movementRequests.Contains(owner) && _movementRequests.Count == 1)
+        if (Setting.MovementAllowed && target.HasValue && _movementRequests.Contains(owner) && _movementRequests.Count == 1)
         {
             _directOwner = _directFeedbackOwner = owner;
             _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance, motion, now);
@@ -122,6 +123,13 @@ public sealed class SafeZoneRuntime : IDisposable
         _arenaMargins.Clear(); Setting.RuntimeArenaSafetyMargin = null;
         _hardMargins.Clear(); Setting.RuntimeHardSafetyMargin = null;
         Setting.RuntimeMovementRequested = false; Setting.RuntimeMovementHeld = false;
+    }
+
+    internal void SuspendMovement()
+    {
+        Setting.MovementAllowed = false;
+        ClearMovementRequests();
+        _movement.Reset();
     }
 
     /// <summary>当前发布的解算传送边（机制导航桥写入，仅主线程）。</summary>

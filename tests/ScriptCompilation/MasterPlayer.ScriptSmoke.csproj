@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="ScriptCatalogRegression.cs" />
+    <Compile Include="IntegrationRegression.cs" />
     <Compile Include="BmrSourceInventory.cs" />
     <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.CSharp.dll" />

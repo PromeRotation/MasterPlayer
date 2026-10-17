@@ -20,6 +20,28 @@ internal static class LocalSafeZoneRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("Smart movement gate rejects script runtime requests but preserves guidance", () =>
+        {
+            var move = new FakeMove();
+            using var runtime = CreateRuntime(move);
+            var system = (SafeZoneRebornMovementSystem)runtime.MovementStatus;
+            var owner = new object();
+            runtime.RequestAutomaticMovement(owner, true);
+            move.MoveTo(new GreenMovePoint(Vector3.UnitX * 8));
+            SetField(system, "_hasControl", true);
+            runtime.SuspendMovement();
+            runtime.SuspendMovement();
+            runtime.RequestAutomaticMovement(owner, true);
+            runtime.RequestDirectTraversal(owner, Vector3.UnitX * 10, Now);
+            Check(!runtime.Setting.RuntimeMovementRequested && !runtime.Setting.EffectiveEnableAutoMovement
+                && !runtime.CommitJumpMovement(owner, Vector3.UnitX, Vector3.Zero, 6, Now), "A script bypassed the global movement gate.");
+            var snapshot = runtime.Manager.BuildSnapshot(Now);
+            SeedCompletedWorker(system, new SafeZoneSolver().Solve(snapshot, Player, Capability, new(), Now));
+            system.Update(Player, Capability, Now);
+            Check(move.MoveCount == 1 && move.StopCount == 1 && !system.HasControl, "Disabling must stop only the owned route and reject new movement.");
+            Check(system.LatestSolution is { ExecutablePath.Count: >= 2 } && snapshot.GoalAreas.Count == 1,
+                "Disabling movement removed solver guidance or mechanism data.");
+        });
         foreach (var transition in new[] { "clear", "disabled", "missing player" })
             run($"Local runtime rejects a completed worker result after {transition}", () =>
             {

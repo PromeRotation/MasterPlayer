@@ -130,7 +130,7 @@ internal sealed class VisualScriptEditor
         if (scripts.Length == 0) ImGui.TextWrapped("还没有可视化脚本。点击「新建脚本」开始。");
         ImGui.Spacing();
         ImGui.TextWrapped("同一区域可启用多份脚本，也可以同时运行 C# 脚本。");
-        if (!MasterPlayerSettings.Instance.EnableScripts)
+        if (!MasterPlayerSettings.Instance.EnableMechanics)
             TextWrapped("脚本总开关已关闭；仍可编辑和保存。", Warning);
     }
 
@@ -361,7 +361,7 @@ internal sealed class VisualScriptEditor
             _savedText = manager.SaveVisualScript(path, _draft, _savedText);
             _path = path;
             _dirty = false;
-            if (MasterPlayerSettings.Instance.EnableScripts && manager.IsScriptEnabled(_draft.Id)
+            if (MasterPlayerSettings.Instance.EnableMechanics && manager.IsScriptEnabled(_draft.Id)
                 && _draft.TerritoryId == Svc.ClientState.TerritoryType && !manager.Running.ContainsKey(_draft.Id))
             {
                 Feedback($"文件已保存，但脚本启动失败：{manager.ErrorMessage}", true);

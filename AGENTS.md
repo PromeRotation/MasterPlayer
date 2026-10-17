@@ -1,6 +1,17 @@
-# MasterPlayer — 项目总文档（AGENTS.md）
+# PromeRadar — 项目总文档（AGENTS.md）
 
 面向后续 AI 代理与开发者的项目权威文档。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
+
+## 当前设置与控制契约
+
+- 产品名称为 **PromeRadar**。保留 `masterplayer` 插件 ID、`MasterPlayer.dll`、命名空间和现有配置/脚本/回放目录，维持 PR 启用状态与外部脚本兼容；窗口显示新名但保留 ImGui ID。
+- `EnableSmartMovement` 是唯一移动总开关，取代 `EnableAutoDodge` / `EnableFollow`。接近目标只向同一规划器注册目标，已移除直线跟随执行分支。关闭时立即撤销脚本移动/朝向、斗兽控制、糖豆人原生控制和 runtime owner 请求；绘制、提示及安全区规划继续。执行层 `SafeZoneSetting.MovementAllowed` 阻断 runtime 请求绕过总开关，回放继续禁止移动。
+- `EnableMechanics` 统一控制脚本、模块及原处理器；移除 `EnableScripts` / `EnableMechanicModules`。`TerritoryEnabled` 按区域默认启用，同时门控实时/回放的脚本与模块；脚本原逐项开关保留。模块禁用或被专属脚本压制后不得继续压制通用 AOE，恢复时重建会话以丢弃旧状态。
+- 旧移动开关按 OR 迁移；旧脚本/模块总开关按 OR 迁移。保存新配置不再写旧字段，首次覆盖旧格式前保留 `MasterPlayer.json.before-promeradar.bak`。配置格式字段 `SettingsVersion=1`。
+- `/prpr` 开关面板，`/prpr ai on/off` 控制智能走位；`rec` / `replay` 保留。旧 `/prmp` 兼容。DTR `PromeRadar AI：开/关` 左键切换，同 UI/IPC 共用插件 setter；IPC 请求入队后在 Framework 线程应用，通道与状态字段见 `docs/PromeRadarIPC.md`。
+- 脚本增加 `protected virtual OnMovementDisabled()`；宿主关闭智能走位时先清 Move/Hints 门面，再调用此 hook。脚本额外持有原生控制时必须覆盖并撤销。不得停止其他来源的 GreenMove。
+
+下文旧开关/界面描述与本节冲突时，以本节及当前源码为准；参考仓库、主线程纪律及机制规格继续有效。
 
 ## 1. 项目定位
 

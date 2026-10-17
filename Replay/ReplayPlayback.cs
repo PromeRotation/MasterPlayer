@@ -4,7 +4,7 @@ namespace MasterPlayer.Replay;
 
 internal sealed class ReplayPlayback(ReplayRecording recording)
 {
-    public ReplayWorldState World { get; } = new() { CurrentTime = recording.Header.StartedUtc.ToUniversalTime() };
+    public ReplayWorldState World { get; } = new() { CurrentTime = recording.Header.StartedUtc.ToUniversalTime(), Territory = recording.Header.Territory };
     public double Clock { get; private set; }
     public int NextEventIndex { get; private set; }
     private int _nextFrame;

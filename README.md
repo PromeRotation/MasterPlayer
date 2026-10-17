@@ -1,17 +1,17 @@
-# MasterPlayer
+# PromeRadar
 
-MasterPlayer 是 FFXIV 插件 **PromeRotation（PR）** 的卫星插件（PR 子插件，不是独立 Dalamud 插件），提供：
+PromeRadar（原 MasterPlayer）是 FFXIV 插件 **PromeRotation（PR）** 的卫星插件，提供雷达、世界绘制、智能走位、机制库和录制回放。
 
 - **雷达悬浮窗**：圆形 HUD 式 2D 俯视雷达（完整显示脚本注册的场地边界，可随摄像机旋转；解锁状态下拖拽移动、滚轮缩放、右键快捷菜单），显示安全区快照、解算路径与敌我散点，仅在有机制脚本的区域自动出现
 
-聊天输入 `/prmp` 或在 PR 插件管理器中点「打开 MasterPlayer 设置面板」即可开关设置面板。
+聊天输入 `/prpr` 或在 PR 插件管理器中点「打开 PromeRadar 设置面板」即可开关设置面板。
 - **真实世界绘制**：AOE 预告 / 安全点等游戏内 3D 世界范围提示（DrawManager）
-- **智能躲避**：经本体日志系统事件（PromeEventBus 主线程派发）监听读条并注册危险区（带可调安全余量外扩），由插件内置 SafeZoneReborn 解算、PR GreenMove 执行走位；支持按不同 AOE 的判定时间暂避、等待并转入已结束判定的区域
-- **战斗中跟随**：跟随小队成员或当前选中的玩家、怪物；超出设置距离时自动靠近，路线停止后可恢复，躲避接管时自动让位。怪物距离按双方目标圈边缘计算，玩家按中心计算。在「自动化」页启用跟随、将槽位设为 0 并勾选「无有效槽位时跟随当前目标」与「战斗中生效」，即可在战斗中跟随当前目标。
-- **智能机制处理**：监听战斗事件（读条、连线、点名图标等），按机制分发处理器
-- **机制脚本框架**：Roslyn 热编译的单文件机制脚本（`.cs`），按副本区域自动启停
+- **智能走位**：统一接近目标、避险和机制站位。所有跟随目标交给同一个安全区规划器；机制站位优先于攻击距离。关闭后仅保留绘制、提示和路线规划，撤销插件持有的移动与朝向控制，禁止脚本自动竞速、跳跃及交互。
+- **机制库**：统一管理内置机制模块和自定义脚本，在「副本与区域」按副本启停；自定义脚本保留逐脚本设置、可视化编辑器和保存路网。同区域专属脚本优先于内置模块。
 
-开启雷达悬浮窗、真实世界绘制或智能躲避时，插件会启用自己的安全区；开启智能躲避还会启用插件自动移动。只开启绘制不会启用自动移动。诊断页显示并控制插件自己的解算器，不会改动 PR 本体的安全区开关。
+`/prpr ai on` 开启智能走位，`/prpr ai off` 关闭。DTR 的 `PromeRadar AI：开/关` 显示同一状态，左键切换。`/prpr rec` 开停录制，`/prpr replay` 打开回放；旧 `/prmp` 指令继续可用。其他插件可通过 [IPC 接口](docs/PromeRadarIPC.md) 查询状态、设置开关并订阅状态变化。
+
+开启雷达、世界绘制或智能走位时启用本地解算，只有智能走位允许自动移动。关闭某副本会停用该区域的脚本与内置机制。旧设置自动迁移，首次保存前备份为 `MasterPlayer.json.before-promeradar.bak`。为保持已安装插件身份、外部脚本与配置兼容，插件 ID、程序集、命名空间和数据目录仍保留 `MasterPlayer` 命名。
 
 插件的几何、配置、注册表、快照、解算器与调度器均位于 `MasterPlayer.Spatial`，与 PR 本体独立。最终移动共用 GreenMove；PR 旧版或 Reborn 自动移动开启或持有控制权时，插件让位。发生冲突时，可在「总览」页点击「关闭 PR 本体安全区自动移动」。
 
@@ -93,7 +93,7 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 %AppData%\XIVLauncherCN\pluginConfigs\PromeRotation\Plugins\MasterPlayer\
 ```
 
-构建后 `MasterPlayer.dll` 与 `PromeRotation.Scripting.dll`（由构建后拷贝 Target 自动复制）位于该目录。在游戏内打开 PromeRotation 的插件管理器，启用 MasterPlayer 即可；重新构建覆盖输出后可在插件管理器中热重载，无需重启游戏。
+构建后 `MasterPlayer.dll` 与 `PromeRotation.Scripting.dll`（由构建后拷贝 Target 自动复制）位于该目录。在游戏内打开 PromeRotation 的插件管理器，启用 PromeRadar 即可；重新构建覆盖输出后可在插件管理器中热重载，无需重启游戏。
 
 ## 机制脚本
 

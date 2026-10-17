@@ -113,7 +113,7 @@ public sealed class ScriptManager : IDisposable
         if (existing != null) _descriptors.Remove(existing);
         AddDescriptor(descriptor);
         LoadBuiltInScripts();
-        if (MasterPlayerSettings.Instance.EnableScripts && IsScriptEnabled(definition.Id)
+        if (MasterPlayerSettings.Instance.EnableMechanics && IsScriptEnabled(definition.Id)
             && IsTerritoryMatched(descriptor.Metadata, Svc.ClientState.TerritoryType) && !StartScript(definition.Id))
             return json;
         SetStatus($"已保存可视化脚本：{definition.Name}。");
@@ -278,6 +278,10 @@ public sealed class ScriptManager : IDisposable
     /// <summary>router 非空时脚本以回放模式启动（事件来自 ReplayController 而非 PromeEventBus）。</summary>
     internal bool StartScript(string id, IScriptEventRouter? router)
     {
+        if (!MasterPlayerSettings.Instance.EnableMechanics) return false;
+        var territory = (router as Replay.ReplayScriptEventRouter)?.World?.Territory ?? Svc.ClientState.TerritoryType;
+        if (!MasterPlayerSettings.Instance.IsTerritoryEnabled(territory))
+            return false;
         if (_running.ContainsKey(id))
             return true;
 
@@ -353,10 +357,24 @@ public sealed class ScriptManager : IDisposable
             StopScript(id);
     }
 
+    internal void SuspendMovement()
+    {
+        foreach (var (id, running) in _running.ToArray())
+        {
+            try { running.Script.SuspendMovement(); }
+            catch (Exception ex)
+            {
+                Svc.Log.Error(ex, $"[PromeRadar] 撤销脚本移动失败：{running.Descriptor.Metadata.Name}");
+                StopScript(id);
+            }
+        }
+    }
+
     /// <summary>每帧驱动（主线程）：总开关 → 区域自动启停 → 逐脚本 Update。</summary>
     public void Update(float deltaTime)
     {
-        if (!MasterPlayerSettings.Instance.EnableScripts)
+        if (ReplayModeActive) EnforceReplayActivation();
+        if (!MasterPlayerSettings.Instance.EnableMechanics)
         {
             if (_running.Count > 0)
                 StopAll();
@@ -371,7 +389,7 @@ public sealed class ScriptManager : IDisposable
                 var id = descriptor.Metadata.Id;
                 var enabled = IsScriptEnabled(id);
                 var isRunning = _running.ContainsKey(id);
-                var matched = IsTerritoryMatched(descriptor.Metadata, territory);
+                var matched = MasterPlayerSettings.Instance.IsTerritoryEnabled(territory) && IsTerritoryMatched(descriptor.Metadata, territory);
 
                 if (enabled && matched && !isRunning)
                     StartScript(id);
@@ -385,8 +403,15 @@ public sealed class ScriptManager : IDisposable
 
     internal void UpdateReplayScripts(float deltaTime)
     {
-        if (!MasterPlayerSettings.Instance.EnableScripts) { StopAll(); return; }
+        EnforceReplayActivation();
         UpdateRunning(deltaTime, true);
+    }
+
+    internal void EnforceReplayActivation()
+    {
+        foreach (var (id, running) in _running.ToArray())
+            if (running.IsReplaySession && (!MasterPlayerSettings.Instance.EnableMechanics
+                || !MasterPlayerSettings.Instance.IsTerritoryEnabled(running.Context.ReplayWorld?.Territory ?? 0))) StopScript(id);
     }
 
     private void UpdateRunning(float deltaTime, bool replay)

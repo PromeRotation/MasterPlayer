@@ -8,8 +8,8 @@ using PromeRotation.UI.Components;
 namespace MasterPlayer.Windows;
 
 /// <summary>
-/// 设置面板：侧栏分区（总览/显示与绘制/自动走位/机制脚本/录制回放/诊断）。
-/// 由 UiBuilder.Draw（主线程）驱动；PR 插件管理器按钮或聊天指令 /prmp 开关。
+/// 设置面板：侧栏分区（总览/显示与绘制/智能走位/机制库/录制回放/诊断）。
+/// 由 UiBuilder.Draw（主线程）驱动；PR 插件管理器按钮或聊天指令 /prpr 开关。
 /// </summary>
 public sealed class MainWindow : IDisposable
 {
@@ -22,10 +22,11 @@ public sealed class MainWindow : IDisposable
     private bool _visible;
     private bool _disposed;
     private string _aoeFilter = "";
-    private int _page, _displayPage, _scriptScope;
+    private int _page, _displayPage, _scriptScope, _mechanicsPage;
     private string _scriptFilter = "";
+    private string _territoryFilter = "";
     private string? _selectedScript;
-    private static readonly string[] Pages = ["总览", "显示与绘制", "自动走位", "机制脚本", "录制回放", "诊断"];
+    private static readonly string[] Pages = ["总览", "显示与绘制", "智能走位", "机制库", "录制回放", "诊断"];
     private readonly VisualScriptEditor _visualEditor = new();
     private readonly BlundervilleRouteEditor _routeEditor = new();
 
@@ -46,7 +47,7 @@ public sealed class MainWindow : IDisposable
         using var theme = PromeUiTheme.PushWindowStyle();
         ImGui.SetNextWindowSize(new Vector2(900, 700), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(780, 520), new Vector2(1800, 1400));
-        if (!ImGui.Begin("MasterPlayer 设置", ref _visible))
+        if (!ImGui.Begin("PromeRadar 设置###MasterPlayer 设置", ref _visible))
         {
             ImGui.End();
             return;
@@ -56,7 +57,7 @@ public sealed class MainWindow : IDisposable
         {
             if (ImGui.BeginChild("##navigation", new Vector2(138, -1), false))
             {
-                ImGui.TextColored(AccentColor, "MasterPlayer");
+                ImGui.TextColored(AccentColor, "PromeRadar");
                 ImGui.Spacing();
                 for (var i = 0; i < Pages.Length; ++i)
                     if (ImGui.Selectable(Pages[i], _page == i, ImGuiSelectableFlags.None, new Vector2(0, 36))) _page = i;
@@ -74,7 +75,7 @@ public sealed class MainWindow : IDisposable
                     case 0: DrawOverviewTab(); break;
                     case 1: DrawAppearanceTab(); break;
                     case 2: DrawAutomationTab(); break;
-                    case 3: DrawScriptsTab(); break;
+                    case 3: DrawMechanicsTab(); break;
                     case 4: DrawReplayTab(); break;
                     case 5: DrawDiagnosticsTab(); break;
                 }
@@ -92,10 +93,8 @@ public sealed class MainWindow : IDisposable
         SectionHeader("功能模块");
         changed |= ModuleRow("真实世界绘制", "在游戏 3D 世界中绘制机制范围与安全点提示。", settings.EnableRadar, v => settings.EnableRadar = v);
         changed |= ModuleRow("雷达悬浮窗", "俯视场地、机制和走位路线。", settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
-        changed |= ModuleRow("智能躲避", "根据机制判定时间自动前往安全位置。", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
-        changed |= ModuleRow("接近目标", "跟随队友或当前目标，避险优先。", settings.EnableFollow, v => settings.EnableFollow = v);
-        changed |= ModuleRow("机制脚本", "进入对应区域自动运行已启用的脚本。", settings.EnableScripts, v => settings.EnableScripts = v);
-        changed |= ModuleRow("机制模块", "在没有 MP 专属脚本的区域加载 BossModReborn 原版机制模块。", settings.EnableMechanicModules, v => settings.EnableMechanicModules = v);
+        ModuleRow("智能走位", "统一控制接近目标、躲避与机制移动；关闭后仅绘制和指路。", settings.EnableSmartMovement, v => MasterPlayerPlugin.Instance?.SetSmartMovementEnabled(v));
+        changed |= ModuleRow("机制库", "自动加载当前区域已启用的机制，按副本管理。", settings.EnableMechanics, v => settings.EnableMechanics = v);
 
         if (changed)
             settings.Save();
@@ -118,12 +117,10 @@ public sealed class MainWindow : IDisposable
             HintInline($"活动危险区 {snapshot.DangerAreas.Count}");
             Hint($"插件安全区：{status.PhaseText}");
 
-            var needsSafeZone = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge;
+            var needsSafeZone = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableSmartMovement;
             if (needsSafeZone && !setting.EnableSafeZone)
-                ImGui.TextColored(WarningColor, "插件安全区已关闭，机制范围无法显示；请在诊断页开启解算。");
-            if (settings.EnableAutoDodge && !setting.EnableAutoMovement)
-                ImGui.TextColored(WarningColor, "插件自动移动已关闭，智能躲避不会走位；请在诊断页开启自动移动。");
-            if (settings.EnableAutoDodge &&
+                ImGui.TextColored(WarningColor, "插件解算被外部关闭，机制范围可能无法显示；重新加载插件可恢复。");
+            if (settings.EnableSmartMovement &&
                 (Spatial.HostMovement.AutomaticMovementEnabled || Spatial.HostMovement.HasControl))
             {
                 ImGui.TextColored(WarningColor, "PR 本体安全区正在使用自动移动，插件已让位。");
@@ -131,8 +128,7 @@ public sealed class MainWindow : IDisposable
                     Spatial.HostMovement.DisableAutomaticMovement();
             }
 
-            var anyModuleOn = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableAutoDodge ||
-                              settings.EnableFollow || settings.EnableScripts;
+            var anyModuleOn = settings.EnableRadar || settings.EnableRadarOverlay || settings.EnableSmartMovement || settings.EnableMechanics;
             if (!anyModuleOn)
                 Hint("所有模块均已关闭，打开上方开关即可开始使用。");
         }
@@ -149,7 +145,7 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("显示");
         changed |= Check("启用雷达悬浮窗", settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
-        changed |= Check("仅在有机制脚本的区域显示", settings.RadarOnlyWithScript, v => settings.RadarOnlyWithScript = v);
+        changed |= Check("仅在有机制的区域显示", settings.RadarOnlyWithScript, v => settings.RadarOnlyWithScript = v);
 
         var centerMode = settings.RadarCenterMode;
         if (ImGui.Combo("中心模式", ref centerMode, "场地基准（完整显示脚本注册的场地）\0玩家摄像机基准（跟随自身 25 码视野）\0"))
@@ -269,9 +265,9 @@ public sealed class MainWindow : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var changed = false;
 
-        SectionHeader("接近目标");
-        Hint("开启智能躲避后，机制站位和脱险优先于接近目标。");
-        changed |= Check("启用跟随", settings.EnableFollow, v => settings.EnableFollow = v);
+        ModuleRow("智能走位", "接近目标、脱险和机制站位由同一个规划器协调，机制站位优先。", settings.EnableSmartMovement, v => MasterPlayerPlugin.Instance?.SetSmartMovementEnabled(v));
+        Hint("关闭后继续显示机制与路线，不控制移动、跳跃或朝向。DTR 或 /prpr ai on/off 也可切换。");
+        SectionHeader("接近目标偏好");
 
         var combatDistance = settings.CombatDistance == CombatDistanceMode.Ranged ? 1 : 0;
         ImGui.TextUnformatted("战斗距离");
@@ -317,10 +313,9 @@ public sealed class MainWindow : IDisposable
         changed |= Check("战斗中生效", settings.FollowDuringCombat, v => settings.FollowDuringCombat = v);
         changed |= Check("非战斗中也生效", settings.FollowOutOfCombat, v => settings.FollowOutOfCombat = v);
 
-        SectionHeader("智能躲避");
-        changed |= Check("启用智能躲避", settings.EnableAutoDodge, v => settings.EnableAutoDodge = v);
+        SectionHeader("避险偏好");
         changed |= Check("优化撤离时机", settings.OptimizeDodgeTiming, v => settings.OptimizeDodgeTiming = v);
-        Hint("有安全路线时延后起步，保留输出和读条时间；按实际路程与判定时间撤离，无需选中目标或开启跟随。");
+        Hint("有安全路线时延后起步，保留输出和读条时间；按实际路程与判定时间撤离，无需选中目标。");
         var margin = settings.DodgeDangerMargin;
         if (PluginUi.Slider("危险区安全余量", ref margin, 0f, 2f, "%.2f 码"))
         {
@@ -328,10 +323,64 @@ public sealed class MainWindow : IDisposable
             changed = true;
         }
         Hint("注册危险区时向外扩张的安全余量，智能躲避会与危险区边缘至少保持该距离。");
-        Hint("开启雷达或真实世界绘制会启用 PR 安全区系统；开启智能躲避还会启用 PR 自动移动。只开启绘制不会启用自动移动。");
+        Hint("所有机制的移动控制均受智能走位总开关控制，脚本内的自动竞速等选项只在总开关开启时生效。");
 
         if (changed)
             settings.Save();
+    }
+
+    private void DrawMechanicsTab()
+    {
+        var settings = MasterPlayerSettings.Instance;
+        if (ModuleRow("启用机制库", "统一控制内置机制和自定义脚本，关闭某副本会停用该区域的全部机制。", settings.EnableMechanics, v => settings.EnableMechanics = v)) settings.Save();
+        _mechanicsPage = PluginUi.TabBar("##mechanics_sections", ["副本与区域", "自定义脚本"], _mechanicsPage);
+        if (_mechanicsPage == 0) DrawTerritories();
+        else DrawScriptsTab();
+    }
+
+    private void DrawTerritories()
+    {
+        var plugin = MasterPlayerPlugin.Instance;
+        if (plugin == null) return;
+        var settings = MasterPlayerSettings.Instance;
+        var current = Svc.ClientState.TerritoryType;
+        var enabled = settings.IsTerritoryEnabled(current);
+        if (ImGui.Checkbox($"启用当前区域（{current}）的机制", ref enabled))
+        {
+            settings.TerritoryEnabled[current] = enabled;
+            settings.Save();
+        }
+        Hint("关闭区域后，该区域的机制绘制、提示和走位同时停用。未列出的区域可在进入后通过上方开关管理。");
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##territory_filter", "搜索副本名称 / 区域 ID", ref _territoryFilter, 256);
+        var entries = (plugin.MechanicHost?.Territories ?? []).ToDictionary(entry => entry.TerritoryId);
+        foreach (var script in plugin.Scripts?.Scripts ?? [])
+        {
+            foreach (var territory in script.Metadata.Territorys)
+                if (!entries.ContainsKey(territory))
+                    entries[territory] = new(territory, MechanicHost.MechanicTerritoryCatalog.ResolveName(territory), 0);
+        }
+        foreach (var territory in settings.TerritoryEnabled.Keys.Append(current))
+            if (!entries.ContainsKey(territory))
+                entries[territory] = new(territory, MechanicHost.MechanicTerritoryCatalog.ResolveName(territory), 0);
+        if (!ImGui.BeginTable("##territories", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY, new Vector2(-1, -1))) return;
+        ImGui.TableSetupColumn("启用", ImGuiTableColumnFlags.WidthFixed, 45);
+        ImGui.TableSetupColumn("副本 / 区域", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("区域 ID", ImGuiTableColumnFlags.WidthFixed, 75);
+        ImGui.TableHeadersRow();
+        var filter = _territoryFilter.Trim();
+        foreach (var entry in entries.Values.OrderByDescending(entry => entry.TerritoryId == current).ThenBy(entry => entry.Name))
+        {
+            if (!entry.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) && !entry.TerritoryId.ToString().Contains(filter)) continue;
+            ImGui.PushID(entry.TerritoryId.ToString());
+            ImGui.TableNextRow(); ImGui.TableNextColumn();
+            var active = settings.IsTerritoryEnabled(entry.TerritoryId);
+            if (ImGui.Checkbox("##enabled", ref active)) { settings.TerritoryEnabled[entry.TerritoryId] = active; settings.Save(); }
+            ImGui.TableNextColumn(); ImGui.TextWrapped(entry.Name);
+            ImGui.TableNextColumn(); ImGui.TextUnformatted(entry.TerritoryId.ToString());
+            ImGui.PopID();
+        }
+        ImGui.EndTable();
     }
 
     private void DrawScriptsTab()
@@ -339,7 +388,7 @@ public sealed class MainWindow : IDisposable
         var manager = MasterPlayerPlugin.Instance?.Scripts;
         if (manager == null) { Hint("脚本管理器尚未就绪。"); return; }
         var settings = MasterPlayerSettings.Instance;
-        if (ModuleRow("启用机制脚本", "进入对应区域自动运行，离开后停止。", settings.EnableScripts, v => settings.EnableScripts = v)) settings.Save();
+        Hint("专属脚本优先于内置机制；逐脚本设置与区域开关共同生效。");
         if (ImGui.Button("刷新脚本")) manager.ReloadScripts();
         ImGui.SameLine();
         if (ImGui.Button("打开目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
@@ -384,7 +433,7 @@ public sealed class MainWindow : IDisposable
                 ImGui.PushID(id);
                 if (ImGui.Selectable(descriptor.Metadata.Name + "###select", _selectedScript == id)) _selectedScript = id;
                 var running = manager.Running.ContainsKey(id);
-                var status = running ? "运行中" : !settings.EnableScripts ? "总开关已关闭" : manager.IsScriptEnabled(id) ? "已启用 · 等待区域" : "已停用";
+                var status = running ? "运行中" : !settings.EnableMechanics ? "总开关已关闭" : manager.IsScriptEnabled(id) ? "已启用 · 等待区域" : "已停用";
                 ImGui.TextColored(running ? OnColor : HintColor, status);
                 ImGui.Separator();
                 ImGui.PopID();
@@ -437,7 +486,7 @@ public sealed class MainWindow : IDisposable
 
         if (ImGui.Button("打开录制回放窗口"))
             MasterPlayerPlugin.Instance?.ReplayWindow?.Toggle();
-        Hint("查看场地预览、拖动时间轴或对比多份日志。指令 /prmp replay 也可打开。");
+        Hint("查看场地预览、拖动时间轴或对比多份日志。指令 /prpr replay 也可打开。");
 
         var autoRecord = MasterPlayerSettings.Instance.AutoRecordOnBattleStart;
         if (ImGui.Checkbox("战斗开始时自动录制（战斗结束自动停止）", ref autoRecord))
@@ -450,12 +499,6 @@ public sealed class MainWindow : IDisposable
     private static void DrawMechanicModules(MasterPlayerSettings settings)
     {
         var bridge = MasterPlayerPlugin.Instance?.MechanicHost;
-        var enable = settings.EnableMechanicModules;
-        if (ImGui.Checkbox("启用机制模块宿主", ref enable))
-        {
-            settings.EnableMechanicModules = enable;
-            settings.Save();
-        }
         HintInline("实时世界输入 BossModReborn 运行库，驱动原版机制模块");
         if (bridge == null)
         {
@@ -475,7 +518,7 @@ public sealed class MainWindow : IDisposable
             settings.Save();
         }
 
-        ImGui.Text($"状态：{(!settings.EnableMechanicModules ? "已停用" : bridge.IsSuppressed ? "已压制（当前区域由 MP 专属脚本接管）" : "运行中")}");
+        ImGui.Text($"状态：{(!bridge.IsEnabled ? "已停用" : bridge.IsSuppressed ? "当前区域由专属脚本接管" : "运行中")}");
         HintInline($"效果包捕获：{(bridge.CaptureActive ? "正常" : "不可用（效果数组组件降级）")}");
         ImGui.Text($"已加载模块 {bridge.LoadedModuleCount} / 待激活 {bridge.PendingModuleCount}");
         ImGui.Text($"激活模块：{bridge.ActiveModuleName ?? "无"}");
@@ -520,12 +563,7 @@ public sealed class MainWindow : IDisposable
             var status = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
             var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow);
 
-            var enableSolve = setting.EnableSafeZone;
-            if (ImGui.Checkbox("启用插件解算", ref enableSolve))
-                setting.EnableSafeZone = enableSolve;
-            var enableMovement = setting.EnableAutoMovement;
-            if (ImGui.Checkbox("启用插件自动移动", ref enableMovement))
-                setting.EnableAutoMovement = enableMovement;
+            Hint($"解算：{(setting.EnableSafeZone ? "开启" : "关闭")}｜智能走位：{(settings.EnableSmartMovement ? "开启" : "关闭")}");
             ImGui.Text($"移动控制权：{(status.HasControl ? "持有" : "无")}    阶段：{status.PhaseText}");
             ImGui.Text($"最新解算方案：{(status.LatestSolution != null ? "有" : "无")}");
             ImGui.Text($"当前危险区：{snapshot.DangerAreas.Count}    运行中脚本：{MasterPlayerPlugin.Instance?.Scripts?.Running.Count ?? 0}");

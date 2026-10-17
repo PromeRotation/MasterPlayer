@@ -404,7 +404,7 @@ internal static class SafeZoneTemporalRegression
         foreach (var owner in typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornMovementStatus") is null
             ? new[] { "none", "legacy", "plugin", "replay" } : new[] { "none", "legacy", "Reborn", "plugin", "replay" })
         {
-            run($"script route cleanup respects actual safe-zone ownership: {owner}", () => CheckScriptCleanup(owner));
+            run($"script route cleanup respects actual safe-zone ownership: {owner}", () => FollowRegression.WithSettings(() => CheckScriptCleanup(owner)));
         }
 
         run("Reborn release preserves a route already taken by legacy", () =>

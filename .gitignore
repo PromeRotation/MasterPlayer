@@ -7,3 +7,4 @@ obj/
 *.userprefs
 *.DotSettings.user
 Directory.Build.local.props
+/analysis/promeradar-settings-cleanup/

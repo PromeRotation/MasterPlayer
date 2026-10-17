@@ -53,7 +53,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         _engine.Update();
         _world.NavigationMargin = MasterPlayer.Settings.MasterPlayerSettings.Instance.DodgeDangerMargin;
         var frame = _engine.Frame();
-        if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableAutoDodge && IsMechanismEnabled("走位引导")
+        if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && IsMechanismEnabled("走位引导")
             && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true && _world.Player is { IsDeadOrDestroyed: false } player)
         {
             var plan = CrucibleControlPlan.Build(frame.Hints, player, _world.CurrentTime);
@@ -77,6 +77,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         DiagnoseMovement();
     }
     protected override void OnStop() => Reset();
+    protected override void OnMovementDisabled() { _control?.Clear(); _interaction.Clear(); }
     private void Reset() { _control?.Clear(); _interaction.Clear(); _events?.Clear(); _output?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
     private void Suspend() { _suspended = true; Reset(); }
     private void Resume() { _suspended = false; _nextScan = default; _dirty = true; }

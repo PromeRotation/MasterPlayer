@@ -30,7 +30,7 @@ public sealed class DodgeController : IDisposable
     {
         var settings = MasterPlayerSettings.Instance;
         if (_disposed || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ||
-            !(settings.EnableAutoDodge || settings.EnableRadar || settings.EnableRadarOverlay))
+            !(settings.EnableSmartMovement || settings.EnableRadar || settings.EnableRadarOverlay))
         {
             return;
         }

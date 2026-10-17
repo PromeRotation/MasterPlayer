@@ -24,7 +24,8 @@ public sealed class MasterPlayerSettings
     public static MasterPlayerSettings Instance { get; } = Load();
 
     public bool EnableRadar = true;
-    public bool EnableAutoDodge = false;
+    public int SettingsVersion = 1;
+    public bool EnableSmartMovement = false;
     public bool OptimizeDodgeTiming = true;
     public bool EnableMechanics = true;
     public bool DebugMode = false;
@@ -45,7 +46,6 @@ public sealed class MasterPlayerSettings
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
     public Dictionary<string, AoeVisibility> AoeVisibility = new();
 
-    public bool EnableFollow = false;
     public int FollowSlot = 0;
     public bool FollowTargetWhenNoSlot = true;
     public float FollowDistance = 1.5f;
@@ -56,7 +56,6 @@ public sealed class MasterPlayerSettings
 
     public float DodgeDangerMargin = 0.5f;
 
-    public bool EnableScripts = true;
     // Retain the previous editor's saved data; current navigation uses FinalRoute.
     public Mechanics.Blunderville.BlundervilleRouteLibrary BlundervilleRoutes = new();
     public Mechanics.Blunderville.BlundervilleFinalRouteSettings BlundervilleFinalRoute = new();
@@ -65,7 +64,7 @@ public sealed class MasterPlayerSettings
     public Dictionary<string, HashSet<string>> MechanismEnabled = new();
 
     // 机制模块宿主（MechanicHost）
-    public bool EnableMechanicModules = true;
+    public Dictionary<uint, bool> TerritoryEnabled = new();
     public int MechanicModuleMinMaturity = 3;  // BossMod.BossModuleInfo.Maturity：0=Dummy 1=WIP 2=Contributed 3=Verified 4=AISupport
 
     // 录制回放
@@ -78,7 +77,7 @@ public sealed class MasterPlayerSettings
             if (File.Exists(ConfigFilePath))
             {
                 var json = File.ReadAllText(ConfigFilePath);
-                var settings = JsonSerializer.Deserialize<MasterPlayerSettings>(json, JsonOptions) ?? new MasterPlayerSettings();
+                var settings = FromJson(json);
                 settings.WorldAoe ??= new AoeViewSettings();
                 settings.RadarAoe ??= AoeViewSettings.CreateRadarDefaults();
                 settings.AoeVisibility ??= new Dictionary<string, AoeVisibility>();
@@ -95,6 +94,28 @@ public sealed class MasterPlayerSettings
         return new MasterPlayerSettings();
     }
 
+    internal static MasterPlayerSettings FromJson(string json)
+    {
+        var settings = JsonSerializer.Deserialize<MasterPlayerSettings>(json, JsonOptions) ?? new();
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+        bool ReadLegacy(string key, bool fallback = false)
+            => root.TryGetProperty(key, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean() : fallback;
+        if (!root.TryGetProperty(nameof(EnableSmartMovement), out _))
+            settings.EnableSmartMovement = ReadLegacy("EnableAutoDodge") || ReadLegacy("EnableFollow");
+        if (!root.TryGetProperty(nameof(SettingsVersion), out _))
+            settings.EnableMechanics = ReadLegacy("EnableScripts", true) || ReadLegacy("EnableMechanicModules", true);
+        settings.TerritoryEnabled ??= new();
+        settings.ScriptEnabled ??= new();
+        settings.ScriptSettings ??= new();
+        settings.MechanismEnabled ??= new();
+        return settings;
+    }
+
+    public bool IsTerritoryEnabled(uint territory)
+        => !TerritoryEnabled.TryGetValue(territory, out var enabled) || enabled;
+
     public void Save()
         => TrySave();
 
@@ -102,6 +123,13 @@ public sealed class MasterPlayerSettings
     {
         try
         {
+            if (File.Exists(ConfigFilePath))
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(ConfigFilePath));
+                var backup = ConfigFilePath + ".before-promeradar.bak";
+                if (!document.RootElement.TryGetProperty(nameof(SettingsVersion), out _) && !File.Exists(backup))
+                    File.Copy(ConfigFilePath, backup);
+            }
             var json = JsonSerializer.Serialize(this, JsonOptions);
             File.WriteAllText(ConfigFilePath, json);
             return true;

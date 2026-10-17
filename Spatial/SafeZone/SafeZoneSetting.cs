@@ -15,13 +15,14 @@ public sealed class SafeZoneSetting
     public bool EnableAutoMovement { get; set; }
 
     internal bool RuntimeMovementRequested { get; set; }
+    internal bool MovementAllowed { get; set; } = true;
     internal bool RuntimeMovementHeld { get; set; }
     internal float? RuntimeHardSafetyMargin { get; set; }
     internal bool RuntimePreferStraightPaths { get; set; }
     internal float? RuntimeBaseSpeed { get; set; }
     internal float? RuntimeArenaSafetyMargin { get; set; }
     internal bool EffectiveEnableSafeZone => EnableSafeZone || RuntimeMovementRequested;
-    internal bool EffectiveEnableAutoMovement => (EnableAutoMovement || RuntimeMovementRequested) && !RuntimeMovementHeld;
+    internal bool EffectiveEnableAutoMovement => MovementAllowed && (EnableAutoMovement || RuntimeMovementRequested) && !RuntimeMovementHeld;
 
     /// <summary>短期输出时间优化请求的有效期限。它不是出发时刻；Reborn 必须实时验证等待和撤离路线。</summary>
     public DateTime AttackUptimeExpiresAt { get; set; }

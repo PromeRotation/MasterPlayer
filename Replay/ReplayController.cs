@@ -147,6 +147,7 @@ public sealed class ReplayController : IDisposable
         if (!SessionActive)
             return;
 
+        _scripts.EnforceReplayActivation();
         // 回放脚本被外部停光（刷新脚本、关总开关等）时自动结束会话，避免门控卡死。
         // 零脚本的会话（无匹配录制区域的启用脚本）允许存活，时间轴照常推进。
         if (_routers.Count > 0 && !_routers.Any(r => _scripts.Running.TryGetValue(r.ScriptId, out var run) && run.IsReplaySession))

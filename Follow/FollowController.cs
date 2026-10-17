@@ -4,26 +4,13 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
-using MasterPlayer.Spatial;
-using PromeRotation.GreenMoveSystem;
 using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Follow;
 
 public sealed class FollowController : IDisposable
 {
-    private const float ReissueDistanceSq = 0.5f * 0.5f;
-    private const float TeleportDistanceSq = 10f * 10f;
-    private static readonly TimeSpan DebugLogInterval = TimeSpan.FromSeconds(2);
-
-    private readonly IGreenMoveSystem _greenMove;
     private readonly Func<DateTime> _utcNow;
-    private bool _hasControl;
-    private Vector3 _lastIssuedTarget;
-    private float _lastIssuedDistance;
-    private Vector3 _lastMasterPos;
-    private bool _hasLastMasterPos;
-    private DateTime _nextDebugLogUtc = DateTime.MinValue;
     private bool _disposed;
     private SafeZoneManager? _goalManager;
     private SafeZoneAreaHandle _followGoal;
@@ -31,13 +18,12 @@ public sealed class FollowController : IDisposable
     private float _goalDistance;
     private bool _followGoalActive;
 
-    public FollowController() : this(PromeRotation.Plugin.Instance.GreenMoveSystem)
+    public FollowController() : this(null)
     {
     }
 
-    internal FollowController(IGreenMoveSystem greenMove, Func<DateTime>? utcNow = null)
+    internal FollowController(Func<DateTime>? utcNow)
     {
-        _greenMove = greenMove;
         _utcNow = utcNow ?? (() => DateTime.UtcNow);
     }
 
@@ -63,32 +49,27 @@ public sealed class FollowController : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var player = Svc.Objects.LocalPlayer;
 
-        if (!settings.EnableFollow || player == null || player.IsDead || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        if (player == null || player.IsDead || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
         {
-            ReleaseControl();
-            _hasLastMasterPos = false;
+            ClearFollowGoal();
             return;
         }
 
         var inCombat = PromeRotation.Core.GameData.IsInCombat();
         if (inCombat ? !settings.FollowDuringCombat : !settings.FollowOutOfCombat)
         {
-            ReleaseControl();
+            ClearFollowGoal();
             return;
         }
 
         var master = ResolveMaster(settings);
         if (master == null || master.EntityId == player.EntityId)
         {
-            ReleaseControl();
+            ClearFollowGoal();
             return;
         }
 
         var masterPos = master.Position;
-        var teleported = _hasLastMasterPos
-            && Vector3.DistanceSquared(masterPos, _lastMasterPos) > TeleportDistanceSq;
-        _lastMasterPos = masterPos;
-        _hasLastMasterPos = true;
 
         var followDistance = float.IsFinite(settings.FollowDistance) ? Math.Clamp(settings.FollowDistance, 0.2f, 10f) : 1.5f;
         if (master.ObjectKind == ObjectKind.BattleNpc)
@@ -100,54 +81,12 @@ public sealed class FollowController : IDisposable
             followDistance = attackRange - 0.5f + player.HitboxRadius + master.HitboxRadius;
         }
 
-        // A settled dodge route releases HasControl while the danger is still present.
-        // With auto-dodge enabled, following is a goal for that same planner, never a raw return route.
-        if (settings.EnableAutoDodge)
-        {
-            ReleaseDirectControl();
-            UpdatePlannedFollow(master.EntityId, masterPos, followDistance, player);
-            return;
-        }
-        ClearFollowGoal();
-
-        // Direct following is retained when auto-dodge is explicitly disabled.
-        if (HostMovement.HasControl ||
-            MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.HasControl)
-        {
-            _hasControl = false;
-            return;
-        }
-        var dx = masterPos.X - player.Position.X;
-        var dz = masterPos.Z - player.Position.Z;
-        var distanceSq = dx * dx + dz * dz;
-
-        if (distanceSq > followDistance * followDistance)
-        {
-            if (!_hasControl || !_greenMove.IsRunning || teleported
-                || followDistance != _lastIssuedDistance
-                || Vector3.DistanceSquared(masterPos, _lastIssuedTarget) > ReissueDistanceSq)
-            {
-                _greenMove.MoveTo(new GreenMovePoint(
-                    masterPos,
-                    Tolerance: followDistance,
-                    IgnoreY: true));
-                _hasControl = true;
-                _lastIssuedTarget = masterPos;
-                _lastIssuedDistance = followDistance;
-                DebugLog($"[MasterPlayer] 跟随下发 MoveTo master={master.Name} pos={masterPos:F1}");
-            }
-        }
-        else if (_hasControl)
-        {
-            _greenMove.Stop();
-            _hasControl = false;
-            DebugLog("[MasterPlayer] 跟随到位，Stop");
-        }
+        UpdatePlannedFollow(master.EntityId, masterPos, followDistance, player);
     }
 
     private void UpdatePlannedFollow(uint targetId, Vector3 targetPosition, float distance, IBattleChara player)
     {
-        if (!MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableSafeZone || !MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement)
+        if (!MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableSafeZone)
         {
             ClearFollowGoal();
             return;
@@ -226,54 +165,6 @@ public sealed class FollowController : IDisposable
         return null;
     }
 
-    private void ReleaseControl()
-    {
-        ClearFollowGoal();
-        ReleaseDirectControl();
-    }
-
-    private void ReleaseDirectControl()
-    {
-        if (!_hasControl)
-        {
-            return;
-        }
-        _hasControl = false;
-
-        try
-        {
-            if (!HostMovement.HasControl && !MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.HasControl)
-                _greenMove.Stop();
-        }
-        catch (Exception ex)
-        {
-            SafeLogError(ex, "[MasterPlayer] 跟随松手 Stop 失败");
-        }
-    }
-
-    private void DebugLog(string message)
-    {
-        if (!MasterPlayerSettings.Instance.DebugMode)
-        {
-            return;
-        }
-
-        var now = _utcNow();
-        if (now < _nextDebugLogUtc)
-        {
-            return;
-        }
-        _nextDebugLogUtc = now + DebugLogInterval;
-
-        try
-        {
-            Svc.Log.Debug(message);
-        }
-        catch
-        {
-        }
-    }
-
     public void Dispose()
     {
         if (_disposed)
@@ -282,7 +173,7 @@ public sealed class FollowController : IDisposable
         }
         _disposed = true;
 
-        ReleaseControl();
+        ClearFollowGoal();
     }
 
     private static void SafeLogError(Exception ex, string message)

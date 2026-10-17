@@ -11,16 +11,18 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>
     private bool _disposed;
     private DateTime _uptimeRequest;
 
-    public void Update(bool enableRadar, bool enableRadarOverlay, bool enableAutoDodge, bool optimizeDodgeTiming = false)
+    public void Update(bool enableRadar, bool enableRadarOverlay, bool enableSmartMovement, bool optimizeDodgeTiming = false)
     {
         if (_disposed)
             return;
+
+        setting.MovementAllowed = enableSmartMovement;
 
         // 本地开关被手动关闭后放弃归属，避免之后撤销用户手动重新开启的状态。
         _ownsSafeZone &= setting.EnableSafeZone;
         _ownsAutoMovement &= setting.EnableAutoMovement;
 
-        var needsSafeZone = enableRadar || enableRadarOverlay || enableAutoDodge;
+        var needsSafeZone = enableRadar || enableRadarOverlay || enableSmartMovement;
         if (needsSafeZone && !_safeZoneRequested)
         {
             _safeZoneRequested = true;
@@ -28,13 +30,13 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>
             setting.EnableSafeZone = true;
         }
 
-        if (enableAutoDodge && !_autoMovementRequested)
+        if (enableSmartMovement && !_autoMovementRequested)
         {
             _autoMovementRequested = true;
             _ownsAutoMovement = !setting.EnableAutoMovement;
             setting.EnableAutoMovement = true;
         }
-        else if (!enableAutoDodge)
+        else if (!enableSmartMovement)
         {
             ReleaseAutoMovement();
         }
@@ -42,7 +44,7 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>
         if (!needsSafeZone)
             ReleaseSafeZone();
 
-        if (enableAutoDodge && optimizeDodgeTiming && setting.EnableSafeZone && setting.EnableAutoMovement)
+        if (enableSmartMovement && optimizeDodgeTiming && setting.EnableSafeZone && setting.EnableAutoMovement)
             setting.AttackUptimeExpiresAt = _uptimeRequest = (utcNow?.Invoke() ?? DateTime.UtcNow).AddSeconds(0.5);
         else
             ReleaseUptime();

@@ -119,7 +119,7 @@ internal static class ScriptCatalogRegression
             Pass("external DLL overrides by name and can be removed");
 
             dynamic settings = assembly.GetType("MasterPlayer.Settings.MasterPlayerSettings")!.GetProperty("Instance")!.GetValue(null)!;
-            settings.EnableScripts = false;
+            settings.EnableMechanics = false;
             dynamic definition = Activator.CreateInstance(assembly.GetType("MasterPlayer.Scripting.Visual.VisualScriptDefinition")!)!;
             definition.Name = builtInName;
             definition.TerritoryId = 1339;
@@ -144,6 +144,7 @@ internal static class ScriptCatalogRegression
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
+            IntegrationRegression.Run(assembly);
         }
         finally
         {
@@ -215,7 +216,7 @@ internal static class ScriptCatalogRegression
         var prInstance = typeof(PromeRotation.Plugin).GetProperty("Instance")!;
         var originalPr = prInstance.GetValue(null);
         dynamic settings = assembly.GetType("MasterPlayer.Settings.MasterPlayerSettings")!.GetProperty("Instance")!.GetValue(null)!;
-        var enabled = (bool)settings.EnableScripts;
+        var enabled = (bool)settings.EnableMechanics;
         var file = Path.Combine(Svc.PluginInterface.ConfigDirectory.FullName, "world.mpreplay.jsonl");
         var liveObjectReads = 0;
         IDisposable? draw = null;
@@ -244,7 +245,7 @@ internal static class ScriptCatalogRegression
             controller = Activator.CreateInstance(assembly.GetType("MasterPlayer.Replay.ReplayController")!,
                 BindingFlags.Instance | BindingFlags.NonPublic, null, [(object)manager, recorder, null!], null)!;
             plugin.GetType().GetField("_replayController", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, (object)controller);
-            settings.EnableScripts = true;
+            settings.EnableMechanics = true;
             manager.SetScriptEnabled("masterplayer.dungeon.copperbell", true);
             File.WriteAllText(file, """
                 {"v":2,"territory":1038,"startedUtc":"2026-09-21T01:00:00Z","pluginVersion":"test"}
@@ -256,6 +257,12 @@ internal static class ScriptCatalogRegression
             int Dangers() => ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Count();
             int Previews() => ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().Count();
             Check(controller.Load(file), (string)controller.StatusMessage);
+            settings.TerritoryEnabled[1038u] = false;
+            controller.Play();
+            Check(controller.ReplayScriptCount == 0 && manager.Running.Count == 0 && Dangers() == 0,
+                "A disabled recording territory ran script startup before the initial world frame.");
+            controller.StopSession();
+            settings.TerritoryEnabled.Remove(1038u);
             controller.Play();
             Check(controller.ReplayScriptCount == 1 && controller.World.HasSnapshot, (string)manager.ErrorMessage);
             controller.Update(2f);
@@ -269,6 +276,14 @@ internal static class ScriptCatalogRegression
             plugin.GetType().GetMethod("ClearLiveSafeZone", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(plugin, null);
             Check(runtime.CurrentTime == pausedTime && Dangers() == 1 && Previews() == 1, "Paused production replay changed the world or expired its output.");
             Check(runtime.Manager.BuildSnapshot(runtime.CurrentTime).ArenaBoundary != null, "A live lifecycle event cleared the replay arena.");
+            settings.TerritoryEnabled[1038u] = false;
+            manager.Update(0f);
+            Check(manager.Running.Count == 0 && Dangers() == 0 && Previews() == 0,
+                "Disabling a paused recording territory retained script output.");
+            controller.Update(0f);
+            settings.TerritoryEnabled.Remove(1038u);
+            controller.Play(); controller.Seek(2d); controller.Pause();
+            Check(Dangers() == 1 && Previews() == 1, "Re-enabling the recording territory did not rebuild replay output.");
             controller.Seek(6d);
             Check(Dangers() == 0 && Previews() == 0, "Forward seek left the removed boss AOE behind.");
             controller.Seek(2d);
@@ -306,7 +321,8 @@ internal static class ScriptCatalogRegression
         {
             if (controller != null) ((IDisposable)controller).Dispose();
             manager.SetScriptEnabled("masterplayer.dungeon.copperbell", false);
-            settings.EnableScripts = enabled;
+            settings.TerritoryEnabled.Remove(1038u);
+            settings.EnableMechanics = enabled;
             draw?.Dispose();
             prInstance.SetValue(null, originalPr);
             SetService(nameof(Svc.ClientState), originalClient);

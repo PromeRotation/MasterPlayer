@@ -113,7 +113,7 @@ public sealed class ReplayWindow : IDisposable
         using var theme = PromeUiTheme.PushWindowStyle();
         ImGui.SetNextWindowSize(new Vector2(960, 800), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(720, 480), new Vector2(2000, 1400));
-        if (!ImGui.Begin("MasterPlayer 录制回放", ref _visible))
+        if (!ImGui.Begin("PromeRadar 录制回放###MasterPlayer 录制回放", ref _visible))
         {
             ImGui.End();
             return;

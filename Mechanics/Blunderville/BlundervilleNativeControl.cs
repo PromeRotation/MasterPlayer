@@ -83,7 +83,7 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
 
     public bool Apply(DateTime now, bool authorized, bool jump, float? facing, ulong? interactId)
     {
-        if (_disposed || !authorized || HostMovement.HasControl || HostMovement.AutomaticMovementEnabled || LivePlayer() is not { } player)
+        if (_disposed || !authorized || !Settings.MasterPlayerSettings.Instance.EnableSmartMovement || HostMovement.HasControl || HostMovement.AutomaticMovementEnabled || LivePlayer() is not { } player)
         {
             ClearFacing();
             return false;

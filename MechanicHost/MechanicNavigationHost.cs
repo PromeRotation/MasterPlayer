@@ -71,12 +71,7 @@ public sealed class MechanicNavigationHost : IDisposable
 
         var settings = MasterPlayerSettings.Instance;
         var replay = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true;
-        NavigationActive = settings.EnableAutoDodge && !replay;
-        if (!NavigationActive)
-        {
-            ClearRegistrations();
-            return;
-        }
+        NavigationActive = settings.EnableSmartMovement && !replay;
 
         var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
         var manager = MasterPlayerPlugin.Instance!.SafeZone.Manager;
@@ -168,7 +163,8 @@ public sealed class MechanicNavigationHost : IDisposable
             visibility != null ? h => visibility.Track(h, key, typeName) : null);
 
         ApplyBoundary(module, y);
-        ApplyFacing(now);
+        if (NavigationActive) ApplyFacing(now);
+        else _facing.Clear();
         PublishTeleporters(y);
     }
 
@@ -306,6 +302,8 @@ public sealed class MechanicNavigationHost : IDisposable
         PredictedDamageText = null;
         ClearRegistrations();
     }
+
+    internal void SuspendMovement() => _facing.Clear();
 
     public void Dispose()
     {

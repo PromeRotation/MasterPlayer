@@ -87,7 +87,7 @@ public sealed class ReplayWorldState
     public IReadOnlyDictionary<ulong, ReplayActorState> Actors => _actors;
     public IReadOnlyList<ReplayPartyMember> Party { get; private set; } = [];
     public DateTime CurrentTime { get; internal set; }
-    public ushort Territory { get; private set; }
+    public ushort Territory { get; internal set; }
     public ulong LocalPlayerId { get; private set; }
     public ulong TargetId { get; private set; }
     public string LocalTimelineRole { get; private set; } = "None";

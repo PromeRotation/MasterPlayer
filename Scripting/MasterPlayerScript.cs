@@ -60,6 +60,18 @@ public abstract class MasterPlayerScript
     {
     }
 
+    /// <summary>智能走位关闭时撤销脚本自己持有的原生控制，保留绘制和机制状态。</summary>
+    protected virtual void OnMovementDisabled()
+    {
+    }
+
+    internal void SuspendMovement()
+    {
+        Move.Cleanup();
+        Hints.Cleanup();
+        OnMovementDisabled();
+    }
+
     internal void StartInternal()
     {
         if (_started)

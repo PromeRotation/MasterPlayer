@@ -22,6 +22,7 @@ internal static partial class FollowRegression
     public static void Run(Action<string, Action> run)
     {
         RunCombatRange(run);
+        RunSmartMovementSettings(run);
         run("Host movement disabling preserves the plugin's own automation", () =>
         {
             using var scope = new FollowScope();
@@ -43,51 +44,52 @@ internal static partial class FollowRegression
         {
             using var scope = new FollowScope();
             scope.Update();
-            Check(scope.MoveCount == 1 && scope.LastPoint is { Tolerance: 7f, IgnoreY: true } point &&
-                point.Position == scope.TargetPosition, "A living battle target must receive a route with both hitboxes included.");
+            var goal = scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry;
+            Check(scope.MoveCount == 0 && goal.Contains(new(3.1f, 0, 0)) && !goal.Contains(new(2.9f, 0, 0)), "The planner goal must include both hitboxes.");
             scope.PlayerPosition = new Vector3(3f, 0f, 0f);
             scope.Update();
             scope.Update();
-            Check(scope.StopCount == 1 && scope.MoveCount == 1, "Reaching the configured edge distance must stop once without chasing the boss center.");
+            Check(scope.StopCount == 0 && scope.MoveCount == 0, "Following must leave execution to the shared planner.");
             scope.PlayerPosition = new Vector3(2.95f, 0f, 0f);
             scope.Update();
-            Check(scope.MoveCount == 2, "Walking just outside the configured distance must resume following.");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "The planner goal must remain available.");
         });
 
         run("Follow uses the configured center distance for players", () =>
         {
             using var scope = new FollowScope { TargetKind = ObjectKind.Pc, PlayerPosition = new Vector3(8.45f, 0f, 0f) };
             scope.Update();
-            Check(scope.MoveCount == 1 && scope.LastPoint?.Tolerance == 1.5f,
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry.Contains(new(8.6f,0,0)),
                 "A player 1.55y away must be approached when the configured distance is 1.5y.");
             scope.PlayerPosition = new Vector3(8.5f, 0f, 0f);
             scope.Update();
-            Check(scope.StopCount == 1, "A player at the exact configured distance must stop following.");
+            Check(scope.StopCount == 0 && scope.MoveCount == 0, "Player following must never send direct movement.");
         });
 
-        run("Follow resumes a stopped route to a stationary target without spamming active routes", () =>
+        run("Follow maintains one stable goal without resetting movement", () =>
         {
             using var scope = new FollowScope();
             scope.Update();
+            var first = scope.Manager.BuildSnapshot(DateTime.UtcNow);
             scope.IsRunning = false;
             scope.Update();
-            Check(scope.MoveCount == 2, "An expired route must be reissued even when the target has not moved.");
+            Check(scope.MoveCount == 0, "Following must not restart the executor directly.");
             for (var i = 0; i < 10; i++)
                 scope.Update();
-            Check(scope.MoveCount == 2, "An active route, including a cast/input pause, must not be reset each frame.");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).Version == first.Version, "An unchanged goal must not invalidate each solve.");
         });
 
-        run("Follow refreshes a moving route when distance or target size changes", () =>
+        run("Follow updates its goal when distance or target size changes", () =>
         {
             using var scope = new FollowScope();
             scope.Update();
             scope.Settings.CombatDistance = CombatDistanceMode.Ranged;
             scope.PlayerPosition = new(-25,0,0);
             scope.Update();
-            Check(scope.MoveCount == 2 && scope.LastPoint?.Tolerance == 29f, "Changing mode must update the active route tolerance.");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry.Contains(new(-18,0,0)), "Changing mode must update the goal radius.");
             scope.TargetRadius = 2f;
             scope.Update();
-            Check(scope.MoveCount == 3 && scope.LastPoint?.Tolerance == 27f, "Changing target size must update the active route tolerance.");
+            Check(!scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Single().Geometry.Contains(new(-18,0,0)), "Changing target size must update the goal radius.");
         });
 
         foreach (var invalid in new[] { "missing", "dead", "untargetable", "event NPC", "self" })
@@ -106,7 +108,7 @@ internal static partial class FollowRegression
                 }
                 scope.Update();
                 scope.Update();
-                Check(scope.MoveCount == 1 && scope.StopCount == 1, "An invalid target must stop only the existing follow route, once.");
+                Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 0 && scope.StopCount == 0, "An invalid target must remove the goal without touching the executor.");
             });
         }
 
@@ -117,7 +119,7 @@ internal static partial class FollowRegression
                 using var scope = new FollowScope();
                 switch (gate)
                 {
-                    case "disabled": scope.Settings.EnableFollow = false; break;
+                    case "disabled": scope.Settings.FollowTargetWhenNoSlot = false; break;
                     case "fallback disabled": scope.Settings.FollowTargetWhenNoSlot = false; break;
                     case "invalid slot": scope.Settings.FollowSlot = 8; break;
                     case "combat disabled": scope.Settings.FollowDuringCombat = false; break;
@@ -136,7 +138,7 @@ internal static partial class FollowRegression
             using var scope = new FollowScope { InCombat = false };
             scope.Settings.FollowOutOfCombat = true;
             scope.Update();
-            Check(scope.MoveCount == 1, "Out-of-combat following must honor its own setting.");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1 && scope.MoveCount == 0, "Out-of-combat following must publish a goal.");
         });
 
         run("Follow falls back to the current target when a party slot is unavailable", () =>
@@ -144,7 +146,7 @@ internal static partial class FollowRegression
             using var scope = new FollowScope();
             scope.Settings.FollowSlot = 1;
             scope.Update();
-            Check(scope.MoveCount == 1, "An unavailable party member must allow the enabled current-target fallback.");
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "An unavailable party member must allow the enabled current-target fallback.");
         });
 
         foreach (var owner in typeof(PromeRotation.Plugin).GetProperty("SafeZoneRebornMovementStatus") is null
@@ -156,12 +158,12 @@ internal static partial class FollowRegression
                 scope.Update();
                 scope.SetDodgeControl(owner, true);
                 scope.Update();
-                Check(scope.MoveCount == 1 && scope.StopCount == 0, "Following must not overwrite or stop a dodge route.");
+                Check(scope.MoveCount == 0 && scope.StopCount == 0, "Following must not overwrite or stop a dodge route.");
                 scope.SetDodgeControl(owner, false);
                 scope.Update();
-                Check(scope.MoveCount == 2, "Following must resume after dodge releases control.");
+                Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "The goal remains available when external control ends.");
                 scope.SetDodgeControl(owner, true);
-                scope.Settings.EnableFollow = false;
+                scope.Settings.FollowTargetWhenNoSlot = false;
                 scope.Update();
                 scope.Controller.Dispose();
                 Check(scope.StopCount == 0, "Disabling or unloading follow must preserve a route taken over by dodge.");
@@ -171,7 +173,7 @@ internal static partial class FollowRegression
         run("Auto-dodge following publishes one dynamic planner goal and never sends a raw return route", () =>
         {
             using var scope = new FollowScope();
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             scope.Update();
             var first = scope.Manager.BuildSnapshot(DateTime.UtcNow);
             Check(first.GoalAreas.Count == 1 && scope.MoveCount == 0, "auto-follow bypassed planner");
@@ -187,7 +189,7 @@ internal static partial class FollowRegression
         run("Auto-follow respects mechanic destinations and restores its goal after they clear", () =>
         {
             using var scope = new FollowScope();
-            scope.Settings.EnableAutoDodge = true; scope.Update();
+            scope.Settings.EnableSmartMovement = true; scope.Update();
             var now = DateTime.UtcNow;
             var mechanic = scope.Manager.AddGoalArea(new CircleTemplate(0.2f), new StaticTransform(new(-8,0,0),0),
                 [new GoalWindow(now, null, 10, PositionPreference.Center)]);
@@ -195,14 +197,14 @@ internal static partial class FollowRegression
             Check(scope.Manager.BuildSnapshot(now).GoalAreas.Single().Handle == mechanic, "attack goal competed with bait destination");
             scope.Manager.RemoveArea(mechanic); scope.Update();
             Check(scope.Manager.BuildSnapshot(now).GoalAreas.Count == 1 && scope.MoveCount == 0, "follow goal not restored through planner");
-            scope.Settings.EnableFollow = false; scope.Update();
+            scope.Settings.FollowTargetWhenNoSlot = false; scope.Update();
             Check(scope.Manager.BuildSnapshot(now).GoalAreas.Count == 0, "disable leaked follow goal");
         });
 
         run("Auto-follow excludes pending damage and restores the target only after the hit window", () =>
         {
             using var scope = new FollowScope { PlayerPosition = new(-13,0,0), TargetPosition = Vector3.Zero };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow;
             scope.Now = now;
             var danger = new CircleGeometry(Vector3.Zero, 9);
@@ -233,7 +235,7 @@ internal static partial class FollowRegression
         run("Auto-follow keeps safe attack positions while a moving future splash excludes the rest", () =>
         {
             using var scope = new FollowScope { PlayerPosition = new(-12,0,0), TargetPosition = Vector3.Zero };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow;
             scope.Now = now;
             var danger = new CircleGeometry(new(3,0,0),5);
@@ -259,7 +261,7 @@ internal static partial class FollowRegression
         run("Auto-follow abandons an attack ring without a usable footprint and recovers after cancellation", () =>
         {
             using var scope = new FollowScope { PlayerPosition = new(-13,0,0), TargetPosition = Vector3.Zero };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             var danger = scope.Manager.AddDangerArea(new CircleTemplate(6.5f), new StaticTransform(Vector3.Zero,0),
                 [new DangerWindow(now.AddSeconds(3),now.AddSeconds(4))]);
@@ -277,7 +279,7 @@ internal static partial class FollowRegression
         run("Auto-follow preserves clearance on partial attack circles", () =>
         {
             using var scope = new FollowScope { PlayerPosition = new(-12,0,0), TargetPosition = Vector3.Zero };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow; scope.Now = now;
             scope.Manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(new(3,0,0),0),
                 [new DangerWindow(now.AddSeconds(4),now.AddSeconds(5))]);
@@ -291,7 +293,7 @@ internal static partial class FollowRegression
             run($"Auto-follow {(casting ? "suspends uptime for safe casting" : "retains safe uptime during urgent escape")}", () =>
             {
                 using var scope = new FollowScope { PlayerCasting = casting };
-                scope.Settings.EnableAutoDodge = true;
+                scope.Settings.EnableSmartMovement = true;
                 var now = DateTime.UtcNow; scope.Now = now;
                 var danger = scope.Manager.AddDangerArea(new CircleTemplate(2), new StaticTransform(Vector3.Zero,0),
                     [new DangerWindow(now.AddSeconds(casting ? 4 : 0.8),now.AddSeconds(5))]);
@@ -310,7 +312,7 @@ internal static partial class FollowRegression
         run("Auto-follow routes around a persistent hazard instead of crossing the direct line", () =>
         {
             using var scope = new FollowScope { TargetKind = ObjectKind.Pc };
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow;
             var danger = new CircleGeometry(new(5,0,0),2);
             scope.Manager.AddDangerArea(new CircleTemplate(2), new StaticTransform(danger.Position,0), [DangerWindow.Persistent(now)]);
@@ -326,7 +328,7 @@ internal static partial class FollowRegression
         run("Auto-follow yields only while a mechanic goal window is active", () =>
         {
             using var scope = new FollowScope();
-            scope.Settings.EnableAutoDodge = true;
+            scope.Settings.EnableSmartMovement = true;
             var now = DateTime.UtcNow;
             var template = new CircleTemplate(0.2f);
             var binding = new StaticTransform(new(-8,0,0),0);
@@ -342,7 +344,7 @@ internal static partial class FollowRegression
         run("Auto-follow cleanup removes only its own goal and never stops a solver route", () =>
         {
             using var scope = new FollowScope();
-            scope.Settings.EnableAutoDodge = true; scope.Update();
+            scope.Settings.EnableSmartMovement = true; scope.Update();
             var now = DateTime.UtcNow;
             var foreign = scope.Manager.AddGoalArea(new CircleTemplate(2), new StaticTransform(new(-5,0,0),0), [new GoalWindow(now,null,0,PositionPreference.Nearest)]);
             scope.SetDodgeControl("plugin",true);
@@ -350,15 +352,21 @@ internal static partial class FollowRegression
             Check(scope.Manager.BuildSnapshot(now).GoalAreas.Single().Handle == foreign && scope.StopCount == 0, "cleanup took foreign goal or route");
         });
 
-        run("Follow disposal stops its own route only once", () =>
+        run("Follow disposal removes only its own planner goal", () =>
         {
             using var scope = new FollowScope();
             scope.Update();
             scope.Controller.Dispose();
             scope.Controller.Dispose();
             scope.Update();
-            Check(scope.MoveCount == 1 && scope.StopCount == 1, "Disposal must be idempotent and prevent subsequent updates.");
+            Check(scope.MoveCount == 0 && scope.StopCount == 0 && scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 0, "Disposal must remove the goal and preserve foreign movement.");
         });
+    }
+
+    internal static void WithSettings(Action action)
+    {
+        using var scope = new FollowScope();
+        action();
     }
 
     private static SafeZoneSolution Solve(FollowScope scope, SafeZoneSnapshot snapshot, DateTime now)
@@ -416,8 +424,7 @@ internal static partial class FollowRegression
             Settings = MasterPlayerSettings.Instance;
             _savedSettings = typeof(MasterPlayerSettings).GetFields(BindingFlags.Public | BindingFlags.Instance)
                 .ToDictionary(field => field, field => field.GetValue(Settings));
-            Settings.EnableFollow = true;
-            Settings.EnableAutoDodge = false;
+            Settings.EnableSmartMovement = true;
             Settings.FollowSlot = 0;
             Settings.FollowTargetWhenNoSlot = true;
             Settings.FollowDistance = 1.5f;
@@ -487,7 +494,7 @@ internal static partial class FollowRegression
             _plannerSetting.EnableSafeZone = true;
             _plannerSetting.EnableAutoMovement = true;
             Manager = _localPlugin.SafeZone.Manager;
-            Controller = new FollowController(movement, () => Now ?? DateTime.UtcNow);
+            Controller = new FollowController(() => Now ?? DateTime.UtcNow);
         }
 
         public void Update()
