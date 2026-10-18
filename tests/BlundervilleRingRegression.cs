@@ -46,6 +46,7 @@ internal static class BlundervilleRingRegression
                     // ring section (15–25m) must lie inside the forecast slot.
                     var t = e[0].GetDouble(); replay.Advance(t - 2); var at = Epoch.AddSeconds(t - BlundervilleRingBeam.Lead);
                     var forecast = replay.Encounter.RingBeam.Hazards(Epoch.AddSeconds(t - 2)).Where(h => h.From <= at && h.Until >= at).ToArray();
+                    Check(forecast.All(h => h.HasMotionEnvelope), "A complete beam sweep was buffered a second time as a future cast.");
                     var rotation = e[5].GetSingle(); var axis = new Vector3(MathF.Sin(rotation), 0, MathF.Cos(rotation));
                     var side = new Vector3(axis.Z, 0, -axis.X);
                     ++ticks;
@@ -166,7 +167,15 @@ internal static class BlundervilleRingRegression
                 ready = t + (latency ?? Latency); nextSolve = ready + .1;
             }
             if (!runtime.Setting.RuntimeMovementHeld)
-                runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [air ? null : accepted, player, snapshot, now]);
+            {
+                // Mirror Update's committed-flight/direct-run ordering while
+                // keeping ordinary asynchronous solves on the fixed replay latency.
+                var committed = (bool)runtime.MovementStatus.GetType().GetMethod("ContinueJumpRoute", flags)!.Invoke(runtime.MovementStatus, [now])!;
+                var direct = !committed && (bool)runtime.MovementStatus.GetType().GetMethod("UpdateDirectTraversal", flags)!
+                    .Invoke(runtime.MovementStatus, [player, snapshot, now, true])!;
+                if (!committed && !direct)
+                    runtime.MovementStatus.GetType().GetMethod("Dispatch", flags)!.Invoke(runtime.MovementStatus, [air ? null : accepted, player, snapshot, now]);
+            }
             previous = p; p = move.Advance(p, (float)frame, air ? launchSpeed : 6);
             lastSpeed = Vector3.Distance(previous, p) / (float)frame;
             var landed = launch is { } began && !(t + frame - began < .75);

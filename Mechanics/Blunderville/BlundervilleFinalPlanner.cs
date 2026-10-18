@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Diagnostics;
+using System.Collections.Concurrent;
 using MasterPlayer.Spatial;
 using MasterPlayer.Spatial.Geometry;
 
@@ -118,6 +120,11 @@ internal sealed class BlundervilleFinalPlanner
     private Task<List<Waypoint>?>? _continuation;
     private Waypoint? _continuationFrom;
     private CancellationTokenSource? _searchCancellation;
+    private CancellationTokenSource? _continuationCancellation;
+    private readonly BlundervillePlanningBudget _planningBudget = new();
+    private long _pendingClock, _continuationClock;
+    private bool _workStarted, _pendingCold, _continuationCold;
+    private double _pollSeconds = .1;
     private Vector3 _pendingOrigin;
     private DateTime _pendingAt;
     internal Task? PendingSearch => _pendingSearch;
@@ -131,6 +138,7 @@ internal sealed class BlundervilleFinalPlanner
         _searchCancellation?.Cancel(); _searchCancellation?.Dispose(); _searchCancellation = null;
         _plan = null; _planBomb = null; _next = 0; _stretch = null; _pendingSearch = null; _lastTime = _retry = _stretchSince = default;
         _continuation = null; _continuationFrom = null;
+        _continuationCancellation?.Cancel(); _continuationCancellation?.Dispose(); _continuationCancellation = null;
     }
 
     public bool Active(BlundervilleRaceState state, Vector3 player, DateTime now)
@@ -145,6 +153,7 @@ internal sealed class BlundervilleFinalPlanner
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, DirectTraversalExecution? execution = null)
     {
         if (now < _lastTime) Reset();
+        if (now > _lastTime && _lastTime != default) _pollSeconds = Math.Clamp((now - _lastTime).TotalSeconds, 1d / 240, .1);
         _lastTime = now;
         // Other courses' planners (bumper, ice, arrow bridge) publish their own
         // direct traversals; clearing that flag here stalled FirstA in the
@@ -200,6 +209,7 @@ internal sealed class BlundervilleFinalPlanner
             {
                 if (_pendingSearch == null)
                 {
+                    _pendingClock = Stopwatch.GetTimestamp(); _pendingCold = !_workStarted; _workStarted = true;
                     // Snapshot-only work. Never make the framework wait for
                     // the graph or for its parallel workers to finish.
                     var captured = hazards.ToArray();
@@ -218,8 +228,15 @@ internal sealed class BlundervilleFinalPlanner
                 _ = completed.Exception;
                 if ((now - _pendingAt).TotalSeconds < 3 && Distance(player, _pendingOrigin) <= 1)
                     _plan = Retime(result, index, floor, player, now, speed);
+                _planningBudget.Observe(Stopwatch.GetElapsedTime(_pendingClock).TotalSeconds, _pendingCold);
             }
-            else _plan = SearchPreferred(index, hazards, floor, player, now, speed, hold, soft);
+            else
+            {
+                var began = Stopwatch.GetTimestamp();
+                _plan = SearchPreferred(index, hazards, floor, player, now, speed, hold, soft);
+                _planningBudget.Observe(Stopwatch.GetElapsedTime(began).TotalSeconds, !_workStarted);
+                _workStarted = true;
+            }
             _next = 1; _stretch = null;
             if (_plan is not { Count: >= 2 })
             {
@@ -273,45 +290,58 @@ internal sealed class BlundervilleFinalPlanner
     // and a search on the game thread). Search the continuation from the
     // plan's end, at its arrival time, on a worker shortly before the player
     // gets there; append it once it validates against the newest forecasts.
-    internal const double ContinueLead = 2.5;
     private void Continue(IReadOnlyList<BlundervilleHazard> hazards, HazardIndex index, IGeometryShape floor, DateTime now, float speed)
     {
         var end = _plan![^1];
         if (_profile.Spoke is { } spoke ? Distance(end.Position, spoke[^1]) < 1
-            : end.Position.Z <= Exit + .01f || _profile.Stairs && MathF.Abs(end.Position.Z - RunupZ) < .01f) { _continuation = null; return; }
+            : end.Position.Z <= Exit + .01f || _profile.Stairs && MathF.Abs(end.Position.Z - RunupZ) < .01f)
+        {
+            _continuationCancellation?.Cancel(); _continuationCancellation?.Dispose(); _continuationCancellation = null;
+            _continuation = null; return;
+        }
         if (_continuation == null)
         {
-            if ((end.Arrival - now).TotalSeconds > ContinueLead) return;
+            if ((end.Arrival - now).TotalSeconds > _planningBudget.LeadSeconds(_planningBudget.Samples == 0, _pollSeconds)) return;
+            _continuationClock = Stopwatch.GetTimestamp(); _continuationCold = !_workStarted; _workStarted = true;
             var captured = hazards.ToArray(); var profile = _profile; var from = end;
             _continuationFrom = end;
-            _continuation = Task.Run(() => Search(profile, new HazardIndex(captured, from.Arrival, profile), floor, from.Position, from.Arrival, speed));
+            _continuationCancellation = new(); var token = _continuationCancellation.Token;
+            _continuation = Task.Run(() => Search(profile, new HazardIndex(captured, from.Arrival, profile), floor, from.Position, from.Arrival, speed, cancellation: token));
             return;
         }
         if (!_continuation.IsCompleted) return;
         var done = _continuation; _continuation = null;
         var result = done.IsCompletedSuccessfully ? done.Result : null;
         _ = done.Exception;
-        if (result is not { Count: >= 2 } || _continuationFrom != end || Distance(result[0].Position, end.Position) > .01f) return;
-        // Revalidate the continuation against the latest forecasts.
-        var time = (result[0].Departure - now).TotalSeconds; var position = end.Position;
-        if (result[0].Departure > end.Arrival && !index.Stand(position, (end.Arrival - now).TotalSeconds, time)) return;
-        for (var i = 1; i < result.Count; ++i)
+        _continuationCancellation?.Dispose(); _continuationCancellation = null;
+        try
         {
-            var arrival = (result[i].Arrival - now).TotalSeconds; var depart = (result[i].Departure - now).TotalSeconds;
-            if (!ArenaBoundaryTraversal.ContainsTube(floor, position, result[i].Position, FloorClearance) || !index.Segment(position, result[i].Position, time, arrival)) return;
-            if (depart > arrival && !index.Stand(result[i].Position, arrival, depart)) return;
-            time = depart; position = result[i].Position;
+            if (result is not { Count: >= 2 } || _continuationFrom != end || Distance(result[0].Position, end.Position) > .01f) return;
+            // Revalidate the continuation against the latest forecasts.
+            var time = (result[0].Departure - now).TotalSeconds; var position = end.Position;
+            if (result[0].Departure > end.Arrival && !index.Stand(position, (end.Arrival - now).TotalSeconds, time)) return;
+            for (var i = 1; i < result.Count; ++i)
+            {
+                var arrival = (result[i].Arrival - now).TotalSeconds; var depart = (result[i].Departure - now).TotalSeconds;
+                if (!ArenaBoundaryTraversal.ContainsTube(floor, position, result[i].Position, FloorClearance) || !index.Segment(position, result[i].Position, time, arrival)) return;
+                if (depart > arrival && !index.Stand(result[i].Position, arrival, depart)) return;
+                time = depart; position = result[i].Position;
+            }
+            var count = _plan.Count;
+            _plan[^1] = end with { Departure = result[0].Departure };
+            _plan.AddRange(result.Skip(1));
+            // A wait-free junction extends the published stretch: its prefix is
+            // unchanged, so the runtime keeps following it without a stop.
+            if (_stretch != null && _stretchStart + _stretch.Length == count && result[0].Departure - end.Arrival < TimeSpan.FromMilliseconds(50))
+            {
+                var last = count - 1;
+                while (last < _plan.Count - 1 && _plan[last].Departure - _plan[last].Arrival < TimeSpan.FromMilliseconds(50)) ++last;
+                _stretch = _plan.Skip(_stretchStart).Take(last - _stretchStart + 1).Select(w => w.Position).ToArray();
+            }
         }
-        var count = _plan.Count;
-        _plan[^1] = end with { Departure = result[0].Departure };
-        _plan.AddRange(result.Skip(1));
-        // A wait-free junction extends the published stretch: its prefix is
-        // unchanged, so the runtime keeps following it without a stop.
-        if (_stretch != null && _stretchStart + _stretch.Length == count && result[0].Departure - end.Arrival < TimeSpan.FromMilliseconds(50))
+        finally
         {
-            var last = count - 1;
-            while (last < _plan.Count - 1 && _plan[last].Departure - _plan[last].Arrival < TimeSpan.FromMilliseconds(50)) ++last;
-            _stretch = _plan.Skip(_stretchStart).Take(last - _stretchStart + 1).Select(w => w.Position).ToArray();
+            _planningBudget.Observe(Stopwatch.GetElapsedTime(_continuationClock).TotalSeconds, _continuationCold);
         }
     }
 
@@ -501,6 +531,7 @@ internal sealed class BlundervilleFinalPlanner
         var z = MathF.Floor((player.Z - .5f) / LayerStep) * LayerStep;
         for (; z >= goal - 1e-3f && layer.Count > 0; z -= LayerStep)
         {
+            if (cancellation.IsCancellationRequested) return null;
             var row = z;
             var next = Expand(layer, node =>
             {
@@ -671,12 +702,22 @@ internal sealed class BlundervilleFinalPlanner
         private readonly Dictionary<int, List<Window>> _rows = [];
         private readonly float _clearance, _standClearance;
         private readonly double _lag;
-        private readonly bool _continuous, _delivery;
+        private readonly BlundervilleCourse _profileCourse;
+        private HazardIndex(HazardIndex source, double lag)
+        {
+            _rows = source._rows;
+            _clearance = source._clearance;
+            _standClearance = source._standClearance;
+            _profileCourse = source._profileCourse;
+            _lag = lag;
+        }
+
+        internal HazardIndex WithExecutionLag(double lag) => Math.Abs(lag - _lag) < 1e-9 ? this : new(this, lag);
+
         public HazardIndex(IReadOnlyList<BlundervilleHazard> hazards, DateTime now, Profile profile)
         {
             _clearance = profile.HazardClearance; _lag = profile.ExecutionLag; _standClearance = profile.StandClearance;
-            _continuous = profile.Course == BlundervilleCourse.Final;
-            _delivery = profile.Course == BlundervilleCourse.Delivery;
+            _profileCourse = profile.Course;
             foreach (var h in hazards)
             {
                 var wave = h.Id.StartsWith("wave/", StringComparison.Ordinal) || h.Id.StartsWith("cast/", StringComparison.Ordinal);
@@ -704,13 +745,14 @@ internal sealed class BlundervilleFinalPlanner
             return true;
         }
 
-        // Forbidden departure intervals, including the time spent crossing
-        // each footprint. Advancing to the end of a conflict avoids a coarse
-        // wait grid missing a short opening between two animation sweeps.
-        private readonly Dictionary<(Vector3, Vector3, double), (double From, double Until)[]> _departures = [];
-        public double Departure(Vector3 from, Vector3 to, double earliest, double duration, double limit)
+        internal readonly record struct TimeRange(double From, double Until);
+        internal const double WindowGap = .001;
+        private readonly ConcurrentDictionary<(Vector3, Vector3, double), (double From, double Until)[]> _departures = new();
+        private readonly ConcurrentDictionary<(Vector3 Point, double Horizon), TimeRange[]> _standing = new();
+
+        internal (double From, double Until)[] BlockedDepartures(Vector3 from, Vector3 to, double duration)
         {
-            if (_departures.TryGetValue((from, to, duration), out var cached)) return Earliest(cached, earliest, limit);
+            if (_departures.TryGetValue((from, to, duration), out var cached)) return cached;
             var blocked = new List<(double From, double Until)>();
             var seen = new HashSet<Window>();
             for (var row = (int)MathF.Floor(MathF.Min(from.Z, to.Z) / 2); row <= (int)MathF.Floor(MathF.Max(from.Z, to.Z) / 2); ++row)
@@ -719,30 +761,80 @@ internal sealed class BlundervilleFinalPlanner
                 foreach (var w in list)
                 {
                     if (!seen.Add(w)) continue;
-                    if (w.Geometry is RectangleGeometry box)
-                    {
-                        var a = GeometryHelper.WorldToLocal(from, box.Position, box.Rotation);
-                        var d = GeometryHelper.WorldToLocal(to, box.Position, box.Rotation) - a;
-                        float enter = 0, exit = 1;
-                        if (Clip(a.X, d.X, box.Width / 2 + _clearance, ref enter, ref exit)
-                            && Clip(a.Y, d.Y, box.Length / 2 + _clearance, ref enter, ref exit))
-                            blocked.Add((w.From - duration * exit - _lag, w.Until - duration * enter));
-                    }
-                    else if (w.Geometry.IntersectsSegment(from, to, _clearance))
-                        blocked.Add((w.From - duration - _lag, w.Until));
+                    (double From, double Until)? contact;
+                    // Delivery's wind/barrier pockets and charge schedule are
+                    // calibrated against complete exposure on non-box legs.
+                    if (_profileCourse == BlundervilleCourse.Delivery && w.Geometry is not RectangleGeometry)
+                        contact = w.Geometry.IntersectsSegment(from, to, _clearance) ? (0, 1) : null;
+                    else
+                        contact = BlundervilleSegmentContacts.Find(w.Geometry, from, to, _clearance);
+                    if (contact is { } occupied)
+                        blocked.Add((w.From - duration * occupied.Until - _lag, w.Until - duration * occupied.From));
                 }
             }
-            var sorted = blocked.OrderBy(w => w.From).ToArray();
-            _departures[(from, to, duration)] = sorted;
-            return Earliest(sorted, earliest, limit);
+            var merged = new List<(double From, double Until)>();
+            foreach (var window in blocked.OrderBy(w => w.From))
+                if (merged.Count > 0 && window.From <= merged[^1].Until)
+                    merged[^1] = (merged[^1].From, Math.Max(merged[^1].Until, window.Until));
+                else merged.Add(window);
+            return _departures[(from, to, duration)] = merged.ToArray();
         }
 
-        private static bool Clip(float origin, float direction, float extent, ref float enter, ref float exit)
+        public double Departure(Vector3 from, Vector3 to, double earliest, double duration, double limit)
+            => Earliest(BlockedDepartures(from, to, duration), earliest, limit);
+
+        internal IEnumerable<TimeRange> DepartureRanges(Vector3 from, Vector3 to, double duration, double first, double last)
+            => ClearRanges(TraversalBlockedDepartures(from, to, duration), first, last);
+
+        private readonly ConcurrentDictionary<(Vector3, Vector3, double), (double From, double Until)[]> _sampledDepartures = new();
+        internal (double From, double Until)[] TraversalBlockedDepartures(Vector3 from, Vector3 to, double duration)
         {
-            if (MathF.Abs(direction) < 1e-7f) return MathF.Abs(origin) <= extent;
-            var p = (-extent - origin) / direction; var q = (extent - origin) / direction;
-            enter = MathF.Max(enter, MathF.Min(p, q)); exit = MathF.Min(exit, MathF.Max(p, q));
-            return enter <= exit;
+            if (_profileCourse != BlundervilleCourse.Final) return BlockedDepartures(from, to, duration);
+            var key = (from, to, duration);
+            if (_sampledDepartures.TryGetValue(key, out var cached)) return cached;
+            // Final movement retains its calibrated spatial/clock envelope.
+            // The graph searches its continuous openings without time bins.
+            var samples = Math.Max(2, (int)MathF.Ceiling(Distance(from, to) / .5f) + 1);
+            var half = duration / (samples - 1) / 2;
+            var blocked = new List<(double From, double Until)>();
+            for (var i = 0; i < samples; ++i)
+            {
+                var fraction = i / (float)(samples - 1);
+                var point = Vector3.Lerp(from, to, fraction);
+                if (!_rows.TryGetValue((int)MathF.Floor(point.Z / 2), out var windows)) continue;
+                foreach (var window in windows)
+                    if (window.Geometry.Contains(point, _clearance))
+                        blocked.Add((window.From - fraction * duration - _lag - half, window.Until - fraction * duration + half));
+            }
+            var merged = new List<(double From, double Until)>();
+            foreach (var window in blocked.OrderBy(w => w.From))
+                if (merged.Count > 0 && window.From <= merged[^1].Until)
+                    merged[^1] = (merged[^1].From, Math.Max(merged[^1].Until, window.Until));
+                else merged.Add(window);
+            return _sampledDepartures[key] = merged.ToArray();
+        }
+
+        internal TimeRange[] StandingRanges(Vector3 point, double horizon)
+        {
+            if (_standing.TryGetValue((point, horizon), out var ranges)) return ranges;
+            var blocked = !_rows.TryGetValue((int)MathF.Floor(point.Z / 2), out var windows)
+                ? [] : windows.Where(w => w.Geometry.Contains(point, w.Wind ? 0 : _standClearance))
+                    .Select(w => (From: w.From - _lag, w.Until)).OrderBy(w => w.From).ToArray();
+            return _standing[(point, horizon)] = ClearRanges(blocked, 0, horizon).ToArray();
+        }
+
+        internal static IEnumerable<TimeRange> ClearRanges(IEnumerable<(double From, double Until)> blocked, double first, double last, double gap = WindowGap)
+        {
+            foreach (var window in blocked)
+            {
+                if (window.Until < first) continue;
+                if (window.From > last) break;
+                var end = Math.Min(last, window.From - gap);
+                if (end >= first) yield return new(first, end);
+                first = Math.Max(first, window.Until + gap);
+                if (first > last) yield break;
+            }
+            if (first <= last) yield return new(first, last);
         }
 
         private static double Earliest((double From, double Until)[] blocked, double earliest, double limit)
@@ -758,55 +850,16 @@ internal sealed class BlundervilleFinalPlanner
                 : list.Where(w => w.Until >= arrival && w.Geometry.Contains(p, _clearance))
                     .Select(w => w.From).DefaultIfEmpty(double.PositiveInfinity).Min();
 
-        // Executed somewhere between the plan and Lag seconds later.
-        private readonly Dictionary<(Vector3, Vector3, double), (double From, double Until)[]> _sampledDepartures = [];
         internal bool CachedSegment(Vector3 from, Vector3 to, double start, double duration)
         {
-            var key = (from, to, duration);
-            if (!_sampledDepartures.TryGetValue(key, out var intervals))
-            {
-                var samples = Math.Max(2, (int)MathF.Ceiling(Distance(from, to) / .5f) + 1);
-                var half = _continuous ? duration / (samples - 1) / 2 : 0;
-                var blocked = new List<(double From, double Until)>();
-                for (var i = 0; i < samples; ++i)
-                {
-                    var s = i / (float)(samples - 1); var p = Vector3.Lerp(from, to, s);
-                    if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var windows)) continue;
-                    foreach (var w in windows)
-                        if (w.Geometry.Contains(p, _clearance))
-                            blocked.Add((w.From - s * duration - _lag - half, w.Until - s * duration + half));
-                }
-                var merged = new List<(double From, double Until)>();
-                foreach (var w in blocked.OrderBy(w => w.From))
-                    if (merged.Count > 0 && w.From <= merged[^1].Until)
-                        merged[^1] = (merged[^1].From, Math.Max(merged[^1].Until, w.Until));
-                    else merged.Add(w);
-                _sampledDepartures[key] = intervals = merged.ToArray();
-            }
+            var intervals = TraversalBlockedDepartures(from, to, duration);
             var lo = 0; var hi = intervals.Length;
             while (lo < hi) { var mid = (lo + hi) / 2; if (intervals[mid].Until < start) lo = mid + 1; else hi = mid; }
             return lo == intervals.Length || intervals[lo].From > start;
         }
 
         public bool Segment(Vector3 from, Vector3 to, double start, double end)
-        {
-            if (_delivery) return Departure(from, to, start, Math.Max(0, end - start), start) <= start;
-            var samples = Math.Max(2, (int)MathF.Ceiling(Distance(from, to) / .5f) + 1);
-            // Clearance covers the 0.25m between samples in space; cover it in
-            // time too (the runtime refused stretches that missed a window by
-            // less than one sample step).
-            var half = _continuous ? (end - start) / (samples - 1) / 2 : 0;
-            for (var i = 0; i < samples; ++i)
-            {
-                var s = i / (float)(samples - 1);
-                var p = Vector3.Lerp(from, to, s);
-                var at = start + s * (end - start);
-                if (!_rows.TryGetValue((int)MathF.Floor(p.Z / 2), out var list)) continue;
-                foreach (var w in list)
-                    if (w.Until >= at - half && w.From <= at + _lag + half && w.Geometry.Contains(p, _clearance)) return false;
-            }
-            return true;
-        }
+            => end >= start && CachedSegment(from, to, start, end - start);
     }
 
     private static List<Waypoint>? SearchCorridor(Profile profile, Vector3[] spoke, HazardIndex index, IGeometryShape floor, Vector3 player, DateTime now, float speed,
@@ -823,6 +876,7 @@ internal sealed class BlundervilleFinalPlanner
         if (from < 0 && start < stations[^1].S - .05f) from = stations.Count - 1;
         for (var k = from; k >= 0 && k < stations.Count && layer.Count > 0; ++k)
         {
+            if (cancellation.IsCancellationRequested) return null;
             var (_, point, lateral) = stations[k];
             var last = k == stations.Count - 1;
             var lanes = last ? 0 : width;

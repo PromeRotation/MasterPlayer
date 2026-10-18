@@ -205,11 +205,13 @@ internal static class BlundervilleRegression
             f.Effect(1,34808,origin,0,17);
             f.Now = Epoch.AddSeconds(0.1);
             f.Actors[1] = f.Actors[1] with {Rotation=MathF.PI/2}; f.Scan();
-            Check(f.Draw.Previews.Count==1,"Rotating beam left multiple historical rectangles.");
+            Check(f.Draw.Previews.Count==3 && f.Draw.Previews.Keys.Count(id=>id.StartsWith("beam/"))==1,
+                "Rotating beam left historical rectangles or lost the two fixed physical bases.");
             AssertShape(f.Draw.Previews["beam/1"].Geometry,34808,origin,MathF.PI/2);
             Check(!f.Draw.Previews["beam/1"].Geometry.Contains(origin+Vector3.UnitZ*20),"Rotating beam retained an old angle between packets.");
             f.Now = Epoch.AddSeconds(1.31); f.Scan();
-            Check(f.Draw.Previews.Count==0,"Beam without new observations stayed permanently active.");
+            Check(f.Draw.Previews.Count==2 && f.Draw.Previews.Keys.All(id=>id.StartsWith("ring/column/fan/")),
+                "Beam without new observations stayed permanently active or its fixed bases disappeared.");
         });
         run("Blunderville fan confirmation preserves cast facing when effect facing differs by ninety degrees", () =>
         {
@@ -264,7 +266,9 @@ internal static class BlundervilleRegression
             var origin = target+Vector3.UnitX*10;
             f.Actors[9]=new(9,16338,origin); f.Scan();
             f.Engine.StartCast(9,new(34805,target,null,f.Now,f.Now.AddSeconds(3.3)),f.Now); f.Player=origin; f.Render();
-            AssertShape(f.Draw.Previews.Single().Value.Geometry,34805,origin,0);
+            AssertShape(f.Draw.Previews["cast/9"].Geometry,34805,origin,0);
+            Check(f.Draw.Previews.Count==2 && f.Draw.Previews.ContainsKey("ring/column/fan/east"),
+                "The sourced AOE lost the nearby physical base or invented another pillar.");
         });
         run("Blunderville separate wave columns are consumed independently", () =>
         {

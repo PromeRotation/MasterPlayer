@@ -93,14 +93,32 @@ internal static class BlundervilleGraphRegression
         {
             using var replay = new BlundervilleRingRegression.Recording("final", "feedback-213132.json");
             replay.Advance(20); var now = BlundervilleRingRegression.Epoch.AddSeconds(20);
-            var index = new BlundervilleFinalPlanner.HazardIndex(replay.Encounter.TraversalHazards(now).ToArray(), now, BlundervilleFinalPlanner.Final);
+            var hazards = replay.Encounter.TraversalHazards(now).ToArray();
+            var index = new BlundervilleFinalPlanner.HazardIndex(hazards, now, BlundervilleFinalPlanner.Final);
             var graph = BlundervilleMechanismGraph.Create().Compile();
             foreach (var (from, targets) in graph.Next)
                 foreach (var to in targets)
-                    for (var t = 0d; t < 12; t += .073)
+                    foreach (var t in new[] { 0d, .073, 1.27, 2.8, 5.53, 9.2 })
                     {
                         var a = graph.Positions[from]; var b = graph.Positions[to]; var duration = Distance(a,b)/6;
-                        Check(index.CachedSegment(a,b,t,duration) == index.Segment(a,b,t,t+duration), "Cached window changed safety semantics.");
+                        var sampled = true;
+                        var count = Math.Max(2, (int)MathF.Ceiling(Distance(a, b) / .5f) + 1);
+                        var half = duration / (count - 1) / 2;
+                        for (var sample = 0; sample < count && sampled; ++sample)
+                        {
+                            var fraction = sample / (float)(count - 1);
+                            var point = Vector3.Lerp(a, b, fraction);
+                            var instant = t + fraction * duration;
+                            foreach (var hazard in hazards)
+                            {
+                                var lead = hazard.Id.StartsWith("wave/", StringComparison.Ordinal) || hazard.Id.StartsWith("cast/", StringComparison.Ordinal)
+                                    ? BlundervilleFinalPlanner.Final.HazardWaveLead : BlundervilleFinalPlanner.Final.HazardLead;
+                                if ((hazard.Until - now).TotalSeconds + .1 >= instant - half
+                                    && (hazard.From - now).TotalSeconds - lead <= instant + BlundervilleFinalPlanner.Lag + half
+                                    && hazard.Geometry.Contains(point, BlundervilleFinalPlanner.Clearance)) { sampled = false; break; }
+                            }
+                        }
+                        Check(index.CachedSegment(a, b, t, duration) == sampled, "Cached window changed the independent sampled safety contract.");
                     }
         });
         run("Blunderville graph authored benchmark", () =>
@@ -258,6 +276,7 @@ internal static class BlundervilleGraphRegression
         var p = start ?? graph.Nodes.Single(n => n.Id == graph.Start).Position;
         double ready = 0, scan = 0, stopped = 0; Task? pending = null; var histories = new Dictionary<string, int>();
         var end = 0d; var history = new List<(double T, Vector3 P)>();
+        BlundervilleGraphPlanner.Result? tracedPlan = null;
         for (var tick = 0; tick < 1800; ++tick)
         {
             var t = phase + tick / 30d; end = t-phase; now = BlundervilleRingRegression.Epoch.AddSeconds(t);
@@ -266,6 +285,11 @@ internal static class BlundervilleGraphRegression
             {
                 scan = t + .099; replay.Advance(t);
                 var decision = planner.Apply(Normal(p), state, replay.Encounter.TraversalHazards(now).ToArray(), p, now, nav.GetDirectTraversalExecution(now));
+                if (Environment.GetEnvironmentVariable("MP_GRAPH_TRACE") == "1" && planner.Plan is { } plan && tracedPlan != plan)
+                {
+                    tracedPlan = plan;
+                    Console.WriteLine($"PLAN {t:F3} " + string.Join(";", plan.Steps.Select(s => $"{s.Node} {s.Position.X:F2}/{s.Position.Z:F2} {(s.Arrival-BlundervilleRingRegression.Epoch).TotalSeconds:F4}/{(s.Departure-BlundervilleRingRegression.Epoch).TotalSeconds:F4}")));
+                }
                 if (planner.Pending is { } job && job != pending) { pending = job; job.GetAwaiter().GetResult(); ready = t + .08; }
                 nav.Apply(state, decision, replay.Encounter, now, p, true, false, false);
                 if (decision.Hold) histories[decision.Hint] = histories.GetValueOrDefault(decision.Hint) + 1;

@@ -63,7 +63,7 @@ internal sealed class BlundervilleRacePlanner
             _deliveryRecovery.Reset();
             _nodes = CourseNodes(state.Course, position);
             _version = state.RoundVersion;
-            _cursor = NearestSegment(position);
+            _cursor = NearestSegment(position, BlundervilleRoutes.IsLoop(state.Course));
             _arrival = default; _arrivalTarget = null;
             _deliveryTarget = null; _recovering = false; RecoveryCorridor = null;
             _forcedExpiry = default;
@@ -220,20 +220,21 @@ internal sealed class BlundervilleRacePlanner
         _deliveryTarget = null; _recovering = false; _recoveryNodeCount = 0; RecoveryCorridor = null;
     }
 
-    private int NearestSegment(Vector3 position)
+    private int NearestSegment(Vector3 position, bool loop = false)
     {
         if (_nodes.Count < 2) return 0;
         var closest = float.MaxValue;
         var result = 0;
-        for (var i = 0; i + 1 < _nodes.Count; i++)
+        for (var i = 0; i < (loop ? _nodes.Count : _nodes.Count - 1); i++)
         {
-            var a = _nodes[i].Position; var b = _nodes[i + 1].Position;
+            var next = (i + 1) % _nodes.Count;
+            var a = _nodes[i].Position; var b = _nodes[next].Position;
             var ab = new Vector2(b.X - a.X, b.Z - a.Z);
             var ap = new Vector2(position.X - a.X, position.Z - a.Z);
             var t = ab.LengthSquared() > 0.0001f ? Math.Clamp(Vector2.Dot(ap, ab) / ab.LengthSquared(), 0, 1) : 0;
             var p = Vector3.Lerp(a, b, t);
             var score = Vector3.DistanceSquared(position, p);
-            if (score < closest) { closest = score; result = t <= 0.02f ? i : i + 1; }
+            if (score < closest) { closest = score; result = t <= 0.02f ? i : next; }
         }
         return result;
     }

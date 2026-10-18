@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 using MasterPlayer.Spatial;
 using MasterPlayer.Spatial.Geometry;
 using static MasterPlayer.Mechanics.Blunderville.BlundervillePresetGeometry;
@@ -7,12 +8,20 @@ namespace MasterPlayer.Mechanics.Blunderville;
 
 internal sealed class BlundervilleGraphPlanner
 {
-    internal sealed record Step(int Node, Vector3 Position, DateTime Arrival, DateTime Departure);
+    internal sealed record Step(int Node, Vector3 Position, DateTime Arrival, DateTime Departure)
+    {
+        internal DateTime LatestDeparture { get; init; }
+    }
     internal sealed record Result(List<Step> Steps, int Expanded);
     internal sealed record SearchInfo(int Expanded, bool Limited);
     private sealed record SearchOutcome(Result? Plan, double Milliseconds, SearchInfo Info, int Hazards);
-    private sealed record Ahead(int Node, DateTime Arrival, Vector3 Position, float Speed, Task<SearchOutcome> Work, CancellationTokenSource Cancel);
-    private sealed record Label(int Node, double Time, Label? Previous, double Departed = 0, double ExitWait = 0);
+    private sealed record Ahead(int Node, DateTime Arrival, Vector3 Position, float Speed, Task<SearchOutcome> Work,
+        CancellationTokenSource Cancel, long Requested, bool Cold)
+    {
+        internal bool Sampled { get; set; }
+    }
+    private sealed record Label(int Node, double From, double Until, double ArrivalFrom, double ArrivalUntil,
+        double Travel, Label? Previous, double GoalTime = double.NaN);
     private BlundervilleFinalRouteSettings? _settings;
     private BlundervilleRouteGraph.Compiled? _graph;
     private readonly BlundervilleRacePlanner _tailRace = new();
@@ -22,18 +31,24 @@ internal sealed class BlundervilleGraphPlanner
     internal float? ExitLane { get; private set; }
     private Vector3[]? _stretch;
     private Result? _plan;
+    private Step? _exitStep;
     private Task<SearchOutcome>? _pending;
     private Ahead? _ahead;
     private CancellationTokenSource? _cancel;
     private DateTime _last, _retry, _requested, _reconsider;
     private Vector3 _requestedPosition;
     private float _speed;
+    private readonly BlundervillePlanningBudget _planningBudget = new();
+    private long _requestedClock;
+    private bool _searchStarted, _pendingCold, _pendingSampled;
+    private double _pollSeconds = .1;
     internal Task? Pending => _pending ?? _ahead?.Work;
     internal string Status { get; private set; } = "等待路网";
     internal string LastInvalidation { get; private set; } = "";
     internal string Diagnostics { get; private set; } = "路网尚未计算";
     internal int? CurrentNode => _at;
     internal int? NextNode => _to;
+    internal Result? Plan => _plan;
 
     internal void ConfigureCourse(BlundervilleFinalRouteSettings settings)
     {
@@ -51,6 +66,7 @@ internal sealed class BlundervilleGraphPlanner
     internal void Reset()
     {
         ClearPlan(); _at = _to = null; ExitLane = null;
+        _exitStep = null;
         _round = -1; _last = _retry = default; _tailRace.Reset();
     }
 
@@ -63,6 +79,7 @@ internal sealed class BlundervilleGraphPlanner
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, DirectTraversalExecution? execution = null)
     {
         if (now < _last || _round != state.RoundVersion) { Reset(); _round = state.RoundVersion; }
+        if (now > _last && _last != default) _pollSeconds = Math.Clamp((now - _last).TotalSeconds, 1d / 240, .1);
         _last = now;
         if (state.Course != BlundervilleCourse.Final || !state.IsRacing || state.Qualified) { Reset(); return normal; }
         if (_graph == null) return Hold(player, "请先保存有效路网；不会自动生成路线");
@@ -96,7 +113,7 @@ internal sealed class BlundervilleGraphPlanner
             while (_next < _plan.Steps.Count && (_next < consumed || Distance(player, _plan.Steps[_next].Position) < .03f))
             {
                 var reached = _plan.Steps[_next++]; _at = reached.Node; _to = null;
-                if (_graph.Exits.Contains(reached.Node)) { ClearPlan(); return AtExit(normal, state, hazards, player, now); }
+                if (_graph.Exits.Contains(reached.Node)) { _exitStep = reached; ClearPlan(); return AtExit(normal, state, hazards, player, now); }
             }
             if (_plan != null && _next == _plan.Steps.Count) { ClearPlan(keepAhead: true); _retry = default; }
             if (_plan != null) _to = _plan.Steps[_next].Node;
@@ -106,6 +123,15 @@ internal sealed class BlundervilleGraphPlanner
         if (_graph.Exits.Contains(_at!.Value)) return AtExit(normal, state, hazards, player, now);
         var speed = state.NavigationBaseSpeed(now);
         var index = new BlundervilleFinalPlanner.HazardIndex(hazards, now, BlundervilleFinalPlanner.Final);
+        if (_ahead is { Sampled: false, Work.IsCompleted: true } ready)
+        {
+            if (ready.Work.IsCompletedSuccessfully && ready.Work.Result.Plan is { } candidate)
+                _ = Rebase(candidate, ready.Position, ready.Arrival, ready.Speed,
+                    new BlundervilleFinalPlanner.HazardIndex(hazards, ready.Arrival, BlundervilleFinalPlanner.Final));
+            _ = ready.Work.Exception;
+            _planningBudget.Observe(Stopwatch.GetElapsedTime(ready.Requested).TotalSeconds, ready.Cold);
+            ready.Sampled = true;
+        }
         if (_plan == null && _pending == null && _ahead is { } ahead)
         {
             _ahead = null;
@@ -113,6 +139,7 @@ internal sealed class BlundervilleGraphPlanner
             {
                 _pending = ahead.Work; _cancel = ahead.Cancel; _requested = ahead.Arrival;
                 _requestedPosition = ahead.Position; _speed = ahead.Speed;
+                _requestedClock = ahead.Requested; _pendingCold = ahead.Cold; _pendingSampled = ahead.Sampled;
             }
             else { ahead.Cancel.Cancel(); ahead.Cancel.Dispose(); }
         }
@@ -123,10 +150,17 @@ internal sealed class BlundervilleGraphPlanner
         }
         if (_plan != null)
         {
-            var remainingIndex = execution is { HasControl: true, Rejected: false }
-                ? new BlundervilleFinalPlanner.HazardIndex(hazards, now, BlundervilleFinalPlanner.Final with { ExecutionLag = 0 }) : index;
-            var safe = RemainingSafe(_plan, _next, player, now, speed, remainingIndex, out var failure);
-            if (execution is { Rejected: true } || MathF.Abs(speed - _speed) > .01f || !safe)
+            var priorStep = _plan.Steps[_next - 1];
+            var leg = Distance(priorStep.Position, _plan.Steps[_next].Position);
+            var progress = Math.Clamp(leg - Distance(player, _plan.Steps[_next].Position), 0, leg);
+            var restartBudget = (Latest(priorStep).AddSeconds(progress / speed) - now).TotalSeconds;
+            var following = _stretch != null && execution is { HasControl: true, Rejected: false }
+                && execution.Path.SequenceEqual(_stretch);
+            var remainingIndex = following
+                ? index.WithExecutionLag(0) : index.WithExecutionLag(Math.Clamp(restartBudget, .1, BlundervilleFinalPlanner.Lag));
+            var safe = RemainingSafe(_plan, _next, player, now, speed, index, remainingIndex, out var failure);
+            if (execution is { Rejected: true } || MathF.Abs(speed - _speed) > .01f || !safe
+                || !following && restartBudget < .1)
             {
                 LastInvalidation = $"{now:HH:mm:ss.fff} node={_at}->{_to} {failure} rejected={execution?.Rejected}";
                 ClearPlan();
@@ -144,6 +178,12 @@ internal sealed class BlundervilleGraphPlanner
             if (result != null && now - _requested < TimeSpan.FromSeconds(3)
                 && Distance(player, _requestedPosition) <= Math.Max(.4f, speed * .5f) && MathF.Abs(speed - _speed) < .01f)
                 _plan = Rebase(result, player, now, speed, index);
+            if (!_pendingSampled)
+            {
+                _planningBudget.Observe(Stopwatch.GetElapsedTime(_requestedClock).TotalSeconds, _pendingCold);
+                _pendingSampled = true;
+            }
+            Diagnostics += $"，端到端预算{_planningBudget.ReserveSeconds * 1000:F1}ms，提前{_planningBudget.LeadSeconds(_planningBudget.Samples == 0, _pollSeconds):F2}s";
             if (_plan != null) { _next = 1; _to = _plan.Steps[1].Node; _reconsider = now.AddSeconds(1); }
             else _retry = now.AddSeconds(.25);
         }
@@ -154,6 +194,7 @@ internal sealed class BlundervilleGraphPlanner
                 // A rejected departure has not committed an edge while still
                 // at the node; all explicitly connected successors remain eligible.
                 if (Distance(player, _graph.Positions[_at.Value]) <= .03f) _to = null;
+                _requestedClock = Stopwatch.GetTimestamp(); _pendingCold = !_searchStarted; _searchStarted = true; _pendingSampled = false;
                 var graph = _graph; var at = _at.Value; var to = _to; var captured = hazards.ToArray();
                 _requested = now; _requestedPosition = player; _speed = speed;
                 _cancel = new(); var token = _cancel.Token;
@@ -179,7 +220,7 @@ internal sealed class BlundervilleGraphPlanner
                 : index.Stand(player, 0, 1.5) ? $"节点{_at}：连通分支暂无安全窗口" : "当前连通分支暂不可走，站位有危险，请手动处理");
         }
         var previous = _plan.Steps[_next - 1];
-        if (previous.Departure > now && previous.Departure - previous.Arrival > TimeSpan.FromMilliseconds(50))
+        if (previous.Departure > now && previous.Departure - previous.Arrival > TimeSpan.FromMilliseconds(1))
         { _stretch = null; return Hold(player, $"节点{_at}：等待 {(previous.Departure - now).TotalSeconds:F1} 秒"); }
         if (_stretch == null)
         {
@@ -190,11 +231,13 @@ internal sealed class BlundervilleGraphPlanner
         }
         Status = $"沿路网：{_at} → {_to}";
         var endStep = _plan.Steps[^1];
-        if (_ahead == null && !_graph.Exits.Contains(endStep.Node) && (endStep.Arrival - now).TotalSeconds is > 0 and <= 3)
+        if (_ahead == null && !_graph.Exits.Contains(endStep.Node) && endStep.Arrival > now
+            && (endStep.Arrival - now).TotalSeconds <= _planningBudget.LeadSeconds(_planningBudget.Samples == 0, _pollSeconds))
         {
+            var requested = Stopwatch.GetTimestamp(); var cold = !_searchStarted; _searchStarted = true;
             var cancel = new CancellationTokenSource();
             _ahead = new(endStep.Node, endStep.Arrival, endStep.Position, speed,
-                Search(_graph, endStep.Node, null, hazards.ToArray(), endStep.Position, endStep.Arrival, speed, cancel.Token), cancel);
+                Search(_graph, endStep.Node, null, hazards.ToArray(), endStep.Position, endStep.Arrival, speed, cancel.Token), cancel, requested, cold);
         }
         return new(_stretch[^1], false, false, null, Status, true) { ContinuousPath = _stretch };
     }
@@ -245,8 +288,17 @@ internal sealed class BlundervilleGraphPlanner
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now)
     {
         var index = new BlundervilleFinalPlanner.HazardIndex(hazards, now, BlundervilleFinalPlanner.Final);
+        if (_exitStep is { } exit)
+        {
+            if (exit.Departure > now && index.Stand(player, 0, (exit.Departure - now).TotalSeconds))
+                return Hold(player, $"台阶入口：等待 {(exit.Departure - now).TotalSeconds:F1} 秒后连续登阶");
+            var budget = (Latest(exit) - now).TotalSeconds;
+            if (budget >= .1) index = index.WithExecutionLag(Math.Min(BlundervilleFinalPlanner.Lag, budget));
+            else _exitStep = null;
+        }
         if (!EndSafe(index, _graph!.Positions[_at!.Value], 0))
             return Hold(player, index.Stand(player, 0, .5) ? "已到台阶入口，等待连续登阶窗口" : "台阶入口出现危险，请手动处理");
+        _exitStep = null;
         CommitExit(_graph!.Positions[_at!.Value].X);
         return Tail(normal, state, player, now);
     }
@@ -268,7 +320,8 @@ internal sealed class BlundervilleGraphPlanner
             && index.CachedSegment(p, p with { Z = 137 }, time, BlundervilleFinalPlanner.StairSeconds)
             : index.Stand(p, time, time + (BlundervilleFinalPlanner.Final.Rest(p.Z) ? BlundervilleFinalPlanner.StandAfterGoal : 12));
 
-    private static bool RemainingSafe(Result result, int next, Vector3 player, DateTime now, float speed, BlundervilleFinalPlanner.HazardIndex index, out string failure)
+    private static bool RemainingSafe(Result result, int next, Vector3 player, DateTime now, float speed,
+        BlundervilleFinalPlanner.HazardIndex index, BlundervilleFinalPlanner.HazardIndex movingIndex, out string failure)
     {
         failure = "";
         var steps = result.Steps; var prior = steps[next - 1];
@@ -276,15 +329,24 @@ internal sealed class BlundervilleGraphPlanner
         // departure with this later position puts the player in yesterday's
         // wave footprint and can discard a still-executable crossing.
         var departure = prior.Departure > prior.Arrival ? Math.Max(0, (prior.Departure - now).TotalSeconds) : 0;
+        var currentIndex = departure > 0 ? index : movingIndex;
         if (departure > 0 && !index.Stand(player, 0, departure)) { failure = "unsafe current wait"; return false; }
         for (var i = next; i < steps.Count; ++i)
         {
             var a = steps[i - 1]; var b = steps[i];
             var from = i == next ? player : a.Position;
             var arrival = departure + Distance(from, b.Position) / speed;
-            if (!index.Segment(from, b.Position, departure, arrival)) { failure = $"unsafe {a.Node}->{b.Node} t={departure:F2}..{arrival:F2}"; return false; }
+            if (!currentIndex.Segment(from, b.Position, departure, arrival)) { failure = $"unsafe {a.Node}->{b.Node} t={departure:F2}..{arrival:F2}"; return false; }
             departure = b.Departure > b.Arrival ? Math.Max(arrival, (b.Departure - now).TotalSeconds) : arrival;
             if (departure > arrival && !index.Stand(b.Position, arrival, departure)) return false;
+            if (b.Departure > b.Arrival)
+            {
+                if (!index.Stand(b.Position, arrival, departure)) { failure = $"unsafe next wait at {b.Node}"; return false; }
+                // The published movement ends here. A forecast change beyond
+                // this safe wait must not stop the current run in a mechanism.
+                // Its next departure is checked when this node is reached.
+                return true;
+            }
         }
         return EndSafe(index, steps[^1].Position, departure);
     }
@@ -292,20 +354,36 @@ internal sealed class BlundervilleGraphPlanner
     private static Result? Rebase(Result result, Vector3 player, DateTime now, float speed, BlundervilleFinalPlanner.HazardIndex index)
     {
         List<Step> steps = []; var time = now;
+        var source = result.Steps[0];
+        var firstLeg = Distance(source.Position, result.Steps[1].Position);
+        var progress = Math.Clamp(firstLeg - Distance(player, result.Steps[1].Position), 0, firstLeg);
+        var sourceLatest = Latest(source).AddSeconds(progress / speed);
+        var initialBudget = (sourceLatest - (source.Departure > now ? source.Departure : now)).TotalSeconds;
+        if (initialBudget < .1) return null;
+        var currentIndex = index.WithExecutionLag(Math.Min(BlundervilleFinalPlanner.Lag, initialBudget));
         for (var i = 0; i < result.Steps.Count; ++i)
         {
             var step = result.Steps[i]; var p = i == 0 ? player : step.Position;
             if (i > 0)
             {
                 var previous = steps[^1]; time = previous.Departure.AddSeconds(Distance(previous.Position, p) / speed);
-                if (!Link(previous.Position, p) || !index.Segment(previous.Position, p, (previous.Departure - now).TotalSeconds, (time - now).TotalSeconds)) return null;
+                if (!Link(previous.Position, p) || !currentIndex.Segment(previous.Position, p, (previous.Departure - now).TotalSeconds, (time - now).TotalSeconds)) return null;
             }
             var departure = step.Departure > step.Arrival && step.Departure > time ? step.Departure : time;
             if (departure > time && !index.Stand(p, (time - now).TotalSeconds, (departure - now).TotalSeconds)) return null;
-            steps.Add(new(step.Node, p, time, departure));
+            var latest = i == 0 ? sourceLatest : Latest(step);
+            steps.Add(new(step.Node, p, time, departure) { LatestDeparture = latest });
+            if (departure > time)
+            {
+                var budget = (latest - departure).TotalSeconds;
+                if (budget < .1) return null;
+                currentIndex = index.WithExecutionLag(Math.Min(BlundervilleFinalPlanner.Lag, budget));
+            }
         }
         return EndSafe(index, steps[^1].Position, (steps[^1].Departure - now).TotalSeconds) ? new(steps, result.Expanded) : null;
     }
+
+    private static DateTime Latest(Step step) => step.LatestDeparture == default ? step.Departure.AddSeconds(BlundervilleFinalPlanner.Lag) : step.LatestDeparture;
 
     internal static Result? Find(BlundervilleRouteGraph.Compiled graph, int at, int? committedTo,
         IReadOnlyList<BlundervilleHazard> hazards, Vector3 player, DateTime now, float speed, CancellationToken token = default,
@@ -336,91 +414,99 @@ internal sealed class BlundervilleGraphPlanner
                 distances[prev] = d; open.Enqueue(prev, d);
             }
         }
-        var queue = new PriorityQueue<Label, double>(); var seen = new Dictionary<(int, int), double>();
-        var start = new Label(int.MinValue, 0, null); queue.Enqueue(start, 0);
-        var resting = new Dictionary<int, List<double>>();
-        Label? best = null; var expanded = 0;
+        const double horizon = 16;
+        var queue = new PriorityQueue<Label, double>();
+        var covered = new Dictionary<int, List<(double From, double Until)>>();
+        Label? best = null; var bestTime = 0d; var expanded = 0;
         Vector3 Position(int id) => id == int.MinValue ? player : graph.Positions[id];
         bool Rest(Vector3 p) => BlundervilleFinalPlanner.Final.Rest(p.Z) || p.Z < 184 && index.Stand(p, 0, 28);
-        void Enqueue(Label label)
+        double MaxWait(int node) => graph.Exits.Contains(node) || Rest(Position(node)) ? 12 : 1;
+
+        double ExitDeparture(Vector3 p, double first, double last)
         {
-            if (graph.Exits.Contains(label.Node))
-            {
-                var p = Position(label.Node); var wait = 0;
-                for (; wait <= 120; ++wait)
-                {
-                    var departure = label.Time + wait * .1;
-                    if (departure > 16 || !index.Stand(p, label.Time, departure)) return;
-                    if (EndSafe(index, p, departure) && EndSafe(index, p, departure + .3)) break;
-                }
-                if (wait > 120) return;
-                label = label with { Time = label.Time + wait * .1, ExitWait = wait * .1 };
-            }
-            // Equivalent 0.1s waits accumulated at different nodes must not
-            // replace an earlier entrance arrival because of floating noise.
-            label = label with { Time = Math.Round(label.Time, 6) };
-            if (label.Time > 16) return;
-            if (!resting.TryGetValue(label.Node, out var arrivals)) resting[label.Node] = arrivals = [];
-            var maxWait = Rest(Position(label.Node)) ? 12 : 1;
-            // Exit labels already include a verified wait and complete ascent.
-            // Queue by departure so an early arrival with a long wait cannot
-            // win over another entrance that starts climbing sooner.
-            if (!graph.Exits.Contains(label.Node)
-                && arrivals.Any(t => t <= label.Time && label.Time - t <= maxWait && index.Stand(Position(label.Node), t, label.Time))) return;
-            arrivals.Add(label.Time);
-            var key = (label.Node, (int)Math.Round(label.Time * 20));
-            if (seen.TryGetValue(key, out var old) && old <= label.Time) return;
-            seen[key] = label.Time;
-            var remaining = label.Node == int.MinValue ? 0 : distances.GetValueOrDefault(label.Node, double.PositiveInfinity);
-            if (!double.IsFinite(remaining)) return;
-            queue.Enqueue(label, label.Time + remaining / speed);
+            var blocked = index.TraversalBlockedDepartures(p, p with { Z = 149 }, BlundervilleFinalPlanner.FirstFlightSeconds)
+                .Concat(index.TraversalBlockedDepartures(p, p with { Z = 137 }, BlundervilleFinalPlanner.StairSeconds)).ToArray();
+            var guarded = blocked.Concat(blocked.Select(w => (From: w.From - .3, Until: w.Until - .3))).OrderBy(w => w.From);
+            return BlundervilleFinalPlanner.HazardIndex.ClearRanges(guarded, first, last)
+                .Select(w => w.From).DefaultIfEmpty(double.PositiveInfinity).First();
         }
-        while (queue.TryDequeue(out var current, out _) && expanded++ < 12000)
+
+        void Offer(int node, double arrivalFrom, double arrivalUntil, double safeUntil, double travel, Label? previous)
         {
-            if (token.IsCancellationRequested) return null;
-            if (seen.TryGetValue((current.Node, (int)Math.Round(current.Time * 20)), out var earliest) && current.Time > earliest) continue;
-            var p = Position(current.Node);
-            if (current.Node != int.MinValue && current.Previous != null
-                && (graph.Exits.Contains(current.Node) || BlundervilleFinalPlanner.Final.Rest(p.Z)) && EndSafe(index, p, current.Time))
+            var until = Math.Min(horizon, Math.Min(safeUntil, arrivalUntil + MaxWait(node)));
+            if (arrivalFrom > until) return;
+            if (!covered.TryGetValue(node, out var coverage)) covered[node] = coverage = [];
+            var fresh = BlundervilleFinalPlanner.HazardIndex.ClearRanges(coverage, arrivalFrom, until, 1e-7).ToArray();
+            foreach (var span in fresh)
             {
-                if (player.Z - p.Z > .5f || graph.Exits.Contains(current.Node))
+                var goalTime = graph.Exits.Contains(node) ? ExitDeparture(Position(node), span.From, span.Until) : double.NaN;
+                if (double.IsPositiveInfinity(goalTime)) continue;
+                var remaining = node == int.MinValue ? 0 : distances.GetValueOrDefault(node, double.PositiveInfinity);
+                if (!double.IsFinite(remaining)) continue;
+                var label = new Label(node, span.From, span.Until, arrivalFrom, arrivalUntil, travel, previous, goalTime);
+                queue.Enqueue(label, double.IsNaN(goalTime) ? span.From + remaining / speed : goalTime);
+            }
+            if (fresh.Length == 0) return;
+            coverage.Add((arrivalFrom, until));
+            coverage.Sort((a, b) => a.From.CompareTo(b.From));
+            for (var i = coverage.Count - 1; i > 0; --i)
+                if (coverage[i].From <= coverage[i - 1].Until)
                 {
-                    if (best == null || p.Z < Position(best.Node).Z - .01f || MathF.Abs(p.Z - Position(best.Node).Z) < .01f && current.Time < best.Time) best = current;
-                    if (goals.Contains(current.Node)) { best = current; break; }
+                    coverage[i - 1] = (coverage[i - 1].From, Math.Max(coverage[i - 1].Until, coverage[i].Until));
+                    coverage.RemoveAt(i);
                 }
+        }
+
+        foreach (var safe in index.StandingRanges(player, 32))
+            if (safe.From <= 0 && safe.Until >= 0) Offer(int.MinValue, 0, 0, safe.Until, 0, null);
+
+        while (queue.TryDequeue(out var current, out _) && expanded < 12000)
+        {
+            ++expanded;
+            if (token.IsCancellationRequested) return null;
+            var p = Position(current.Node);
+            var departure = double.IsNaN(current.GoalTime) ? current.From : current.GoalTime;
+            if (current.Previous != null && (graph.Exits.Contains(current.Node) || BlundervilleFinalPlanner.Final.Rest(p.Z))
+                && EndSafe(index, p, departure) && (player.Z - p.Z > .5f || graph.Exits.Contains(current.Node)))
+            {
+                if (best == null || p.Z < Position(best.Node).Z - .01f
+                    || MathF.Abs(p.Z - Position(best.Node).Z) < .01f && departure < bestTime)
+                { best = current; bestTime = departure; }
+                if (goals.Contains(current.Node)) { best = current; bestTime = departure; break; }
             }
             var targets = current.Node == int.MinValue ? committedTo is { } lockedNext ? new[] { lockedNext } : graph.Next[at] : graph.Next[current.Node];
             foreach (var next in targets)
             {
-                // Waiting on a verified strip dominates walking in circles.
-                // Explicit backwards links remain usable, but do not revisit
-                // a node already traversed by this candidate.
-                var revisited = next == at;
-                for (var prior = current; !revisited && prior != null; prior = prior.Previous)
-                    revisited = prior.Node == next;
-                if (revisited) continue;
                 var b = graph.Positions[next]; var duration = Distance(p, b) / speed;
-                var waits = Rest(p) ? 120 : 10;
-                for (var wait = 0; wait <= waits; ++wait)
-                {
-                    var depart = current.Time + wait * .1;
-                    if (depart + duration > 16) break;
-                    if (wait > 0 && !index.Stand(p, current.Time, depart)) break;
-                    if (index.CachedSegment(p, b, depart, duration)) Enqueue(new(next, depart + duration, current, depart));
-                }
+                if (duration <= 0) continue;
+                foreach (var opening in index.DepartureRanges(p, b, duration, current.From, Math.Min(current.Until, horizon - duration)))
+                    foreach (var safe in index.StandingRanges(b, 32))
+                    {
+                        var first = Math.Max(opening.From + duration, safe.From);
+                        var last = Math.Min(opening.Until + duration, safe.Until);
+                        if (first <= last) Offer(next, first, last, safe.Until, duration, current);
+                    }
             }
         }
         report?.Invoke(new(expanded, expanded >= 12000));
         if (best == null) return null;
-        var chain = new List<Label>(); for (var label = best; label != null; label = label.Previous) chain.Add(label); chain.Reverse();
         List<Step> steps = [];
-        for (var i = 0; i < chain.Count; ++i)
+        var chosenDeparture = bestTime;
+        for (var label = best; label != null; label = label.Previous)
         {
-            var label = chain[i]; var id = label.Node == int.MinValue ? at : label.Node;
-            var time = now.AddSeconds(label.Time - label.ExitWait);
-            var departure = i + 1 < chain.Count ? now.AddSeconds(chain[i+1].Departed) : now.AddSeconds(label.Time);
-            steps.Add(new(id, Position(label.Node), time, departure));
+            // Keep the receiving time before extending it with a legal wait.
+            // Each child was produced from one parent's continuous opening.
+            var arrival = label == best
+                ? Math.Max(label.ArrivalFrom, chosenDeparture - MaxWait(label.Node))
+                : Math.Min(chosenDeparture, label.ArrivalUntil);
+            if (arrival < label.ArrivalFrom - .00001 || arrival > label.ArrivalUntil + .00001
+                || chosenDeparture < label.From - .00001 || chosenDeparture > label.Until + .00001
+                || chosenDeparture - arrival > MaxWait(label.Node) + .00001) return null;
+            steps.Add(new(label.Node == int.MinValue ? at : label.Node, Position(label.Node),
+                now.AddSeconds(arrival), now.AddSeconds(chosenDeparture)) { LatestDeparture = now.AddSeconds(chosenDeparture + BlundervilleFinalPlanner.Lag) });
+            chosenDeparture = arrival - label.Travel;
         }
+        steps.Reverse();
         return steps.Count >= 2 ? new(steps, expanded) : null;
     }
 }

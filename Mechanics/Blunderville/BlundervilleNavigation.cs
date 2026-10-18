@@ -38,8 +38,16 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             || state.Course == BlundervilleCourse.Ring && (player.Z < -137 || decision.Target is { Z: < -137 })
             || state.Course == BlundervilleCourse.Final && player.Y >= 35 && (player.Z < 129 || decision.Target is { Z: < 129 });
         var delivery = state.Course == BlundervilleCourse.Delivery;
+        // Ring uses the same .3m player footprint as Bean's physical hazards;
+        // the course-edge clearance remains independent.
+        float? hardMargin = state.Course switch
+        {
+            BlundervilleCourse.Delivery => .1f,
+            BlundervilleCourse.Ring => .3f,
+            _ => null
+        };
         runtime.RequestAutomaticMovement(this, automatic && !replay, decision.Hold, state.NavigationBaseSpeed(now),
-            preciseRoute || delivery ? 0.1f : null, preferStraightPaths: true, hardSafetyMargin: delivery ? .1f : null);
+            preciseRoute || delivery ? 0.1f : null, preferStraightPaths: true, hardSafetyMargin: hardMargin);
         using var group = safeZone.BeginDrawingGroup("竞速路线与机制处理");
         if (decision.Target is { } target && showRoute)
         {
@@ -93,8 +101,8 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             var template = Template(hazard.Geometry);
             if (template == null) continue;
             var binding = new StaticTransform(hazard.Geometry.Position, hazard.Geometry.Rotation);
-            DangerWindow[] windows = [new(hazard.From, hazard.Until, hazard.Telegraph)
-                { HasMotionEnvelope = hazard.Id.StartsWith("bumper/", StringComparison.Ordinal)
+            DangerWindow[] windows = [new(hazard.From, hazard.Until == DateTime.MaxValue ? null : hazard.Until, hazard.Telegraph)
+                { HasMotionEnvelope = hazard.HasMotionEnvelope || hazard.Id.StartsWith("bumper/", StringComparison.Ordinal)
                     || hazard.Id.StartsWith("delivery/", StringComparison.Ordinal)
                     || hazard.Id.StartsWith("charge/", StringComparison.Ordinal)
                     || hazard.Id.StartsWith("rhythm/", StringComparison.Ordinal)
@@ -114,11 +122,13 @@ internal sealed class BlundervilleNavigation(SafeZoneRuntime runtime, ScriptSafe
             safeZone.SetNavigationOnly(handle, true);
             _dangers[id] = new(hazard, handle);
         }
-        // A stair flight must keep running across the next tread. Validate the
-        // complete straight ascent with the runtime's timed traversal checks;
-        // subdividing it into solver waypoints cannot authorize a running hop.
-        var stairRun = crossing is BlundervilleJumpCorridor { Stairs: true } stairs && decision.Target == stairs.MovementTarget;
-        runtime.RequestDirectTraversal(this, automatic && !replay && (decision.DirectTraversal || stairRun) ? decision.Target : null, now,
+        // A running jump needs its exact landing route to acquire takeoff.
+        // A generic escape goal can strand Ring jumps on an island while the
+        // beam approaches. Validate the full straight run with the existing
+        // timed traversal checks; the native takeoff/landing gate still owns flight.
+        var jumpRun = crossing is BlundervilleJumpCorridor jump && decision.Target == jump.MovementTarget
+            && (jump.Stairs || state.Course == BlundervilleCourse.Ring);
+        runtime.RequestDirectTraversal(this, automatic && !replay && (decision.DirectTraversal || jumpRun) ? decision.Target : null, now,
             decision.ContinuousPath, decision.HeadingTolerance, decision.TraversalMotion);
     }
 

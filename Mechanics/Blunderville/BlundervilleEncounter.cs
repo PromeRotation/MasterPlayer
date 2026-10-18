@@ -7,7 +7,10 @@ namespace MasterPlayer.Mechanics.Blunderville;
 internal sealed record BlundervilleCast(uint Action, Vector3 Location, float? Rotation, DateTime StartedAt, DateTime FinishAt, Vector3? SourcePosition = null);
 internal sealed record BlundervilleActor(ulong Id, uint Oid, Vector3 Position, bool Dead = false, BlundervilleCast? Cast = null, float Rotation = 0, float HitboxRadius = 0);
 internal sealed record BlundervillePreview(string Id, string Group, IGeometryShape Geometry, bool Outline = false, float Progress = 1);
-internal sealed record BlundervilleHazard(string Id, IGeometryShape Geometry, DateTime From, DateTime Until, DateTime Telegraph);
+internal sealed record BlundervilleHazard(string Id, IGeometryShape Geometry, DateTime From, DateTime Until, DateTime Telegraph)
+{
+    internal bool HasMotionEnvelope { get; init; }
+}
 
 internal sealed class BlundervilleEncounter(Action<string> diagnostic)
 {
@@ -26,8 +29,8 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     private readonly Dictionary<ulong, Wave> _waves = [];
     // Each Final wave column re-casts every 5.91–6.04s in six recordings; a
     // wave cast is visible only ~1s before its origin hits. Remember the last
-    // cast per column to forecast the next cycles for route planning.
-    private sealed record WaveCycle(Vector3 Origin, float Rotation, DateTime LastStart, double CastSeconds);
+    // confirmed origin per column to forecast the next cycles for planning.
+    private sealed record WaveCycle(Vector3 Origin, float Rotation, DateTime LastStart, double CastSeconds, bool Confirmed = false);
     private readonly Dictionary<ulong, WaveCycle> _waveCycles = [];
     internal const double WaveCyclePeriod = 5.98;
     private readonly Dictionary<ulong, Route> _routes = [];
@@ -48,6 +51,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     public BlundervilleRingBeam RingBeam { get; } = new();
     public BlundervilleSpinSchedule SpinBlades { get; } = new();
     private readonly BlundervilleRingCycles _ringCycles = new();
+    private readonly BlundervilleRingColumns _ringColumns = new();
     private readonly BlundervilleCylinderSchedule _cylinders = new();
     private const double StepSeconds = 0.45;
     private const float StepHeight = 2.21464f;
@@ -106,6 +110,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             else if (_casts.TryGetValue(id, out var pending) && now < pending.Cast.FinishAt.AddSeconds(-0.35))
                 Cancel(id, pending.Cast.Action);
         }
+        _ringColumns.Synchronize(_actors.Values, now);
     }
 
     public void Map(byte index, uint state, DateTime now)
@@ -151,12 +156,28 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _lastCasts[source] = new(cast, fromPacket);
         _casts[source] = new(source, cast, geometry, rule.Group);
         if (fromPacket && cast.Action is 34797 or 34798 or 34805) _ringCycles.Cast(cast.Action, pos, cast.StartedAt);
+        _ringColumns.Cast(source, cast, pos, now);
         if (fromPacket && cast.Action == 34717 && _actors.TryGetValue(source, out var cylinder) && cylinder.Oid == 16339)
             _cylinders.Cast(source, pos, cast.StartedAt);
         if (cast.Action == BlundervilleCatalog.WaveStart && IsWaveOrigin(pos, facing ?? 0))
         {
-            _waves[source] = new(source, pos, facing!.Value, cast.StartedAt, cast.FinishAt);
-            _waveCycles[source] = new(pos, facing.Value, cast.StartedAt, (cast.FinishAt - cast.StartedAt).TotalSeconds);
+            var impact = cast.FinishAt;
+            if (_waveCycles.TryGetValue(source, out var cycle) && cycle.Confirmed
+                && Vector3.DistanceSquared(cycle.Origin, pos) < .2f * .2f
+                && (now - cycle.LastStart).TotalSeconds <= 3 * WaveCyclePeriod)
+            {
+                var originTime = cycle.LastStart.AddSeconds(cycle.CastSeconds);
+                var periods = Math.Round((cast.FinishAt - originTime).TotalSeconds / WaveCyclePeriod);
+                var predicted = originTime.AddSeconds(periods * WaveCyclePeriod);
+                // Recorded cast receipt/finish estimates can be ~0.7s late.
+                // A fresh confirmed cycle is more stable than that estimate.
+                if (Math.Abs((predicted - cast.FinishAt).TotalSeconds) <= 1) impact = predicted;
+                else cycle = null;
+            }
+            else cycle = null;
+            _waves[source] = new(source, pos, facing!.Value, cast.StartedAt, impact);
+            if (cycle == null)
+                _waveCycles[source] = new(pos, facing.Value, cast.StartedAt, (cast.FinishAt - cast.StartedAt).TotalSeconds);
         }
     }
 
@@ -191,6 +212,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             ObserveRoute(source, pos, now);
             if (action == 34774) _deliveryCharges.Effect(source, pos, destination, now, rotation);
             if (action == 34774) _rampPushers.Effect(source, pos, destination, now);
+            if (action == 35409 && _ringColumns.Effect(source, pos, destination, now)) return;
             if (destination is { } end && Finite(end))
             {
                 var delta = end - pos; delta.Y = 0;
@@ -227,6 +249,8 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
                 && MathF.Abs(pos.Z - wave.Origin.Z - stage * 6) < 0.2f && stage > wave.Consumed)
             {
                 _waves[source] = wave with { Impact = now.AddSeconds(-stage * StepSeconds), Consumed = stage };
+                if (stage == 0 && _waveCycles.TryGetValue(source, out var cycle))
+                    _waveCycles[source] = cycle with { LastStart = now.AddSeconds(-cycle.CastSeconds), Confirmed = true };
                 if (stage == 4) _waves.Remove(source);
             }
         }
@@ -241,6 +265,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         {
             _casts.Remove(source);
             _waves.Remove(source);
+            if (cast.Cast.Action == 35409) _ringColumns.Cancel(source);
         }
     }
 
@@ -254,6 +279,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         _ballMotion.Remove(source); _charges.Remove(source); _rampPushers.Remove(source); _cylinders.Remove(source);
         _actors.Remove(source); _casts.Remove(source); _lastCasts.Remove(source); _waves.Remove(source); _routes.Remove(source); _beams.Remove(source);
         _waveCycles.Remove(source);
+        _ringColumns.Remove(source);
         foreach (var id in _pulses.Where(p => p.Value.Source == source).Select(p => p.Key).ToArray()) _pulses.Remove(id);
     }
 
@@ -284,6 +310,8 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
             yield return new(body.Id, BlundervilleCatalog.Devices, body.Geometry, true);
         foreach (var pulse in _pulses.Values) yield return pulse.Preview;
         foreach (var charge in _charges.Values) yield return new(charge.Id, BlundervilleCatalog.Routes, charge.Geometry);
+        foreach (var column in _ringColumns.Hazards(now))
+            yield return new(column.Id, BlundervilleCatalog.Devices, column.Geometry, now < column.From);
         foreach (var actor in _actors.Values.Where(a => a.Oid == BlundervilleCatalog.Ball))
             yield return new($"ball/{actor.Id}", BlundervilleCatalog.Balls, new CircleGeometry(actor.Position, 2));
         foreach (var (source, beam) in _beams)
@@ -313,6 +341,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
     {
         _actors.Clear(); _casts.Clear(); _lastCasts.Clear(); _pulses.Clear(); _waves.Clear(); _routes.Clear(); _beams.Clear();
         _waveCycles.Clear();
+        _ringColumns.Reset();
         _sequences.Clear(); _sequenceOrder.Clear(); _missingFacing.Clear(); _lastTime = default;
         _animations.Reset();
         _alternatingPulses.Reset();
@@ -345,6 +374,7 @@ internal sealed class BlundervilleEncounter(Action<string> diagnostic)
         foreach (var hazard in _cylinders.Hazards(now))
             if (Scheduled(hazard.Id, hazard.Id.StartsWith("bumper/", StringComparison.Ordinal) ? "bumper/" : "rhythm/", now)) yield return hazard;
         foreach (var hazard in _deliveryCharges.Hazards(now)) yield return hazard;
+        foreach (var column in _ringColumns.Hazards(now)) yield return column;
         foreach (var hazard in _charges.Values)
             if (ramp || !OnRamp(hazard.Geometry.Position)) yield return hazard;
         if (ramp) foreach (var hazard in _rampPushers.Hazards(now)) yield return hazard;

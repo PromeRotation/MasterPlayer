@@ -198,12 +198,14 @@ internal static partial class BlundervilleRoutes
     // a solve (~0.2s live) to arrive, and a route ending at the node stopped
     // the player there on every pass (Ring replays: ~0.5s per node, 26% of
     // the round standing). The solver still keeps the board's edges.
+    // The east relay stays outside the fan/corner footprints. Its old inner
+    // goal was pinched between the fixed base and the moving column.
     private static readonly IReadOnlyList<BlundervilleRouteNode> RingNodes = ReadOnly(
-        N(218, 10, -125, RingPass), N(212, 10, -110, RingPass), N(198, 10, -107, RingPass), N(185, 10, -114, RingPass), N(184, 10, -135),
+        N(220.8f, 10, -115.1f, RingPass), N(212, 10, -110, RingPass), N(198, 10, -107, RingPass), N(185, 10, -114, RingPass), N(184, 10, -135),
         N(183.8f, 10, -138.6f, .3f, true), N(185.6f, 10, -142.8f, .3f), N(188.7f, 10, -149, RingPass),
         N(192.8f, 10, -156.4f, RingPass), N(193.6f, 10, -157.5f, RingPass), N(208.9f, 10, -153.1f, .3f),
         N(209.5f, 10, -147.7f, .3f, true), N(210.3f, 10, -143.3f, .3f), N(210.8f, 10, -142.6f, .3f, true),
-        N(213.2f, 10, -138.7f, .3f), N(218, 10, -134, RingPass));
+        N(213.2f, 10, -138.7f, .3f));
     private const float RingPass = 2.5f;
 
     private static BlundervilleRouteNode N(float x, float y, float z, float radius = 1.2f, bool jump = false) => new(new(x, y, z), radius, jump);

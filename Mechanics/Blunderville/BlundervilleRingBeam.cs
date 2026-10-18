@@ -66,7 +66,10 @@ internal sealed class BlundervilleRingBeam
             double from = k * Slot, until = from + Slot;
             var a = Model(from) + offset; var b = Model(until) + offset;
             var geometry = new RayRectangleGeometry(Center, (float)Wrap((a + b) / 2), Width + Length * (float)Math.Abs(b - a), Length);
-            yield return new($"beam/forecast/{k}", geometry, start.AddSeconds(from - Lead), start.AddSeconds(until + Lead), start);
+            // Each slice already encloses the angular sweep, observation error
+            // and its time margin; cast buffering would count them twice.
+            yield return new($"beam/forecast/{k}", geometry, start.AddSeconds(from - Lead), start.AddSeconds(until + Lead), start)
+                { HasMotionEnvelope = true };
         }
     }
 
