@@ -23,7 +23,9 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
             && CrucibleCatalog.GroupFor(a.NameID) >= firstGroup && CrucibleCatalog.GroupFor(a.NameID) <= lastGroup
             && a.Position.InCircle(player.Position, 80);
         var members = World.Actors.Where(Member).ToArray();
-        var primary = members.FirstOrDefault(a => CrucibleCatalog.GroupFor(a.NameID) == Module?.Group)
+        // Keep the module's boss while it is still valid; insertion order would otherwise hand it to an add.
+        var primary = (Module?.PrimaryActor is { } current && members.Contains(current) ? current : null)
+            ?? members.FirstOrDefault(a => CrucibleCatalog.GroupFor(a.NameID) == Module?.Group)
             ?? members.OrderByDescending(a => a.InCombat).ThenBy(a => (a.Position - player.Position).LengthSq()).FirstOrDefault();
         if (primary == null) { if (Module != null) Reset(); return; }
         var group = CrucibleCatalog.GroupFor(primary.NameID);

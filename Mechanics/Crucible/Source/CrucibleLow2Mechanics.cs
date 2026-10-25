@@ -262,7 +262,11 @@ sealed class CrucibleMinotaurRotation(BossModule module) : Components.GenericAOE
             return;
         ++NumCasts;
         if (--_remaining <= 0 || _step == default)
+        {
             _next = null;
+            // Each Endless Swipes chain announces its own direction; never reuse the previous one.
+            if (_remaining <= 0) _step = default;
+        }
         else
             _next = new(Shape, next.Origin, next.Rotation + _step, WorldState.FutureTime(1.62d), actorID: caster.InstanceID);
     }
@@ -272,6 +276,7 @@ sealed class CrucibleMinotaurRotation(BossModule module) : Components.GenericAOE
         if (spell.Action.ID is 48210 or 48212 && spell.Interrupted)
         {
             _next = null;
+            _step = default;
             _remaining = 0;
             _events.Clear();
         }

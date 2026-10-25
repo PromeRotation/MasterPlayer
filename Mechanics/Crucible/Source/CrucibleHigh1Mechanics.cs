@@ -159,7 +159,20 @@ sealed class CrucibleMiasma(BossModule module) : Components.GenericAOEs(module, 
     }
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
-        => hints.Add(WarningText, ArmedPositions().Any(p => actor.Position.InCircle(p, ContactRadius)));
+    {
+        var armed = false;
+        foreach (var position in ArmedPositions())
+        {
+            armed = true;
+            if (actor.Position.InCircle(position, ContactRadius))
+            {
+                hints.Add(WarningText, true);
+                return;
+            }
+        }
+        if (armed)
+            hints.Add(WarningText, false);
+    }
 
     public override void OnActorDestroyed(Actor actor) => _armed.Remove(actor.InstanceID);
     public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
@@ -277,17 +290,18 @@ sealed class CrucibleRockWalls(BossModule module) : Components.GenericAOEs(modul
     private readonly Dictionary<byte, WPos> _walls = [];
     private AOEInstance? _collapse;
     private ulong _casterID;
+    private readonly List<AOEInstance> _aoes = [];
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {
         if (_collapse is { } expired && expired.Activation.AddSeconds(2d) < WorldState.CurrentTime)
             _collapse = null;
-        var aoes = new List<AOEInstance>();
+        _aoes.Clear();
         if (_collapse is { } collapse)
-            aoes.Add(collapse);
+            _aoes.Add(collapse);
         foreach (var position in _walls.Values)
-            aoes.Add(new(Wall, position));
-        return CollectionsMarshal.AsSpan(aoes);
+            _aoes.Add(new(Wall, position));
+        return CollectionsMarshal.AsSpan(_aoes);
     }
 
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
@@ -540,13 +554,14 @@ sealed class CrucibleDragonPoison(BossModule module) : Components.GenericAOEs(mo
     public override void OnActorDeath(Actor actor) => _activations.Remove(actor);
     public override void OnActorDestroyed(Actor actor) => _activations.Remove(actor);
 
+    private readonly List<AOEInstance> _aoes = [];
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {
-        var aoes = new List<AOEInstance>();
+        _aoes.Clear();
         foreach (var (pool, activation) in _activations)
             if (WorldState.CurrentTime >= activation && pool.EventState != 7 && !pool.IsDeadOrDestroyed)
-                aoes.Add(new(Shape, pool.Position, pool.Rotation));
-        return CollectionsMarshal.AsSpan(aoes);
+                _aoes.Add(new(Shape, pool.Position, pool.Rotation));
+        return CollectionsMarshal.AsSpan(_aoes);
     }
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)

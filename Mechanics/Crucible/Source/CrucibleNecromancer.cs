@@ -35,13 +35,14 @@ sealed class CrucibleDeathDrive(BossModule module) : Components.GenericAOEs(modu
         else _targets.Remove(actor.InstanceID);
     }
     public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
+    private static readonly AOEShapeCircle TargetShape = new(10);
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {
         Update();
         _display.Clear();
         foreach (var (id, expiry) in _targets)
             if (WorldState.Actors.Find(id) is { } target)
-                _display.Add(new(new AOEShapeCircle(10), target.Position, activation: expiry, risky: false, actorID: id));
+                _display.Add(new(TargetShape, target.Position, activation: expiry, risky: false, actorID: id));
         return CollectionsMarshal.AsSpan(_display);
     }
     public override void AddHints(int slot, Actor actor, TextHints hints)

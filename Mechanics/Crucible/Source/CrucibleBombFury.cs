@@ -32,13 +32,6 @@ sealed class CrucibleBombFuryKnockback(BossModule module) : HighCrucibleKnockbac
         Casters.Sort((a, b) => a.Activation.CompareTo(b.Activation));
     }
 
-    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
-    {
-        // The normal cast end can precede the effect packet; release on impact.
-        if (spell.Interrupted)
-            base.OnCastFinished(caster, spell);
-    }
-
     public override bool DestinationUnsafe(int slot, Actor actor, WPos pos) => !pos.InCircle(Module.Center, 19.5f)
         || (Module.FindComponent<CrucibleBombPools>()?.ActiveAOEs(slot, actor).ToArray().Any(a => a.Check(pos)) ?? false);
 
@@ -77,8 +70,15 @@ sealed class CrucibleBombFuryKnockback(BossModule module) : HighCrucibleKnockbac
             // globally optimal point during the two-second knockback interval.
             var required = Math.Min(0.8f, _bestClearance * 0.8f);
             if (required > 0 && GoalClearance(current) >= required) return current;
-            return _candidates.Where(p => p.Clearance >= required).OrderBy(p => (p.Position - current).LengthSq())
-                .Select(p => (WPos?)p.Position).FirstOrDefault();
+            WPos? best = null;
+            var bestDistance = float.MaxValue;
+            foreach (var (position, clearance) in _candidates)
+            {
+                if (clearance < required) continue;
+                var distance = (position - current).LengthSq();
+                if (distance < bestDistance) { bestDistance = distance; best = position; }
+            }
+            return best;
         }
         public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {

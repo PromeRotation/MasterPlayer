@@ -74,11 +74,13 @@ internal sealed class CrucibleEventAdapter(CrucibleEngine engine, Func<ulong, Ac
             case LogSystemStatusAddEvent status when Find(status.TargetId) is { } actor:
                 var gained = new ActorStatus { ID = status.StatusId, Extra = status.Param, SourceID = (uint)status.SourceId, ExpireAt = status.Duration > 0 ? status.Timestamp.ToUniversalTime().AddSeconds(status.Duration) : DateTime.MaxValue };
                 var duplicate = actor.Statuses.Any(s => s.ID == gained.ID && s.SourceID == gained.SourceID && s.Extra == gained.Extra && Math.Abs((s.ExpireAt - gained.ExpireAt).TotalSeconds) < 1);
-                actor.Statuses = actor.Statuses.Where(s => s.ID != gained.ID).Append(gained).ToArray();
+                actor.Statuses = actor.Statuses.Where(s => s.ID != gained.ID || s.SourceID != gained.SourceID).Append(gained).ToArray();
                 if (!duplicate) _engine.Dispatch(c => c.OnStatusGain(actor, ref gained)); break;
             case LogSystemStatusRemoveEvent status when Find(status.TargetId) is { } actor:
-                var lost = actor.FindStatus(status.StatusId) ?? new ActorStatus { ID = status.StatusId, Extra = status.Param };
-                actor.Statuses = actor.Statuses.Where(s => s.ID != lost.ID).ToArray();
+                // Same-id statuses from different sources are tracked separately, matching the scan diff.
+                var lost = actor.FindStatus(status.StatusId, (uint)status.SourceId) ?? actor.FindStatus(status.StatusId)
+                    ?? new ActorStatus { ID = status.StatusId, Extra = status.Param };
+                actor.Statuses = actor.Statuses.Where(s => s.ID != lost.ID || s.SourceID != lost.SourceID).ToArray();
                 _engine.Dispatch(c => c.OnStatusLose(actor, ref lost)); break;
             case LogSystemObjectCreateEvent: Scan(); break;
             case LogSystemObjectRemoveEvent remove when Find(remove.SourceId) is { } actor: _engine.Destroy(actor, true); break;

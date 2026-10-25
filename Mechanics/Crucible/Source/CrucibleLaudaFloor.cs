@@ -27,9 +27,4 @@ static class CrucibleLaudaFloor
         // Electric floor can be crossed during flight, but neither endpoint may touch it.
         return Contains(start) && Contains(start + displacement);
     }
-
-    public sealed class LandingZone(WDir displacement) : ShapeDistance
-    {
-        public override float Distance(in WPos p) => SafeTravel(p, displacement) ? 1 : -1;
-    }
 }

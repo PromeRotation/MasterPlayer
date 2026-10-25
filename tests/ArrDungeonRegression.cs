@@ -54,7 +54,7 @@ internal static class ArrDungeonRegression
                 Check(f.Draw.Previews.Single().Value.Geometry.Position == location, "Moving caster moved the locked AOE.");
             });
 
-        foreach (var (boss, action, hint) in new[] { (0x387Cu, 28545u, "Tankbuster"), (0x387Cu, 28547u, "Single-target damage"), (0x3870u, 28461u, "Tankbuster"), (0x38C9u, 28764u, "Tankbuster") })
+        foreach (var (boss, action, hint) in new[] { (0x387Cu, 28545u, "死刑"), (0x387Cu, 28547u, "单体伤害"), (0x3870u, 28461u, "死刑"), (0x38C9u, 28764u, "死刑") })
             run($"ARR dungeons AID {action}: single target hint never becomes spatial danger", () =>
             {
                 using var f = new Fight(1038, boss);
@@ -305,7 +305,7 @@ internal static class ArrDungeonRegression
             var preview = f.Draw.Previews.Single().Value;
             var shape = (RectangleGeometry)preview.Geometry;
             Check(preview.OutlineOnly && shape.Width == 4 && shape.Length == 6 && shape.Position == f.Actors[ripple].Position, "Ripple rectangle differs from BMR.");
-            Check(f.Engine.Hints(f.Player).Contains("Adds spawning soon!") && f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.GoalAreas.Count == 0, "Ripple became navigation or lost hint.");
+            Check(f.Engine.Hints(f.Player).Contains("小怪即将出现") && f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.GoalAreas.Count == 0, "Ripple became navigation or lost hint.");
             f.Output.Apply(f.Engine, f.Now, false);
             Check(f.Draw.Previews.Count == 0, "Ripple toggle failed.");
             f.Engine.Animation(ripple, 0x00080008); f.Render();
@@ -313,16 +313,16 @@ internal static class ArrDungeonRegression
             f.Engine.Animation(ripple, 0x00040000); f.Actors.Remove(ripple); f.Scan();
             Check(!f.Engine.ActiveRipples.Any(), "Removed ripple leaked.");
         });
-        foreach (var (oid, color) in new[] { (0x1E8554u, "Blue"), (0x1E8A8Cu, "Red"), (0x1E8A8Du, "Green") })
+        foreach (var (oid, color, label) in new[] { (0x1E8554u, "Blue", "蓝"), (0x1E8A8Cu, "Red", "红"), (0x1E8A8Du, "Green", "绿") })
             run($"ARR dungeons Sastasha zone: {color} memo and resolved switch", () =>
             {
                 var e = new DungeonEncounter(1036);
                 e.Synchronize([], Vector3.Zero, DateTime.UtcNow);
-                Check(e.Hints(null).Single() == "Correct switch: Unknown", "Unknown hint missing.");
+                Check(e.Hints(null).Single() == "正确开关：未知", "Unknown hint missing.");
                 e.Synchronize([new(1, oid, Vector3.Zero, Targetable: false)], Vector3.Zero, DateTime.UtcNow);
                 Check(e.CoralColor == "Unknown", "Untargetable memo revealed wrong switch.");
                 e.Synchronize([new(1, oid, Vector3.Zero)], Vector3.Zero, DateTime.UtcNow);
-                Check(e.CoralColor == color && e.Hints(null).Single() == "Correct switch: " + color, "Memo color incorrect.");
+                Check(e.CoralColor == color && e.Hints(null).Single() == "正确开关：" + label, "Memo color incorrect.");
                 e.ResetFight();
                 Check(e.CoralColor == color, "Boss reset discarded zone knowledge.");
                 e.Synchronize([new(2, 0x1E8558, Vector3.Zero)], Vector3.Zero, DateTime.UtcNow);
@@ -333,9 +333,9 @@ internal static class ArrDungeonRegression
             using var f = new Fight(1037, 0x4C);
             var imp = f.Spawn(0x7D);
             f.Actors[imp] = f.Actors[imp] with { Targetable = false }; f.Scan();
-            Check(f.Engine.Hints(f.Player).Contains("Kill the imps!"), "Hint incorrectly requires targetability.");
+            Check(f.Engine.Hints(f.Player).Contains("先击杀小恶魔"), "Hint incorrectly requires targetability.");
             f.Actors[imp] = f.Actors[imp] with { Dead = true }; f.Scan();
-            Check(!f.Engine.Hints(f.Player).Contains("Kill the imps!"), "Dead imp kept hint alive.");
+            Check(!f.Engine.Hints(f.Player).Contains("先击杀小恶魔"), "Dead imp kept hint alive.");
         });
         run("ARR dungeons TamTara selects three arenas with strict X thresholds", () =>
         {

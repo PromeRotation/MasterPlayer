@@ -50,7 +50,8 @@ sealed class CrucibleVoidBlizzard(BossModule module) : Components.GenericAOEs(mo
             _lanes.Remove(lane);
     }
 
-    private bool Inside(WPos p) => (CrucibleArena.Find(Module.Center)?.SafeBounds ?? Module.Arena.Bounds).Contains(p - Module.Center);
+    private ArenaBounds? _bounds;
+    private bool Inside(WPos p) => (_bounds ??= CrucibleArena.Find(Module.Center)?.SafeBounds ?? Module.Arena.Bounds).Contains(p - Module.Center);
 
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
     {

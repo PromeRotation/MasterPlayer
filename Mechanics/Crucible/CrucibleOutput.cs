@@ -172,10 +172,9 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                         .Where(g => totals[g] > 0 && safeCounts[g] >= totals[g] * OptionalGoalSafety.MinSafeFraction).ToArray();
                     float Score(WPos p)
                     {
-                        if (!Safe(p)) return 0;
                         var score = 0f;
                         foreach (var g in accepted) score += Math.Max(0,goals[g](p));
-                        return score;
+                        return score > 0 && Safe(p) ? score : 0;
                     }
                     var max = 0f;
                     for (var z = -radius; z <= radius; z += OptionalGoalSafety.SampleStep)
@@ -227,7 +226,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         // navigation copy over it. Constraints without a preview remain visible.
         foreach (var (id, area) in desired)
             if (_areas.TryGetValue(id, out var registered))
-                safeZone.SetNavigationOnly(registered.Handle, area.Kind == AreaKind.Danger && previewGeometries.Contains(Area.GeometrySignature(area.Geometry)));
+                safeZone.SetNavigationOnly(registered.Handle, area.Kind == AreaKind.Danger && previewGeometries.Contains(area.GeometryHash));
 
         var lineIndex = 0;
         foreach (var line in module.Arena.Lines)
@@ -288,15 +287,16 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
     }
     private sealed record Area(IGeometryShape Geometry, DateTime Activation, AreaKind Kind, int Priority = 0, PositionPreference Preference = PositionPreference.Nearest, DateTime? ExpiresAt = null, bool ExactGeometry = false)
     {
+        public int GeometryHash { get; } = GeometrySignature(Geometry);
         public string Signature()
-            => $"{GeometrySignature(Geometry)}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}:{ExactGeometry}";
+            => $"{GeometryHash}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}:{ExactGeometry}";
         public static int GeometrySignature(IGeometryShape geometry)
         {
             var hash = new HashCode();
-            hash.Add(geometry.Kind); hash.Add(geometry.Position); hash.Add(geometry.Rotation); hash.Add(geometry.GetBounds());
+            hash.Add(geometry.Kind); hash.Add(geometry.Position.X); hash.Add(geometry.Position.Z); hash.Add(geometry.Rotation); hash.Add(geometry.GetBounds());
             if (geometry is CircleComplementGeometry circle) hash.Add(circle.SafeRadius);
             else if (geometry is FrozenConstraintGeometry grid) hash.Add(grid.ContentHash);
-            else foreach (var contour in geometry.GetContours(24)) foreach (var p in contour) hash.Add(p);
+            else foreach (var contour in geometry.GetContours(24)) foreach (var p in contour) { hash.Add(p.X); hash.Add(p.Z); }
             return hash.ToHashCode();
         }
     }

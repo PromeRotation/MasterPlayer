@@ -32,6 +32,7 @@ internal sealed class Actor
     public ActorTetherInfo Tether;
     public ActorStatus[] Statuses = [];
     public ActorStatus? FindStatus(uint id) => Statuses.Where(s => s.ID == id).Select(s => (ActorStatus?)s).FirstOrDefault();
+    public ActorStatus? FindStatus(uint id, ulong source) => Statuses.Where(s => s.ID == id && s.SourceID == source).Select(s => (ActorStatus?)s).FirstOrDefault();
 }
 internal readonly record struct ActionID(uint ID)
 {

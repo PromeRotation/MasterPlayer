@@ -25,19 +25,19 @@ internal static class ArrDungeonCatalog
                 new(987, 0x4C, "MindBlast", new CircleTemplate(9.95f))], [971])],
         1038 => [
             new(0x387C, "Kottos", p => ArrDungeonArenas.Kottos(p.Y), [
-                new(28545, 0x387C, "GrandSlam", null, "Tankbuster"),
+                new(28545, 0x387C, "GrandSlam", null, "死刑"),
                 new(28544, 0x233C, "LumberingLeap", new CircleTemplate(12)),
                 new(28546, 0x387C, "ColossalSlam", new FanTemplate(30, MathF.PI / 3)),
-                new(28547, 0x387C, "Catapult", null, "Single-target damage")], [28543, 28549]),
+                new(28547, 0x387C, "Catapult", null, "单体伤害")], [28543, 28549]),
             new(0x3870, "Ichorous Ire", p => ArrDungeonArenas.Ichorous(p.Y), [
                 new(28462, 0x3870, "Syrup", new CircleTemplate(4)),
-                new(28461, 0x3870, "FluidSpread", null, "Tankbuster"),
+                new(28461, 0x3870, "FluidSpread", null, "死刑"),
                 new(28465, 0x3871, "Divide", new CircleTemplate(8))], [28463, 28464]),
             new(0x38C9, "Gyges the Great", p => new CircleGeometry(new(-100, p.Y, 6), 19.5f), [
                 new(28762, 0x38C9, "GiganticSwing", new DonutTemplate(4, 40)),
                 new(28760, 0x38C9, "GiganticSmash", new CircleTemplate(10)),
                 new(28761, 0x233C, "GiganticBlast", new CircleTemplate(8)),
-                new(28764, 0x38C9, "GrandSlam", null, "Tankbuster"),
+                new(28764, 0x38C9, "GrandSlam", null, "死刑"),
                 new(28763, 0x38C9, "ColossalSlam", new FanTemplate(40, MathF.PI / 3))], [])],
         _ => []
     };

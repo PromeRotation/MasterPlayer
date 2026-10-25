@@ -120,9 +120,15 @@ internal class GenericKnockback(BossModule module, uint aid = 0) : BossComponent
     public override void OnEventCast(Actor actor, ActorCastEvent spell) { if (spell.Action.ID == WatchedAction) ++NumCasts; }
     public override void AddHints(int slot, Actor actor, TextHints hints) { if (ActiveKnockbacks(slot, actor).Length > 0) hints.Add("即将击退／吸引：注意落点", false); }
     protected virtual bool LandingUnsafe(int slot, Actor actor, WPos landing, DateTime activation)
-        => DestinationUnsafe(slot, actor, landing) || Module.Components.OfType<GenericAOEs>().Any(component =>
-            component.ActiveAOEs(slot, actor).ToArray().Any(a => a.Risky && a.Check(landing)
-                && (a.Activation == default || a.Activation >= activation.AddSeconds(-0.5) && a.Activation <= activation.AddSeconds(0.6))));
+    {
+        if (DestinationUnsafe(slot, actor, landing)) return true;
+        foreach (var component in Module.Components.OfType<GenericAOEs>())
+            foreach (var a in component.ActiveAOEs(slot, actor))
+                if (a.Risky && a.Check(landing)
+                    && (a.Activation == default || a.Activation >= activation.AddSeconds(-0.5) && a.Activation <= activation.AddSeconds(0.6)))
+                    return true;
+        return false;
+    }
 
     public override void DrawArenaForeground(int slot, Actor actor)
     {

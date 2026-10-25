@@ -85,14 +85,14 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     private void DiagnoseMovement()
     {
         if (_engine?.Module is not { } module || _world.Player is not { } player || _world.CurrentTime < _nextDiagnostic) return;
-        var plugin = PromeRotation.Plugin.Instance;
-        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(_world.CurrentTime);
         var movement = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus;
+        var moveRunning = PromeRotation.Plugin.Instance.GreenMoveSystem.IsRunning;
+        if (movement.HasControl && moveRunning) return;
+        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(_world.CurrentTime);
         var solution = movement.LatestSolution;
         var dangers = snapshot.DangerAreas.Where(a => a.Geometry.Contains(player.Position.ToVec3())
             && a.DangerWindows.Any(w => w.DangerUntil == null || w.DangerUntil > _world.CurrentTime)).ToArray();
-        var moveRunning = plugin.GreenMoveSystem.IsRunning;
-        if (dangers.Length == 0 || movement.HasControl && moveRunning) return;
+        if (dangers.Length == 0) return;
         _nextDiagnostic = _world.FutureTime(1);
         var deadline = dangers.SelectMany(a => a.DangerWindows).Min(w => (w.DangerFrom - _world.CurrentTime).TotalSeconds);
         var casts = string.Join(",", _world.Actors.Where(a => a.CastInfo != null).Select(a =>
@@ -154,15 +154,18 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
                     ID = s.StatusId, Extra = s.Param, SourceID = s.SourceId,
                     ExpireAt = s.RemainingTime > 0 ? _world.FutureTime(s.RemainingTime) : DateTime.MaxValue
                 }).ToArray();
-                foreach (var old in actor.Statuses.Where(s => !statuses.Any(n => n.ID == s.ID && n.SourceID == s.SourceID)))
+                if (!SameStatuses(actor.Statuses, statuses))
                 {
-                    var lost = old;
-                    _engine.Dispatch(c => c.OnStatusLose(actor, ref lost));
-                }
-                foreach (var item in statuses.Where(s => !actor.Statuses.Any(o => o.ID == s.ID && o.SourceID == s.SourceID && o.Extra == s.Extra)))
-                {
-                    var gained = item;
-                    if (!isNew) _engine.Dispatch(c => c.OnStatusGain(actor, ref gained));
+                    foreach (var old in actor.Statuses.Where(s => !statuses.Any(n => n.ID == s.ID && n.SourceID == s.SourceID)))
+                    {
+                        var lost = old;
+                        _engine.Dispatch(c => c.OnStatusLose(actor, ref lost));
+                    }
+                    foreach (var item in statuses.Where(s => !actor.Statuses.Any(o => o.ID == s.ID && o.SourceID == s.SourceID && o.Extra == s.Extra)))
+                    {
+                        var gained = item;
+                        if (!isNew) _engine.Dispatch(c => c.OnStatusGain(actor, ref gained));
+                    }
                 }
                 actor.Statuses = statuses;
                 if (battle.IsCasting && battle.CastActionId != 0)
@@ -216,9 +219,19 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         }
     }
 
+    private static bool SameStatuses(ActorStatus[] previous, ActorStatus[] current)
+    {
+        if (previous.Length != current.Length) return false;
+        for (var i = 0; i < previous.Length; ++i)
+            if (previous[i].ID != current[i].ID || previous[i].SourceID != current[i].SourceID || previous[i].Extra != current[i].Extra) return false;
+        return true;
+    }
+
     private Actor? Find(ulong id)
     {
         if (_world.Actors.Find((uint)id) is { } actor) return actor;
+        // Scan never registers these ids, so rescanning cannot resolve them.
+        if ((uint)id is 0 or 0xE0000000) return null;
         Scan();
         return _world.Actors.Find((uint)id);
     }

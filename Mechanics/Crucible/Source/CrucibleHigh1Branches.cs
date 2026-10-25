@@ -278,10 +278,11 @@ sealed class CrucibleGolemJump(BossModule module) : CriticalEngagement.ReplayVal
 // Keep an informational outline, but never kite them or force add targeting.
 sealed class CrucibleMovingBombs(BossModule module) : Components.GenericAOEs(module)
 {
+    private static readonly AOEShapeCircle Small = new(6), Large = new(10);
     private readonly HashSet<ulong> _resolved = [];
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => Module.Enemies(19668).Concat(Module.Enemies(19669))
         .Where(a => !a.IsDeadOrDestroyed && !_resolved.Contains(a.InstanceID))
-        .Select(a => new AOEInstance(new AOEShapeCircle(a.OID == 19668 ? 6 : 10), a.Position, risky: false, actorID: a.InstanceID)).ToArray();
+        .Select(a => new AOEInstance(a.OID == 19668 ? Small : Large, a.Position, risky: false, actorID: a.InstanceID)).ToArray();
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
         if (spell.Action.ID is 48792 or 48794)
@@ -289,7 +290,6 @@ sealed class CrucibleMovingBombs(BossModule module) : Components.GenericAOEs(mod
     }
     public override void OnActorDestroyed(Actor actor) => _resolved.Remove(actor.InstanceID);
     public override void OnActorCreated(Actor actor) => _resolved.Remove(actor.InstanceID);
-    public override void DrawArenaBackground(int pcSlot, Actor pc) { }
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {
         foreach (var aoe in ActiveAOEs(pcSlot, pc))

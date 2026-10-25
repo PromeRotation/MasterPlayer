@@ -171,12 +171,12 @@ internal sealed class DungeonEncounter(uint territory, Action<string>? warning =
 
     public IEnumerable<string> Hints(Vector3? player)
     {
-        if (territory == 1036 && CoralColor != "Resolved") yield return "Correct switch: " + CoralColor;
+        if (territory == 1036 && CoralColor != "Resolved") yield return "正确开关：" + CoralColor switch { "Blue" => "蓝", "Red" => "红", "Green" => "绿", _ => "未知" };
         foreach (var hint in _casts.Values.Select(c => c.Rule.Hint).OfType<string>().Distinct()) yield return hint;
-        foreach (var prediction in PredictedDamage) yield return $"{prediction.DamageType}: {prediction.Role} {prediction.Name}";
-        if (ActiveRipples.Any()) yield return "Adds spawning soon!";
-        if (Active?.BossOid == 0x4C && _actors.Values.Any(a => a.Oid == 0x7D && !a.Dead)) yield return "Kill the imps!";
-        if (player is { } p && _casts.Values.Any(c => c.Rule.Shape?.Resolve(c.Location, c.Rotation, null).Contains(p) == true)) yield return "GTFO from aoe!";
+        foreach (var prediction in PredictedDamage) yield return $"死刑：{prediction.Role} {prediction.Name}";
+        if (ActiveRipples.Any()) yield return "小怪即将出现";
+        if (Active?.BossOid == 0x4C && _actors.Values.Any(a => a.Oid == 0x7D && !a.Dead)) yield return "先击杀小恶魔";
+        if (player is { } p && _casts.Values.Any(c => c.Rule.Shape?.Resolve(c.Location, c.Rotation, null).Contains(p) == true)) yield return "离开范围！";
     }
 
     public void ResetFight()

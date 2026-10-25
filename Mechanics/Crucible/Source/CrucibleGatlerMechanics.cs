@@ -10,6 +10,7 @@ sealed class CrucibleGatlerTorrent(BossModule module) : Components.GenericKnockb
     private ulong _caster;
     private Angle _rotation;
     private readonly Knockback[] _source = new Knockback[1];
+    private LandingZone? _landing;
 
     private WDir Displacement(WPos p)
     {
@@ -32,12 +33,18 @@ sealed class CrucibleGatlerTorrent(BossModule module) : Components.GenericKnockb
         {
             return CrucibleLaudaFloor.SafeTravel(p, component.Displacement(p)) ? 1 : -1;
         }
+
+        // The zone only changes with the cast rotation; avoid resampling the floor every frame.
+        private FrozenConstraintGeometry? _geometry;
+        public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
+            => _geometry != null && _geometry.Position.Y == y ? _geometry
+                : _geometry = FrozenConstraintGeometry.Create(p => Distance(p), component.Module.Center, y);
     }
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         if (ActiveKnockbacks(slot, actor).Length != 0 && !IsImmune(slot, _activation))
-            hints.AddForbiddenConstraint(new LandingZone(this), _activation.AddSeconds(-0.5));
+            hints.AddForbiddenConstraint(_landing ??= new LandingZone(this), _activation.AddSeconds(-0.5));
     }
 
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
@@ -46,6 +53,7 @@ sealed class CrucibleGatlerTorrent(BossModule module) : Components.GenericKnockb
         {
             _activation = Module.CastFinishAt(spell);
             _rotation = spell.Rotation;
+            _landing = null;
             _caster = caster.InstanceID;
         }
     }

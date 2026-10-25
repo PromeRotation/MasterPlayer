@@ -254,10 +254,12 @@ abstract class ReplayValidatedCastAOEs(BossModule module) : Components.GenericAO
     private void PruneExpired()
     {
         var now = WorldState.CurrentTime;
-        _pending.RemoveAll(entry => now > entry.AOE.Activation.AddSeconds(ExpireDelay));
-        _resolved.RemoveAll(resolved => now > resolved.ExpiresAt);
-        foreach (var key in _seenEvents.Where(entry => now > entry.Value).Select(entry => entry.Key).ToArray())
-            _seenEvents.Remove(key);
+        for (var i = _pending.Count - 1; i >= 0; --i)
+            if (now > _pending[i].AOE.Activation.AddSeconds(ExpireDelay)) _pending.RemoveAt(i);
+        for (var i = _resolved.Count - 1; i >= 0; --i)
+            if (now > _resolved[i].ExpiresAt) _resolved.RemoveAt(i);
+        foreach (var (key, expiresAt) in _seenEvents)
+            if (now > expiresAt) _seenEvents.Remove(key);
     }
 
     private void RemoveActor(ulong actorID)
