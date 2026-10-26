@@ -31,7 +31,7 @@ public sealed record AoeShapeDescriptor(AoeShapeKind Kind, float Param1, float P
 
 public static class AoeShapeDatabase
 {
-    // BMR AIHintsBuilder：CastType 2/5 且 EffectRange ≥ 30 视为全屏 AOE，不画危险区。
+    // CastType 2/5 且 EffectRange ≥ 30 视为全屏 AOE，不画危险区。
     private const float RaidwideSize = 30f;
 
     private static readonly Dictionary<uint, AoeShapeDescriptor> KnownShapes = new()
@@ -40,7 +40,7 @@ public static class AoeShapeDatabase
         [20001u] = new AoeShapeDescriptor(AoeShapeKind.Circle, 8f, 0f, false, 0f),
         [20002u] = new AoeShapeDescriptor(AoeShapeKind.Fan, 20f, MathF.PI * 2f / 3f, true, 0f),
         [20003u] = new AoeShapeDescriptor(AoeShapeKind.Rectangle, 6f, 40f, true, 0.3f),
-        // BMR CrucibleSpells + CrucibleTreantAOEs：R60，总角 90/150/150，锁定读条落点与 CastRotation。
+        // 斗兽 CrucibleSpells + CrucibleTreantAOEs：R60，总角 90/150/150，锁定读条落点与 CastRotation。
         [0xBE8Au] = new(AoeShapeKind.Fan, 60f, MathF.PI / 2f, false, 0.3f) { UseCastRotation = true },
         [0xBE8Bu] = new(AoeShapeKind.Fan, 60f, MathF.PI * 5f / 6f, false, 0.3f) { UseCastRotation = true },
         [0xBE8Cu] = new(AoeShapeKind.Fan, 60f, MathF.PI * 5f / 6f, false, 0.3f) { UseCastRotation = true },
@@ -49,7 +49,7 @@ public static class AoeShapeDatabase
     public static bool TryGetShape(uint actionId, out AoeShapeDescriptor? descriptor)
         => TryGetShape(actionId, 0f, out descriptor);
 
-    // casterHitboxRadius 为施法者 hitbox 半径：按 BMR 规则计入 CastType 3/4/5 的尺寸。
+    // casterHitboxRadius 为施法者 hitbox 半径：计入 CastType 3/4/5 的尺寸。
     public static bool TryGetShape(uint actionId, float casterHitboxRadius, out AoeShapeDescriptor? descriptor)
     {
         if (Mechanics.Blunderville.BlundervilleCatalog.TryGet(actionId, out _))
@@ -124,7 +124,7 @@ public static class AoeShapeDatabase
         return true;
     }
 
-    // Lumina Action 表兜底推断，映射逐条对齐 BMR AIHintsBuilder.GuessShape（BossMod/BossModule/AIHintsBuilder.cs:376-390）：
+    // Lumina Action 表兜底推断，CastType → 形状映射：
     //   2=落点/自身圆（不加 hitbox，TargetArea=落点型静态锚定）；3=扇形（半径+hitbox，总开角取 Omen 路径 fanXXX 度数，缺省 180°）；
     //   4=直线矩形（长+hitbox，XAxisModifier=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形（宽=XAxisModifier，长按施法者→落点距离）；
     //   10=月环（外径=EffectRange，内径取 Omen 路径 sircle_/sicle_/circle 后两位数字，缺省 3）；12=矩形（不加 hitbox）；13=扇形（不加 hitbox）。
@@ -175,7 +175,7 @@ public static class AoeShapeDatabase
         }
     }
 
-    // BMR DetermineConeAngle：Omen 贴图路径中 fanXXX 的三位数即总开角度数（如 gl_fan120_1 → 120°），解析失败回退 180°。
+    // Omen 贴图路径中 fanXXX 的三位数即总开角度数（如 gl_fan120_1 → 120°），解析失败回退 180°。
     private static float ConeAngleRadians(Lumina.Excel.Sheets.Action action)
     {
         const float fallback = MathF.PI;
@@ -194,7 +194,7 @@ public static class AoeShapeDatabase
         return MathF.Min(degrees, 360) * MathF.PI / 180f;
     }
 
-    // BMR DetermineDonutInner/ExtractInnerValueFromPath：Omen 路径关键词后两位数字为内径；解析不到回退 3（BMR 运行时缺省值）。
+    // Omen 路径关键词后两位数字为内径；解析不到回退 3。
     private static float DonutInnerRadius(Lumina.Excel.Sheets.Action action)
     {
         if (action.Omen.ValueNullable is { } omen)

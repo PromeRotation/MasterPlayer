@@ -342,7 +342,7 @@ internal sealed class CircleComplementGeometry(Vector3 center, float safeRadius,
     public IReadOnlyList<IReadOnlyList<Vector3>> GetContours(int segments = 64) => [];
 }
 
-// Snapshot arbitrary BMR constraints on the main thread. PR workers never capture actors or components.
+// Snapshot arbitrary mechanic constraints on the main thread. PR workers never capture actors or components.
 internal sealed class FrozenConstraintGeometry : IGeometryShape
 {
     private readonly bool[] _inside;

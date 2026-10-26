@@ -1,4 +1,4 @@
-// Ported from BossmodRebornCN f6914f3e8. See docs/reference/CrucibleAll.spec.md.
+// See docs/reference/CrucibleAll.spec.md.
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;

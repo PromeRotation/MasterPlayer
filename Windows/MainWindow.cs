@@ -499,7 +499,7 @@ public sealed class MainWindow : IDisposable
     private static void DrawMechanicModules(MasterPlayerSettings settings)
     {
         var bridge = MasterPlayerPlugin.Instance?.MechanicHost;
-        HintInline("实时世界输入 BossModReborn 运行库，驱动原版机制模块");
+        HintInline("实时世界输入机制运行库，驱动内置机制模块");
         if (bridge == null)
         {
             ImGui.TextDisabled("（机制模块宿主未初始化）");

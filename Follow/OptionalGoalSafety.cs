@@ -8,7 +8,7 @@ namespace MasterPlayer.Follow;
 
 internal static class OptionalGoalSafety
 {
-    // BMR NavigationDecision: prioritize escape, and abandon mostly covered uptime goals.
+    // Prioritize escape, and abandon mostly covered uptime goals.
     public const float MinSafeFraction = 0.25f;
     public const float UrgentSeconds = 1;
     private static readonly SolveOptions HostDefaults = new();

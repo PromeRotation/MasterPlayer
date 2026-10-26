@@ -56,7 +56,7 @@ public sealed class DodgeController : IDisposable
             return;
         }
 
-        // 机制模块已激活时其 ForbiddenZones 经机制导航宿主注册，通用躲避推断让位（对齐 BMR AIHintsBuilder：有激活模块即停用自动推断）
+        // 机制模块已激活时其 ForbiddenZones 经机制导航宿主注册，通用躲避推断让位（有激活模块即停用自动推断）
         if (MasterPlayerPlugin.Instance?.MechanicHost?.HasActiveModule == true)
         {
             return;
@@ -109,7 +109,7 @@ public sealed class DodgeController : IDisposable
         }
     }
 
-    // 敌我过滤（对齐 BMR AIHintsBuilder.OnCastStarted / WorldStateGameSync 的 IsAlly 判定）：
+    // 敌我过滤（按原生 ClassifyTarget 判定盟友）：
     // 只响应敌对 BattleNpc 的读条；玩家、宠物、坐骑、事件 NPC 一律不算。
     // 友方战斗 NPC（剧情/Trust 等同盟单位）类型也是 BattleNpc，用游戏原生 ActionManager.ClassifyTarget 甄别（!= Enemy 即盟友）。
     // 对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。

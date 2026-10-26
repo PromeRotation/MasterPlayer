@@ -1,4 +1,4 @@
-// BMR arena contours. Regenerate with --bmr-arenas; see ARRDungeons01.spec.md.
+// Arena contours. Regenerate with --bmr-arenas; see ARRDungeons01.spec.md.
 using System.Numerics;
 using MasterPlayer.Spatial.Geometry;
 

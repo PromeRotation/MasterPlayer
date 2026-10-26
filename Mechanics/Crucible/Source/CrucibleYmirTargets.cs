@@ -23,7 +23,7 @@ sealed class CrucibleYmirTargets(BossModule module) : BossComponent(module)
                 enemy.Priority = CanAttack(enemy.Actor, required) ? 10 : AIHints.Enemy.PriorityForbidden;
 
         // This encounter explicitly requests target switching, including while
-        // BMR only supplies movement for another rotation plugin.
+        // Movement only; target selection is left to the rotation plugin.
         var selected = Module.Enemies(required).Where(a => CanAttack(a, required))
             .OrderBy(a => a.InstanceID == actor.TargetID ? 0 : 1)
             .ThenBy(a => (a.Position - actor.Position).LengthSq()).FirstOrDefault();

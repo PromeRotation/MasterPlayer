@@ -14,7 +14,7 @@ using MasterPlayer.Spatial.SafeZone;
 namespace MasterPlayer.Radar;
 
 /// <summary>
-/// 可嵌入雷达视图：按实际场地轮廓在给定屏幕视口内绘制 BMR 式 2D 俯视内容
+/// 可嵌入雷达视图：按实际场地轮廓在给定屏幕视口内绘制 2D 俯视内容
 /// （场地底图、距离环、场地边界、危险/安全区、解算路径、队友/敌人/自身、罗盘）。
 /// 数据来源为 SafeZoneRebornManager 快照与 AoeVisibilityRegistry，外观遵循 RadarAoe 设置。
 /// 供 RadarOverlayWindow（悬浮窗）与 ReplayWindow（回放窗口内嵌）共用。

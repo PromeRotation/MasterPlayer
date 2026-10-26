@@ -98,7 +98,7 @@ public sealed class ReplayController : IDisposable
         Speed = speed;
     }
 
-    /// <summary>跳转到指定秒数：重启回放脚本后从开头补发事件（BMR 式重置 + 快进）。</summary>
+    /// <summary>跳转到指定秒数：重启回放脚本后从开头补发事件（重置 + 快进）。</summary>
     public void Seek(double t)
     {
         if (_recording == null || _disposed || !double.IsFinite(t))

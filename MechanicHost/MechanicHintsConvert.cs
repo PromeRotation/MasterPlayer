@@ -486,7 +486,7 @@ internal static class MechanicHintsConvert
         }
     }
 
-    // BMR GoalZones 评分函数 → MP 目标区：只消费机制级强目标（权重 >= StrongGoalThreshold 的「软覆盖」语义），
+    // 运行库 GoalZones 评分函数 → MP 目标区：只消费机制级强目标（权重 >= StrongGoalThreshold 的「软覆盖」语义），
     // uptime/身位等弱偏好（≤3）不拖拽玩家走位。按 0.5m 网格评估总和，取峰值 50% 以上的区域轮廓。
     public const float StrongGoalThreshold = 100f;
 
@@ -879,7 +879,7 @@ internal static class MechanicHintsConvert
 
     private static float SignedSweep(Vector2 start, Vector2 end)
     {
-        // Atan2(X,Z) 约定下 atan2(cross, dot) = -Δθ，取负还原 BMR 的角度增量方向
+        // Atan2(X,Z) 约定下 atan2(cross, dot) = -Δθ，取负还原运行库的角度增量方向
         var cross = start.X * end.Y - start.Y * end.X;
         var dot = start.X * end.X + start.Y * end.Y;
         return -MathF.Atan2(cross, dot);

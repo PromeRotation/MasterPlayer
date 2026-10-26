@@ -154,7 +154,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                     var safeCounts = new int[goals.Count];
                     bool Safe(WPos p) => !exclusions.Any(e => e.Mask.Contains(p.ToVec3(y)))
                         && !frame.Hints.TemporaryObstacles.Any(o => o.Distance(p) <= 0);
-                    // Measure each original preference before clipping, as BMR does.
+                    // Measure each original preference before clipping.
                     for (var z = -radius; z <= radius; z += OptionalGoalSafety.SampleStep)
                         for (var x = -radius; x <= radius; x += OptionalGoalSafety.SampleStep)
                         {

@@ -160,7 +160,7 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
         if (!_arrowResolved)
         {
             _arrowResolved = true;
-            // BMR MovementOverride.ForcedMovementDirection; the value is a world heading in radians.
+            // Native forced movement direction; the value is a world heading in radians.
             if (!Svc.SigScanner.TryGetStaticAddressFromSig("F3 0F 11 0D ?? ?? ?? ?? 48 85 DB", out _arrowAddress))
                 Svc.Log.Warning("[MasterPlayer 糖豆人] 未找到旋转箭头方向，自动竞速将在箭头阶段等待；绘制继续工作。");
         }

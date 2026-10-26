@@ -20,7 +20,7 @@ internal sealed record MechanicPreviewLine(Vector3 Start, Vector3 End, bool Safe
 
 internal static class MechanicDrawConvert
 {
-    // ColorConfig 默认值（ABGR）；MP 不加载 BMR 配置文件，这些值即运行库实际生效值。
+    // ColorConfig 默认值（ABGR）；MP 不加载运行库配置文件，这些值即实际生效值。
     private const uint ColorAoe = 0x80008080;
     private const uint ColorDanger = 0xff00ffff;
     private const uint ColorTrap = 0x80000080;

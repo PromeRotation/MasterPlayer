@@ -121,7 +121,7 @@ internal static class LiveWorldSampler
                 obj.OwnerId, obj.TargetObjectId, native->FateId, (int)native->RenderFlags, native->EventState,
                 modelState, animState1, animState2, tetherId, tetherTargetId, cast, statuses));
 
-            // 原生逐目标 IncomingEffects（对齐 BMR WorldStateGameSync 槽位扫描；只上报非零槽位，差分在喂养器侧）
+            // 原生逐目标 IncomingEffects（按原生槽位扫描；只上报非零槽位，差分在喂养器侧）
             if (chrNative != null)
             {
                 var aeh = chrNative->GetActionEffectHandler();
