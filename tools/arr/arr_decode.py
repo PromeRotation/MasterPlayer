@@ -75,6 +75,11 @@ def decode(path: pathlib.Path, maps: pathlib.Path, keep_all: bool):
         elif kind.startswith('effect') and size >= 40:
             event.update(action=struct.unpack_from('<I', payload, 8)[0], seq=struct.unpack_from('<I', payload, 12)[0],
                          animationTarget=struct.unpack_from('<H', payload, 0x1c)[0], type=payload[0x1f], targets=payload[0x21])
+            # Header 0x28, then 64 bytes of effects per slot, 8 bytes padding, then the target IDs.
+            slots = int(kind[6:])
+            ids_at = 0x28 + slots * 64 + 8
+            if size >= ids_at + 8 * slots:
+                event['targetIds'] = [t for t in struct.unpack_from(f'<{slots}Q', payload, ids_at)[:payload[0x21]] if t]
         elif kind in ('control', 'controlself', 'controltarget'):
             event.update(category=struct.unpack_from('<H', payload)[0], params=list(struct.unpack_from('<IIII', payload, 4)))
         elif kind in ('npc', 'boss'):
@@ -91,7 +96,7 @@ def decode(path: pathlib.Path, maps: pathlib.Path, keep_all: bool):
             event.update(raw=payload.hex())
         elif kind == 'object':
             oid, entity, layout = struct.unpack_from('<III', payload, 4)
-            event.update(oid=oid, entity=entity, layout=layout, pos=list(struct.unpack_from('<fff', payload, 0x30)),
+            event.update(oid=oid, entity=entity, layout=layout, pos=list(struct.unpack_from('<fff', payload, 0x34)),
                          rot=angle(struct.unpack_from('<H', payload, 0x22)[0]))
             actors[entity] = {k: event[k] for k in ('oid', 'pos', 'rot')}
         elif kind == 'map' and size >= 9:

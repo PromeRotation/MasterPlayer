@@ -37,8 +37,19 @@ sealed class CrucibleOwlChapters(BossModule module) : Components.GenericAOEs(mod
     private DateTime _showAt;
     private DateTime _activation;
     private static readonly AOEShapeCircle Spot = new(6);
-    private Actor[] Pads() => WorldState.CurrentTime >= _showAt && _activation.AddSeconds(1) >= WorldState.CurrentTime && _padOID != 0
-        ? Module.Enemies(_padOID).Where(a => a.EventState != 7 && !a.IsDeadOrDestroyed).ToArray() : [];
+    // 23:15 ARR: the quake pad was 19y away; 3s of guidance arrived 0.7s late. Start early enough to
+    // walk to the nearest pad at run speed with 2s to spare.
+    private const float RunSpeed = 6;
+    private const double Spare = 2;
+    private Actor[] Pads(Actor actor) => _padOID != 0 && _activation.AddSeconds(1) >= WorldState.CurrentTime
+        && Module.Enemies(_padOID).Where(a => a.EventState != 7 && !a.IsDeadOrDestroyed).ToArray() is { Length: > 0 } pads
+        && WorldState.CurrentTime >= Earliest(pads.Min(p => (p.Position - actor.Position).Length()))
+        ? pads : [];
+    private DateTime Earliest(float distance)
+    {
+        var lead = _activation.AddSeconds(-(distance / RunSpeed + Spare));
+        return lead < _showAt ? lead : _showAt;
+    }
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
     {
         if (spell.EventHappened || spell.Action.ID is not (48657 or 48658 or 48659))
@@ -51,20 +62,24 @@ sealed class CrucibleOwlChapters(BossModule module) : Components.GenericAOEs(mod
         _showAt = WorldState.FutureTime(spell.RemainingTime - 3);
         _activation = Module.CastFinishAt(spell, spell.Action.ID == 48659 ? 0.8 : 0);
     }
-    public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => Pads()
+    public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor) => Pads(actor)
         .Select(p => new AOEInstance(Spot, p.Position, activation: _activation, color: Colors.SafeFromAOE, risky: false)).ToArray();
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
-        if (Pads().Length > 0)
+        if (Pads(actor).Length > 0)
             hints.Add(_action switch { 48657 => "进入浮空区域，等爆震判定后再离开！", 48658 => "进入河童区域，等狂水判定后再离开！", _ => "进入变身区域应对魔法锤！" }, actor.FindStatus(_status) == null);
     }
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         // Status gain does not resolve the chapter. Leaving the pad removes
         // Levitate and previously made AI alternate between the pad and boss.
-        var pad = Pads().MinBy(p => (p.Position - actor.Position).LengthSq());
+        var pad = Pads(actor).MinBy(p => (p.Position - actor.Position).LengthSq());
         if (pad != null)
+        {
             hints.AddForbiddenConstraint(new SDInvertedCircle(pad.Position, Spot.Radius - 0.5f), _activation.AddSeconds(-0.8));
+            // The deadline alone lets the planner wait for its last moment; walk there now.
+            hints.GoalPoints.Add((pad.Position, Spot.Radius - 2, 100));
+        }
     }
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {

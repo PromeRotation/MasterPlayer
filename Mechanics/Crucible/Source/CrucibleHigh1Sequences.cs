@@ -299,13 +299,18 @@ sealed class CrucibleDragonWaves(BossModule module) : Components.GenericAOEs(mod
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         if (_expires > WorldState.CurrentTime)
+        {
+            // 23:15 ARR: with only the deadline the player left at it, 20y away, and took five pulses.
             hints.AddForbiddenConstraint(new SDInvertedCircle(_origin, Spot.Radius), _activation.AddSeconds(-0.5));
+            hints.GoalPoints.Add((_origin, Spot.Radius - 2, 100));
+        }
     }
     public override void OnCastFinished(Actor caster, ActorCastInfo spell)
     {
         if (spell.Action.ID == 48807 && spell.Interrupted)
             _expires = default;
     }
+
     public override void OnActorDeath(Actor actor)
     {
         if (actor.OID == 19672)

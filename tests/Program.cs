@@ -415,6 +415,7 @@ LocalSafeZoneRegression.Run(Run);
 FollowRegression.Run(Run);
 DodgeUptimeRegression.Run(Run);
 RecordedDodgeRefinementRegression.Run(Run);
+RecordedHigh1FeedbackRegression.Run(Run);
 VisualScriptRegression.Run(Run);
 ReplayRecordingRegression.Run(Run);
 ReplayWorldRegression.Run(Run);
