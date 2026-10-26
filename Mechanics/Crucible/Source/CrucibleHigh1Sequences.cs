@@ -301,6 +301,9 @@ sealed class CrucibleDragonWaves(BossModule module) : Components.GenericAOEs(mod
         if (_expires > WorldState.CurrentTime)
         {
             // 23:15 ARR: with only the deadline the player left at it, 20y away, and took five pulses.
+            // Drifting clouds can wall off the pocket: the general planner only targets places that
+            // stay safe, so walk a route timed through the clouds' lines as a direct traversal.
+            hints.DirectRoute = RouteNow(actor);
             hints.AddForbiddenConstraint(new SDInvertedCircle(_origin, Spot.Radius), _activation.AddSeconds(-0.5));
             hints.GoalPoints.Add((_origin, Spot.Radius - 2, 100));
         }
@@ -309,6 +312,114 @@ sealed class CrucibleDragonWaves(BossModule module) : Components.GenericAOEs(mod
     {
         if (spell.Action.ID == 48807 && spell.Interrupted)
             _expires = default;
+    }
+
+    // Time-expanded A* on a 0.5y grid in 0.1s steps; clouds are extrapolated along their lines.
+    private const float RouteSpeed = 5.5f, RouteStep = 0.1f, RouteCell = 0.5f;
+    private const float CloudClearance = CrucibleDragonClouds.ContactRadius + 0.5f;
+    private const int RouteSteps = 70, RouteExpansions = 12000;
+    private List<WPos>? _route;
+    private DateTime _routeAt, _searchAt;
+    private Task<List<WPos>?>? _search;
+    internal Task? PendingRoute => _search;
+
+    private List<WPos>? RouteNow(Actor actor)
+    {
+        var now = WorldState.CurrentTime;
+        if (_search is { IsCompleted: true } done)
+        {
+            _route = done.IsCompletedSuccessfully ? done.Result : null;
+            _routeAt = _searchAt;
+            _search = null;
+        }
+        if (_search == null && now >= _searchAt.AddSeconds(0.25))
+        {
+            var clouds = Module.FindComponent<CrucibleDragonClouds>()?.Motions().ToArray() ?? [];
+            var start = actor.Position;
+            // Inside the pocket only a cloud about to pass through it needs a route.
+            if (clouds.Length == 0 || start.InCircle(_origin, Spot.Radius - 2) && CanHold(start, 0, clouds))
+            {
+                _route = null;
+                _searchAt = now;
+            }
+            else
+            {
+                // The search can take several milliseconds; keep it off the game thread.
+                var bounds = CrucibleArena.Find(Module.Center)?.SafeBounds ?? Module.Arena.Bounds;
+                var (center, origin) = (Module.Center, _origin);
+                _searchAt = now;
+                _search = Task.Run(() => Route(start, clouds, bounds, center, origin));
+            }
+        }
+        if (_route == null)
+            return null;
+        // Walk the part of the plan from now until its first wait; the next replan resumes it.
+        var first = Math.Min(_route.Count - 1, (int)((now - _routeAt).TotalSeconds / RouteStep) + 1);
+        var run = new List<WPos>();
+        for (var i = first; i < _route.Count; ++i)
+        {
+            if (_route[i].AlmostEqual(_route[i - 1], 0.01f))
+                break;
+            run.Add(_route[i]);
+        }
+        // Keep only the corners of the run.
+        for (var i = run.Count - 2; i > 0; --i)
+            if (MathF.Abs((run[i] - run[i - 1]).Cross(run[i + 1] - run[i])) < 0.01f)
+                run.RemoveAt(i);
+        return run.Count > 0 ? run : null;
+    }
+
+    private const int HoldSteps = 15;
+    private static bool Clear(WPos p, int step, (WPos Position, WDir Velocity)[] clouds)
+    {
+        var t = step * RouteStep;
+        foreach (var (position, velocity) in clouds)
+            if ((p - (position + velocity * t)).LengthSq() < CloudClearance * CloudClearance) return false;
+        return true;
+    }
+    // The route ends where the player can then stand for 1.5s.
+    private static bool CanHold(WPos p, int step, (WPos Position, WDir Velocity)[] clouds)
+    {
+        for (var i = 0; i <= HoldSteps; i += 3)
+            if (!Clear(p, step + i, clouds)) return false;
+        return true;
+    }
+
+    private static List<WPos>? Route(WPos start, (WPos Position, WDir Velocity)[] clouds, ArenaBounds bounds, WPos center, WPos origin)
+    {
+        bool Safe(WPos p, int step) => bounds.Contains(p - center) && Clear(p, step, clouds);
+        var goal = Spot.Radius - 2;
+        var move = RouteSpeed * RouteStep;
+        var open = new PriorityQueue<(int Node, int Step), float>();
+        var nodes = new List<(WPos P, int Parent)> { (start, -1) };
+        var seen = new HashSet<(int, int, int)>();
+        open.Enqueue((0, 0), 0);
+        var expansions = 0;
+        while (open.TryDequeue(out var current, out _) && ++expansions < RouteExpansions)
+        {
+            var at = nodes[current.Node].P;
+            if (at.InCircle(origin, goal) && CanHold(at, current.Step, clouds))
+            {
+                var path = new List<WPos>();
+                for (var i = current.Node; i >= 0; i = nodes[i].Parent) path.Add(nodes[i].P);
+                path.Reverse();
+                return path;
+            }
+            if (current.Step >= RouteSteps) continue;
+            for (var dx = -1; dx <= 1; ++dx)
+                for (var dz = -1; dz <= 1; ++dz)
+                {
+                    var dir = new WDir(dx, dz);
+                    var next = dir.LengthSq() > 0 ? at + dir.Normalized() * move : at;
+                    var step = current.Step + 1;
+                    if (!seen.Add(((int)MathF.Round(next.X / RouteCell), (int)MathF.Round(next.Z / RouteCell), step)) || !Safe(next, step))
+                        continue;
+                    nodes.Add((next, current.Node));
+                    var remaining = MathF.Max(0, (next - origin).Length() - goal) / RouteSpeed;
+                    open.Enqueue((nodes.Count - 1, step), step * RouteStep + remaining);
+                }
+        }
+        return null;
     }
 
     public override void OnActorDeath(Actor actor)

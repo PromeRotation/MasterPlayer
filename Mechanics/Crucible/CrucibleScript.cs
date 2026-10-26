@@ -74,12 +74,37 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         else { _control?.Clear(); _interaction.Clear(); }
         _output.Apply(_engine, frame, Svc.Objects.LocalPlayer?.Position.Y ?? 0,
             IsMechanismEnabled("危险区域"), IsMechanismEnabled("走位引导"), IsMechanismEnabled("场地边界"));
+        ApplyDirectRoute(frame.Hints.DirectRoute);
         DiagnoseMovement();
     }
-    protected override void OnStop() => Reset();
-    protected override void OnMovementDisabled() { _control?.Clear(); _interaction.Clear(); }
+    protected override void OnStop() { ApplyDirectRoute(null); Reset(); }
+
+    // A component's timed route (B31 breath through drifting clouds) runs as a direct traversal;
+    // the runtime still validates it against the registered dangers every frame.
+    private bool _routing;
+    private void ApplyDirectRoute(List<WPos>? route)
+    {
+        var runtime = MasterPlayerPlugin.Instance?.SafeZone;
+        if (runtime == null) return;
+        var allowed = route is { Count: > 0 } && MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement
+            && IsMechanismEnabled("走位引导") && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true;
+        if (allowed)
+        {
+            var y = Svc.Objects.LocalPlayer?.Position.Y ?? 0;
+            runtime.RequestAutomaticMovement(this, true);
+            runtime.RequestDirectTraversal(this, route![^1].ToVec3(y), _world.CurrentTime, route.Select(p => p.ToVec3(y)).ToArray());
+            _routing = true;
+        }
+        else if (_routing)
+        {
+            runtime.RequestDirectTraversal(this, null, _world.CurrentTime);
+            runtime.RequestAutomaticMovement(this, false);
+            _routing = false;
+        }
+    }
+    protected override void OnMovementDisabled() { ApplyDirectRoute(null); _control?.Clear(); _interaction.Clear(); }
     private void Reset() { _control?.Clear(); _interaction.Clear(); _events?.Clear(); _output?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
-    private void Suspend() { _suspended = true; Reset(); }
+    private void Suspend() { _suspended = true; ApplyDirectRoute(null); Reset(); }
     private void Resume() { _suspended = false; _nextScan = default; _dirty = true; }
 
     private void DiagnoseMovement()

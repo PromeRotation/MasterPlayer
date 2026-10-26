@@ -122,6 +122,8 @@ internal sealed class AIHints
     public float MaxCastTime = float.MaxValue;
     public bool ForceCancelCast, ForcedMarchImminent, OwnsTargetSelection;
     public Vector3? ForcedMovement;
+    // A timed route the player should walk now (no waits); executed as a direct traversal.
+    public List<WPos>? DirectRoute;
     public Angle? DesiredFacing;
     public DateTime DesiredFacingExpire;
     // A hit has a finite window. A positioning deadline remains binding until its component releases it.
