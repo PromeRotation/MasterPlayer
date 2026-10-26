@@ -146,7 +146,7 @@
 
 当前组件：`CrucibleBoundary`、`XBMB11AOE`、`CrucibleMinotaurSequence`、`CrucibleMinotaurStomp`、`CrucibleMinotaurRotation`、`CrucibleMinotaurEnrageHint`。
 
-22:50 ARR 补充：首击就准备两次击退均留在电网内的站位；仅在首击后临时跑位可能来不及。新增字段与实战时序见 [迁移规格](../CrucibleAll.spec.md)，早期 `catalog.json` 收集快照尚不含本次新增动作。
+22:50 ARR 补充：首击就准备两次击退均留在电网内的站位；仅在首击后临时跑位可能来不及。新增字段与实战时序见 [机制规格](../CrucibleAll.spec.md)，早期 `catalog.json` 收集快照尚不含本次新增动作。
 
 字段级来源、源码位置、CastType/EffectRange/Omen和未简化的形状表达式见[catalog.json](catalog.json)。
 

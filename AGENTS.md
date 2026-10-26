@@ -1,6 +1,6 @@
 # PromeRadar — 项目总文档（AGENTS.md）
 
-面向后续 AI 代理与开发者的项目权威文档。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
+面向后续 AI 代理与开发者的项目权威文档。机制问题的标准工作流（ARR 录像解析 → 机制实现 → 离线模拟 → 实机验收）见 [docs/ARR解析与模拟流程.md](docs/ARR解析与模拟流程.md)；按日期的修复与验证记录见 [docs/开发记录.md](docs/开发记录.md)。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
 
 ## 当前设置与控制契约
 
@@ -18,8 +18,8 @@
 MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud 插件：
 
 - **不实现 `IDalamudPlugin`**，不被 Dalamud 直接加载；实现的是 PR 的 `IPromePlugin` 契约，由 PR 插件管理器（`PromePluginManager`）在游戏内反射加载、启用、热重载。
-- 功能组件：**雷达悬浮窗（RadarOverlayWindow，BMR 式 2D 俯视小地图）+ 真实世界绘制（RadarRenderer，3D 世界范围提示）+ 智能躲避（Dodge）+ 战斗中跟随（Follow）+ 智能机制处理（Mechanics）+ 机制脚本框架（Scripting）+ 录制回放（Replay，BMR 式事件录制与时间轴回放，用于测试脚本）**。术语约定：「雷达」专指雷达悬浮窗；游戏内 3D 世界范围提示叫「真实世界绘制」。
-- 定位类似 BossModReborn。**安全区完整实现由插件持有**（`Spatial/SafeZoneReborn`、所需 `SafeZone` 数据与注册层、`Geometry`），所有脚本、跟随、雷达与诊断使用 `MasterPlayerPlugin.Instance.SafeZone`。PR 本体提供 GreenMove 移动执行、DrawManager 世界绘制、事件和移速信息；安全区不再调用本体解算器。迁移来源与边界见 `Spatial/README.md`。
+- 功能组件：**雷达悬浮窗（RadarOverlayWindow，2D 俯视小地图）+ 真实世界绘制（RadarRenderer，3D 世界范围提示）+ 智能躲避（Dodge）+ 战斗中跟随（Follow）+ 智能机制处理（Mechanics）+ 机制脚本框架（Scripting）+ 录制回放（Replay，事件录制与时间轴回放，用于测试脚本）**。术语约定：「雷达」专指雷达悬浮窗；游戏内 3D 世界范围提示叫「真实世界绘制」。
+- **安全区完整实现由插件持有**（`Spatial/SafeZoneReborn`、所需 `SafeZone` 数据与注册层、`Geometry`），所有脚本、跟随、雷达与诊断使用 `MasterPlayerPlugin.Instance.SafeZone`。PR 本体提供 GreenMove 移动执行、DrawManager 世界绘制、事件和移速信息；安全区不再调用本体解算器。来源与接口边界见 `Spatial/README.md`。
 - Dalamud 服务不经构造函数注入（卫星插件没有 `[PluginService]`），统一走 ECommons 静态门面 `Svc`（`ECommons.DalamudServices.Svc`：`Svc.Framework.Update`、`Svc.PluginInterface.UiBuilder.Draw`、`Svc.Log`、`Svc.Objects` 等）。
 
 ## 2. 参考仓库
@@ -30,7 +30,6 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 | PromeRotation 本体源码 | `C:\Users\xiaos\Documents\GitHub\PromeRotation-1.0-XSZFork`（本体项目在 `PromeRotation\` 子目录） | PromeRotation API 签名的唯一权威来源 |
 | Dalamud（卫月）主仓库 | `C:\Users\xiaos\Documents\GitHub\Dalamud` | 查询卫月本体的服务接口、事件、插件接口及 API 用法，以接口定义、实现和源码注释为准 |
 | FFXIVClientStructs（FFCS） | `C:\Users\xiaos\Documents\GitHub\FFXIVClientStructs` | 查询游戏原生结构、字段布局、指针及成员函数等互操作 API 的定义与用法 |
-| BossModReborn（BMR） | `C:\Users\xiaos\Documents\GitHub\BossModReborn-7.56` | 机制迁移与运行时推断参考：通用 AOE 形状推断（`BossMod/BossModule/AIHintsBuilder.cs` 的 CastType→形状映射、Omen 路径 fanXXX 开角/月环内径解析、VFX 25 视线过滤）、施法者敌我判定（`WorldStateGameSync` 的 `ActionManager.ClassifyTarget != Enemy` 即盟友）、斗兽棋模块（`BossMod/Modules/Dawntrail/Foray/Crucible/`，CrucibleHigh1 脚本原型） |
 
 查询 API 时按归属查阅对应仓库：PR 封装查 PromeRotation，卫月服务与接口查 Dalamud，游戏原生结构与函数查 FFCS。核对具体签名、类型和调用约束，不凭记忆臆造成员；同时确认源码版本与当前编译引用及运行环境匹配。
 
@@ -58,7 +57,7 @@ MasterPlayer/
 ├── Dodge/
 │   ├── DodgeController.cs         # 智能躲避：读条事件（PromeEventBus 主线程派发）→ 危险区注册 → SafeZone 解算走位
 │   ├── DangerMarginInflator.cs    # 危险区几何外扩（GeometryTemplate 按 DodgeDangerMargin 膨胀）
-│   └── AoeShapeDatabase.cs        # ActionId → AOE 形状查表（静态表 + Lumina CastType 推断，映射对齐 BMR）
+│   └── AoeShapeDatabase.cs        # ActionId → AOE 形状查表（静态表 + Lumina CastType 推断）
 ├── Mechanics/
 │   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
 │   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
@@ -90,14 +89,16 @@ MasterPlayer/
 │   └── ExampleZoneScript.cs       # 区域限定示例脚本
 ├── Scripts/
 │   ├── Crucible/                 # 斗兽奇弈五盘入口（随 DLL 内置加载，配置目录版本可覆盖）
-│   └── Dungeons/                 # BMR 地城入口；实现与固定场地轮廓位于 Mechanics/Dungeons/
+│   ├── Dungeons/                 # 地城入口；实现与固定场地轮廓位于 Mechanics/Dungeons/
+│   └── GoldSaucer/               # 金碟巨豆中心（糖豆人）入口；实现位于 Mechanics/Blunderville/
 ├── docs/
 │   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
-│   ├── BMR机制迁移指南.md         # BMR→MasterPlayer 机制迁移的语义对照/流程/踩坑（配合 .agents/skills/bmr-mechanic-migration 技能）
-│   ├── BMR全量迁移记录.md         # 迁移过程记录（批次/差异/验证命令）
-│   ├── BMR移植报告.md             # 移植结论性报告：已实现/未实现/整体进度（2026-09-23）
+│   ├── ARR解析与模拟流程.md       # 录像解析 → 机制分析 → 夹具 → 离线模拟 → 实机验收
+│   ├── 开发记录.md                # 按日期的修复、证据与验证记录
 │   └── reference/
-│       └── CrucibleHigh1.spec.md  # 斗兽棋·高一迁移规格（该脚本内容的唯一事实来源）
+│       ├── CrucibleAll.spec.md    # 斗兽五盘机制规格
+│       ├── Blunderville.spec.md   # 糖豆人机制与路网规格
+│       └── *.spec.md              # 其他区域、机制运行库与宿主桥规格
 └── Windows/
     ├── MainWindow.cs              # ImGui 主面板（总开关、脚本库、模块状态、录制回放入口、调试信息）
     └── ReplayWindow.cs            # 录制回放独立窗口（上内嵌雷达 + 下事件时间轴 / 多日志对比）
@@ -274,9 +275,9 @@ public sealed class DodgeController : IDisposable
 ```
 
 - 事件源为 `PromeEventBus.OnStartCast`（主线程派发，无队列，回调里直接注册危险区）；雷达悬浮窗、真实世界绘制、智能躲避任一开启即识别读条，避免只开启绘制时没有危险区数据。注册前模板经 `DangerMarginInflator.Inflate` 按 `DodgeDangerMargin` 外扩；`Update()` 只做失效句柄簿记清理。
-- **施法者敌我过滤**（对齐 BMR `AIHintsBuilder.OnCastStarted`）：只响应 `ObjectKind.BattleNpc` 且游戏原生 `ActionManager.ClassifyTarget(Character*) == TargetCategory.Enemy` 的读条——玩家/宠物/坐骑/事件 NPC/友方战斗 NPC（剧情、Trust 等同盟单位）一律跳过；对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。命中时把施法者 `HitboxRadius` 传给形状推断。
+- **施法者敌我过滤**：只响应 `ObjectKind.BattleNpc` 且游戏原生 `ActionManager.ClassifyTarget(Character*) == TargetCategory.Enemy` 的读条——玩家/宠物/坐骑/事件 NPC/友方战斗 NPC（剧情、Trust 等同盟单位）一律跳过；对象表无法解析的施法者（多为场外辅助体）放行，避免丢预告。命中时把施法者 `HitboxRadius` 传给形状推断。
 - **脚本压制去重**：`ScriptManager.IsGenericDodgeSuppressed(actionId)` 为 true（运行中脚本已用 `SuppressGenericDodge` 声明接管该技能）时跳过，避免通用躲避与脚本重复注册同一危险区。
-- **机制模块压制去重**：`MasterPlayerPlugin.Instance.MechanicHost?.HasActiveModule == true`（机制模块已激活、ForbiddenZones 经机制导航宿主注册）时跳过，对齐 BMR AIHintsBuilder「有激活模块即停用自动 AOE 推断」的语义，避免通用推断与模块危险区重复。
+- **机制模块压制去重**：`MasterPlayerPlugin.Instance.MechanicHost?.HasActiveModule == true`（机制模块已激活、ForbiddenZones 经机制导航宿主注册）时跳过（有激活模块即停用自动 AOE 推断），避免通用推断与模块危险区重复。
 - **错峰判定转场**：由插件内 `MasterPlayer.Spatial.SafeZoneReborn.Solver.SafeZoneSolver` 的安全时间区间搜索处理，允许先在后判定区提前站位、等待，再进入已结束判定的区域；只向 GreenMove 下发首次等待前的路段，周期重解接续。修复只需构建并重载 MasterPlayer；回归入口为 `dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。
 
 高一 B31 四连放毒与预备点使用 R0.2、Center 目标圈；插件 Reborn 会细化小目标网格并按目标内部余量收紧移动容差。修改解算后须重新构建并加载 MasterPlayer，仅刷新脚本无法更新解算器。
@@ -313,7 +314,7 @@ public static class AoeShapeDatabase
 }
 ```
 
-- 静态表查不到时走 **Lumina Action 表推断**，映射逐条对齐 BMR `AIHintsBuilder.GuessShape`：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
+- 静态表查不到时走 **Lumina Action 表推断**，映射如下：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
 
 **Mechanics.MechanicDispatcher**（`Mechanics\MechanicDispatcher.cs`）
 
@@ -387,15 +388,15 @@ public sealed class MechanicHostController : IDisposable
 }
 ```
 
-- 构造：`MechanicRuntimeEnvironment.Initialize(Svc.Data.GameData, Svc.Log)`（IDataManager.GameData 属性拿 Lumina.GameData）→ 内存覆盖 `BossModuleManager.Config.MinMaturity`（int 直接转 `BossModuleInfo.Maturity`，Dummy=0/WIP=1/Contributed=2/Verified=3/AISupport=4，`>=` 语义；**不触发 `Modified.Fire`，BMR 配置不落盘**）→ `new MechanicSession(gameVersion)`（版本串取 Lumina `Repositories["ffxiv"].Version`，回退 `"live"`）→ `new MechanicWorldFeed(session)` → `new ActionEffectCapture()` → PromeEventBus 订阅（owner=this，逐个 IDisposable 退订）。初始化异常 → IsAvailable=false + LastError，其余组件照常。
+- 构造：`MechanicRuntimeEnvironment.Initialize(Svc.Data.GameData, Svc.Log)`（IDataManager.GameData 属性拿 Lumina.GameData）→ 内存覆盖 `BossModuleManager.Config.MinMaturity`（int 直接转 `BossModuleInfo.Maturity`，Dummy=0/WIP=1/Contributed=2/Verified=3/AISupport=4，`>=` 语义；**不触发 `Modified.Fire`，运行库配置不落盘**）→ `new MechanicSession(gameVersion)`（版本串取 Lumina `Repositories["ffxiv"].Version`，回退 `"live"`）→ `new MechanicWorldFeed(session)` → `new ActionEffectCapture()` → PromeEventBus 订阅（owner=this，逐个 IDisposable 退订）。初始化异常 → IsAvailable=false + LastError，其余组件照常。
 - 事件→DTO：Tether/TetherCancel/TargetIcon（IconId=MarkerId 原值，Feed 内减 IDScramble.Delta）/TargetVfx（TargetId 恒 0，PR 事件无此字段）/Marker（MarkerId=param1+1，减 1 得 Sign；TargetId=0xE0000000 为清除）/MapEffect（State=Param1|Param2<<16）/EObjAnimation/EObjSetState/DirectorUpdate/NpcYell/SystemLog（Args 恒空）/PlayActionTimeline；Waymark 无总线方法，走 `OnLogEvent<LogSystemWaymarkEvent>`，只更新控制器内 8 槽状态随帧下发。回调在主线程直接 `feed.Enqueue`；门控（总开关/压制/回放）关闭时回调直接丢弃，队列不积压。
 - `Update()` 门控：IsAvailable && EnableMechanicModules && !IsSuppressed && !ReplayModeActive 才执行；跳过帧清空 capture 队列并 `MechanicNavigationHost.Sleep()` + `MechanicDrawHost.Sleep()`。执行序：`LiveWorldSampler.Capture` → `capture.Drain(feed)` → `session.BeginFrame(DateTime.UtcNow)` → `feed.ApplyFrame` → `feed.Flush` → `session.Update` → `_navBridge.Update()` → `_drawBridge.Update()`。
-- `LiveWorldSampler`（internal static）：全对象表遍历（SpawnIndex=表下标；EntityId 0/0xE0000000 回退 GameObjectId，0xFF 高字节丢弃）；IsAlly 用原生 `ActionManager.ClassifyTarget != Enemy`（非 Character 恒 true，对齐 BMR）；Cast 取 CastInfo（ActionType==1 为 Spell，Rotation 用 Character.CastRotation 弧度）；Statuses 逐槽带下标；逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽（击退/效果数组 + TargetConfirmed），帧级稀疏上报非零槽进 `MechanicWorldFrame.IncomingEffects`（喂养器按槽差分发 OpIncomingEffect/OpEffectResult；回放无此通道）；队伍槽 0=本人（ContentId 先 Svc.Party 按 EntityId 匹配、回退 Svc.PlayerState），1-7 取 `PartyHelper.GetParty()` 顺序（含本人，跳过 [0]）；CFC 由 Lumina TerritoryType.ContentFinderCondition 解析并按区域缓存。
+- `LiveWorldSampler`（internal static）：全对象表遍历（SpawnIndex=表下标；EntityId 0/0xE0000000 回退 GameObjectId，0xFF 高字节丢弃）；IsAlly 用原生 `ActionManager.ClassifyTarget != Enemy`（非 Character 恒 true）；Cast 取 CastInfo（ActionType==1 为 Spell，Rotation 用 Character.CastRotation 弧度）；Statuses 逐槽带下标；逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽（击退/效果数组 + TargetConfirmed），帧级稀疏上报非零槽进 `MechanicWorldFrame.IncomingEffects`（喂养器按槽差分发 OpIncomingEffect/OpEffectResult；回放无此通道）；队伍槽 0=本人（ContentId 先 Svc.Party 按 EntityId 匹配、回退 Svc.PlayerState），1-7 取 `PartyHelper.GetParty()` 顺序（含本人，跳过 [0]）；CFC 由 Lumina TerritoryType.ContentFinderCondition 解析并按区域缓存。
 - `ActionEffectCapture`：`Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(Addresses.Receive.Value, Detour)`；detour 只读包（NumTargets 截到 32，逐目标 8×ulong 原始效果）入 `ConcurrentQueue` 后必须原样调 `Original`，绝不改动画锁/不拦截动作；hook 失败一次性警告并降级（OnEventCast 不受影响）。
 - **绘制桥（M4，`MechanicDrawHost`）**：`EnableRadarOverlay || EnableRadar` 且 `BossModules.ActiveModule` 与队伍槽 0 存在时，每帧 `MechanicModuleDrawCapture.Capture(module, 0, Angle(相机方位角 DirH+π))` 捕获绘制命令，经 `MechanicDrawConvert` 转换后按稳定槽位 id `module/{moduleTypeName}/{i}` 注册进 `AoeVisibilityRegistry`（填充/描边→`AddPreview` 500ms 自过期，线→`AddLine`，帧末差集移除未刷新 id）；双视图全关、无激活模块、压制或回放时 `Sleep()` 清注册（`RemovePreviews("module/")`）并清空 extras/提示。捕获异常按模块 5 秒限频记 `LastCaptureError` 与计数。文字提示聚合 `CalculateGlobalHints()` + `CalculateHintsForRaidMember(0, pc)`，经控制器 `CurrentHints` 暴露给诊断页。
 - **`MechanicDrawConvert`**（internal static 纯逻辑，不引用 Dalamud/PR，tests 直接链接）：Circle/Donut/Fan 直转 MP 几何；Cone(inner>0)/Capsule/ArcCapsule/ComplexPoly（只取外轮廓，洞忽略）/ZoneTriangles（逐三角形）→ `WorldPolygonGeometry`；Cross → 双 `RectangleGeometry`（臂长 2×Range、宽 2×HalfWidth）；Rect 换算中心 `Origin + dir×(LenFront−LenBack)/2`、宽 2×HalfWidth、长 LenFront+LenBack；BMR `Angle.Rad`/`WDir.ToAngle().Rad` 与 MP 弧度约定一致（0=+Z，π/2=+X）。安全色判定用 ColorConfig 默认 ABGR 硬编码对照表（SafeFromAOE 0x80008000 / Safe 0xff00ff00 → safe，其余默认危险）；场地边框 ComplexPoly（Border 白 0xffffffff）跳过，由 MP 边界层绘制。IconWorld/ActorMarker/CardinalNames 跳过（MP 雷达已有角色/罗盘）；Eye/TextWorld/SignMarker 转 `MechanicRadarExtra`（记录 Kind/世界坐标/文本/危险标志/原色 ABGR）。Y 高度取队伍槽 0 玩家 `PosRot.Y`。
-- **雷达 extras 图层**：`RadarView.DrawMechanicExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用 BMR 原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `module/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。
-- **导航桥（M5，`MechanicNavigationHost`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时 BMR 自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `MechanicHintsConvert` 转模板后由 `MechanicNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。补集语义（SDInverted 族/SDOutsideOfUnion/SDPrecisePosition）经 `TryConvertComplement` 取内侧安全形状走同一差集的目标通道（`IsGoal`）：注册为优先级 1、Nearest 偏好的目标安全区（不外扩），SDInvertedUnionOffset 仍跳过。TemporaryObstacles → `AddObstacle` 同 diff；场地障碍位图 `PathfindMapObstacles` → 连通域外轮廓多边形 → 障碍（位图引用+矩形缓存，静态场地零每帧成本）；机制级强 GoalZones（峰值权重 ≥100）0.5m 采样轮廓 → 目标区（500ms 节流，弱偏好不拖拽）；Teleporters → `SafeZoneRuntime.SetTeleporters` 发布解算传送边（内容签名去重，失活清空）。PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过，反射宿主 `MechanicHost/MechanicFacingControl.cs` 与脚本 Hints 门面共用）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `module-nav/{moduleTypeName}` 供「按机制显示」关闭。
+- **雷达 extras 图层**：`RadarView.DrawMechanicExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用模块原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `module/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。
+- **导航桥（M5，`MechanicNavigationHost`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时运行库自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `MechanicHintsConvert` 转模板后由 `MechanicNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。补集语义（SDInverted 族/SDOutsideOfUnion/SDPrecisePosition）经 `TryConvertComplement` 取内侧安全形状走同一差集的目标通道（`IsGoal`）：注册为优先级 1、Nearest 偏好的目标安全区（不外扩），SDInvertedUnionOffset 仍跳过。TemporaryObstacles → `AddObstacle` 同 diff；场地障碍位图 `PathfindMapObstacles` → 连通域外轮廓多边形 → 障碍（位图引用+矩形缓存，静态场地零每帧成本）；机制级强 GoalZones（峰值权重 ≥100）0.5m 采样轮廓 → 目标区（500ms 节流，弱偏好不拖拽）；Teleporters → `SafeZoneRuntime.SetTeleporters` 发布解算传送边（内容签名去重，失活清空）。PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过，反射宿主 `MechanicHost/MechanicFacingControl.cs` 与脚本 Hints 门面共用）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `module-nav/{moduleTypeName}` 供「按机制显示」关闭。
 - **时间轴（M6）**：控制器每帧（`session.Update()` 后、模块激活且 `StateMachine.ActivePhase` 非空时）`MechanicTimeline.Capture(module)` 产出 `CurrentTimeline` 快照（条目含名称/ExpectedEnd/StateHint 伤害标记，未决分支只有分支 ID 不猜选），异常限频隔离；门控关闭/无模块/Dispose 置 null。消费侧为纯读：雷达悬浮窗时间轴条（`RadarOverlayWindow` 壳层、RadarView 之后追加，窗口高度计入条高，右键菜单开关 `ShowModuleTimeline`）与诊断页摘要共用纯逻辑 `MechanicHost/MechanicTimelineView.cs`（空名状态隐藏、剩余秒钳制非负、伤害着色优先级 Tankbuster>Raidwide>Knockback>Cast>Attention>Neutral、后续至多 3 条、分支行「分支?」）。回放会话的数据接入属 M7（回放激活时控制器整体跳过，快照为 null；ReplayWindow 预测泳道未做，记入 spec）。
 - **`MechanicHintsConvert`**（internal static 纯逻辑，tests 直接链接）：ShapeDistance 运行时识别——SDCircle/SDDonut 直转、SDCone/SDDonutSector 由存储法线还原朝向与半角（coneFactor<0 时分角线反向）、SDRect/SDCross/SDTri/SDConvexPolygon/SDCapsule/SDArcCapsule 字段反射直转或多边形近似、SDPolygonWithHoles/SDComplexPolygonInvertedContains 取外轮廓（洞忽略）、SDUnion 全成员可识别才拆分；补集语义经 `TryConvertComplement` 取内侧安全形状（SDInverted 族直转、SDOutsideOfUnion 取成员并集、SDPrecisePosition 转单元格矩形、SDInvertedUnionOffset 跳过）；其余（击退二值场、Intersection、DeepDungeonLOS 等）0.5 码网格采样（范围取模块边界半径、60 码封顶，填充率 >65% 判为补集丢弃）→ 连通域 → 角点网格 marching-squares 边链接外轮廓（对角捏合 cross=+1 拆环，孔洞环随最大环丢弃）→ WorldPolygonTemplate。`ConvertObstacleBitmap`：PathfindMapObstacles 位图区域 → 连通域外轮廓多边形（锚点=rect 中心对场心像素，≤8 组件、<4 格忽略）。`ConvertGoalZones`：仅消费峰值权重 ≥100 的机制级强目标（0.5m 总和采样、峰值 50% 以上轮廓、覆盖率 >65% 丢弃）。`MapActivation`：default/已过→持续，未来→延迟秒数。`ConvertBounds`：Circle/ABRect(Rect/Square)/Custom（最大 part 外轮廓）→ MP 边界几何。`MechanicNavAreaDiffer` 差集含危险区与目标区（`IsGoal` 通道：优先级 1、Nearest、不外扩）+ 障碍三路，离线可测（SafeZoneRegistry/Manager 可脱机构造；快照在 `SafeZoneSetting.EnableSafeZone=false` 时过滤危险区）。敌人优先级/ActionsToExecute 不消费（缺口记录）；OpIncomingEffect/OpEffectResult 由 LiveWorldSampler 原生槽扫描接入（非本转换层）。注意：**BossMod 值类型（WPos/WDir/Bitmap.Rect 等）不得存入本程序集类型的字段或闭包**——值类型布局会把 MechanicRuntime 程序集依赖引入 MasterPlayer.dll 的类型加载（曾致 ScriptManager 内置发现 GetTypes 失败；引用类型字段无碍）。
 
@@ -667,7 +668,7 @@ public readonly record struct GreenMovePoint(
 ### 5.6 脚本系统（`Scripting\`，模式照抄 PromePainter `Scripting\`）
 
 - **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
-- **非斗兽棋 BMR 移植**：结论性进度与缺口见 `docs/BMR移植报告.md`；逐模块状态见 `docs/BMR全量迁移记录.md` 与清单 CSV；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。运行库（MechanicRuntime/）承载全部 1,214 个目标模块，宿主桥（MechanicHost/）负责实时/回放输入、双视图绘制、安全区导航与时间轴；规格见 `docs/reference/MechanicRuntime.spec.md`、`docs/reference/MechanicHost.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
+- **机制运行库与地城**：模块清单见 `docs/reference/BMRModuleInventory.csv`（测试数据，文件名保留）；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。运行库（MechanicRuntime/）承载全部 1,214 个目标模块，宿主桥（MechanicHost/）负责实时/回放输入、双视图绘制、安全区导航与时间轴；规格见 `docs/reference/MechanicRuntime.spec.md`、`docs/reference/MechanicHost.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
 - **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
 - **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。
@@ -696,7 +697,7 @@ public readonly record struct GreenMovePoint(
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
 - **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 悬浮窗大小；场地始终适配内容视口）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整个视口即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
 
-### 5.8 录制回放（`Replay\`，对齐 BMR `BossMod/Replay/` 的 Operation 思路）
+### 5.8 录制回放（`Replay\`）
 
 机制事件的录制与时间轴回放，用于复现战斗、测试脚本运行状态。**PR 本体的 PromeEventBus/LogSystem 只订阅不发布（无公开 Raise），合成事件因此只在 MasterPlayer 脚本层派发**：录制走 `PromeEventBus.OnLogEvent` 全量订阅，回放经每脚本 `ReplayScriptEventRouter` 直喂，不进总线，DodgeController/Follow/其他插件不响应回放事件。
 
@@ -732,131 +733,6 @@ public readonly record struct GreenMovePoint(
 6. **脚本回调与 OnUpdate 均在主线程执行**（PromeEventBus 事件由主线程派发），脚本内可直接调 SafeZone / Move / Draw 三门面，无需自行入队；脚本不得再订阅 `CombatEventManager` 裸事件（那是 hook/网络线程，绕过了 owner 管理）。
 7. **脚本不得持静态状态跨热重载**：脚本重启创建新实例，内置脚本刷新复用当前程序集，静态状态不会重置；外部脚本旧程序集也可能残留（重复订阅、状态错乱）。状态一律放实例字段，`OnStop` 做收尾。
 
+---
 
-### 2026-09-18 界面与高一复核补充
-
-以下按日期保留历史验证背景。2026-09-21 已将完整 Reborn 迁入插件，旧记录中的“本体与 MP 配套构建/部署”不再适用于安全区修复；当前依赖和验证方式以 §5.2 与 `Spatial/README.md` 为准。
-
-- 主面板按总览、显示与绘制、自动走位、机制脚本、录制回放、诊断组织；设置页、回放、编辑器及雷达菜单使用实际 PR 的 `PromeUiTheme.PushWindowStyle`，动态颜色令牌跟随明暗与主题色。`Windows/PluginUi.cs` 统一提示、满宽滑条与窄区域开关说明换行。
-- 绘制页内分雷达、世界绘制、按机制显示；危险/安全填充和边框分别提供颜色与 0–100% 不透明度滑条，持久化仍为原 RGBA，不迁移或重置用户配置。隐藏绘制不删除危险区。
-- 脚本页搜索名称/区域 ID，筛选全部/当前区域/运行中；左列表右详情，原有脚本启停、设置、机制开关与可视化编辑入口保留。编辑器保存为主操作，复制/重新读取/删除收入“更多”，原有未保存和删除确认保留。
-- 回放录制与播放分行、文件支持搜索和折叠，场地预览默认收起；事件类型收进折叠项，隐藏泳道不占空白行。文件列表在开启、手动刷新和录制结束时更新，空目录不每帧扫描。
-- `RadarViewportLayout` 将 RadarScale 用于悬浮窗整体大小，限制到屏幕可用大小；`RadarArenaLayout` 只按实际半径与旋转轮廓适配，不再二次放大。覆盖用户 1.152 倍、0.3–3 倍、多字号与异形回归。
-- 高一 B22–B31 对照 BMR 70 个组件，无遗漏。魔界花/巨像击退正常读条结束不撤落点约束，命中、取消、死亡或 +2s 超时清理。免疫状态匹配 BMR，要求状态结束严格晚于判定。
-- 石像鬼钢铁/月环分阶段解算：两段均预览，R13.5预备，钢铁命中或含NPC补正的判定时间到达即转R5内圈，不再额外等0.25s；局部真实几何不重复叠加用户外扩，同轮目标固定。月环起点补偿+0.2s，确保宿主0.25s紧急提前量下仍早于真实伤害；不能恢复+0.35s。验证须覆盖后台/起步延迟与真实命中时刻，见 `docs/reference/CrucibleAll.spec.md`。
-- 插件 Reborn 在普通路线发布延迟后即时用既有0.25s紧急余量复核，仍检查最新危险窗、障碍及场地。只需更新并重载 MasterPlayer；对应 PR 本体改动已提交上游 #80。构建排除嵌套测试目录，避免旧 DLL 覆盖 HintPath。
-
-### 2026-09-18 高二躲避延迟修复补充
-
-- 最新 23:02:30 ARR 是 B32 佛劳洛斯；51.218s 三条49194命中，不能将该文件当作 B33 夺心魔。分析及源码/部署备份在 `F:/project/卫月插件/analysis/masterplayer-high2-20260918-230230/`。
-- 插件内 Reborn 包含解析光栅化、无目标安全点提前完成、严格搜索剪枝、异步路线期限与重算保持、折线撤离预算、路径平滑和异形边界复核。常规求解失败时仅对1.5s内脚下待判定伤害重试一次0.25s提前余量；真实危险时间与空间余量不变，禁止全局推迟伤害。
-- `tests/LateDodgeRegression.cs` 18项专项与完整311项回归通过；测试须引用本轮修复的实际宿主候选，不能拿旧PR DLL验证新执行器。PR本体与MasterPlayer必须成对更新并重载；只刷新机制脚本不生效。
-- `DiagnoseMovement` 现覆盖全部斗兽组，每秒限频，记录脚下危险未接管时的期限、快照/结果年龄、异步计数与当前技能。离线回归不替代游戏内实战验收。
-
-### 2026-09-19 夺心魔实战反馈
-
-- 对照BMR，B33包含场地、普通AOE、小怪策略、菌床、水点名、雷点名、麻痹/毒全屏提示共8组件，无整项遗漏。最新可用ARR为 `2026.09.18 23.58.25.dat`，分析在 `F:/project/卫月插件/analysis/masterplayer-mindflayer-20260919/`。
-- **覆盖上一节的1.5s限制**：普通解算已经失败时立即允许既有0.25s提前余量重试，不能等倒计时降到1.5s才开始。重算必须保留正在逃离待判定危险的紧急余量，避免半路恢复0.5s后停步；真实时窗与空间余量未修改。
-- `CrucibleEngine.Cast`去重须比较锁定朝向和目标ID，同位置同技能不能丢弃事件包对本地扫描朝向的修正；已由同源旋转十字回归确认。日志同时记录持有/执行状态及各读条的朝向、落点，覆盖HasControl=true但GreenMove已停的情况。
-- `MindflayerLiveRegression`4项新增回归（四激光采用当前0.5m用户余量、50ms起步延迟及连续重算），完整315项通过，五盘入口编译通过。十字形状与BMR距离函数一致；原回放缺运行时采样朝向，不能声称已唯一确定本次十字受击原因。
-
-
-### 2026-09-19 高二与劳妲复核补充
-
-- 高二B32–45共73组件与BMR一致。劳妲锁线按波次释放引导，迟到连线不能重开；已落地飞刀与投放helper生命周期分开。普通AOE/剑线/烙印/视线正常读条结束要等待真实效果，取消和死亡另处理。
-- 5555/5341状态可能乱序或无时长，禁止对DateTime.MaxValue直接AddSeconds；效果朝向用事件携带值，不能把后续扫描朝向当锁定依据。
-- `AddAoe`公开签名保留。内置机制通过`AddAoePreview`/`AddLinePreview`向双视图提供描边、紧迫度及连线；精准预览拥有显示时，通过SetNavigationOnly仅隐藏同几何的解算绘制副本，不删除危险区。保留用户配色/透明度/来源开关和owner清理。
-- `High2MigrationRegression`覆盖全部已配置高二读条的朝向修正与生命周期，并用旧劳妲ARR时序验证三剑撤离、40m到20m击退转场。在线简介不作为精确尺寸真源；自动面向/停手/交互等既有降级没有被本次绘制补全替代。详见CrucibleAll.spec及本地analysis/masterplayer-high2-lauda-20260919。
-
-- 本轮新增50项、完整365项通过，Release编译与5盘smoke通过；01:16已备份替换MP，MVID `a77e577e-8462-44d3-901e-c6d4568d40c2`。部署时游戏未运行，下次启动加载；PR本体未动。
-
-### 2026-09-19 11:29 ARR 后续修复
-
-- 杜尔迦三大圈的半路停步可用200ms异步发布延迟复现。插件 `Spatial/SafeZoneReborn/SafeZoneRebornMovementSystem` 拒绝候选/收到失败时须先按GreenMove当前索引和最新场地、障碍、危险窗复核正在执行的路线；仍安全则继续，保留其目标和紧急余量。不得仅因候选过时而取消有效逃离路线，也不得无条件延续被新危险封锁的旧路。
-- 夺心魔地面水来自真实EObj `2005400/0x1E9998`，不是未结算的水icon；按存活与EventState!=7扫描并描边。只有雷点名者受放置约束，采用R8水池+R6雷圈完全分离的保守策略，不能把水池设为永久禁区或把自己移动的点名圈当危险追逐。
-- High2CrucibleSpread重复icon不推迟期限；水49199/雷49205视觉取消撤对应点名，正常结束等真实效果；效果、超时、死亡、换组清理。水池视觉边缘及整圈分离策略仍待实战核对，详见CrucibleAll.spec。
-- 新增19项回归，完整384项通过；本轮构建测试须引用 `analysis/masterplayer-high2-20260919-112903/host/` 中实际PR候选。MP Release与五盘smoke通过。本体与MP配套部署，不能仅刷新脚本。
-
-### 2026-09-19 罗盘路线绘制卡死
-
-- `RadarView.DrawSolutionPath` 原来的浮点游标while循环在虚线边缘会因加法舍入不再前进，普通路径即可复现无限循环。寻路回归没有执行这段ImGui绘制，不能据寻路全绿排除绘制卡死。
-- `RadarPathDashes` 以double距离及整数虚线索引生成线段，每帧最多2048个虚线区间；过滤非有限输入、重复点和退化段。保留折线相位、动画与透明度渐变，实时/回放罗盘共用。禁止恢复浮点累加直到到达端点的无界循环。
-- 新增9项回归（5组旧循环卡死数值、60秒×144帧、无效/极大坐标、静止路径），完整393项通过。Windows AppHangB1记录及原日志在 `analysis/masterplayer-freeze-20260919-1218/`；原进程已被关闭且无堆栈，死循环是确定缺陷，但不能声称已唯一证明实战卡死归因。
-
-### 2026-09-19 普通二回放与用户僵尸策略
-
-- 新证据 `analysis/masterplayer-low2-20260919-123703/`：B07/B09/B10。虚灵法师补707死亡驱动移动预览→48182固定圆、2161/1257精神控制全路径箭头及5424层数提示；未自动接管面向。
-- 用户明确要求僵尸先击杀、禁止一直拖着跑：`CrucibleZombies`不注册身体/移动危险或障碍，仅击杀提示。后续不得恢复旧BMR僵尸自动避让；瘴气与其他技能继续躲避。
-- 双足飞龙龙卷按观测位移预测，不用攻击转向当速度；停止/瞬移清预测，解析圆矩形替代逐体全场采样。台风落点校验包含龙卷与相邻判定AOE。
-- 插件 Reborn 不因每次危险快照变化取消在途解算。变版本成功路线只作为候选，必须通过最新快照校验；持续伤害中仅准初始退出、禁止再入或危险终点。清空/停用后即使任务早已完成，也须检查 CTS 取消状态再接收，不能复活旧会话路线。
-
-### 2026-09-19 斗兽技能备用资料
-
-- 资料入口：[CrucibleSkills/README.md](docs/reference/CrucibleSkills/README.md)。五盘45组、122条官方敌人名录、430个已知Action与49个关联状态，含中英文名称、分盘技能表、中文攻略要点、网页来源及待核验项。
-- 本资料只供后续开发参考；网页攻略、本地客户端字段和现有代码记录已分别标注。视频仅收集简介和分P目录，不视为已核验视频机制；不要将表读条直接当伤害判定时刻，也不要将接管列表当机制正确性证明。
-
-### 2026-09-19 本地BMR机制同步
-
-- 以本地工作区（含未提交机制）为准，45组253组件逐项核对；新增B03移动冰、B08牛头魔链条、B15鱼人/壳/本体转火、B17逐眼背对、B19分波爆炸、B21异形地板/引导/双向洪流、B28攻击转交、B30熔毁与三连击退。保留MP水雷分离、移动龙卷、取消/效果生命周期和雷达死循环修复。
-- B08月环接黑球、B30三连击退必须分阶段导航；后续波仍绘制。B08仅该局部月环不重复外扩，B30窄就位区采用缓存的0.1m快照及明确目标。详见 `docs/reference/CrucibleAll.spec.md`，不得把所有未来波无条件当成步行危险区。
-- 僵尸先击杀，不躲身体；追人火/雪爆弹只预览，不绕行、不强制转火；石像鬼拉线维持用户特化策略。
-- 自动转火/背对经可选宿主 `PromeRotation.Hosting.MechanicControl` 接口；只有开启自动躲避与走位引导才生效，回放禁用。旧宿主缺接口或签名不兼容时一次提示并保留绘制/走位。禁止硬依赖未发布本体接口，禁止直接覆写用户锁角/目标设置。
-- 新回归入口 `--upstream-sync`，可配 `--filter=<用例名称片段>` 定点复现；全量回归也包含这些用例。构建与移动回归须引用配套本体。
-- 本轮新增40项、完整455项回归通过，MasterPlayer Release 0警告0错误，五盘独立脚本编译通过；17:28配套本体/MP已备份替换并核对哈希。测试及宿主补丁在工作区 `analysis/masterplayer-bmr-sync-20260919/`；本体适配未包含在MasterPlayer源码提交中。
-
-### 2026-09-19 通用撤离时机优化
-
-- 自动走位 → 智能躲避新增默认开启的 `OptimizeDodgeTiming`。仅开启智能躲避即可使用，不依赖选中 Boss、跟随或近战/远程模式。配置保存在 MasterPlayer 自身 JSON。
-- `SafeZoneActivation` 每帧在本地自动移动开启时刷新 `SafeZoneSetting.AttackUptimeExpiresAt`，有效期 0.5 秒；关闭或卸载只撤销自身最后写入的请求。此字段表示请求生命周期，不是预定出发时间；实现位于插件内。
-- 本地 `SafeZoneRebornMovementSystem.Uptime.cs` 复用危险时间窗、剩余折线路线复核与0.2秒滑步窗口；普通 AOE 有余量时等待，按当前移速验证整条路线，保留危险起止余量及0.15秒起步余量。读条按实际离开危险的时间判断，主线程不新增寻路搜索。
-- 已起步、当前危险、紧急缩减余量路径、分阶段转场、激活的机制目标及未知/冻结约束不做起步延后。跟随的可选攻击目标优先级为 -1；非负优先级用于必须完成的机制站位。负优先级不改变现有光栅目标权重。
-- 石像鬼50932后的48718前后刀只让当前一刀参与导航，两刀保留预览；第一刀效果立即切换反向目标；目标为后方3y的R1区域，避免不必要的R0.2精确网格。互补半场同时注册会在第一刀就位后触发数秒时间搜索，拖住第二刀。`--filter='Gargoyle charge'`覆盖此链路，连续模拟必须计入真实求解耗时，不能只代入固定后台延迟。
-- 回归入口 `--filter='Dodge uptime'`，匿名录像 fixture 为 `tests/Fixtures/Crucible/uptime-low1-205342.json`；证据在 `F:/project/卫月插件/analysis/masterplayer-dodge-uptime-20260919/`。用户更正后的录像是普通一盘 20:53:42，不能用高一 15:46:32 代替此次出发时机验证。
-
-### 2026-09-19 连续波次撤离精修
-
-- 普通一盘 21:29:27 ARR 记录 B02 第三条肢解 46879（207.474s）和 B04 第一圈地面隆起 46902（270.226s）命中，旧配套本体在真实组件/移动链路离线重现原地不动。
-- 本体安全时间区间搜索在完整时间路线暂不可行时，返回最近、且安全时间严格优于原地的临时站位；保留全部危险/障碍/场地检查及有限等待期限。`IsPartialEscape` 标识只验证到当前避险阶段，不能当作整套机制已经规划完成。
-- 调度复核临时路线仍安全、快照版本未变时保持该阶段；新事件、动态危险改变、期限到达会失效重算。禁止每次 TTL 都把临时站位推向更远一波。等待及绕行仍由本体负责，MP 不直接竞争移动控制。
-- 错峰未来判定不使用单次 AOE 贪输出等待：不同判定时间超过 0.1 秒时优先起步。保留普通单次技能的撤离优化，不全局修改命中时间或放宽安全余量。
-- B04 地面隆起的外围准备约束由 R8 改为 R10；原 R8 与首圈经过组件/user/PR 余量后没有可达待机带。伤害绘制、各圈真实半径与判定时间不变。
-- 回归入口 `--filter='Recorded dodge refinement'`，fixture 为 `tests/Fixtures/Crucible/dodge-low1-212927.json`；覆盖两套连续波次、跟随开关、80/300ms 后台延迟与80ms移动启动延迟。证据目录 `F:/project/卫月插件/analysis/masterplayer-dodge-refine-20260919-212927/`。本体与 MP 必须配套编译部署。
-- PR 主题 PR #76 尚未合并，`PromeUi.PageHeader` / `TabBar` 不是当前本体主分支的必备 API。统一经 `PluginUi` 缓存可选委托调用；主分支缺少时使用已有 `SectionHeader` / `TabButton`。不要重新硬引用未合并主题 API，合并验证须以最新主分支加本体配套改动编译。
-
-### 2026-09-19 普通二 22:50 ARR 补漏
-
-- B11 补 48198/48201 R5 落点与 48199/48202 两次径向 20m 击退；B13 补 48231 R4–40 月环。精确形状来自客户端表/Omen，击退来自效果包 Knockback=96，不把冲击波猜成全场月环。
-- 双重踏必须逐次从上一次落点计算下一次位移，首段即准备连锁安全站位；只顾第一段安全会在 3.462 秒后的第二击出场。正常读条结束不提前切波，效果包按 helper 消费并去重；取消、死亡、销毁和超时清理。
-- 两端同步；MP 约束网格缓存按源、免疫、AOE、场地失效，稳定帧复用。僵尸身体不躲、优先击杀的既定策略保留。本次未修改 PR 本体。
-- MP 全量 529 场景、五盘脚本编译，BMR Release 11 场景/44 断言通过。`--filter='Recorded low-two'` 回放暗天球/月环/双重踏，覆盖跟随开关和 80/300ms 延迟；`--filter='Low-two'` 包含生命周期用例。匿名 fixture 为 `low2-225025.json`。
-- 暗天球48186已实现，录像实战受击的根因尚未在现有离线条件中复现，不宣称已全部修复。证据：`F:/project/卫月插件/analysis/masterplayer-low2-20260919-225025/`。
-
-### 2026-09-20 高二 23:43 ARR：卡顿、动物交互与劳妲击退
-
-- MP 数字格和洪流冻结几何按输入缓存；明确机制点优先于通用目标评分。通用评分只扫描实际场地范围，缓存静态场地归属，动态目标和危险每帧重新读取，不缓存可变闭包。尾王飞刀稳定帧由约161ms降至14ms（离线机制输入/绘制生成，不代表游戏GPU耗时）。
-- MP 新增2015459答题物的真实交互执行；已确认答案、范围2m内、停稳0.2s、未移动/读条才交互，1.1s节流，发起后保护交互读条。EventState7视为完成。
-- 劳妲5555参考面向不因重复扫描改变；保持正/反向判别。使用实际位置朝对侧凸台计算40m落点；站位目标为中心±18m，允许R2就位口袋，MP不重复按伤害外扩。约束截止为实际击退时间，由宿主加时间余量；禁止额外提前3.5秒，否则与前一波R8圆产生不可满足的约束。
-- MP用原PR时间寻路躲圆后进点；BMR在早一波AOE覆盖最终点时先引导到附近安全地板，效果确认后再约束最终点。两者都保持面向到49489真实效果；第二轮预选北侧落点避开49446。
-- MP宿主转火只发一次并立即解除500ms目标lease，持续帧只保留必要面向/读条控制；BMR目标仅首次可选时选择，玩家手动切怪不再被抢回。禁选列表不再用于持续目标锁。
-- MP完整543项回归通过，新增`High2 feedback`与`Recorded Lauda`入口；后者使用匿名`high2-234310.json`，真实组件/宿主解算与调度，100ms脚本刷新、80/300ms后台延迟及80ms启动延迟，检查两次40m实际落地、后续洪流和六圆/半场。BMR实际Release同录像9场景/4711断言通过。未修改PR本体。原生交互及面向hook仍须重载后实战核验。
-
-### 2026-09-27 执行层移除、六项能力接入与斗兽输出层性能修复
-
-- 移除 BMR 寻路引擎与 AI/移动执行控制 43 个死代码文件（MP 走位由自有 SafeZoneReborn + GreenMove 承载）；9 个上游文件登记适配（SourceChanges.json 共 25 条），排除清单硬编码于 `tests/MechanicRuntime/SourceIntegrity.cs`。障碍位图加载器与 417 个资源、Teleporters 数据面保留；Teleporter 结构体迁入 `BossModule/AIHints.cs`。2,546 断言与 1,060+154 启动覆盖不变。
-- 六项能力：补集→目标安全区（TryConvertComplement，优先级 1 Nearest 不外扩）；场地障碍位图→障碍（位图引用+矩形缓存）；OpIncomingEffect/OpEffectResult（LiveWorldSampler 原生 32 槽扫描，回放无此通道）；强 GoalZones→目标区（≥100 权重、500ms 节流）；ScriptHintsApi 朝向引导（MechanicFacingControl 提取共用）；Teleporters→解算传送边（SafeZoneRuntime.SetTeleporters → A* 出口后继）。
-- 斗兽输出层性能修复：移动危险区（B31 毒云 SDCapsule）每帧重建 FrozenConstraintGeometry 是掉帧主凶（实测 12.12ms/个 vs 解析几何 0.022ms，550 倍），与雷达/解算无关（解算在后台线程）。SDCapsule 改解析多边形直接几何；ShapeDistance 增 ContentKey，CrucibleOutput 按内容键缓存兜底几何（512 上限）。
-- 踩坑：BossMod 值类型字段/闭包会把 MechanicRuntime 程序集依赖引入 MasterPlayer.dll 的类型布局，导致 ScriptManager 内置发现 GetTypes 在缺 MechanicRuntime 探测路径下整体失败（冒烟抓获）。引用类型字段无此问题；值类型一律拆基元或引用。
-- 验证：主项目 0 错误 0 警告；运行库 0 错误；tests/MechanicRuntime 2,551 断言 0 失败；全量回归 708 场景通过；脚本冒烟 19 项通过；已部署插件目录。
-
-### 2026-10-07 金碟巨豆中心竞速绘制
-
-- 内置脚本 `masterplayer.goldsaucer.blunderville`，区域1165；小游戏不依赖战斗旗标，先提供纯绘制。五份 ARR 覆盖两种第一关、两种第二关与决赛，20个内部动作全部压制通用躲避；尺寸静态查询与客户端一致，34803为visual不画。
-- 34812自身源点z190.4、包落点z187.396，必须分开；同轮原生扫描只补缺，不能覆写包内锁定快照。34797/98效果朝向与锁定读条相差90°，只沿用捕获的扇形；35409按源点至落点计算冲锋，不能用占位-π朝向。
-- 滚动球16351/旋转长条9020动态刷新，其余helper判定保持短时静态快照。波浪每列独立预测后四段，实际效果校时/消费，取消、死亡、销毁、超时及回放倒退清理。MapEffect与全机关活动定位未唯一证实，不猜提前开关、跳跃或最快导航；详情见 `docs/reference/Blunderville.spec.md`。
-- 本轮52专项、759全量场景、9脚本编译及20项冒烟通过；运行库2,550断言0失败。Release 0错误（25条已有上游警告），按实装PR1.5.10.1编译，插件目录已备份替换并核对哈希。实机验收待用户完成。
-
-2026-10-15 1.14.33：用户授权按机制重铺保存路网。机制底稿只在编辑/导出构造，运行不生成边；安全区间支配与边时序缓存缩减搜索，图视窗16s，末段仍保留完整登阶检查。按最新危险确认当前边可走时继续到节点再更新后继。已知等待带最多12s，其他节点最多1s且需有已验证后续；不能在波浪区以无后续的站点结束计划。详见Blunderville.spec.md本版本限制与实际回归耗时。
-
-2026-10-15 1.14.34：最新19:43录像出生X=0.5导致0.4m接入门控拒绝；只在起跑平台允许安全接入保存起点。当前段结束前3s预计算后段，交接复核最新时序；已运动边使用100ms观察延迟，不重复完整起步延迟。入口到达/登阶出发分别计时，等待出口按实际出发时间评分。末段补显式横向边与外侧节点，共186点540边8入口。最新出生至四阶顶部离线44.17s、零记录接触，不等同资格终点/实机验收；详见规格。
-
-2026-10-15 1.14.35：20:21录像复现Z204停顿；Y下发原本已忽略。时序复核须由实际点/当前时间重算剩余行程，已取得前进控制不再额外叠加启动延迟，保留危险窗口余量和逐帧复核；节点到达统一0.03m。台阶从入口轴线改为每阶选择同侧起跳/落点，可横移、斜跳及调整距离；当前层的高度/落地状态仍必须真实，不能将Y全部删除。保留保存路网，入口支持面与后续落点分开验证。31路网、176跳跃、14原台阶、6UI、20脚本通过；最新模拟42.47s至台阶顶部，尚需实机验收。
+历史修复与验证记录已移至 [docs/开发记录.md](docs/开发记录.md)。
