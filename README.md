@@ -135,6 +135,12 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 
 ---
 
+## 第三方组件与许可
+
+- 插件自身代码（安全区与解算器、雷达、绘制、录制回放、脚本框架，以及斗兽、糖豆人、地城等机制实现）均为本项目编写。
+- `MechanicRuntime/` 是随插件打包的机制运行库，只用于「机制模块」功能：在没有专属脚本的副本中提供机制绘制与躲避。它以 BSD 3-Clause 许可分发，版权声明与许可全文见 [ThirdPartyNotices/BossModReborn.LICENSE](ThirdPartyNotices/BossModReborn.LICENSE)，分发插件时须保留该文件。
+- `Spatial/` 安全区来源与许可见 [Spatial/README.md](Spatial/README.md) 和 [ThirdPartyNotices/PromeRotation.LICENSE](ThirdPartyNotices/PromeRotation.LICENSE)。
+
 ## 文档索引
 
 | 文档 | 内容 |
