@@ -173,6 +173,7 @@ class CrucibleCastAOEs(BossModule module, Battle battle) : ReplayValidatedCastAO
     protected override AOEConfig? ConfigFor(uint actionID)
     {
         if ((_battle == Battle.B03 && actionID == 46889)
+            || (_battle == Battle.B02 && actionID == CrucibleDismemberSweep.Dismember)
             || (_battle == Battle.B04 && (CrucibleGroundUpliftAOEs.IsUplift(actionID) || actionID == 46908))
             || !CrucibleSpells.Table.TryGetValue(actionID, out var spell))
         {

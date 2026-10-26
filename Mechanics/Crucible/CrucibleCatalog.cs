@@ -55,7 +55,7 @@ internal static class CrucibleCatalog
     internal static BossComponent[] Create(int group, BossModule m) => group switch
     {
         1 => [new CrucibleBoundary(m), new XBMB01AOE(m), new XBMB01Hint0(m)],
-        2 => [new CrucibleBoundary(m), new XBMB02AOE(m)],
+        2 => [new CrucibleBoundary(m), new XBMB02AOE(m), new CrucibleDismemberSweep(m)],
         3 => [new CrucibleBoundary(m), new XBMB03AOE(m), new CrucibleVoidBlizzard(m), new CrucibleVoidFlare(m), new CrucibleVoidFlareHint(m), new XBMB03Hint0(m)],
         4 => [new CrucibleBoundary(m), new XBMB04AOE(m), new CrucibleGroundUpliftAOEs(m), new CrucibleWebAOEs(m), new XBMB04Hint0(m)],
         5 => [new CrucibleBoundary(m), new XBMB05AOE(m), new CrucibleLava(m), new CrucibleFireSpiritWard(m), new CrucibleFireball(m)],

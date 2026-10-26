@@ -18,6 +18,10 @@ internal static class RecordedDodgeRefinementRegression
             foreach(var delay in new[] { .08, .3 })
                 foreach(var follow in new[] { false, true })
                     run($"Recorded dodge refinement {key}, {delay:F2}s worker, follow={follow}",()=>Replay(key,delay,follow));
+        // B02 Dismember sweep: cross the wave front next to the boss instead of outrunning all five strips.
+        foreach(var (file, limit) in new[] { ("dodge-low1-212927.json", 6.0), ("dismember-low1-230421.json", 6.0) })
+            foreach(var delay in new[] { .08, .3 })
+                run($"Recorded B02 dismember sweep {file[^11..^5]} stays short, {delay:F2}s worker",()=>Replay(file.StartsWith("dodge") ? "cleave" : "dismember",delay,false,file,limit));
         foreach(var key in new[] { "dark-orb", "goblin-ring", "stomp" })
             foreach(var delay in new[] { .08, .3 })
                 foreach(var follow in new[] { false, true })
@@ -25,7 +29,7 @@ internal static class RecordedDodgeRefinementRegression
     }
 
     private static Vector3 Vector(JsonElement e) => new(e[0].GetSingle(),0,e[2].GetSingle());
-    private static void Replay(string key, double delay, bool follow, string file = "dodge-low1-212927.json")
+    private static void Replay(string key, double delay, bool follow, string file = "dodge-low1-212927.json", double maxPath = double.PositiveInfinity)
     {
         using var fixture=JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Fixtures","Crucible",file)));
         var fight=fixture.RootElement.GetProperty("fights").EnumerateArray().Single(f=>f.GetProperty("key").GetString()==key);
@@ -57,6 +61,7 @@ internal static class RecordedDodgeRefinementRegression
         var followActive=false;
         string lastStatus="";
         var position=player.Position.ToVec3();
+        var travelled=0d;
         var end=events.Max(e=>e.GetProperty("hit").GetDouble())+1;
         for(var tick=0;tick*.02<=end;tick++)
         {
@@ -116,10 +121,16 @@ internal static class RecordedDodgeRefinementRegression
             dispatch.Invoke(movement,[accepted,new PlayerState(position,0,6,false,false,0,true,snapshot.Version),snapshot,now]);
             if(move.IsRunning && firstMove<0)firstMove=t;
             if(move.IsRunning && !wasMoving)movementReady=t+.08;
-            if(t>=movementReady && t>=knockbackUntil)position=(Vector3)advance.Invoke(move,[position,.02f])!;
+            if(t>=movementReady && t>=knockbackUntil)
+            {
+                var next=(Vector3)advance.Invoke(move,[position,.02f])!;
+                travelled+=Vector3.Distance(next,position);position=next;
+            }
             wasMoving=move.IsRunning;
         }
-        Console.WriteLine($"  {key}: firstMove={firstMove:F2}, all {events.Length} impacts avoided");
+        Console.WriteLine($"  {key}: firstMove={firstMove:F2}, travelled={travelled:F1}m, all {events.Length} impacts avoided");
+        if(travelled>maxPath)
+            throw new InvalidOperationException($"{key} travelled {travelled:F1}m (limit {maxPath:F1}m) instead of crossing the wave front");
         output.Clear();
     }
     private static bool UsesTemporalPlanningForTest(this SafeZoneSolution solution)
