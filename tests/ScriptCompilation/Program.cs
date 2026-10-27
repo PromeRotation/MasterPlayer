@@ -17,7 +17,9 @@ var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Sp
     .Append(Path.GetFullPath(args[1])).Distinct(StringComparer.OrdinalIgnoreCase)
     .Select(p => MetadataReference.CreateFromFile(p)).ToArray();
 var count = 0;
-foreach (var file in Directory.EnumerateFiles(Path.Combine(args[0], "Scripts"), "*.cs", SearchOption.AllDirectories))
+// Built-in entries live in each preset area: Presets/<area>/Entries.
+foreach (var file in Directory.EnumerateDirectories(Path.Combine(args[0], "Presets"), "Entries", SearchOption.AllDirectories)
+    .SelectMany(d => Directory.EnumerateFiles(d, "*.cs")))
 {
     var compilation = CSharpCompilation.Create($"ScriptSmoke{++count}",
         [CSharpSyntaxTree.ParseText(File.ReadAllText(file), new(LanguageVersion.Latest), file)], references,

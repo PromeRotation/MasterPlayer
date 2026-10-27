@@ -1,6 +1,6 @@
 # 机制运行库（MechanicRuntime）
 
-此库包含机制模块、组件、状态机、配置、动作定义、几何及障碍地图，供 MasterPlayer 接入。它不实现 `IDalamudPlugin`。独立构建与离线模块启动验收已完成；宿主桥（`MechanicHost/`，M3–M7）已完成实时世界喂入、效果包捕获、双视图绘制、安全区导航、机制时间轴与回放驱动，本库随插件一同部署。逐模块完整战斗行为验收仍未完成，不能据此宣称全副本可用。
+此库包含机制模块、组件、状态机、配置、动作定义、几何及障碍地图，供 MasterPlayer 接入。它不实现 `IDalamudPlugin`。独立构建与离线模块启动验收已完成；宿主桥（`src/Mechanics/Host/`，M3–M7）已完成实时世界喂入、效果包捕获、双视图绘制、安全区导航、机制时间轴与回放驱动，本库随插件一同部署。逐模块完整战斗行为验收仍未完成，不能据此宣称全副本可用。
 
 源码版本：`f6914f3e85145b5c0390d2e53376b4ffd957cca6`。`Upstream/` 包含运行库 C# 源码（命名空间 `BossMod`）与 `Pathfinding/ObstacleMaps/` 资源，不包含：插件入口 `Framework/Plugin.cs`、`Modules/Dawntrail/Foray/Crucible/`、构建产物，以及 2026-09-27 移除的寻路引擎与 AI/移动执行控制（`Pathfinding/` 的 Map/ThetaStar/NavigationDecision/MapVisualizer、`AI/`（仅保留 AIConfig）、`Framework/` 的 ActionManagerEx/MovementOverride/IPCProvider/DTRProvider/MultiboxManager/WorldStateGameSync、`BossModule/AIHintsVisualizer.cs`、`Debug/`、`Autorotation/MiscAI/`、`Autorotation/UIRotationWindow.cs` 及 3 个模块侧 AIRotationModule 子类——MP 使用自有 SafeZoneReborn 解算与 PR GreenMove 移动，这些文件无构造者；排除清单以 `tests/MechanicRuntime/SourceIntegrity.cs` 为准）。障碍位图加载器（ObstacleMapDatabase/ObstacleMapManager）与 417 个位图资源保留，供后续 MP 场地障碍接入。保留支持类型是为了闭合模块、配置和动作定义的依赖；保留某类不等于启用对应控制器。
 

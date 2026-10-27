@@ -11,46 +11,46 @@
     <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
+    <Compile Include="..\src\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\src\UI\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blunderville\*.json" CopyToOutputDirectory="PreserveNewest" />
-    <Compile Include="..\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
-    <Compile Include="..\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
-    <Compile Include="..\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
-    <Compile Include="..\Follow\FollowController.cs" Link="FollowController.cs" />
-    <Compile Include="..\Follow\DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
-    <Compile Include="..\Follow\OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
-    <Compile Include="..\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
-    <Compile Include="..\Radar\RadarPathDashes.cs" Link="RadarPathDashes.cs" />
-    <Compile Include="..\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
-    <Compile Include="..\Radar\RadarLocalGeometry.cs" Link="RadarLocalGeometry.cs" />
-    <Compile Include="..\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
-    <Compile Include="..\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
-    <Compile Include="..\MechanicHost\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />
-    <Compile Include="..\MechanicHost\MechanicHintsConvert.cs" Link="MechanicHost\MechanicHintsConvert.cs" />
-    <Compile Include="..\MechanicHost\MechanicTimelineView.cs" Link="MechanicHost\MechanicTimelineView.cs" />
-    <Compile Include="..\MechanicHost\MechanicEventFactory.cs" Link="MechanicHost\MechanicEventFactory.cs" />
-    <Compile Include="..\MechanicHost\ReplayFeedAdapter.cs" Link="MechanicHost\ReplayFeedAdapter.cs" />
-    <Compile Include="..\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
-    <Compile Include="..\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
-    <Compile Include="..\Scripting\CastRotation.cs" Link="CastRotation.cs" />
-    <Compile Include="..\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
-    <Compile Include="..\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
-    <Compile Include="..\Scripting\ScriptHintsApi.cs" Link="ScriptHintsApi.cs" />
-    <Compile Include="..\MechanicHost\MechanicFacingControl.cs" Link="MechanicHost\MechanicFacingControl.cs" />
-    <Compile Include="..\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
-    <Compile Include="..\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
-    <Compile Include="..\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />
-    <Compile Include="..\Replay\ReplayPlayback.cs" Link="Replay\ReplayPlayback.cs" />
-    <Compile Include="..\Replay\ReplayRecordFilter.cs" Link="Replay\ReplayRecordFilter.cs" />
-    <Compile Include="..\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
-    <Compile Include="..\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
-    <Compile Include="..\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
+    <Compile Include="..\src\Core\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
+    <Compile Include="..\src\Core\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
+    <Compile Include="..\src\Core\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
+    <Compile Include="..\src\Movement\Follow\FollowController.cs" Link="FollowController.cs" />
+    <Compile Include="..\src\Movement\Follow\DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
+    <Compile Include="..\src\Movement\Follow\OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
+    <Compile Include="..\src\UI\Radar\RadarProjection.cs" Link="RadarProjection.cs" />
+    <Compile Include="..\src\UI\Radar\RadarPathDashes.cs" Link="RadarPathDashes.cs" />
+    <Compile Include="..\src\UI\Radar\RadarArenaLayout.cs" Link="RadarArenaLayout.cs" />
+    <Compile Include="..\src\UI\Radar\RadarLocalGeometry.cs" Link="RadarLocalGeometry.cs" />
+    <Compile Include="..\src\UI\Radar\RadarClipRegion.cs" Link="RadarClipRegion.cs" />
+    <Compile Include="..\src\UI\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicHintsConvert.cs" Link="MechanicHost\MechanicHintsConvert.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicTimelineView.cs" Link="MechanicHost\MechanicTimelineView.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicEventFactory.cs" Link="MechanicHost\MechanicEventFactory.cs" />
+    <Compile Include="..\src\Mechanics\Host\ReplayFeedAdapter.cs" Link="MechanicHost\ReplayFeedAdapter.cs" />
+    <Compile Include="..\src\Movement\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
+    <Compile Include="..\src\Movement\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
+    <Compile Include="..\src\Scripting\CastRotation.cs" Link="CastRotation.cs" />
+    <Compile Include="..\src\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
+    <Compile Include="..\src\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
+    <Compile Include="..\src\Scripting\ScriptHintsApi.cs" Link="ScriptHintsApi.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicFacingControl.cs" Link="MechanicHost\MechanicFacingControl.cs" />
+    <Compile Include="..\src\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
+    <Compile Include="..\src\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
+    <Compile Include="..\src\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />
+    <Compile Include="..\src\Replay\ReplayPlayback.cs" Link="Replay\ReplayPlayback.cs" />
+    <Compile Include="..\src\Replay\ReplayRecordFilter.cs" Link="Replay\ReplayRecordFilter.cs" />
+    <Compile Include="..\src\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
+    <Compile Include="..\src\Replay\ReplayTimeline.cs" Link="Replay\ReplayTimeline.cs" />
+    <Compile Include="..\src\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
 
-    <Compile Include="..\Mechanics\Crucible\**\*.cs" Exclude="..\Mechanics\Crucible\CrucibleScript.cs" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Mechanics\Dungeons\**\*.cs" Exclude="..\Mechanics\Dungeons\DungeonScript.cs" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Mechanics\Blunderville\**\*.cs" Exclude="..\Mechanics\Blunderville\BlundervilleScript.cs;..\Mechanics\Blunderville\BlundervilleNativeControl.cs" Link="Blunderville\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Blunderville\**\*.cs" Exclude="..\Presets\Blunderville\BlundervilleScript.cs;..\Presets\Blunderville\BlundervilleNativeControl.cs;..\Presets\Blunderville\Entries\**" Link="Blunderville\%(RecursiveDir)%(Filename)%(Extension)" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationPath)\ECommons.dll" />
     <Reference Include="Dalamud" HintPath="$(DalamudRoot)\Dalamud.dll" />

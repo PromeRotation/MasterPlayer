@@ -19,7 +19,7 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 
 - **不实现 `IDalamudPlugin`**，不被 Dalamud 直接加载；实现的是 PR 的 `IPromePlugin` 契约，由 PR 插件管理器（`PromePluginManager`）在游戏内反射加载、启用、热重载。
 - 功能组件：**雷达悬浮窗（RadarOverlayWindow，2D 俯视小地图）+ 真实世界绘制（RadarRenderer，3D 世界范围提示）+ 智能躲避（Dodge）+ 战斗中跟随（Follow）+ 智能机制处理（Mechanics）+ 机制脚本框架（Scripting）+ 录制回放（Replay，事件录制与时间轴回放，用于测试脚本）**。术语约定：「雷达」专指雷达悬浮窗；游戏内 3D 世界范围提示叫「真实世界绘制」。
-- **安全区完整实现由插件持有**（`Spatial/SafeZoneReborn`、所需 `SafeZone` 数据与注册层、`Geometry`），所有脚本、跟随、雷达与诊断使用 `MasterPlayerPlugin.Instance.SafeZone`。PR 本体提供 GreenMove 移动执行、DrawManager 世界绘制、事件和移速信息；安全区不再调用本体解算器。来源与接口边界见 `Spatial/README.md`。
+- **安全区完整实现由插件持有**（`src/Spatial/SafeZoneReborn`、所需 `SafeZone` 数据与注册层、`Geometry`），所有脚本、跟随、雷达与诊断使用 `MasterPlayerPlugin.Instance.SafeZone`。PR 本体提供 GreenMove 移动执行、DrawManager 世界绘制、事件和移速信息；安全区不再调用本体解算器。来源与接口边界见 `src/Spatial/README.md`。
 - Dalamud 服务不经构造函数注入（卫星插件没有 `[PluginService]`），统一走 ECommons 静态门面 `Svc`（`ECommons.DalamudServices.Svc`：`Svc.Framework.Update`、`Svc.PluginInterface.UiBuilder.Draw`、`Svc.Log`、`Svc.Objects` 等）。
 
 ## 2. 参考仓库
@@ -39,70 +39,38 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 
 ```
 MasterPlayer/
-├── MasterPlayerPlugin.cs      # 插件入口（IPromePlugin + [PromePlugin]）
-├── MasterPlayer.csproj        # 构建配置（引用 PR 本体 bin，产物直出到 PR 插件目录）
-├── AGENTS.md                  # 本文档
-├── Settings/
-│   ├── MasterPlayerSettings.cs    # 全局设置单例（MasterPlayer.json，System.Text.Json）
-│   └── SafeZoneActivation.cs      # 功能开关到插件安全区/自动移动开关的生命周期联动
-├── Spatial/                      # 插件自有几何、注册表、快照、Reborn 解算器与移动调度
-│   ├── SafeZoneRuntime.cs        # 生命周期与主线程输入采样，最终路线交给 PR GreenMove
-│   └── HostMovement.cs           # 与 PR 旧版/Reborn 的移动控制仲裁
-├── Radar/
-│   ├── RadarOverlayWindow.cs      # 雷达悬浮窗：窗口壳 + 显示门槛 + 交互（内容渲染委托 RadarView）
-│   ├── RadarView.cs               # 可嵌入雷达视图：给定屏幕圆心/半径绘制全套雷达内容（悬浮窗与回放窗口共用）
-│   └── RadarRenderer.cs           # 真实世界绘制：DrawManager 3D 世界范围提示（AOE 预告/安全点等）
-├── Follow/
-│   └── FollowController.cs        # 战斗中跟随：跟随队友/当前目标（自动躲避开启时作为 Reborn 动态目标，与危险区统一解算）
-├── Dodge/
-│   ├── DodgeController.cs         # 智能躲避：读条事件（PromeEventBus 主线程派发）→ 危险区注册 → SafeZone 解算走位
-│   ├── DangerMarginInflator.cs    # 危险区几何外扩（GeometryTemplate 按 DodgeDangerMargin 膨胀）
-│   └── AoeShapeDatabase.cs        # ActionId → AOE 形状查表（静态表 + Lumina CastType 推断）
-├── Mechanics/
-│   ├── MechanicDispatcher.cs      # 机制事件分发器：订阅事件源 → 入队 → 主线程派发给 Handler
-│   └── IMechanicHandler.cs        # 机制处理器接口（每个具体机制一个实现类）
-├── MechanicHost/                     # 机制宿主（M3 输入桥 + M4 绘制桥 + M5 导航桥，规格见 docs/reference/MechanicHost.spec.md）
-│   ├── MechanicHostController.cs     # 会话编排：MechanicRuntimeEnvironment 初始化 + MechanicSession + 事件订阅 + 区域脚本压制 + 诊断属性
-│   ├── ActionEffectCapture.cs  # ActionEffectHandler.Receive 纯观察 hook（只入队不拦截）→ 效果包 DTO
-│   ├── LiveWorldSampler.cs          # 对象表/队伍/标点 → MechanicWorldFrame 采样（FFCS 读法对齐 ReplayWorldCapture）
-│   ├── MechanicDrawHost.cs           # 绘制桥（M4）：激活模块 DrawArenaCaptured 捕获 → 双视图预览注册 + 文字提示/extras
-│   ├── MechanicDrawConvert.cs          # MechanicDrawCommand → MP 几何/线段/extras 纯逻辑转换（tests 可链接）
-│   ├── MechanicNavigationHost.cs     # 导航桥（M5）：AIHintsBuilder 聚合 → 危险区/障碍/边界 diff 注册 + 面向控制 + 诊断
-│   ├── MechanicTimelineView.cs       # 时间轴条行模型纯逻辑（剩余钳制/伤害着色/分支占位，tests 可链接）
-│   └── MechanicHintsConvert.cs         # ShapeDistance/ArenaBounds → GeometryTemplate 识别与采样 + 帧差集注册器（tests 可链接）
-├── Scripting/                     # 机制脚本框架：Roslyn 热编译 + 描述符注册表 + 每脚本 owner 上下文
-│                                  # （ScriptManager / MasterPlayerScript / IScriptHostContext / SafeZone·Move·Draw 三门面等，契约见 §3.1；
-│                                  #   事件订阅经 IScriptEventRouter 抽象：LiveScriptEventRouter 实时转发 PromeEventBus，回放走 ReplayScriptEventRouter）
-├── Replay/
-│   ├── ReplayRecording.cs         # 录制文件模型 + JSON Lines 读写（.mpreplay.jsonl；纯逻辑不依赖游戏服务，tests 可链接）
-│   ├── ReplayWorldState.cs        # v2对象／状态／施法／队伍快照、增量及独立回放世界
-│   ├── ReplayWorldCapture.cs      # 主线程采样对象，保存已观察到的完整EAnim
-│   ├── ReplayPlayback.cs          # 按录制时间及文件行序合并对象帧和事件
-│   ├── ReplayScriptEventRouter.cs # 回放事件路由：脚本订阅落本地注册表，Raise 按类型派发 + 简单事件映射补发
-│   ├── ReplayRecorder.cs          # 录制器：PromeEventBus.OnLogEvent 全量订阅写文件；手动或战斗自动开停
-│   ├── ReplayRecordFilter.cs      # 录制过滤：跳过玩家（PC）/玩家召唤物来源的动作·状态·读条（纯逻辑）
-│   ├── ReplayController.cs        # 回放控制器：回放会话编排 + 主线程时钟派发（播放/暂停/变速/Seek/停止）
-│   ├── ReplayTimeline.cs          # 时间轴模型：读条区间（取消/打断截断）+ 泳道分类打点 + 实体名映射（纯逻辑）
-│   └── ReplayComparison.cs        # 多日志对比：按读条 ActionId 聚合次数/首用时间/日志间差异（纯逻辑）
-├── Examples/
-│   ├── ExampleGenericScript.cs    # 通用机制示例脚本（编译进插件 DLL 做冒烟检查）
-│   └── ExampleZoneScript.cs       # 区域限定示例脚本
-├── Scripts/
-│   ├── Crucible/                 # 斗兽奇弈五盘入口（随 DLL 内置加载，配置目录版本可覆盖）
-│   ├── Dungeons/                 # 地城入口；实现与固定场地轮廓位于 Mechanics/Dungeons/
-│   └── GoldSaucer/               # 金碟巨豆中心（糖豆人）入口；实现位于 Mechanics/Blunderville/
-├── docs/
-│   ├── 脚本开发指南.md            # 面向脚本开发者的中文指南
-│   ├── ARR解析与模拟流程.md       # 录像解析 → 机制分析 → 夹具 → 离线模拟 → 实机验收
-│   ├── 开发记录.md                # 按日期的修复、证据与验证记录
-│   └── reference/
-│       ├── CrucibleAll.spec.md    # 斗兽五盘机制规格
-│       ├── Blunderville.spec.md   # 糖豆人机制与路网规格
-│       └── *.spec.md              # 其他区域、机制运行库与宿主桥规格
-└── Windows/
-    ├── MainWindow.cs              # ImGui 主面板（总开关、脚本库、模块状态、录制回放入口、调试信息）
-    └── ReplayWindow.cs            # 录制回放独立窗口（上内嵌雷达 + 下事件时间轴 / 多日志对比）
+├── MasterPlayer.csproj           # 构建配置（引用 PR 本体 bin，产物直出到 PR 插件目录）
+├── AGENTS.md / README.md
+├── src/                          # 插件本体（命名空间仍为 MasterPlayer.*，与目录无关）
+│   ├── Core/
+│   │   ├── MasterPlayerPlugin.cs # 插件入口（IPromePlugin + [PromePlugin]）
+│   │   ├── Settings/             # MasterPlayerSettings（MasterPlayer.json）、SafeZoneActivation、AoeViewSettings
+│   │   └── Integration/          # 智能走位开关、IPC
+│   ├── Spatial/                  # 插件自有几何、注册表、快照、Reborn 解算器与移动调度（SafeZoneRuntime / HostMovement）
+│   ├── Movement/
+│   │   ├── Dodge/                # 通用读条躲避、危险区外扩、AOE 形状推断
+│   │   └── Follow/               # 战斗中跟随（Reborn 动态目标）
+│   ├── Mechanics/
+│   │   ├── MechanicDispatcher.cs / IMechanicHandler.cs / Handlers/
+│   │   └── Host/                 # 机制运行库宿主桥：输入（M3）、绘制（M4）、导航（M5）、时间轴（M6）、回放（M7）
+│   ├── Scripting/                # 脚本框架：Roslyn 热编译、描述符注册表、owner 上下文、三门面；Visual/ 可视化脚本
+│   ├── Replay/                   # .mpreplay.jsonl 录制、回放世界、时间轴与多日志对比
+│   └── UI/
+│       ├── Radar/                # 雷达悬浮窗、RadarView、真实世界绘制、可见性注册表
+│       └── Windows/              # 主面板、回放窗口、可视化编辑器、糖豆人路网编辑器、PluginUi
+├── Presets/                      # 内置预设：每个区域一个目录，实现 + 数据 + Entries/ 脚本入口
+│   ├── Crucible/                 # 斗兽奇弈：框架（Engine/Output/Model…）、Source/ 各组组件、Entries/ 五盘入口
+│   ├── Blunderville/             # 金碟巨豆中心：规划器、路网预设、Entries/ 入口
+│   ├── Dungeons/                 # ARR 地城：场地轮廓、技能表、Entries/ 三个入口
+│   └── Examples/                 # 示例脚本（编译进 DLL 做冒烟，不作为内置脚本加载）
+├── MechanicRuntime/              # 机制运行库（独立项目，打包为 MasterPlayer.MechanicRuntime.dll）
+├── tests/                        # 回归（MasterPlayer.RegressionTests）、脚本冒烟、界面兼容、运行库测试；Fixtures/ 录像夹具
+├── tools/arr/                    # ARR 录像解析（opcode 映射、事件解码）
+├── docs/                         # 快速开始、ARR 流程、脚本指南、开发记录、reference/ 机制规格
+└── ThirdPartyNotices/            # 第三方许可
 ```
+
+新增区域机制时：在 `Presets/<区域>/` 放实现，在 `Presets/<区域>/Entries/` 放 `[MechanicScript]` 入口（命名空间 `MasterPlayer.Scripts.*` 才会被发现为内置脚本），并在 `tests/MasterPlayer.RegressionTests.csproj` 按现有区域的写法链接实现文件。
 
 ### 3.1 跨模块共享契约（逐字一致，引用他模块时严格按此签名，不得臆造成员）
 
@@ -138,7 +106,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 - `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解，这三个实时回调在回放期间跳过，保护录制场景。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
 - `SafeZoneActivation` 注入本地 `SafeZone.Setting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`；仅智能躲避请求 `EnableAutoMovement`。关闭/卸载仅撤销自己开启的本地开关，手动关闭不每帧覆写，可在诊断页恢复。功能联动不修改 PR 本体安全区。
 
-**Settings.MasterPlayerSettings**（`Settings\MasterPlayerSettings.cs`）
+**Settings.MasterPlayerSettings**（`src\Core\Settings\MasterPlayerSettings.cs`）
 
 ```csharp
 public sealed class MasterPlayerSettings
@@ -196,7 +164,7 @@ public sealed class MasterPlayerSettings
 
 - 存储路径 `Path.Combine(Svc.PluginInterface.ConfigDirectory.FullName, "MasterPlayer.json")`（`ConfigDirectory` 是 `DirectoryInfo`，拼路径取 `.FullName`，同 PromePainter 的 `PainterSettings`），序列化用 `System.Text.Json`。
 
-**Radar.RadarRenderer**（`Radar\RadarRenderer.cs`）——真实世界绘制（3D 范围提示）
+**Radar.RadarRenderer**（`src\UI\Radar\RadarRenderer.cs`）——真实世界绘制（3D 范围提示）
 
 ```csharp
 public sealed class RadarRenderer : IDisposable
@@ -207,7 +175,7 @@ public sealed class RadarRenderer : IDisposable
 }
 ```
 
-**Radar.RadarOverlayWindow**（`Radar\RadarOverlayWindow.cs`）——雷达悬浮窗
+**Radar.RadarOverlayWindow**（`src\UI\Radar\RadarOverlayWindow.cs`）——雷达悬浮窗
 
 ```csharp
 public sealed class RadarOverlayWindow : IDisposable
@@ -218,9 +186,9 @@ public sealed class RadarOverlayWindow : IDisposable
 }
 ```
 
-- 窗口壳只管显示门槛（EnableRadarOverlay/RadarOnlyWithScript）、拖拽/滚轮/右键菜单交互与防抖保存；内容渲染委托 `RadarView`（悬浮窗与回放窗口共用同一组件）。机制模块激活且 `ShowModuleTimeline` 开启时，窗口向下扩展一条预测时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，数据来自 `MechanicHostController.CurrentTimeline`/`MechanicClockUtc`，行模型由纯逻辑 `MechanicHost/MechanicTimelineView.cs` 生成，伤害类型着色 Tankbuster/Raidwide/Knockback），条区随窗口一起拖拽，右键菜单有开关。
+- 窗口壳只管显示门槛（EnableRadarOverlay/RadarOnlyWithScript）、拖拽/滚轮/右键菜单交互与防抖保存；内容渲染委托 `RadarView`（悬浮窗与回放窗口共用同一组件）。机制模块激活且 `ShowModuleTimeline` 开启时，窗口向下扩展一条预测时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，数据来自 `MechanicHostController.CurrentTimeline`/`MechanicClockUtc`，行模型由纯逻辑 `src/Mechanics/Host/MechanicTimelineView.cs` 生成，伤害类型着色 Tankbuster/Raidwide/Knockback），条区随窗口一起拖拽，右键菜单有开关。
 
-**Radar.RadarView**（`Radar\RadarView.cs`）——可嵌入雷达视图
+**Radar.RadarView**（`src\UI\Radar\RadarView.cs`）——可嵌入雷达视图
 
 ```csharp
 public sealed class RadarView
@@ -231,7 +199,7 @@ public sealed class RadarView
 }
 ```
 
-**Windows.ReplayWindow**（`Windows\ReplayWindow.cs`）——录制回放独立窗口
+**Windows.ReplayWindow**（`src\UI\Windows\ReplayWindow.cs`）——录制回放独立窗口
 
 ```csharp
 public sealed class ReplayWindow : IDisposable
@@ -245,7 +213,7 @@ public sealed class ReplayWindow : IDisposable
 - 「MasterPlayer 录制回放」窗口（`/prmp replay` 或主面板「录制回放」页按钮开关）：顶部录制/回放工具栏 + 录制文件列表（「回放」加载播放 + 对比勾选）；「时间轴回放」页签 = 上内嵌 RadarView + 下事件时间轴（泳道分类、滚轮缩放、左键 Seek、悬停详情、播放头跟随回放时钟、泳道显隐）；「日志对比」页签 = 对齐按钮（战斗开始/首次读条/清零）+ 每日志偏移调节 + 技能汇总表（出现 x/N、每日志次数与首用、首用最大差）+ 叠加读条泳道。技能名经 Lumina Action 表解析并缓存（仅 UI 层）。
 
 
-**Follow.FollowController**（`Follow\FollowController.cs`）
+**Follow.FollowController**（`src\Movement\Follow\FollowController.cs`）
 
 ```csharp
 public sealed class FollowController : IDisposable
@@ -263,7 +231,7 @@ public sealed class FollowController : IDisposable
 - 自动躲避模式只撤销自己的本地目标句柄，不直接操作 GreenMove；本地解算关闭时不会降级为直线跟随。直接跟随只有自己下发过 MoveTo 才 Stop；插件安全区或 PR 旧版/Reborn 持有控制权时让位，关闭与卸载同样保护对方路线。回放中禁止跟随。
 - 通用避险优先级：玩家读条、脚下危险扣除宿主开始余量后不足 1 秒、或处于硬障碍内时，撤销普通跟随目标，保持危险解算运行。普通目标保留宿主 0.5 米硬余量，危险结束后的 0.3 秒余量也纳入排除；按原目标覆盖范围统计安全占比，小于 25% 时停用其 GoalWindow，不能只给空几何（PR 的目标启发式仍会朝空区域中心移动）。仅目标启停递增一次版本，使旧追击解算失效；目标/危险几何正常动态更新仍不递增。精确机制 GoalPoints 不受此普通偏好过滤。
 
-**Dodge.DodgeController**（`Dodge\DodgeController.cs`）
+**Dodge.DodgeController**（`src\Movement\Dodge\DodgeController.cs`）
 
 ```csharp
 public sealed class DodgeController : IDisposable
@@ -284,7 +252,7 @@ public sealed class DodgeController : IDisposable
 
 持续危险区与硬障碍覆盖玩家时，Reborn 必须立即逃离、不等读条；硬障碍仅对起点包含玩家的区域允许退出，边界和其他硬障碍仍阻挡。每个持续区域独立禁止退出后重入，逃离路径保留搜索原始线段，并按网格分辨率收紧到达容差，避免停在区域内；无出口返回 `NoReachableSafeCell`。此逻辑在插件内，回归同样走 `tests/MasterPlayer.RegressionTests.csproj`。
 
-**Dodge.DangerMarginInflator**（`Dodge\DangerMarginInflator.cs`）
+**Dodge.DangerMarginInflator**（`src\Movement\Dodge\DangerMarginInflator.cs`）
 
 ```csharp
 public static class DangerMarginInflator
@@ -295,7 +263,7 @@ public static class DangerMarginInflator
 
 - `margin <= 0` 原样返回；Circle 半径 +margin；Donut 内径 -margin（下限 0）/外径 +margin；Fan 半径 +margin；Rectangle 宽 +2×margin / 长 +margin；RayRectangle 两侧与长各 +margin；多边形模板与未知子类原样返回。
 
-**Dodge AOE 形状数据库**（`Dodge\AoeShapeDatabase.cs`）
+**Dodge AOE 形状数据库**（`src\Movement\Dodge\AoeShapeDatabase.cs`）
 
 ```csharp
 public enum AoeShapeKind { Circle, Donut, Fan, Rectangle, RayRectangle }
@@ -316,7 +284,7 @@ public static class AoeShapeDatabase
 
 - 静态表查不到时走 **Lumina Action 表推断**，映射如下：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
 
-**Mechanics.MechanicDispatcher**（`Mechanics\MechanicDispatcher.cs`）
+**Mechanics.MechanicDispatcher**（`src\Mechanics\MechanicDispatcher.cs`）
 
 ```csharp
 public sealed class MechanicDispatcher : IDisposable
@@ -334,7 +302,7 @@ public sealed class MechanicDispatcher : IDisposable
 - 事件 record 命名空间以本体 `LogSystem\LogSystemEvents.cs` 为准：**`PromeRotation.LogSystem`**（`LogSystemCastStartEvent` / `LogSystemTetherEvent` / `LogSystemTargetIconEvent` 均为 `sealed record : LogSystemEvent`）。
 - 注意 `LogSystemCastStartEvent.ActionId` 是 **`ushort`**（而 `LogSystemActionEffectEvent.ActionId` 是 `uint`）；传给 `AoeShapeDatabase.TryGetShape(uint, ...)` 时会发生隐式 widening，无需强转。
 
-**Mechanics.IMechanicHandler**（`Mechanics\IMechanicHandler.cs`）
+**Mechanics.IMechanicHandler**（`src\Mechanics\IMechanicHandler.cs`）
 
 ```csharp
 public interface IMechanicHandler : IDisposable
@@ -346,7 +314,7 @@ public interface IMechanicHandler : IDisposable
 }
 ```
 
-**MechanicHost.MechanicHostController**（`MechanicHost\MechanicHostController.cs`）——机制输入（M3）+ 绘制（M4）+ 导航（M5）宿主，逐字契约：
+**MechanicHost.MechanicHostController**（`src\Mechanics\Host\MechanicHostController.cs`）——机制输入（M3）+ 绘制（M4）+ 导航（M5）宿主，逐字契约：
 
 ```csharp
 public sealed class MechanicHostController : IDisposable
@@ -396,11 +364,11 @@ public sealed class MechanicHostController : IDisposable
 - **绘制桥（M4，`MechanicDrawHost`）**：`EnableRadarOverlay || EnableRadar` 且 `BossModules.ActiveModule` 与队伍槽 0 存在时，每帧 `MechanicModuleDrawCapture.Capture(module, 0, Angle(相机方位角 DirH+π))` 捕获绘制命令，经 `MechanicDrawConvert` 转换后按稳定槽位 id `module/{moduleTypeName}/{i}` 注册进 `AoeVisibilityRegistry`（填充/描边→`AddPreview` 500ms 自过期，线→`AddLine`，帧末差集移除未刷新 id）；双视图全关、无激活模块、压制或回放时 `Sleep()` 清注册（`RemovePreviews("module/")`）并清空 extras/提示。捕获异常按模块 5 秒限频记 `LastCaptureError` 与计数。文字提示聚合 `CalculateGlobalHints()` + `CalculateHintsForRaidMember(0, pc)`，经控制器 `CurrentHints` 暴露给诊断页。
 - **`MechanicDrawConvert`**（internal static 纯逻辑，不引用 Dalamud/PR，tests 直接链接）：Circle/Donut/Fan 直转 MP 几何；Cone(inner>0)/Capsule/ArcCapsule/ComplexPoly（只取外轮廓，洞忽略）/ZoneTriangles（逐三角形）→ `WorldPolygonGeometry`；Cross → 双 `RectangleGeometry`（臂长 2×Range、宽 2×HalfWidth）；Rect 换算中心 `Origin + dir×(LenFront−LenBack)/2`、宽 2×HalfWidth、长 LenFront+LenBack；BMR `Angle.Rad`/`WDir.ToAngle().Rad` 与 MP 弧度约定一致（0=+Z，π/2=+X）。安全色判定用 ColorConfig 默认 ABGR 硬编码对照表（SafeFromAOE 0x80008000 / Safe 0xff00ff00 → safe，其余默认危险）；场地边框 ComplexPoly（Border 白 0xffffffff）跳过，由 MP 边界层绘制。IconWorld/ActorMarker/CardinalNames 跳过（MP 雷达已有角色/罗盘）；Eye/TextWorld/SignMarker 转 `MechanicRadarExtra`（记录 Kind/世界坐标/文本/危险标志/原色 ABGR）。Y 高度取队伍槽 0 玩家 `PosRot.Y`。
 - **雷达 extras 图层**：`RadarView.DrawMechanicExtras`（DrawAreas 后、解算路径前）经 `RadarProjection` 投影，Eye 画双弧+圆点（仿 Components/Gaze.cs，配色用用户危险/安全描边色），Text 用模块原色（ABGR 与 ImU32 同字节序直接使用），Sign 画标记字母（Attack1→"1"、Bind2→"B2"、□/○/×/△）；整体按 `module/{moduleTypeName}` 键过 `AoeVisibilityRegistry.FindRule` 可见性。
-- **导航桥（M5，`MechanicNavigationHost`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时运行库自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `MechanicHintsConvert` 转模板后由 `MechanicNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。补集语义（SDInverted 族/SDOutsideOfUnion/SDPrecisePosition）经 `TryConvertComplement` 取内侧安全形状走同一差集的目标通道（`IsGoal`）：注册为优先级 1、Nearest 偏好的目标安全区（不外扩），SDInvertedUnionOffset 仍跳过。TemporaryObstacles → `AddObstacle` 同 diff；场地障碍位图 `PathfindMapObstacles` → 连通域外轮廓多边形 → 障碍（位图引用+矩形缓存，静态场地零每帧成本）；机制级强 GoalZones（峰值权重 ≥100）0.5m 采样轮廓 → 目标区（500ms 节流，弱偏好不拖拽）；Teleporters → `SafeZoneRuntime.SetTeleporters` 发布解算传送边（内容签名去重，失活清空）。PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过，反射宿主 `MechanicHost/MechanicFacingControl.cs` 与脚本 Hints 门面共用）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `module-nav/{moduleTypeName}` 供「按机制显示」关闭。
-- **时间轴（M6）**：控制器每帧（`session.Update()` 后、模块激活且 `StateMachine.ActivePhase` 非空时）`MechanicTimeline.Capture(module)` 产出 `CurrentTimeline` 快照（条目含名称/ExpectedEnd/StateHint 伤害标记，未决分支只有分支 ID 不猜选），异常限频隔离；门控关闭/无模块/Dispose 置 null。消费侧为纯读：雷达悬浮窗时间轴条（`RadarOverlayWindow` 壳层、RadarView 之后追加，窗口高度计入条高，右键菜单开关 `ShowModuleTimeline`）与诊断页摘要共用纯逻辑 `MechanicHost/MechanicTimelineView.cs`（空名状态隐藏、剩余秒钳制非负、伤害着色优先级 Tankbuster>Raidwide>Knockback>Cast>Attention>Neutral、后续至多 3 条、分支行「分支?」）。回放会话的数据接入属 M7（回放激活时控制器整体跳过，快照为 null；ReplayWindow 预测泳道未做，记入 spec）。
+- **导航桥（M5，`MechanicNavigationHost`）**：自持 `AIHintsBuilder(session.World, BossModules, ZoneModules, rsr: null)`（构造即订阅 WorldState，Dispose 释放）与 `AIHints`；仅 `BossModules.ActiveModule?.StateMachine.ActivePhase != null` 时 `builder.Update(hints, 0, false)`（有激活模块时运行库自动 AOE 推断自然停用，无模块时不消费通用推断——与 MP 通用躲避不重复），无模块/失活时清空全部注册。ForbiddenZones 经 `MechanicHintsConvert` 转模板后由 `MechanicNavAreaDiffer` 按帧差集注册到本地安全区（键 `source/activation.Ticks/序`，同键同参不动、参数变走 `Manager.UpdateArea(incrementVersion:false)`、消失 Remove；activation 未来→`AddDelayedHit(0.6s)`、default/已过→`AddPersistentDanger`；StaticTransform 快照不绑定实体，避免组件每帧重建造成双重移动；危险区按 `DodgeDangerMargin` 外扩，障碍不外扩）。补集语义（SDInverted 族/SDOutsideOfUnion/SDPrecisePosition）经 `TryConvertComplement` 取内侧安全形状走同一差集的目标通道（`IsGoal`）：注册为优先级 1、Nearest 偏好的目标安全区（不外扩），SDInvertedUnionOffset 仍跳过。TemporaryObstacles → `AddObstacle` 同 diff；场地障碍位图 `PathfindMapObstacles` → 连通域外轮廓多边形 → 障碍（位图引用+矩形缓存，静态场地零每帧成本）；机制级强 GoalZones（峰值权重 ≥100）0.5m 采样轮廓 → 目标区（500ms 节流，弱偏好不拖拽）；Teleporters → `SafeZoneRuntime.SetTeleporters` 发布解算传送边（内容签名去重，失活清空）。PathfindMapBounds 变化才 `SetArenaBoundary`、失活 `ClearArenaBoundary`；ForbiddenDirections 在 EnableAutoDodge 且判定 ≤0.75s 时经反射宿主 `PromeRotation.Hosting.MechanicControl` 请求背对（朝向=禁向中心+π，接口缺失一次提示并跳过，反射宿主 `src/Mechanics/Host/MechanicFacingControl.cs` 与脚本 Hints 门面共用）；ImminentSpecialMode/PredictedDamage 仅写诊断。仅 `EnableAutoDodge` 且非回放注册；绘制不受该开关限制。来源键 `module-nav/{moduleTypeName}` 供「按机制显示」关闭。
+- **时间轴（M6）**：控制器每帧（`session.Update()` 后、模块激活且 `StateMachine.ActivePhase` 非空时）`MechanicTimeline.Capture(module)` 产出 `CurrentTimeline` 快照（条目含名称/ExpectedEnd/StateHint 伤害标记，未决分支只有分支 ID 不猜选），异常限频隔离；门控关闭/无模块/Dispose 置 null。消费侧为纯读：雷达悬浮窗时间轴条（`RadarOverlayWindow` 壳层、RadarView 之后追加，窗口高度计入条高，右键菜单开关 `ShowModuleTimeline`）与诊断页摘要共用纯逻辑 `src/Mechanics/Host/MechanicTimelineView.cs`（空名状态隐藏、剩余秒钳制非负、伤害着色优先级 Tankbuster>Raidwide>Knockback>Cast>Attention>Neutral、后续至多 3 条、分支行「分支?」）。回放会话的数据接入属 M7（回放激活时控制器整体跳过，快照为 null；ReplayWindow 预测泳道未做，记入 spec）。
 - **`MechanicHintsConvert`**（internal static 纯逻辑，tests 直接链接）：ShapeDistance 运行时识别——SDCircle/SDDonut 直转、SDCone/SDDonutSector 由存储法线还原朝向与半角（coneFactor<0 时分角线反向）、SDRect/SDCross/SDTri/SDConvexPolygon/SDCapsule/SDArcCapsule 字段反射直转或多边形近似、SDPolygonWithHoles/SDComplexPolygonInvertedContains 取外轮廓（洞忽略）、SDUnion 全成员可识别才拆分；补集语义经 `TryConvertComplement` 取内侧安全形状（SDInverted 族直转、SDOutsideOfUnion 取成员并集、SDPrecisePosition 转单元格矩形、SDInvertedUnionOffset 跳过）；其余（击退二值场、Intersection、DeepDungeonLOS 等）0.5 码网格采样（范围取模块边界半径、60 码封顶，填充率 >65% 判为补集丢弃）→ 连通域 → 角点网格 marching-squares 边链接外轮廓（对角捏合 cross=+1 拆环，孔洞环随最大环丢弃）→ WorldPolygonTemplate。`ConvertObstacleBitmap`：PathfindMapObstacles 位图区域 → 连通域外轮廓多边形（锚点=rect 中心对场心像素，≤8 组件、<4 格忽略）。`ConvertGoalZones`：仅消费峰值权重 ≥100 的机制级强目标（0.5m 总和采样、峰值 50% 以上轮廓、覆盖率 >65% 丢弃）。`MapActivation`：default/已过→持续，未来→延迟秒数。`ConvertBounds`：Circle/ABRect(Rect/Square)/Custom（最大 part 外轮廓）→ MP 边界几何。`MechanicNavAreaDiffer` 差集含危险区与目标区（`IsGoal` 通道：优先级 1、Nearest、不外扩）+ 障碍三路，离线可测（SafeZoneRegistry/Manager 可脱机构造；快照在 `SafeZoneSetting.EnableSafeZone=false` 时过滤危险区）。敌人优先级/ActionsToExecute 不消费（缺口记录）；OpIncomingEffect/OpEffectResult 由 LiveWorldSampler 原生槽扫描接入（非本转换层）。注意：**BossMod 值类型（WPos/WDir/Bitmap.Rect 等）不得存入本程序集类型的字段或闭包**——值类型布局会把 MechanicRuntime 程序集依赖引入 MasterPlayer.dll 的类型加载（曾致 ScriptManager 内置发现 GetTypes 失败；引用类型字段无碍）。
 
-**Windows.MainWindow**（`Windows\MainWindow.cs`）
+**Windows.MainWindow**（`src\UI\Windows\MainWindow.cs`）
 
 ```csharp
 public sealed class MainWindow : IDisposable
@@ -413,7 +381,7 @@ public sealed class MainWindow : IDisposable
 
 - 面板为分页签布局：总览（六个功能模块开关 + 状态/警告）、雷达悬浮窗、绘制外观（真实世界/雷达独立配色 + 按技能来源的显示表格）、自动化（跟随 + 智能躲避余量）、脚本（目录管理与脚本详情）、录制回放（精简入口：录制/回放状态行 + 打开独立窗口按钮 + 自动录制开关）、诊断（调试模式、本体状态、机制模块、机制处理器）。聊天指令 `/prmp` 开关面板（注册于 `MasterPlayerPlugin`，PR 已占用 `/pr`，勿冲突），`/prmp rec` 开停录制，`/prmp replay` 开关录制回放窗口。
 
-**Scripting 脚本框架**（`Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
+**Scripting 脚本框架**（`src\Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
 
 ```csharp
 public sealed record ScriptMetadata(string Id, string Name, uint[] Territorys, string Version, string Author, string Note, string Region, string SourcePath);
@@ -527,7 +495,7 @@ public sealed class ScriptManager : IDisposable
 
 - 脚本目录：`Path.Combine(Svc.PluginInterface.ConfigDirectory.FullName, "MasterPlayer", "Scripts")`（即 `pluginConfigs\PromeRotation\MasterPlayer\Scripts\`，**严禁放 `Plugins\MasterPlayer\` 内**）。
 - 脚本上下文 `MasterPlayerScriptContext` 为 `internal sealed : IScriptHostContext, IDisposable`，internal 构造 `(ScriptManager manager, ScriptMetadata metadata, ScriptSettingStore settings, IScriptEventRouter? router = null)`；router 缺省为 `LiveScriptEventRouter.Instance`（实时转发 PromeEventBus），回放会话由 ReplayController 注入 `ReplayScriptEventRouter`。
-- **事件路由抽象**：`internal interface IScriptEventRouter : IDisposable { IDisposable Subscribe(object owner, string eventName, Delegate handler, Type? logEventType = null); }`（`Scripting\IScriptEventRouter.cs`）。上下文的 35 个订阅方法统一经 `_router.Subscribe(this, "<事件名>", handler, typeof(<事件record类型>))` 落地；事件名与 `PromeEventBus.Subscribe` 字符串名一致。`LiveScriptEventRouter`（`Scripting\LiveScriptEventRouter.cs`，单例，Dispose 为 no-op）：logEventType 命中内置类型表则调对应 `PromeEventBus.OnXxx` 强类型方法，否则反射走泛型 `OnLogEvent<TEvent>`，简单事件直接转发字符串名 API。脚本上下文 Dispose 时在 TryCleanup 链中顺带 Dispose 路由器（回放路由借此清空本地注册表）。
+- **事件路由抽象**：`internal interface IScriptEventRouter : IDisposable { IDisposable Subscribe(object owner, string eventName, Delegate handler, Type? logEventType = null); }`（`src\Scripting\IScriptEventRouter.cs`）。上下文的 35 个订阅方法统一经 `_router.Subscribe(this, "<事件名>", handler, typeof(<事件record类型>))` 落地；事件名与 `PromeEventBus.Subscribe` 字符串名一致。`LiveScriptEventRouter`（`src\Scripting\LiveScriptEventRouter.cs`，单例，Dispose 为 no-op）：logEventType 命中内置类型表则调对应 `PromeEventBus.OnXxx` 强类型方法，否则反射走泛型 `OnLogEvent<TEvent>`，简单事件直接转发字符串名 API。脚本上下文 Dispose 时在 TryCleanup 链中顺带 Dispose 路由器（回放路由借此清空本地注册表）。
 - `ScriptSettingStore` 公共面照抄 PromePainter：`RegisteredSettings` / `GetPropertyType` / `GetPropertyValue` / `SetPropertyValue` / `Get<T>` / `Set` / `GetBool` / `GetInt` / `GetFloat` / `GetString` / `Contains`（MainWindow 据此画设置控件，不依赖反射）。
 
 ## 4. 开发模式 / 构建部署
@@ -553,7 +521,7 @@ dotnet build MasterPlayer.csproj
 - PR 用 shadow copy + 可收集 `AssemblyLoadContext` 加载子插件，DLL 不锁文件，游戏运行中可直接覆盖构建。
 - 首次加载后若插件管理器列表里没有 MasterPlayer，点「刷新全部」让它重扫 `Plugins\` 目录。
 - **PR 本体升级后必须重新构建本插件**（见第 2 节警告）。
-- 环境验证使用 `dotnet build -p:CI=true` 输出到仓库 `bin\Debug\`，避免验证阶段覆盖已安装插件。宿主 `SafeZoneRebornSetting` / `SafeZoneRebornMovementStatus` 由 `Spatial/HostMovement.cs` 缓存反射探测；旧版无该接口时仍检查旧版控制权，新版两者均检查。回归 fixture 仅在宿主提供 Reborn 接口时测试宿主 Reborn 所有权，插件本地 Reborn 测试始终执行。
+- 环境验证使用 `dotnet build -p:CI=true` 输出到仓库 `bin\Debug\`，避免验证阶段覆盖已安装插件。宿主 `SafeZoneRebornSetting` / `SafeZoneRebornMovementStatus` 由 `src/Spatial/HostMovement.cs` 缓存反射探测；旧版无该接口时仍检查旧版控制权，新版两者均检查。回归 fixture 仅在宿主提供 Reborn 接口时测试宿主 Reborn 所有权，插件本地 Reborn 测试始终执行。
 
 ## 5. 核心 API 速查
 
@@ -663,12 +631,12 @@ public readonly record struct GreenMovePoint(
 
 例外：**仅 `PromeRotation.Scripting.dll` 需要随包拷贝到插件目录**（PR 加载器在该目录解析子插件依赖，本体版本一致无冲突），由 csproj 里 `AfterTargets="Build"` 的拷贝目标自动完成（照抄 PromePainter.csproj 的 `CopyPromeRotationScripting` target）。**`MasterPlayer.MechanicRuntime.dll` 同样随包输出**（csproj `ProjectReference` 默认 Private=true；MechanicRuntime 自身的 Dalamud/FFCS/Lumina 等引用全是 Private=false 白名单共享程序集，不拷包）。
 
-**白名单之外的依赖不进包**（csproj 保持 `Private=false`）：PR 加载器只解析白名单到宿主，其余依赖 miss 后由 `Scripting/HostDependencyProbe.cs` 的 ALC `Resolving` 兜底——按「插件自身目录 → 宿主 PR 安装目录」顺序探测同名 DLL 并流式加载（宿主目录里的依赖版本天然与运行中本体一致）。该探针现在作为白名单方案的额外兜底保留。新增非白名单依赖无需改 csproj；仅当两处目录都没有该 DLL 时才会加载失败（报原始 `FileNotFoundException`）。
+**白名单之外的依赖不进包**（csproj 保持 `Private=false`）：PR 加载器只解析白名单到宿主，其余依赖 miss 后由 `src/Scripting/HostDependencyProbe.cs` 的 ALC `Resolving` 兜底——按「插件自身目录 → 宿主 PR 安装目录」顺序探测同名 DLL 并流式加载（宿主目录里的依赖版本天然与运行中本体一致）。该探针现在作为白名单方案的额外兜底保留。新增非白名单依赖无需改 csproj；仅当两处目录都没有该 DLL 时才会加载失败（报原始 `FileNotFoundException`）。
 
-### 5.6 脚本系统（`Scripting\`，模式照抄 PromePainter `Scripting\`）
+### 5.6 脚本系统（`src\Scripting\`，模式照抄 PromePainter `src\Scripting\`）
 
-- **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
-- **机制运行库与地城**：模块清单见 `docs/reference/BMRModuleInventory.csv`（测试数据，文件名保留）；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。运行库（MechanicRuntime/）承载全部 1,214 个目标模块，宿主桥（MechanicHost/）负责实时/回放输入、双视图绘制、安全区导航与时间轴；规格见 `docs/reference/MechanicRuntime.spec.md`、`docs/reference/MechanicHost.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
+- **内置与目录**：仓库 `Scripts/` 使用 `MasterPlayer.Scripts` 及其子命名空间的具体脚本类（公共无参构造）由当前插件程序集反射发现，来源为 `BuiltIn`，不依赖 `Assembly.Location`，不加载 `Presets/Examples/`。配置目录 `ConfigDirectory\MasterPlayer\Scripts\` 仍递归扫描 `.cs`、`.dll`、`*.mechanic.json`；外部脚本严禁放 `Plugins\MasterPlayer\` 插件目录内。
+- **机制运行库与地城**：模块清单见 `docs/reference/BMRModuleInventory.csv`（测试数据，文件名保留）；首批三个普通地城的唯一规格为 `docs/reference/ARRDungeons01.spec.md`。运行库（MechanicRuntime/）承载全部 1,214 个目标模块，宿主桥（src/Mechanics/Host/）负责实时/回放输入、双视图绘制、安全区导航与时间轴；规格见 `docs/reference/MechanicRuntime.spec.md`、`docs/reference/MechanicHost.spec.md`。重制区域 ID 为1036/1037/1038，不能使用旧区域157/164/161或CFC分组ID。新地城运行时与斗兽棋分离，AOE保存读条落点/朝向快照，绘制原尺寸与导航余量分离；定向回归筛选 `ARR dungeons`。
 - **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
 - **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。
@@ -679,25 +647,25 @@ public readonly record struct GreenMovePoint(
 
 ### 5.6.1 可视化机制脚本
 
-- 编辑入口为「机制脚本」→「可视化编辑器」，源码位于 `Scripting/Visual/` 与 `Windows/VisualScriptEditor.cs` / `VisualAoePreview.cs`；使用、UI 与扩展约定见 `docs/可视化脚本编辑器.md`。
+- 编辑入口为「机制脚本」→「可视化编辑器」，源码位于 `src/Scripting/Visual/` 与 `src/UI/Windows/VisualScriptEditor.cs` / `VisualAoePreview.cs`；使用、UI 与扩展约定见 `docs/可视化脚本编辑器.md`。
 - 递归加载 `*.mechanic.json`（新建默认存入脚本目录的 `Visual/`）；带格式版本的定义经描述符工厂创建 `VisualMechanicScript`，沿用区域匹配与独立 owner 生命周期。同区域、同施法者允许多个 GUID；保存只重载当前文档，不刷新其他脚本。
 - 规则按 Action ID 与可选施法者 Data ID（Dalamud `BaseId`）筛选；绑定用事件的 Entity ID。可视化规则通过事件级 `IsGenericDodgeSuppressed` 条件接管，不能使用全局 Action ID 压制，否则会漏掉其他施法者的同技能。
 - 运行器只使用安全区门面注册危险区，不操作 GreenMove 或场地边界；按事件时间扣除派发延迟，清理取消、打断、过期和停止的区域。位置与普通朝向跟随使用局部偏移，其他模式使用世界偏移；预览复用同一 PR 模板。
 - 角度偏移 `AngleOffsetDegrees` 默认 0，在 `RotationOffsetTemplate.Resolve` 中叠加，不修改绑定朝向，避免同时转动局部位置偏移；`DangerMarginInflator` 递归外扩内层模板，保留角度与安全余量。正角度左转、负角度右转。
 
-### 5.7 雷达悬浮窗（`Radar\RadarOverlayWindow.cs`）
+### 5.7 雷达悬浮窗（`src\UI\Radar\RadarOverlayWindow.cs`）
 
 随实际场地轮廓显示的 2D 俯视小地图，原生 ImGui 窗口（无标题栏、无边框、`NoBackground`），由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
 
 - **显示门槛**：`RadarOnlyWithScript`（默认开）开启时，仅当存在运行中的**区域专属脚本**（`Territorys` 非空且匹配当前区域；通用脚本不算，未启用/未运行不算）才显示——即「只在有脚本的区域出现」。
 - **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时优先读取当前斗兽入口与该导航边界对应的 `DisplayBounds` 和固定场心，否则用宿主边界。`RadarArenaLayout` 按镜头旋转后的轮廓最大轴向范围等比缩放到视口，保留4像素边框空间；不会用外接圆缩小长方形、填平异形凹口或给所有地图统一外扩。模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定25码圆形视野。
 - **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
-- **场地裁剪（`Radar/RadarCanvas.cs`、`Radar/RadarClipRegion.cs`）**：背景和内容按真实轮廓与视口相交；凹多边形由PR三角化后逐片裁剪，线段合并连续区间但不跨越凹口。面积计算先平移到局部原点并忽略退化三角形，避免窗口位置造成精度误差。边框随场地，方向文字置于轮廓外侧，距离参考环仍表示实际距离；悬浮窗和回放按当前字号保留方向文字与阴影的边距。
+- **场地裁剪（`src/UI/Radar/RadarCanvas.cs`、`src/UI/Radar/RadarClipRegion.cs`）**：背景和内容按真实轮廓与视口相交；凹多边形由PR三角化后逐片裁剪，线段合并连续区间但不跨越凹口。面积计算先平移到局部原点并忽略退化三角形，避免窗口位置造成精度误差。边框随场地，方向文字置于轮廓外侧，距离参考环仍表示实际距离；悬浮窗和回放按当前字号保留方向文字与阴影的边距。
 - **数据源**：`MasterPlayerPlugin.Instance.SafeZone.Manager.BuildSnapshot`（边界描边、障碍与危险区按危险配色、目标区按安全配色；可选随 `DangerWindow.TelegraphProgressAt` 加深填充）及 `AoeVisibilityRegistry` 的仅供显示预览。危险区描边带辉光双层描边，`RadarPulseDanger` 开启且预告进度 ≥ 0.7 时描边脉冲；解算路径来自 `MasterPlayerPlugin.Instance.SafeZone.MovementStatus.LatestSolution.ExecutablePath`，画成向终点流动的虚线 + 终点菱形扩散圈；队友来自 `PartyHelper.GetParty()`，敌人来自对象表（带深色描边，当前目标有高亮环），玩家自身为双层箭头 + 光晕。
 - **显示配置**：`AoeViewSettings` 为真实世界／雷达独立保存危险和安全区的填充／边框 RGBA、形状过滤及类别开关。`AoeVisibilityRegistry` 关联区域句柄与 `action/{id}` 或 `script/{guid}/{group}` 来源键；未知来源归 `other`。所有显示过滤只发生在两种视图，不能删除解算区域。预览由 `Draw.AddAoe` 登记，同 id 覆盖，按时间／`Draw.Remove`／脚本停止清理；辅助 `Draw.Add/AddBound/AddTether` 保持直接世界绘制语义。
 - **窗口外观与交互**：`RadarOverlayLock`（锁定 + 鼠标穿透）、`RadarScale`（0.3~3 悬浮窗大小；场地始终适配内容视口）、`RadarBackgroundOpacity`、`RadarShowCompass`、`RadarShowRangeRings`、`RadarPulseDanger`。解锁状态下整个视口即拖拽把手（InvisibleButton），滚轮直接调 `RadarScale`（0.8s 防抖后落盘），右键弹快捷菜单（锁定/不透明度/罗盘/距离环/脉冲/隐藏雷达）。窗口位置由 imgui.ini 按窗口名「MasterPlayer 雷达」持久化。
 
-### 5.8 录制回放（`Replay\`）
+### 5.8 录制回放（`src\Replay\`）
 
 机制事件的录制与时间轴回放，用于复现战斗、测试脚本运行状态。**PR 本体的 PromeEventBus/LogSystem 只订阅不发布（无公开 Raise），合成事件因此只在 MasterPlayer 脚本层派发**：录制走 `PromeEventBus.OnLogEvent` 全量订阅，回放经每脚本 `ReplayScriptEventRouter` 直喂，不进总线，DodgeController/Follow/其他插件不响应回放事件。
 
@@ -714,7 +682,7 @@ public readonly record struct GreenMovePoint(
 
 ## 6. 铁律（违反任何一条都等于 bug）
 
-`Windows/PluginUi.Toggle` 不得直接绑定 `PromeUi.ToggleRow`，PR 运行版本可能有 4/5/6 参数签名。缓存检测前四参数与可选尾参数，调用后回写 `ref bool`；无兼容方法时回退 ImGui Checkbox。更新上游须保留这项本地兼容修复，并运行 `tests/UiCompatibility` 检查实际 DLL 无直接 ToggleRow 引用。
+`src/UI/Windows/PluginUi.Toggle` 不得直接绑定 `PromeUi.ToggleRow`，PR 运行版本可能有 4/5/6 参数签名。缓存检测前四参数与可选尾参数，调用后回写 `ref bool`；无兼容方法时回退 ImGui Checkbox。更新上游须保留这项本地兼容修复，并运行 `tests/UiCompatibility` 检查实际 DLL 无直接 ToggleRow 引用。
 
 第三关使用用户手工路网（BlundervilleFinalRouteSettings.Graph）：节点可分叉、汇合及显式回头，从所有已连通后继择路，验证通过的后继可预选并连续执行，不要求每到分叉停下重算；不是唯一折线或整关预设。未画的边不得生成，相交线不自动连接，行走中不可跳分支。台阶入口可多个、自定X，按实测平台校验后执行该入口横向位置的四阶动作，不锁±4。旧Sections按原几何迁移成边。后台时序搜索保留边界、危险及执行复核；保存替换快照。验证 --filter="Blunderville graph"；实机待验收。详见docs/reference/Blunderville.spec.md。
 

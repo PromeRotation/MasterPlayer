@@ -86,7 +86,7 @@ dotnet run --project tests/MasterPlayer.RegressionTests.csproj -c Release -- --k
 dotnet run --project tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj -- . bin/Debug/MasterPlayer.dll
 
 # 界面接口兼容（不同 PR 版本的 ToggleRow 签名）
-dotnet run --project tests/UiCompatibility/MasterPlayer.UiCompatibility.csproj -- Windows/PluginUi.cs bin/Debug/MasterPlayer.dll "PR目录/PromeRotation.dll"
+dotnet run --project tests/UiCompatibility/MasterPlayer.UiCompatibility.csproj -- src/UI/Windows/PluginUi.cs bin/Debug/MasterPlayer.dll "PR目录/PromeRotation.dll"
 
 # 机制运行库（需要本机游戏数据）
 dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.csproj -- . "D:\path\to\game\sqpack"
@@ -106,7 +106,7 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 
 ## 机制脚本
 
-仓库 `Scripts/` 下的脚本随 DLL 内置加载，在「机制脚本」页勾选后进入对应区域自动启动；启用状态、设置与机制开关保存在 `MasterPlayer.json`。
+仓库 `Presets/<区域>/Entries/` 下的脚本随 DLL 内置加载（每个区域的实现、数据与入口都在 `Presets/<区域>/`），在「机制脚本」页勾选后进入对应区域自动启动；启用状态、设置与机制开关保存在 `MasterPlayer.json`。
 
 自定义 `.cs`、`.dll` 或 `*.mechanic.json` 放在配置目录（**不要**放进插件程序集目录）：
 
@@ -141,7 +141,7 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 
 - 插件自身代码（安全区与解算器、雷达、绘制、录制回放、脚本框架，以及斗兽、糖豆人、地城等机制实现）均为本项目编写。
 - `MechanicRuntime/` 是随插件打包的机制运行库，只用于「机制模块」功能：在没有专属脚本的副本中提供机制绘制与躲避。它以 BSD 3-Clause 许可分发，版权声明与许可全文见 [ThirdPartyNotices/BossModReborn.LICENSE](ThirdPartyNotices/BossModReborn.LICENSE)，分发插件时须保留该文件。
-- `Spatial/` 安全区来源与许可见 [Spatial/README.md](Spatial/README.md) 和 [ThirdPartyNotices/PromeRotation.LICENSE](ThirdPartyNotices/PromeRotation.LICENSE)。
+- `src/Spatial/` 安全区来源与许可见 [src/Spatial/README.md](src/Spatial/README.md) 和 [ThirdPartyNotices/PromeRotation.LICENSE](ThirdPartyNotices/PromeRotation.LICENSE)。
 
 ## 文档索引
 
@@ -156,4 +156,4 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 | [IPC 接口](docs/PromeRadarIPC.md) | 外部插件调用 |
 | [开发记录](docs/开发记录.md) | 按日期的修复与验证记录 |
 | [docs/reference/](docs/reference/) | 各区域机制规格（斗兽、糖豆人、地城、运行库、宿主桥） |
-| [Spatial/README.md](Spatial/README.md) | 安全区与解算器 |
+| [src/Spatial/README.md](src/Spatial/README.md) | 安全区与解算器 |

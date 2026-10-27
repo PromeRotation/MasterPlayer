@@ -93,7 +93,7 @@ python tools/arr/arr_decode.py "录像1.dat" "录像2.dat" --out analysis/<日�
 
 1. **定位战斗窗口**：按 Boss `oid` 的生成、首个读条和死亡/移除划定起止时间。
 2. **列出技能**：统计窗口内 `cast` 与 `effect*` 的 `action`。同一技能可能由 Boss 和多个 helper（不可见的辅助实体）同时施放，要按来源分组。
-3. **确定形状与尺寸**：查客户端 Action 表（CastType、EffectRange、XAxisModifier、Omen 路径）。CastType 与形状的对应见 `Dodge/AoeShapeDatabase.cs`：2/5 圆、3/13 扇形（开角取 Omen `fanXXX`）、4/12 矩形、8 冲锋、10 月环（内径取 Omen 名）。表里查不到的，用命中玩家的位置反推并标注为推断。
+3. **确定形状与尺寸**：查客户端 Action 表（CastType、EffectRange、XAxisModifier、Omen 路径）。CastType 与形状的对应见 `src/Movement/Dodge/AoeShapeDatabase.cs`：2/5 圆、3/13 扇形（开角取 Omen `fanXXX`）、4/12 矩形、8 冲锋、10 月环（内径取 Omen 名）。表里查不到的，用命中玩家的位置反推并标注为推断。
 4. **确定位置与朝向**：
    - 用读条的锁定 `loc` / `rotation`，不要用读条期间施法者的实时位置；
    - 有的技能生效朝向与读条朝向不同（曾出现相差 90°），以 `effect` 为准核对；
@@ -147,7 +147,7 @@ public sealed class ExampleArea : MasterPlayerScript
 - **快照而非跟随**：落点和朝向在读条开始锁定后用 `StaticTransform`；需要朝向时用 `CastRotation.TryGet(e, out var rotation)`，取不到就跳过，不要回退到普通朝向。
 - **生命周期**：读条取消、打断、施法者死亡、生效后都要撤销对应区域；脚本停止时门面会自动清理。
 - **显示与解算分离**：预览用原尺寸，导航余量由用户设置统一外扩，不要在脚本里重复加大。
-- **复杂机制**：多波次、击退、引导等参考 `Mechanics/Crucible/` 与 `Mechanics/Blunderville/` 的实现，以及对应 spec。
+- **复杂机制**：多波次、击退、引导等参考 `Presets/Crucible/` 与 `Presets/Blunderville/` 的实现，以及对应 spec。
 
 ---
 

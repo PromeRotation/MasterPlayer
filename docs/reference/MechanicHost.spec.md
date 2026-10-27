@@ -5,7 +5,7 @@
 ## 总体结构
 
 ```
-游戏对象表/网络包 ──► MP 采样与事件（MechanicHost/，主项目）
+游戏对象表/网络包 ──► MP 采样与事件（src/Mechanics/Host/，主项目）
                           │  转换为纯数据帧/事件 DTO
                           ▼
                   MechanicWorldFeed（MechanicRuntime/Hosting/，纯逻辑，离线可测）
@@ -19,7 +19,7 @@
         （导航桥）     （绘制桥）       （时间轴）     （文字提示→面板/日志）
 ```
 
-分层纪律：帧差分与事件排序逻辑全部在 `MechanicRuntime/Hosting/MechanicWorldFeed.cs`（不引用 Dalamud 服务/PR 类型，可用 FFCS/Lumina 数值类型之外的纯托管数据），`tests/MechanicRuntime` 用合成帧驱动验收；MP 侧 `MechanicHost/` 只做「实时对象表→DTO」「PromeEventBus→DTO」的转换与生命周期编排。回放模式复用同一 Feed：`ReplayPlayback` 帧/事件 → DTO → 独立 MechanicSession，成为离线验收工具。
+分层纪律：帧差分与事件排序逻辑全部在 `MechanicRuntime/Hosting/MechanicWorldFeed.cs`（不引用 Dalamud 服务/PR 类型，可用 FFCS/Lumina 数值类型之外的纯托管数据），`tests/MechanicRuntime` 用合成帧驱动验收；MP 侧 `src/Mechanics/Host/` 只做「实时对象表→DTO」「PromeEventBus→DTO」的转换与生命周期编排。回放模式复用同一 Feed：`ReplayPlayback` 帧/事件 → DTO → 独立 MechanicSession，成为离线验收工具。
 
 ## 输入桥（M3）
 
@@ -43,13 +43,13 @@
 
 ### 动作效果包捕获（MP 自挂，不改 PR）
 
-`MechanicHost/ActionEffectCapture.cs`：用 `Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(ActionEffectHandler.Addresses.Receive.Value, detour)` 纯观察接收的效果包——构造 `ActorCastEvent`（Action/MainTargetID/AnimationLock/NumTargets/TargetPos/GlobalSequence/SourceSequence/包朝向 `IntToFloatAngle(RotationInt)` + 逐目标 8×ulong 原始效果）→ 主线程队列 → `OpCastEvent(casterID, info)`。detour 只读取入参并调用 Original，不修改动画锁、不拦截动作。hook 安装失败时降级：聚合 PR ActionEffect 摘要（同 GlobalSequence 窗口合并）构造无 Effects 的包，并记录一次性警告；降级只影响依赖效果数组的组件（击退距离、特定效果判定），OnEventCast 计数不受影响。
+`src/Mechanics/Host/ActionEffectCapture.cs`：用 `Svc.Hook.HookFromAddress<ActionEffectHandler.Delegates.Receive>(ActionEffectHandler.Addresses.Receive.Value, detour)` 纯观察接收的效果包——构造 `ActorCastEvent`（Action/MainTargetID/AnimationLock/NumTargets/TargetPos/GlobalSequence/SourceSequence/包朝向 `IntToFloatAngle(RotationInt)` + 逐目标 8×ulong 原始效果）→ 主线程队列 → `OpCastEvent(casterID, info)`。detour 只读取入参并调用 Original，不修改动画锁、不拦截动作。hook 安装失败时降级：聚合 PR ActionEffect 摘要（同 GlobalSequence 窗口合并）构造无 Effects 的包，并记录一次性警告；降级只影响依赖效果数组的组件（击退距离、特定效果判定），OnEventCast 计数不受影响。
 
 `OpEffectResult`（PendingHP/Status 确认）：2026-09-27 已接入——`LiveWorldSampler` 逐角色扫描原生 `ActionEffectHandler.IncomingEffects` 32 槽（按原生槽位语义，帧级稀疏上报非零槽），`MechanicWorldFeed` 按槽差分发 `OpIncomingEffect`（击退类效果即时武装 `PendingKnockbacks`，槽清空移除）；`TargetConfirmed` 翻转补发 `OpEffectResult` 加速待定 HP/MP/状态确认（不重发 OpIncomingEffect，避免重复武装）。回放录制未存槽位数据，回放帧该通道为空（保持降级口径）。
 
 ### 会话生命周期
 
-- `MechanicHostController`（`MechanicHost/MechanicHostController.cs`）：插件 Initialize 时在 `_mechanics` 之后构造；`Svc.Framework.Update` 中排在 `_dodge` 之前（模块当帧输出可参加当帧解算）；Dispose 反向对称、逐项 try/catch。
+- `MechanicHostController`（`src/Mechanics/Host/MechanicHostController.cs`）：插件 Initialize 时在 `_mechanics` 之后构造；`Svc.Framework.Update` 中排在 `_dodge` 之前（模块当帧输出可参加当帧解算）；Dispose 反向对称、逐项 try/catch。
 - 环境初始化：`MechanicRuntimeEnvironment.Initialize(Svc.Data 的 Lumina.GameData, Svc.Log)`，失败（数据校验和等）则禁用桥并在诊断页报错，不影响其他组件。
 - 会话：常驻一个 MechanicSession；切区不退缩重建（OpZoneChange 驱动模块卸载/切换）；停止/Seek（回放）才新建会话。
 - 门控：`MasterPlayerSettings.EnableMechanicModules`（默认 true）总开关 + `MechanicModuleMinMaturity`（默认 Verified，可降 Contributed/AISupport/WIP）。当前区域有 MP 区域专属脚本运行时（ScriptManager 已有查询），该区域暂停桥的模块激活与输出，避免与 MP 区域专属脚本（斗兽棋、首批地城）双重接管。
@@ -57,7 +57,7 @@
 
 ## 回放接入（M7）
 
-状态：2026-09-23 已实现（控制器回放会话生命周期 + `MechanicHost/ReplayFeedAdapter.cs` + `MechanicEventFactory.cs` + ReplayWindow 预测条；离线回归 `tests/MechanicReplayAdapterRegression.cs` 4 场景）。
+状态：2026-09-23 已实现（控制器回放会话生命周期 + `src/Mechanics/Host/ReplayFeedAdapter.cs` + `MechanicEventFactory.cs` + ReplayWindow 预测条；离线回归 `tests/MechanicReplayAdapterRegression.cs` 4 场景）。
 
 - 挂接点：`ReplayController` 构造注入 `MechanicHostController?`（桥在插件 Initialize 顺序中先于回放控制器构造）；StartSession→`EnterReplaySession(录制区域)`、Seek 的 RestartSessionScripts→`RestartReplaySession()`、StopSession→`ExitReplaySession()`；`AdvanceTo` 的 dispatch 回调先 `OnReplayEvent` 再发脚本路由器，update 回调先 `OnReplayTick(World)` 再 `UpdateReplayScripts`（每步先喂桥再更新脚本）。
 - 会话：实时会话与回放会话并存，输出侧（模块计数/时间轴/两座桥）读 ActiveSession 指针；`MechanicNavigationHost`/`MechanicDrawHost` 经 `SwitchSession` 切换（导航桥的 AIHintsBuilder 订阅 WorldState，切换时销毁重建）。回放中导航注册禁用（ReplayModeActive 判定），绘制/时间轴照常；回放区域有运行中的 MP 区域脚本时不激活模块（与实时压制一致）。
@@ -66,15 +66,15 @@
 
 ## 绘制桥（M4）
 
-状态：2026-09-23 已实现（MP 侧 `MechanicHost/MechanicDrawHost.cs` + `MechanicDrawConvert.cs` + `RadarView.DrawMechanicExtras` + 诊断页提示区；离线回归 `tests/MechanicDrawConvertRegression.cs` 8 场景）。
+状态：2026-09-23 已实现（MP 侧 `src/Mechanics/Host/MechanicDrawHost.cs` + `MechanicDrawConvert.cs` + `RadarView.DrawMechanicExtras` + 诊断页提示区；离线回归 `tests/MechanicDrawConvertRegression.cs` 8 场景）。
 
 - 适配点：`MechanicRuntime/Upstream/BossModule/MiniArena.cs` 单文件适配（登记 SourceChanges.json）：每个绘制原语在世界坐标层（RotatedCoords 之前）转发到可选静态汇 `MechanicDrawSink`。Zone 族 13 方法在**形状参数层**捕获（不取三角化结果），描边/线/多边形/文字/角色标记同样在世界层捕获。`Begin/End` 的 ImGui 窗口管理在无汇时可空转。直画旁路（Gaze 眼睛、头顶标记贴图）一并转发。无汇时保持原行为（不影响离线测试与既有用例）。
-- MP 侧 `MechanicHost/MechanicDrawHost.cs`：每帧 DrawArena 驱动改为「无 ImGui 捕获驱动」——调用 `module.DrawArena` 等效序列（背景→组件背景→前景→组件前景）但由捕获汇收集命令；命令按来源模块分组进 `AoeVisibilityRegistry`（键 `module/{moduleTypeName}`，名称取 ModuleInfo 显示名），双视图复用现有 `AddPreview/AddLine` 与配色/开关；文字提示进诊断/提示区。危险/安全配色默认映射模块绘制的 Risky 语义，用户配色仍生效。
+- MP 侧 `src/Mechanics/Host/MechanicDrawHost.cs`：每帧 DrawArena 驱动改为「无 ImGui 捕获驱动」——调用 `module.DrawArena` 等效序列（背景→组件背景→前景→组件前景）但由捕获汇收集命令；命令按来源模块分组进 `AoeVisibilityRegistry`（键 `module/{moduleTypeName}`，名称取 ModuleInfo 显示名），双视图复用现有 `AddPreview/AddLine` 与配色/开关；文字提示进诊断/提示区。危险/安全配色默认映射模块绘制的 Risky 语义，用户配色仍生效。
 - 落地差异（相对上一段设计）：模块显示名取 `module.GetType().Name`（`BossModuleRegistry.Info` 无 DisplayName 字段）；`MechanicDrawComplexPoly` 只取外轮廓（洞忽略），场地边框（Border 白）跳过由 MP 边界层绘制；ZoneTriangles 逐三角形转 `WorldPolygonGeometry`（不合并连通域）；extras（Eye/Text/Sign）经 `RadarView` 专用图层按模块键过可见性，Eye 用用户危险/安全色、Text 用模块原色；安全色判定硬编码 ColorConfig 默认 ABGR（MP 不加载运行库配置文件）。已知缺口：ShowBorderRisk 时边框以 Enemy 色 ComplexPoly 出现，会短暂显示为用户危险描边；IconWorld（FontAwesome 图标）/ActorMarker/CardinalNames 跳过不画。
 
 ## 导航桥（M5）
 
-状态：2026-09-23 已实现（MP 侧 `MechanicHost/MechanicNavigationHost.cs` + `MechanicHintsConvert.cs`，DodgeController 加机制模块激活压制；离线回归 `tests/MechanicHintsConvertRegression.cs` 9 场景）。
+状态：2026-09-23 已实现（MP 侧 `src/Mechanics/Host/MechanicNavigationHost.cs` + `MechanicHintsConvert.cs`，DodgeController 加机制模块激活压制；离线回归 `tests/MechanicHintsConvertRegression.cs` 9 场景）。
 
 - 每帧 `session.Update()` 后驱动 `AIHintsBuilder.Update(hints, playerSlot, false)`（rsr=null），消费：
   - `ForbiddenZones` → SD* 具体类型识别（SDCircle/SDRect/SDCone/SDDonut/SDCross 及组合）→ MP GeometryTemplate；无法识别回退 0.5 码网格采样连通域 → LocalPolygonTemplate。activation → 绝对时间（注册 AddDelayedHit/AddDelayedDanger；default=立即 → AddPersistentDanger + 帧 diff 续命）。键：`module/{sourceInstanceID}/{activationTick}/{序}`，帧 diff 移除未刷新句柄。
@@ -92,7 +92,7 @@
 
 ## 时间轴（M6）
 
-状态：2026-09-23 已实现实时侧（雷达悬浮窗时间轴条 + 诊断页摘要 + 纯逻辑行模型 `MechanicHost/MechanicTimelineView.cs`，离线回归 `tests/MechanicTimelineViewRegression.cs` 3 场景）；ReplayWindow 预测条已在 M7 接线（回放会话激活且快照非空时显示于泳道区顶部）。
+状态：2026-09-23 已实现实时侧（雷达悬浮窗时间轴条 + 诊断页摘要 + 纯逻辑行模型 `src/Mechanics/Host/MechanicTimelineView.cs`，离线回归 `tests/MechanicTimelineViewRegression.cs` 3 场景）；ReplayWindow 预测条已在 M7 接线（回放会话激活且快照非空时显示于泳道区顶部）。
 
 - 数据源：`MechanicTimeline.Capture(module)`（保留分支未定与伤害标记）。控制器每帧在 `session.Update` 后捕获（异常限频隔离），经 `MechanicHostController.CurrentTimeline` / `MechanicClockUtc` 暴露。
 - 呈现：雷达悬浮窗雷达内容下方追加时间轴条（当前状态行 + 后续至多 3 条 + 未决分支「分支?」，伤害类型着色 Tankbuster/Raidwide/Knockback，右键菜单与 `ShowModuleTimeline` 设置开关）；MainWindow 诊断页显示激活模块/阶段/状态摘要。ReplayWindow 泳道留待 M7；条目点击不 Seek（预测不是录制内容）。

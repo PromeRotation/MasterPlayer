@@ -77,7 +77,7 @@
 - 原始文件不写回、不入库。测试 fixture 仅保留匿名 NPC 序号、机制事件、位置和相对时间；不保留玩家姓名、玩家 ID、聊天或原始包。Despawn 真实对象ID取8-byte载荷 offset4，不能取消息头的本地玩家ID。
 - ARR 头结构对照 [Hypostasis FFXIVReplay](https://github.com/UnknownX7/Hypostasis/blob/master/Game/Structures/FFXIVReplay.cs)，包结构对照本仓库 `MechanicRuntime/Upstream/Network/ServerIPC.cs`。这十二份 DT 录制的数据段偏移为 **0x36C**。
 - opcode 通过本机游戏 dispatcher 跳转表提取；不能套旧 ARR 的固定 opcode。运行时使用 PR 的原生 StartCast / ActionEffect / EnvControl hook，经脚本基类主线程派发；100ms 对象表扫描补读条和滚动球。
-- 危险区尺寸来自本机 Action 表，CastType 换算对照 `Dodge/AoeShapeDatabase.cs`。赛道来自本机 `w1ek` LGB/SGB/模型与可走网格，并用成功段 ARR 交叉验证；不把掉落或回退轨迹当最快路线。机制运行库无对应金碟模块，未把网络攻略当几何或时序真源。
+- 危险区尺寸来自本机 Action 表，CastType 换算对照 `src/Movement/Dodge/AoeShapeDatabase.cs`。赛道来自本机 `w1ek` LGB/SGB/模型与可走网格，并用成功段 ARR 交叉验证；不把掉落或回退轨迹当最快路线。机制运行库无对应金碟模块，未把网络攻略当几何或时序真源。
 
 | 课程 | Director stage | ARR 段数 | 场地定位 |
 |---|---|---|---|

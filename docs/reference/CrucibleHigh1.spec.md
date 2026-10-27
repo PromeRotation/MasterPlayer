@@ -1,6 +1,6 @@
 # 斗兽棋高一（斗兽奇弈·高段第一盘）机制规格
 
-组件：`Mechanics/Crucible/Source/`（CrucibleHigh1Mechanics/Sequences/Branches + 共享组件）。本文是高段第一盘入口 `Scripts/Crucible/High1/CrucibleHigh1.cs` 的唯一事实来源。所有 ID 均为十六进制（括号内十进制）。
+组件：`Presets/Crucible/Source/`（CrucibleHigh1Mechanics/Sequences/Branches + 共享组件）。本文是高段第一盘入口 `Presets/Crucible/Entries/CrucibleHigh1.cs` 的唯一事实来源。所有 ID 均为十六进制（括号内十进制）。
 
 ## 0. 战斗形态与总体架构
 
