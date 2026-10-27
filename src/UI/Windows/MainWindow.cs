@@ -85,10 +85,12 @@ public sealed class MainWindow : IDisposable
         finally { ImGui.End(); }
     }
 
-    private static void DrawOverviewTab()
+    private void DrawOverviewTab()
     {
         var settings = MasterPlayerSettings.Instance;
         var changed = false;
+
+        DrawCurrentArea();
 
         SectionHeader("功能模块");
         changed |= ModuleRow("真实世界绘制", "在游戏 3D 世界中绘制机制范围与安全点提示。", settings.EnableRadar, v => settings.EnableRadar = v);
@@ -101,6 +103,60 @@ public sealed class MainWindow : IDisposable
 
         SectionHeader("当前状态");
         DrawOverviewStatus(settings);
+
+        SectionHeader("录制与反馈");
+        DrawRecordControls();
+        Hint("躲错、漏画或卡住时：用 ARR 录下那一把，把录像和出问题的时间点交给 AI，按 docs/ARR解析与模拟流程.md 修复。");
+    }
+
+    // Current area, whether its mechanics are enabled, and which scripts run here.
+    private void DrawCurrentArea()
+    {
+        var plugin = MasterPlayerPlugin.Instance;
+        var territory = Svc.ClientState.TerritoryType;
+        var settings = MasterPlayerSettings.Instance;
+        ImGui.TextColored(AccentColor, $"{MechanicHost.MechanicTerritoryCatalog.ResolveName(territory)}（{territory}）");
+        var enabled = settings.IsTerritoryEnabled(territory);
+        ImGui.SameLine();
+        if (ImGui.Checkbox("启用本区域机制##overview_area", ref enabled))
+        {
+            settings.TerritoryEnabled[territory] = enabled;
+            settings.Save();
+        }
+        var here = plugin?.Scripts?.Scripts.Where(d => d.Metadata.Territorys.Contains(territory)).ToArray() ?? [];
+        if (here.Length == 0)
+        {
+            Hint(plugin?.MechanicHost?.ActiveModuleName is { } module ? $"本区域无专属脚本，使用内置机制模块：{module}" : "本区域无专属脚本，读条范围由通用躲避识别。");
+            return;
+        }
+        foreach (var descriptor in here)
+        {
+            var running = plugin!.Scripts!.Running.ContainsKey(descriptor.Metadata.Id);
+            ImGui.TextColored(running ? OnColor : HintColor, $"{(running ? "●" : "○")} {descriptor.Metadata.Name}");
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"设置##goto_{descriptor.Metadata.Id}"))
+            {
+                _page = 3; _mechanicsPage = 0; _selectedScript = descriptor.Metadata.Id; _scriptFilter = ""; _scriptScope = 0;
+            }
+        }
+    }
+
+    private static void DrawRecordControls()
+    {
+        var recorder = MasterPlayerPlugin.Instance?.Recorder;
+        if (recorder == null)
+            return;
+        if (recorder.IsRecording)
+        {
+            if (ImGui.Button("停止录制")) recorder.StopRecording();
+            ImGui.SameLine();
+            ImGui.TextColored(OnColor, $"● 录制中 {(int)recorder.Elapsed.TotalMinutes:D2}:{recorder.Elapsed.Seconds:D2}（{recorder.EventCount} 事件）");
+        }
+        else if (ImGui.Button("开始录制"))
+            recorder.StartRecording();
+        ImGui.SameLine();
+        if (ImGui.Button("打开回放窗口"))
+            MasterPlayerPlugin.Instance?.ReplayWindow?.Toggle();
     }
 
     private static void DrawOverviewStatus(MasterPlayerSettings settings)
@@ -112,7 +168,6 @@ public sealed class MainWindow : IDisposable
             var scripts = MasterPlayerPlugin.Instance?.Scripts;
             var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(DateTime.UtcNow);
 
-            ImGui.Text($"当前区域 ID：{Svc.ClientState.TerritoryType}");
             HintInline($"运行中脚本 {scripts?.Running.Count ?? 0} / {scripts?.Scripts.Count ?? 0}");
             HintInline($"活动危险区 {snapshot.DangerAreas.Count}");
             Hint($"插件安全区：{status.PhaseText}");
@@ -291,13 +346,13 @@ public sealed class MainWindow : IDisposable
             Hint("优先选择 3 码攻击范围内的安全位置；必须远离时先躲避，危险结束后回到近战范围。");
         Hint("对怪物计入双方目标圈，并预留停步余量。跟随队友使用下方距离。");
 
-        var slot = settings.FollowSlot;
-        if (ImGui.SliderInt("跟随槽位", ref slot, 0, 7))
+        var slot = Math.Clamp(settings.FollowSlot, 0, 7);
+        if (ImGui.Combo("跟随队友", ref slot, "不指定\0小队第 2 位\0小队第 3 位\0小队第 4 位\0小队第 5 位\0小队第 6 位\0小队第 7 位\0小队第 8 位\0"))
         {
             settings.FollowSlot = slot;
             changed = true;
         }
-        Hint("0 = 不指定小队槽位；1~7 = 小队 UI 序。");
+        Hint("按小队列表顺序（第 1 位是自己）。不指定时按下方选项决定是否跟随当前目标。");
 
         changed |= Check("无有效槽位时跟随当前目标", settings.FollowTargetWhenNoSlot, v => settings.FollowTargetWhenNoSlot = v);
         Hint("支持玩家和怪物；不跟随已死亡或不可选中的目标。");
@@ -333,9 +388,9 @@ public sealed class MainWindow : IDisposable
     {
         var settings = MasterPlayerSettings.Instance;
         if (ModuleRow("启用机制库", "统一控制内置机制和自定义脚本，关闭某副本会停用该区域的全部机制。", settings.EnableMechanics, v => settings.EnableMechanics = v)) settings.Save();
-        _mechanicsPage = PluginUi.TabBar("##mechanics_sections", ["副本与区域", "自定义脚本"], _mechanicsPage);
-        if (_mechanicsPage == 0) DrawTerritories();
-        else DrawScriptsTab();
+        _mechanicsPage = PluginUi.TabBar("##mechanics_sections", ["机制脚本", "按区域启停"], _mechanicsPage);
+        if (_mechanicsPage == 0) DrawScriptsTab();
+        else DrawTerritories();
     }
 
     private void DrawTerritories()
@@ -388,13 +443,12 @@ public sealed class MainWindow : IDisposable
         var manager = MasterPlayerPlugin.Instance?.Scripts;
         if (manager == null) { Hint("脚本管理器尚未就绪。"); return; }
         var settings = MasterPlayerSettings.Instance;
-        Hint("专属脚本优先于内置机制；逐脚本设置与区域开关共同生效。");
+        Hint("内置预设随插件加载，自定义脚本放在配置目录；专属脚本优先于内置机制模块。");
         if (ImGui.Button("刷新脚本")) manager.ReloadScripts();
         ImGui.SameLine();
-        if (ImGui.Button("打开目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
+        if (ImGui.Button("打开脚本目录")) OpenScriptsDirectory(manager.ScriptsDirectory);
         ImGui.SameLine();
-        if (ImGui.Button("可视化编辑器")) _visualEditor.Open();
-        if (ImGui.Button("糖豆人路网（一二三关）")) _routeEditor.Open();
+        if (ImGui.Button("新建可视化脚本")) _visualEditor.Open();
         if (!string.IsNullOrEmpty(manager.StatusMessage)) Hint(manager.StatusMessage);
         if (!string.IsNullOrEmpty(manager.ErrorMessage))
         {
@@ -433,8 +487,10 @@ public sealed class MainWindow : IDisposable
                 ImGui.PushID(id);
                 if (ImGui.Selectable(descriptor.Metadata.Name + "###select", _selectedScript == id)) _selectedScript = id;
                 var running = manager.Running.ContainsKey(id);
-                var status = running ? "运行中" : !settings.EnableMechanics ? "总开关已关闭" : manager.IsScriptEnabled(id) ? "已启用 · 等待区域" : "已停用";
-                ImGui.TextColored(running ? OnColor : HintColor, status);
+                var status = running ? "运行中" : !settings.EnableMechanics ? "机制库已关闭"
+                    : descriptor.Metadata.Territorys.Length > 0 && descriptor.Metadata.Territorys.All(t => !settings.IsTerritoryEnabled(t)) ? "区域已关闭"
+                    : manager.IsScriptEnabled(id) ? "已启用 · 进入区域后运行" : "已停用";
+                ImGui.TextColored(running ? OnColor : HintColor, $"{SourceLabel(descriptor.Source)} · {status}");
                 ImGui.Separator();
                 ImGui.PopID();
             }
@@ -466,7 +522,7 @@ public sealed class MainWindow : IDisposable
         DrawMechanicHandlers();
     }
 
-    private static void DrawReplayTab()
+    private void DrawReplayTab()
     {
         var recorder = MasterPlayerPlugin.Instance?.Recorder;
         var replay = MasterPlayerPlugin.Instance?.Replay;
@@ -476,17 +532,13 @@ public sealed class MainWindow : IDisposable
             return;
         }
 
-        if (recorder.IsRecording)
-            ImGui.TextColored(OnColor, $"● 录制中 {(int)recorder.Elapsed.TotalMinutes:D2}:{recorder.Elapsed.Seconds:D2}（{recorder.EventCount} 事件）");
-        else
+        DrawRecordControls();
+        if (!recorder.IsRecording && !string.IsNullOrEmpty(recorder.StatusMessage))
             HintInline(recorder.StatusMessage);
-
         if (replay.SessionActive)
             ImGui.TextColored(OnColor, $"● 回放中：{replay.ReplayScriptCount} 个脚本，{replay.Clock:F1} s");
-
-        if (ImGui.Button("打开录制回放窗口"))
-            MasterPlayerPlugin.Instance?.ReplayWindow?.Toggle();
-        Hint("查看场地预览、拖动时间轴或对比多份日志。指令 /prpr replay 也可打开。");
+        Hint("回放窗口可查看场地预览、拖动时间轴或对比多份日志；/prpr rec、/prpr replay 也可操作。");
+        Hint("插件录制（.mpreplay.jsonl）用于在回放窗口检查绘制；修机制请用 ARR 录像，见 docs/ARR解析与模拟流程.md。");
 
         var autoRecord = MasterPlayerSettings.Instance.AutoRecordOnBattleStart;
         if (ImGui.Checkbox("战斗开始时自动录制（战斗结束自动停止）", ref autoRecord))
@@ -603,16 +655,22 @@ public sealed class MainWindow : IDisposable
         Hint($"v{metadata.Version} · {metadata.Author}");
         Hint(descriptor.Source == ScriptSource.BuiltIn ? "来源：插件内置" : "来源：配置目录");
         var enabled = manager.IsScriptEnabled(id);
-        if (PluginUi.Toggle("enabled", "启用此脚本", "在适用区域自动运行。", ref enabled)) manager.SetScriptEnabled(id, enabled);
+        if (PluginUi.Toggle("enabled", "启用此脚本", "进入适用区域后自动运行。", ref enabled)) manager.SetScriptEnabled(id, enabled);
         if (descriptor.Source == ScriptSource.Visual && ImGui.Button("编辑脚本")) _visualEditor.Open(descriptor.SourcePath);
+        if (id == "masterplayer.goldsaucer.blunderville" && ImGui.Button("编辑糖豆人路网（一二三关）")) _routeEditor.Open();
         if (!string.IsNullOrWhiteSpace(metadata.Note)) ImGui.TextWrapped(metadata.Note);
-        Hint(metadata.Territorys.Length == 0 ? "适用区域：通用" : $"适用区域：{string.Join(", ", metadata.Territorys)}");
+        Hint(metadata.Territorys.Length == 0 ? "适用区域：通用"
+            : "适用区域：" + string.Join("、", metadata.Territorys.Select(t => $"{MechanicHost.MechanicTerritoryCatalog.ResolveName(t)}（{t}）")));
         if (manager.Running.TryGetValue(id, out var run))
         {
             DrawScriptSettings(run);
-            DrawMechanismToggles(manager, id, run);
+            DrawMechanismToggles(manager, id, run.Script.GetMechanisms());
         }
-        else Hint("脚本运行后可调整设置与机制开关。");
+        else
+        {
+            DrawMechanismToggles(manager, id, Mechanisms(descriptor));
+            Hint("脚本设置在脚本运行后显示；机制开关现在即可调整，进入区域后生效。");
+        }
         if (ImGui.TreeNode("文件信息"))
         {
             ImGui.TextWrapped(metadata.SourcePath);
@@ -688,9 +746,26 @@ public sealed class MainWindow : IDisposable
         ImGui.PopID();
     }
 
-    private static void DrawMechanismToggles(ScriptManager manager, string scriptId, RunningScript run)
+    private readonly Dictionary<string, string[]> _mechanisms = [];
+    // A script lists its mechanisms without starting; create it once to read the list.
+    private string[] Mechanisms(ScriptDescriptor descriptor)
     {
-        var mechanisms = run.Script.GetMechanisms().ToArray();
+        if (_mechanisms.TryGetValue(descriptor.Metadata.Id, out var cached)) return cached;
+        try { cached = descriptor.CreateInstance().GetMechanisms().ToArray(); }
+        catch { cached = []; }
+        return _mechanisms[descriptor.Metadata.Id] = cached;
+    }
+
+    private static string SourceLabel(ScriptSource source) => source switch
+    {
+        ScriptSource.BuiltIn => "内置",
+        ScriptSource.Visual => "可视化",
+        _ => "自定义",
+    };
+
+    private static void DrawMechanismToggles(ScriptManager manager, string scriptId, IEnumerable<string> list)
+    {
+        var mechanisms = list.ToArray();
         if (mechanisms.Length == 0)
             return;
 
