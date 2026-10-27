@@ -1,6 +1,6 @@
 # PromeRadar — 项目总文档（AGENTS.md）
 
-面向后续 AI 代理与开发者的项目权威文档。机制问题的标准工作流（ARR 录像解析 → 机制实现 → 离线模拟 → 实机验收）见 [docs/ARR解析与模拟流程.md](docs/ARR解析与模拟流程.md)；按日期的修复与验证记录见 [docs/开发记录.md](docs/开发记录.md)。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
+面向后续 AI 代理与开发者的项目权威文档。上手步骤见 [docs/快速开始.md](docs/快速开始.md)；机制问题的标准工作流（ARR 录像解析 → 机制实现 → 离线模拟 → 实机验收）见 [docs/ARR解析与模拟流程.md](docs/ARR解析与模拟流程.md)；按日期的修复与验证记录见 [docs/开发记录.md](docs/开发记录.md)。动手写代码前先读完本文；涉及 PromeRotation、Dalamud（卫月）或 FFXIVClientStructs（FFCS）的 API 签名与用法，**一律查阅对应仓库源码**（路径见下）。
 
 ## 当前设置与控制契约
 

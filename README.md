@@ -2,6 +2,8 @@
 
 > FFXIV 插件 **PromeRotation（PR）** 的卫星插件：雷达、世界绘制、智能走位、机制脚本与录制回放。
 > 项目的核心工作流是**由 AI 解析实战录像（ARR），实现机制绘制与躲避，再用离线模拟验证**，见 [ARR 解析与模拟流程](docs/ARR解析与模拟流程.md)。
+>
+> **第一次使用或第一次接手开发，先看 [快速开始](docs/快速开始.md)。**
 
 为保持已安装插件、外部脚本与配置兼容，插件 ID、程序集、命名空间和数据目录仍沿用 `MasterPlayer` 命名。
 
@@ -145,6 +147,7 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 
 | 文档 | 内容 |
 |---|---|
+| [快速开始](docs/快速开始.md) | 玩家安装使用；AI/开发者构建、测试、修机制的入口 |
 | [AGENTS.md](AGENTS.md) | 架构、模块契约、开发纪律（AI 代理先读） |
 | [ARR 解析与模拟流程](docs/ARR解析与模拟流程.md) | 录像解析、机制分析、夹具与离线模拟、实机验收闭环 |
 | [脚本开发指南](docs/脚本开发指南.md) | 脚本 API、事件、三门面 |
