@@ -8,7 +8,7 @@ using PromeRotation.UI.Components;
 namespace MasterPlayer.Windows;
 
 /// <summary>
-/// 设置面板：侧栏分区（总览/显示与绘制/智能走位/机制库/录制回放/诊断）。
+/// 设置面板：侧栏分区（总览/显示与绘制/智能走位/机制库/录制回放/诊断/PR3 遥控）。
 /// 由 UiBuilder.Draw（主线程）驱动；PR 插件管理器按钮或聊天指令 /prpr 开关。
 /// </summary>
 public sealed class MainWindow : IDisposable
@@ -26,7 +26,8 @@ public sealed class MainWindow : IDisposable
     private string _scriptFilter = "";
     private string _territoryFilter = "";
     private string? _selectedScript;
-    private static readonly string[] Pages = ["总览", "显示与绘制", "智能走位", "机制库", "录制回放", "诊断"];
+    private static readonly string[] Pages = ["总览", "显示与绘制", "智能走位", "机制库", "录制回放", "诊断", "遥控"];
+    private readonly RemoteControlPage _remotePage = new();
     private readonly VisualScriptEditor _visualEditor = new();
     private readonly BlundervilleRouteEditor _routeEditor = new();
 
@@ -44,6 +45,13 @@ public sealed class MainWindow : IDisposable
         _routeEditor.Draw();
         if (!_visible) return;
 
+        var remoteVisible = Integration.RemoteControlClient.HasPermission;
+        if (!remoteVisible)
+        {
+            if (_page == 6) _page = 0;
+            _remotePage.Reset();
+        }
+
         using var theme = PromeUiTheme.PushWindowStyle();
         ImGui.SetNextWindowSize(new Vector2(900, 700), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(780, 520), new Vector2(1800, 1400));
@@ -60,7 +68,10 @@ public sealed class MainWindow : IDisposable
                 ImGui.TextColored(AccentColor, "PromeRadar");
                 ImGui.Spacing();
                 for (var i = 0; i < Pages.Length; ++i)
+                {
+                    if (i == 6 && !remoteVisible) continue;
                     if (ImGui.Selectable(Pages[i], _page == i, ImGuiSelectableFlags.None, new Vector2(0, 36))) _page = i;
+                }
                 ImGui.Spacing();
                 Hint("外观跟随 PR 主题");
                 Hint("设置即时生效");
@@ -78,6 +89,7 @@ public sealed class MainWindow : IDisposable
                     case 3: DrawMechanicsTab(); break;
                     case 4: DrawReplayTab(); break;
                     case 5: DrawDiagnosticsTab(); break;
+                    case 6 when remoteVisible: _remotePage.Draw(); break;
                 }
             }
             ImGui.EndChild();

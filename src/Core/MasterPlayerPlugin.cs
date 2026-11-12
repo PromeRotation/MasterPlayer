@@ -33,6 +33,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private SafeZoneActivation? _safeZoneActivation;
     private SafeZoneRuntime? _safeZone;
     private Integration.SmartMovementIntegration? _integration;
+    private Integration.RemoteControlClient? _remoteControl;
     private bool _smartMovementEnabled;
     private IDisposable? _safeZoneTerritory, _safeZoneDeath, _safeZoneBattleEnd;
     public SafeZoneRuntime SafeZone => _safeZone ?? throw new InvalidOperationException("MasterPlayer 安全区尚未初始化。");
@@ -52,6 +53,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     internal Replay.ReplayController? Replay => _replayController;
 
     internal Windows.ReplayWindow? ReplayWindow => _replayWindow;
+
+    public Integration.RemoteControlClient? RemoteControl => _remoteControl;
 
     public void Initialize()
     {
@@ -79,6 +82,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _replayWindow = new Windows.ReplayWindow();
         _radarOverlay = new Radar.RadarOverlayWindow();
         _follow = new Follow.FollowController();
+        _remoteControl = new Integration.RemoteControlClient();
         _mainWindow = new Windows.MainWindow();
         _integration = new Integration.SmartMovementIntegration();
 
@@ -217,6 +221,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             }
         }
 
+        SafeDispose(ref _remoteControl);
         SafeDispose(ref _integration);
         SafeDispose(ref _replayWindow);
         SafeDispose(ref _mainWindow);

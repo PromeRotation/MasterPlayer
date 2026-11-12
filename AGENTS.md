@@ -10,6 +10,7 @@
 - 旧移动开关按 OR 迁移；旧脚本/模块总开关按 OR 迁移。保存新配置不再写旧字段，首次覆盖旧格式前保留 `MasterPlayer.json.before-promeradar.bak`。配置格式字段 `SettingsVersion=1`。
 - `/prpr` 开关面板，`/prpr ai on/off` 控制智能走位；`rec` / `replay` 保留。旧 `/prmp` 兼容。DTR `PromeRadar AI：开/关` 左键切换，同 UI/IPC 共用插件 setter；IPC 请求入队后在 Framework 线程应用，通道与状态字段见 `docs/PromeRadarIPC.md`。
 - 脚本增加 `protected virtual OnMovementDisabled()`；宿主关闭智能走位时先清 Move/Hints 门面，再调用此 hook。脚本额外持有原生控制时必须覆盖并撤销。不得停止其他来源的 GreenMove。
+- 「遥控」为 PR3 专属侧栏页，逐帧通过公开 `PromeRotation.Core.Core.MyPrLevel() >= 3` 判断；掉级退回总览。`MasterPlayerPlugin.RemoteControl` 提供 XSZToolbox IPC 客户端，每次调用重新检查等级，仅主线程调用；移动发送受智能走位开关门控，回放禁止全部控制发送。工具箱远程建房/入房/关闭与 PR 专用 IPC 同步等待网络且访问主线程对象，因此留在工具箱原 UI；本项目消费旧 Action 控制、状态/成员快照及本地虚拟房间接口，契约见 `docs/PromeRadarIPC.md`，定向回归在 `tests/RemoteControl/`。
 
 下文旧开关/界面描述与本节冲突时，以本节及当前源码为准；参考仓库、主线程纪律及机制规格继续有效。
 
@@ -379,7 +380,7 @@ public sealed class MainWindow : IDisposable
 }
 ```
 
-- 侧栏六页：**总览**（当前区域名称与本区域开关、本区域脚本状态及跳转设置、四个功能模块开关、状态与警告、开始/停止录制与回放窗口、ARR 反馈提示）、**显示与绘制**（雷达 / 世界绘制 / 按机制显示）、**智能走位**（接近目标偏好、跟随队友、避险偏好）、**机制库**（「机制脚本」：内置/可视化/自定义脚本列表与详情，未运行时也可调机制开关，糖豆人路网编辑器入口在其详情里；「按区域启停」：区域开关表）、**录制回放**、**诊断**。聊天指令 `/prpr`（旧 `/prmp` 兼容），`rec` 开停录制，`replay` 开关回放窗口。
+- 侧栏七页（遥控仅 PR3 可见）：**总览**（当前区域名称与本区域开关、本区域脚本状态及跳转设置、四个功能模块开关、状态与警告、开始/停止录制与回放窗口、ARR 反馈提示）、**显示与绘制**（雷达 / 世界绘制 / 按机制显示）、**智能走位**（接近目标偏好、跟随队友、避险偏好）、**机制库**（「机制脚本」：内置/可视化/自定义脚本列表与详情，未运行时也可调机制开关，糖豆人路网编辑器入口在其详情里；「按区域启停」：区域开关表）、**录制回放**、**诊断**、**遥控**（XSZToolbox 房间成员、位置/动作/消息/职能控制及虚拟房间）。聊天指令 `/prpr`（旧 `/prmp` 兼容），`rec` 开停录制，`replay` 开关回放窗口。
 
 **Scripting 脚本框架**（`src\Scripting\*.cs`，命名空间统一 `MasterPlayer.Scripting`，含 `ScriptSettingStore`）
 
