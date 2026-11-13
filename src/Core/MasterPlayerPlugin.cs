@@ -34,6 +34,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private SafeZoneRuntime? _safeZone;
     private Integration.SmartMovementIntegration? _integration;
     private Integration.RemoteControlClient? _remoteControl;
+    private Combat.Sequences.CombatSkillSequence? _skillSequences;
     private bool _smartMovementEnabled;
     private IDisposable? _safeZoneTerritory, _safeZoneDeath, _safeZoneBattleEnd;
     public SafeZoneRuntime SafeZone => _safeZone ?? throw new InvalidOperationException("MasterPlayer 安全区尚未初始化。");
@@ -55,6 +56,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     internal Windows.ReplayWindow? ReplayWindow => _replayWindow;
 
     public Integration.RemoteControlClient? RemoteControl => _remoteControl;
+    internal Combat.Sequences.CombatSkillSequence? SkillSequences => _skillSequences;
 
     public void Initialize()
     {
@@ -83,6 +85,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _radarOverlay = new Radar.RadarOverlayWindow();
         _follow = new Follow.FollowController();
         _remoteControl = new Integration.RemoteControlClient();
+        _skillSequences = new Combat.Sequences.CombatSkillSequence();
         _mainWindow = new Windows.MainWindow();
         _integration = new Integration.SmartMovementIntegration();
 
@@ -154,6 +157,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _mechanics?.Update();
         _replayRecorder?.Update();
         _replayController?.Update(deltaTime);
+        _skillSequences?.Update();
         _scripts?.Update(deltaTime);
         _follow?.Update();
         _safeZone?.Update(PromeRotation.Plugin.Instance.SpeedMultiplierService.EffectiveMultiplier,
@@ -221,6 +225,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             }
         }
 
+        SafeDispose(ref _skillSequences);
         SafeDispose(ref _remoteControl);
         SafeDispose(ref _integration);
         SafeDispose(ref _replayWindow);

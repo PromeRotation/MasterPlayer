@@ -26,7 +26,8 @@ public sealed class MainWindow : IDisposable
     private string _scriptFilter = "";
     private string _territoryFilter = "";
     private string? _selectedScript;
-    private static readonly string[] Pages = ["总览", "显示与绘制", "智能走位", "机制库", "录制回放", "诊断", "遥控"];
+    private static readonly string[] Pages = ["总览", "显示与绘制", "智能走位", "机制库", "录制回放", "诊断", "技能序列", "遥控"];
+    private readonly SkillSequencePage _sequencePage = new();
     private readonly RemoteControlPage _remotePage = new();
     private readonly VisualScriptEditor _visualEditor = new();
     private readonly BlundervilleRouteEditor _routeEditor = new();
@@ -48,7 +49,7 @@ public sealed class MainWindow : IDisposable
         var remoteVisible = Integration.RemoteControlClient.HasPermission;
         if (!remoteVisible)
         {
-            if (_page == 6) _page = 0;
+            if (_page == 7) _page = 0;
             _remotePage.Reset();
         }
 
@@ -69,7 +70,7 @@ public sealed class MainWindow : IDisposable
                 ImGui.Spacing();
                 for (var i = 0; i < Pages.Length; ++i)
                 {
-                    if (i == 6 && !remoteVisible) continue;
+                    if (i == 7 && !remoteVisible) continue;
                     if (ImGui.Selectable(Pages[i], _page == i, ImGuiSelectableFlags.None, new Vector2(0, 36))) _page = i;
                 }
                 ImGui.Spacing();
@@ -89,7 +90,8 @@ public sealed class MainWindow : IDisposable
                     case 3: DrawMechanicsTab(); break;
                     case 4: DrawReplayTab(); break;
                     case 5: DrawDiagnosticsTab(); break;
-                    case 6 when remoteVisible: _remotePage.Draw(); break;
+                    case 6: _sequencePage.Draw(); break;
+                    case 7 when remoteVisible: _remotePage.Draw(); break;
                 }
             }
             ImGui.EndChild();

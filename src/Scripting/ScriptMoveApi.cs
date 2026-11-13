@@ -36,6 +36,25 @@ public sealed class ScriptMoveApi
     /// <summary>获取当前移动状态。</summary>
     public GreenMoveStatus GetStatus() => System.GetStatus();
 
+    /// <summary>原生移动脚本暂停插件自动移动；关闭智能走位、回放或 PR 接管时返回 false。仅主线程。</summary>
+    public bool TryHoldAutomaticMovement()
+    {
+        var plugin = MasterPlayerPlugin.Instance;
+        if (plugin == null || !MasterPlayerSettings.Instance.EnableSmartMovement || plugin.Scripts?.ReplayModeActive == true ||
+            !plugin.SafeZone.Setting.MovementAllowed || HostMovement.AutomaticMovementEnabled || HostMovement.HasControl)
+        {
+            ReleaseAutomaticMovement();
+            return false;
+        }
+
+        plugin.SafeZone.RequestAutomaticMovement(this, true, hold: true);
+        return true;
+    }
+
+    /// <summary>仅撤销本脚本的自动移动暂停请求。</summary>
+    public void ReleaseAutomaticMovement()
+        => MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
+
     /// <summary>替换当前路线并移动到单点。</summary>
     public void MoveTo(GreenMovePoint point)
     {
@@ -107,11 +126,16 @@ public sealed class ScriptMoveApi
 
     internal void Cleanup()
     {
-        if (!_hasControl)
-            return;
         try
         {
-            Stop();
+            try
+            {
+                ReleaseAutomaticMovement();
+            }
+            finally
+            {
+                Stop();
+            }
         }
         catch (Exception ex)
         {

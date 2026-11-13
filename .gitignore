@@ -9,3 +9,4 @@ obj/
 Directory.Build.local.props
 /analysis/promeradar-settings-cleanup/
 /analysis/
+/LocalOnly/

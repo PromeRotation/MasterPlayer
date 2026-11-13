@@ -29,6 +29,8 @@ public sealed class MasterPlayerSettings
     public bool OptimizeDodgeTiming = true;
     public bool EnableMechanics = true;
     public bool DebugMode = false;
+    public bool EnableSkillSequences = false;
+    public List<Combat.Sequences.SkillSequenceProfile> SkillSequences = new();
 
     public bool EnableRadarOverlay = false;
     public int RadarCenterMode = 0;
@@ -113,6 +115,14 @@ public sealed class MasterPlayerSettings
         settings.ScriptEnabled ??= new();
         settings.ScriptSettings ??= new();
         settings.MechanismEnabled ??= new();
+        settings.SkillSequences ??= new();
+        settings.SkillSequences.RemoveAll(p => p == null || p.JobId == 0);
+        foreach (var profile in settings.SkillSequences)
+        {
+            profile.Entries ??= new();
+            profile.Entries.RemoveAll(e => e == null);
+            profile.CompletionCommand ??= "";
+        }
         return settings;
     }
 

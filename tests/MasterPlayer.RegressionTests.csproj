@@ -50,6 +50,7 @@
 
     <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\src\Combat\Sequences\*.cs" Exclude="..\src\Combat\Sequences\CombatSkillSequence.cs" Link="Sequences\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Blunderville\**\*.cs" Exclude="..\Presets\Blunderville\BlundervilleScript.cs;..\Presets\Blunderville\BlundervilleNativeControl.cs;..\Presets\Blunderville\Entries\**" Link="Blunderville\%(RecursiveDir)%(Filename)%(Extension)" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationPath)\ECommons.dll" />

@@ -145,6 +145,7 @@ internal static class ScriptCatalogRegression
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
             IntegrationRegression.Run(assembly);
+            SkillSequenceRuntimeRegression.Run(assembly);
         }
         finally
         {
@@ -202,6 +203,8 @@ internal static class ScriptCatalogRegression
                 Check(!runtime.Manager.ContainsArea(handle), "Replay transitions must clear the previous session's areas.");
             }
             Check(moveCalls == 0, "Registration and replay preview must not invoke movement.");
+            ScriptMovementRegression.Run(assembly, manager, (object)runtime);
+            Check(moveCalls == 0, "Script holds must not issue GreenMove commands.");
             Console.WriteLine("PASS production local runtime: script registration, cleanup and replay transitions");
             CheckReplaySession(assembly, manager, runtime, plugin);
             Check(moveCalls == 0, "Recorded playback must never invoke movement.");

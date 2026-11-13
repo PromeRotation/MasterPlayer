@@ -345,6 +345,7 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 });
 
 CrucibleMechanicRegression.Run(Run);
+SkillSequenceRegression.Run(Run);
 ArrDungeonRegression.Run(Run);
 BlundervilleRegression.Run(Run);
 BlundervillePresetRegression.Run(Run);
