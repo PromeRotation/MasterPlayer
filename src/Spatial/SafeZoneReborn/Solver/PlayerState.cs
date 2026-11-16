@@ -1,7 +1,6 @@
 using MasterPlayer.Spatial.SafeZone;
 using System;
 using System.Numerics;
-using ECommons.DalamudServices;
 
 namespace MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
@@ -21,14 +20,14 @@ public readonly record struct PlayerState(
     int SnapshotVersion)
 {
     /// <summary>
-    /// 在主线程读取当前本地玩家，产出不可变快照。
+    /// 在主线程读取 MP 当前视角玩家（正常游戏本人或 ARR 观看角色），产出不可变快照。
     /// <para><paramref name="currentSpeed"/> 由 <see cref="MovementCapability.CurrentSpeed"/> 传入，使两者一致。</para>
     /// <para><paramref name="snapshotVersion"/> 一般取 <c>SafeZoneManager.Version</c>，用于下游判断解算结果是否仍对应同一份快照。</para>
     /// <para>玩家不存在时返回带版本号的默认值（位置为零、未移动、未读条），由调用方决定是否解算。</para>
     /// </summary>
     public static PlayerState CaptureFromMainThread(int snapshotVersion, float currentSpeed, bool isMoving = false)
     {
-        var me = Svc.Objects.LocalPlayer;
+        var me = PlayerPerspective.LivePlayer;
         if (me is null)
         {
             return new PlayerState(Vector3.Zero, 0f, currentSpeed, false, false, 0f, true, snapshotVersion);

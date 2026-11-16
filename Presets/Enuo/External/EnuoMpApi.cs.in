@@ -1,0 +1,61 @@
+using System.Reflection;
+using MasterPlayer.Scripting;
+using MasterPlayer.Spatial;
+using MasterPlayer.Spatial.Geometry;
+using MasterPlayer.Spatial.SafeZone;
+
+namespace MasterPlayer.LocalScripts.Enuo;
+
+// Compatibility with the already installed MP: keep its movement ownership,
+// replay gates and preview bookkeeping instead of implementing another mover.
+// All reflection is resolved before subscribing or claiming any control.
+internal sealed class EnuoMpApi
+{
+    private readonly MasterPlayerPlugin _plugin;
+    private readonly MethodInfo _automatic, _direct;
+    private readonly object?[] _automaticArgs, _directArgs;
+    private readonly PropertyInfo _scripts, _replay;
+    private readonly Action<SafeZoneAreaHandle, bool> _navigationOnly;
+    private readonly Action<string, IGeometryShape, bool, bool, float> _preview;
+
+    public EnuoMpApi(ScriptSafeZoneApi safe, ScriptDrawApi draw)
+    {
+        _plugin = MasterPlayerPlugin.Instance ?? throw new InvalidOperationException("恩欧：MP 尚未初始化。");
+        _automatic = Find(typeof(SafeZoneRuntime), "RequestAutomaticMovement", typeof(object), typeof(bool), typeof(bool));
+        _direct = Find(typeof(SafeZoneRuntime), "RequestDirectTraversal", typeof(object), typeof(Vector3?), typeof(DateTime));
+        _automaticArgs = Defaults(_automatic);
+        _directArgs = Defaults(_direct);
+        _scripts = typeof(MasterPlayerPlugin).GetProperty("Scripts", Flags) ?? throw Missing("Scripts");
+        _replay = _scripts.PropertyType.GetProperty("ReplayModeActive", Flags) ?? throw Missing("ReplayModeActive");
+        if (_replay.PropertyType != typeof(bool)) throw Missing("ReplayModeActive : bool");
+        _navigationOnly = Find(typeof(ScriptSafeZoneApi), "SetNavigationOnly", typeof(SafeZoneAreaHandle), typeof(bool))
+            .CreateDelegate<Action<SafeZoneAreaHandle, bool>>(safe);
+        _preview = Find(typeof(ScriptDrawApi), "AddAoePreview", typeof(string), typeof(IGeometryShape), typeof(bool), typeof(bool), typeof(float))
+            .CreateDelegate<Action<string, IGeometryShape, bool, bool, float>>(draw);
+    }
+
+    public bool ReplayActive => _scripts.GetValue(_plugin) is { } scripts && (bool)_replay.GetValue(scripts)!;
+    public void RequestAutomaticMovement(object owner, bool enabled, bool hold = false)
+    {
+        _automaticArgs[0] = owner; _automaticArgs[1] = enabled; _automaticArgs[2] = hold;
+        _automatic.Invoke(_plugin.SafeZone, _automaticArgs);
+    }
+    public void RequestDirectTraversal(object owner, Vector3? target, DateTime now)
+    {
+        _directArgs[0] = owner; _directArgs[1] = target; _directArgs[2] = now;
+        _direct.Invoke(_plugin.SafeZone, _directArgs);
+    }
+    public void SetNavigationOnly(SafeZoneAreaHandle handle, bool value) => _navigationOnly(handle, value);
+    public void AddAoePreview(string id, IGeometryShape shape, bool safe, bool outlineOnly, float progress)
+        => _preview(id, shape, safe, outlineOnly, progress);
+
+    private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    private static MethodInfo Find(Type type, string name, params Type[] prefix)
+        => type.GetMethods(Flags).SingleOrDefault(m => m.Name == name && m.ReturnType == typeof(void)
+            && m.GetParameters().Select(p => p.ParameterType).Take(prefix.Length).SequenceEqual(prefix)
+            && m.GetParameters().Skip(prefix.Length).All(p => p.HasDefaultValue)) ?? throw Missing(type.Name + "." + name);
+    private static object?[] Defaults(MethodInfo method)
+        => method.GetParameters().Select(p => p.HasDefaultValue ? p.DefaultValue : null).ToArray();
+    private static Exception Missing(string name)
+        => new NotSupportedException("恩欧脚本：当前 MP 缺少兼容接口 " + name + "，本脚本未接管控制。");
+}

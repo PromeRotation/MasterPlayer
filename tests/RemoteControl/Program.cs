@@ -74,6 +74,10 @@ MasterPlayerPlugin.Instance.Replay.SessionActive = true;
 var sentBeforeReplay = sent.Count;
 Check(!remote.MoveTo("MT", Vector3.Zero) && !remote.Echo("MT", "test") && !remote.MoveStop("MT") && sent.Count == sentBeforeReplay, "replay blocks all remote control dispatch");
 MasterPlayerPlugin.Instance.Replay.SessionActive = false;
+ECommons.DalamudServices.Svc.Condition = TestCondition.DutyReplay();
+Check(!remote.MoveTo("MT", Vector3.Zero) && !remote.Echo("MT", "test") && !remote.MoveStop("MT") && sent.Count == sentBeforeReplay,
+    "ARR blocks all remote control without entering MP offline replay");
+ECommons.DalamudServices.Svc.Condition = null;
 handlers[prefix + "IsConnected"] = () => false;
 Check(!remote.MoveTo("MT", Vector3.Zero), "disconnected room rejects control");
 handlers[prefix + "IsConnected"] = () => true;

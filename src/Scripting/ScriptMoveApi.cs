@@ -40,7 +40,7 @@ public sealed class ScriptMoveApi
     public bool TryHoldAutomaticMovement()
     {
         var plugin = MasterPlayerPlugin.Instance;
-        if (plugin == null || !MasterPlayerSettings.Instance.EnableSmartMovement || plugin.Scripts?.ReplayModeActive == true ||
+        if (plugin == null || !MasterPlayerSettings.Instance.EnableSmartMovement || PlayerPerspective.IsReplay ||
             !plugin.SafeZone.Setting.MovementAllowed || HostMovement.AutomaticMovementEnabled || HostMovement.HasControl)
         {
             ReleaseAutomaticMovement();
@@ -146,7 +146,7 @@ public sealed class ScriptMoveApi
     private bool TryTakeControl()
     {
         var safeZoneHasControl = SafeZoneHasControl;
-        if (!MasterPlayerSettings.Instance.EnableSmartMovement || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        if (!MasterPlayerSettings.Instance.EnableSmartMovement || PlayerPerspective.IsReplay)
         {
             Cleanup();
             return false;

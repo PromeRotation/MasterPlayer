@@ -193,7 +193,7 @@ public sealed class RemoteControlClient : IDisposable
         // Toolbox treats an empty selector as everyone with an assigned job role.
         RequireText(role, "目标职能（全部成员请明确填写 .*）");
         if (!connected.InvokeFunc()) throw new InvalidOperationException("尚未连接遥控房间。");
-        if (MasterPlayerPlugin.Instance?.Replay?.SessionActive == true) throw new InvalidOperationException("回放期间不能发送遥控指令。");
+        if (MasterPlayerPlugin.Instance?.Replay?.SessionActive == true || DutyReplayState.Active) throw new InvalidOperationException("回放期间不能发送遥控指令。");
         if (movement && !MasterPlayerSettings.Instance.EnableSmartMovement) throw new InvalidOperationException("请先开启智能走位。");
         if (position is { } p && (!float.IsFinite(p.X) || !float.IsFinite(p.Y) || !float.IsFinite(p.Z)))
             throw new ArgumentException("位置必须是有限数值。");

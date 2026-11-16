@@ -22,6 +22,7 @@ public sealed class MechanicNavigationHost : IDisposable
     private int _terrainLeft, _terrainTop, _terrainRight, _terrainBottom;
     private IReadOnlyList<MechanicNavPrimitive>? _terrainPrims;
     private DateTime _goalZonesNextEval = DateTime.MinValue;
+    private ulong _perspectiveId;
     private IReadOnlyList<MechanicNavPrimitive> _goalZonesPrims = [];
 
     public bool ModuleActive { get; private set; }
@@ -45,8 +46,10 @@ public sealed class MechanicNavigationHost : IDisposable
     public void Update()
     {
         var module = _session.BossModules.ActiveModule;
+        var slot = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ? 0
+            : _session.World.Party.FindSlot(PlayerPerspective.GetId());
         ModuleActive = module?.StateMachine.ActivePhase != null;
-        if (module == null || !ModuleActive)
+        if (module == null || !ModuleActive || slot < 0 || _session.World.Party[slot] == null)
         {
             Sleep();
             return;
@@ -54,7 +57,13 @@ public sealed class MechanicNavigationHost : IDisposable
 
         try
         {
-            _builder.Update(_hints, 0, false);
+            var id = _session.World.Party[slot]!.InstanceID;
+            if (_perspectiveId != id)
+            {
+                ClearRegistrations();
+                _perspectiveId = id;
+            }
+            _builder.Update(_hints, slot, false);
         }
         catch (Exception ex)
         {
@@ -70,7 +79,7 @@ public sealed class MechanicNavigationHost : IDisposable
         UpdateDiagnostics();
 
         var settings = MasterPlayerSettings.Instance;
-        var replay = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true;
+        var replay = PlayerPerspective.IsReplay;
         NavigationActive = settings.EnableSmartMovement && !replay;
 
         var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
@@ -78,7 +87,7 @@ public sealed class MechanicNavigationHost : IDisposable
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var typeName = module.GetType().Name;
         var key = $"module-nav/{typeName}";
-        var y = module.WorldState.Party[0]?.PosRot.Y ?? 0f;
+        var y = module.WorldState.Party[slot]?.PosRot.Y ?? 0f;
         var sampleCenter = module.Center.ToVec3(y);
         var sampleRadius = _hints.PathfindMapBounds?.Radius ?? 0f;
 

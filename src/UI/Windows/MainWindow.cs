@@ -137,6 +137,9 @@ public sealed class MainWindow : IDisposable
             settings.TerritoryEnabled[territory] = enabled;
             settings.Save();
         }
+        if (PlayerPerspective.IsDutyReplay)
+            Hint(PlayerPerspective.LivePlayer is { } viewed
+                ? $"ARR 观看角色：{viewed.Name.TextValue}（仅预览）" : "ARR 观看角色暂不可用，等待对象加载。");
         var here = plugin?.Scripts?.Scripts.Where(d => d.Metadata.Territorys.Contains(territory)).ToArray() ?? [];
         if (here.Length == 0)
         {

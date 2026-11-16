@@ -89,8 +89,8 @@ internal sealed class SmartMovementIntegration : IDisposable
                 dtr.Shown = true;
             }
         }
-        var replay = plugin.Replay?.SessionActive == true;
-        var player = Svc.Objects.LocalPlayer;
+        var replay = PlayerPerspective.IsReplay;
+        var player = replay ? null : PlayerPerspective.LivePlayer;
         var nextState = JsonSerializer.Serialize(new
         {
             ApiVersion = 1,

@@ -1,0 +1,184 @@
+using System.Collections;
+using System.Numerics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using Dalamud.Plugin.Services;
+using ECommons.DalamudServices;
+using MasterPlayer;
+using MasterPlayer.LocalScripts.Enuo;
+using MasterPlayer.Replay;
+using MasterPlayer.Scripting;
+using MasterPlayer.Settings;
+using MasterPlayer.Spatial;
+using MasterPlayer.Spatial.SafeZone;
+using PromeRotation.GreenMoveSystem;
+using PromeRotation.LogSystem;
+
+public static class EnuoExternalChecks
+{
+    public static void Run(Func<int> subscriptions)
+    {
+        var originalPr = PromeRotation.Plugin.Instance;
+        var originalObjects = Svc.Objects;
+        using var draw = new PromeRotation.Spatial.Drawing.DrawManager();
+        var pr = RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
+        typeof(PromeRotation.Plugin).GetField("_drawManager", EnuoTestScope.Flags)!.SetValue(pr, draw);
+        typeof(PromeRotation.Plugin).GetProperty("Instance")!.SetValue(null, pr);
+        typeof(Svc).GetProperty(nameof(Svc.Objects))!.SetValue(null,
+            CatalogServiceProxy.Create<IObjectTable>((name, _) => throw new InvalidOperationException("Offline/replay touched live objects: " + name)));
+        try
+        {
+            var count = 0;
+            EnuoRegression.Run((name, test) => { test(); count++; Console.WriteLine("PASS external " + name); });
+            EnuoTestScope.Check(count == 21, "Expected all twenty-one Enuo regression cases.");
+            CheckLifecycle(subscriptions);
+            Console.WriteLine("PASS external script: 21 scenarios including all three ARR fixtures, actual MP output and solver");
+        }
+        finally
+        {
+            typeof(PromeRotation.Plugin).GetProperty("Instance")!.SetValue(null, originalPr);
+            typeof(Svc).GetProperty(nameof(Svc.Objects))!.SetValue(null, originalObjects);
+        }
+    }
+
+    private static void CheckLifecycle(Func<int> subscriptions)
+    {
+        using var scope = new EnuoTestScope(new(2026, 11, 12, 14, 5, 2, DateTimeKind.Utc));
+        var owner = new object(); var foreign = new object();
+        scope.Bridge.RequestAutomaticMovement(owner, true, true);
+        EnuoTestScope.Check(scope.Flag("RuntimeMovementRequested") && scope.Flag("RuntimeMovementHeld"), "External movement hold was not registered.");
+        scope.Bridge.RequestAutomaticMovement(foreign, true);
+        scope.Bridge.RequestAutomaticMovement(owner, false);
+        EnuoTestScope.Check(scope.Flag("RuntimeMovementRequested") && !scope.Flag("RuntimeMovementHeld"), "External release cleared another owner or retained heat hold.");
+        scope.Bridge.RequestAutomaticMovement(foreign, false);
+        scope.Bridge.RequestAutomaticMovement(owner, true);
+        scope.Bridge.RequestDirectTraversal(owner, new(110, 0, 100), scope.Now);
+        EnuoTestScope.Check(typeof(SafeZoneRuntime).GetField("_directOwner", EnuoTestScope.Flags)!.GetValue(scope.Runtime) == owner, "Freeze traversal did not retain the script owner.");
+        scope.Bridge.RequestAutomaticMovement(owner, false);
+        EnuoTestScope.Check(!scope.Flag("RuntimeMovementRequested") && typeof(SafeZoneRuntime).GetField("_directOwner", EnuoTestScope.Flags)!.GetValue(scope.Runtime) == null, "Release leaked automatic/direct movement.");
+
+        var world = new ReplayWorldState();
+        typeof(ReplayWorldState).GetMethod("Apply", EnuoTestScope.Flags)!.Invoke(world, [new ReplayWorldFrame
+        {
+            Full = true, Territory = 1362, LocalPlayerId = 1,
+            Party = Enumerable.Range(0, 8).Select(i => new ReplayPartyMember(i, EnuoStrategy.Roles[i], (ulong)i + 1)).ToArray(),
+            Actors = [.. Enumerable.Range(1, 8).Select(i => new ReplayActorState { Id = (ulong)i, Kind = 1, InCombat = true, Position = new(100, 0, 100) }),
+                new() { Id = 100, Oid = 0x4DC1, InCombat = true, Targetable = true, Position = new(100, 0, 100) }]
+        }]);
+        var handlers = new Dictionary<string, Delegate>();
+        var settings = (ScriptSettingStore)Activator.CreateInstance(typeof(ScriptSettingStore), EnuoTestScope.Flags, null, [(Action)(() => { })], null)!;
+        var move = (ScriptMoveApi)Activator.CreateInstance(typeof(ScriptMoveApi), EnuoTestScope.Flags, null, [(Action<string>)(_ => { })], null)!;
+        var hints = (ScriptHintsApi)Activator.CreateInstance(typeof(ScriptHintsApi), EnuoTestScope.Flags, null, [(Func<bool>)(() => true)], null)!;
+        var context = CatalogServiceProxy.Create<IScriptHostContext>((name, args) => name switch
+        {
+            "get_CurrentTime" => scope.Now, "get_ReplayWorld" => world,
+            "get_CurrentPlayer" => world.LocalPlayer, "get_CurrentPlayerId" => world.LocalPlayer?.Id ?? 0,
+            "get_IsReplay" => true,
+            "get_SafeZone" => scope.Api, "get_Draw" => scope.Draw, "get_Settings" => settings,
+            "get_Move" => move, "get_Hints" => hints,
+            "IsMechanismEnabled" => true,
+            "SuppressGenericDodge" or "Log" or "LogError" => null,
+            _ when name.StartsWith("On") => Subscribe(name, (Delegate)args[0]!),
+            _ => throw new NotSupportedException(name)
+        });
+        IDisposable Subscribe(string name, Delegate handler) { handlers[name] = handler; return new EmptySubscription(); }
+        var script = new MasterPlayer.LocalScripts.Enuo.Entry.EnuoExtreme();
+        typeof(MasterPlayerScript).GetProperty("Host")!.SetValue(script, context);
+        void Lifecycle(string name) => typeof(MasterPlayerScript).GetMethod(name, EnuoTestScope.Flags)!.Invoke(script, null);
+        Lifecycle("StartInternal");
+        ((Action<LogSystemEvent>)handlers["OnLogEvent"])(new LogSystemCastStartEvent
+        {
+            SourceId = 100, ActionId = 49979, CastTime = 5, EffectPosition = new(100, 0, 100), Raw = new ReplayCastData(0)
+        });
+        scope.Now = scope.Now.AddSeconds(.2);
+        typeof(MasterPlayerScript).GetMethod("UpdateInternal", EnuoTestScope.Flags)!.Invoke(script, [.2f]);
+        EnuoTestScope.Check(scope.Manager.BuildSnapshot(scope.Now).DangerAreas.Count > 0 && scope.PreviewCount > 0, "External lifecycle did not publish recorded geometry.");
+        EnuoTestScope.Check(!scope.Flag("RuntimeMovementRequested"), "Replay acquired live movement.");
+        EnuoTestScope.Check(subscriptions() == 0, "Debug is not disabled by default.");
+        for (var i = 0; i < 8; i++)
+            ((Action<LogSystemEvent>)handlers["OnLogEvent"])(new LogSystemCastStartEvent
+                { SourceId = (ulong)(200 + i), TargetId = (ulong)i + 1, ActionId = 50042, CastTime = 5,
+                    EffectPosition = new(100, 0, 100), Raw = new ReplayCastData(0) });
+        scope.Now = scope.Now.AddSeconds(.2);
+        void Tick() => typeof(MasterPlayerScript).GetMethod("UpdateInternal", EnuoTestScope.Flags)!.Invoke(script, [.2f]);
+        Tick();
+        foreach (var viewed in new ulong[] { 5, 2, 0, 8, 1 })
+        {
+            typeof(ReplayWorldState).GetMethod("Apply", EnuoTestScope.Flags)!.Invoke(world,
+                [new ReplayWorldFrame { Territory = 1362, LocalPlayerId = viewed, Party = world.Party.ToArray() }]);
+            Tick();
+            var goals = scope.Manager.BuildSnapshot(scope.Now).GoalAreas;
+            EnuoTestScope.Check(viewed == 0 ? goals.Count == 0 && scope.PreviewCount == 0
+                : goals.Any(g => g.Geometry.Contains(EnuoStrategy.Spread((int)viewed - 1))),
+                "External script retained the previous perspective's goal or forgot earlier casts.");
+            EnuoTestScope.Check(!scope.Flag("RuntimeMovementRequested"), "Perspective switch acquired movement.");
+        }
+        var goalsBefore = scope.Manager.BuildSnapshot(scope.Now).GoalAreas.Count;
+        var dangersBefore = scope.Manager.BuildSnapshot(scope.Now).DangerAreas.Count;
+        var previewsBefore = scope.PreviewCount;
+        settings.Set("DebugAllRoles", true); Tick();
+        EnuoTestScope.Check(subscriptions() == 1 && scope.PreviewCount == previewsBefore + 8, "Enabling debug did not add exactly eight preview-only targets.");
+        EnuoTestScope.Check(scope.Manager.BuildSnapshot(scope.Now).GoalAreas.Count == goalsBefore
+            && scope.Manager.BuildSnapshot(scope.Now).DangerAreas.Count == dangersBefore && !scope.Flag("RuntimeMovementRequested"), "All-role debug changed navigation/control.");
+        settings.Set("DebugAllRoles", false); Tick();
+        EnuoTestScope.Check(subscriptions() == 0 && scope.PreviewCount == previewsBefore, "Disabling debug leaked UI/previews or removed normal output.");
+        settings.Set("DebugAllRoles", true); Tick(); Tick();
+        EnuoTestScope.Check(subscriptions() == 1, "Repeated updates duplicated the debug draw callback.");
+        ((Action)handlers["OnPlayerDied"])();
+        EnuoTestScope.Check(scope.Manager.BuildSnapshot(scope.Now).DangerAreas.Count == 0 && scope.PreviewCount == 0 && subscriptions() == 0, "Death left external geometry or debug subscription.");
+        ((Action)handlers["OnPlayerRevived"])();
+        Lifecycle("SuspendMovement"); Lifecycle("StopInternal");
+        EnuoTestScope.Check(scope.Manager.BuildSnapshot(scope.Now).GoalAreas.Count == 0 && scope.PreviewCount == 0 && !scope.Flag("RuntimeMovementRequested"), "Disable/stop leaked script output or movement.");
+        Console.WriteLine("PASS external lifecycle: debug toggle/preview isolation, owner holds/traversal, replay isolation, death and stop cleanup");
+    }
+    private sealed class EmptySubscription : IDisposable { public void Dispose() { } }
+}
+
+internal sealed class EnuoTestScope : IDisposable
+{
+    public const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    private readonly MasterPlayerPlugin? _previous = MasterPlayerPlugin.Instance;
+    private readonly object _visibility;
+    public DateTime Now;
+    public SafeZoneRuntime Runtime { get; }
+    public SafeZoneManager Manager => Runtime.Manager;
+    public ScriptSafeZoneApi Api { get; }
+    public ScriptDrawApi Draw { get; }
+    public EnuoMpApi Bridge { get; }
+    public int PreviewCount => ((IEnumerable)_visibility.GetType().GetMethod("GetPreviews")!.Invoke(_visibility, [Now])!).Cast<object>().Count();
+    public bool Flag(string name) => (bool)typeof(SafeZoneSetting).GetProperty(name, Flags)!.GetValue(Runtime.Setting)!;
+
+    public EnuoTestScope(DateTime now, float margin = 0)
+    {
+        Now = now;
+        var movement = CatalogServiceProxy.Create<IGreenMoveSystem>((name, _) => name switch
+        {
+            "get_IsRunning" => false,
+            _ => throw new InvalidOperationException("Offline test issued movement: " + name)
+        });
+        Runtime = (SafeZoneRuntime)Activator.CreateInstance(typeof(SafeZoneRuntime), Flags, null,
+            [movement, (Func<bool>)(() => false), (Func<bool>)(() => false)], null)!;
+        typeof(SafeZoneRuntime).GetProperty("ReplayClock", Flags)!.SetValue(Runtime, (Func<DateTime>)(() => Now));
+        Runtime.Setting.EnableSafeZone = true;
+        var plugin = new MasterPlayerPlugin();
+        typeof(MasterPlayerPlugin).GetField("_safeZone", Flags)!.SetValue(plugin, Runtime);
+        typeof(MasterPlayerPlugin).GetField("_scripts", Flags)!.SetValue(plugin, new ScriptManager());
+        typeof(MasterPlayerPlugin).GetProperty("Instance")!.SetValue(null, plugin);
+        MasterPlayerSettings.Instance.DodgeDangerMargin = margin;
+        MasterPlayerSettings.Instance.EnableSmartMovement = true;
+        var visibilityType = typeof(MasterPlayerPlugin).Assembly.GetType("MasterPlayer.Radar.AoeVisibilityRegistry")!;
+        _visibility = Activator.CreateInstance(visibilityType, [MasterPlayerSettings.Instance.AoeVisibility, (Func<DateTime>)(() => Now)])!;
+        typeof(MasterPlayerPlugin).GetProperty("AoeVisibility", Flags)!.SetValue(plugin, _visibility);
+        Api = (ScriptSafeZoneApi)Activator.CreateInstance(typeof(ScriptSafeZoneApi), Flags, null, ["enuo-external-test", "Enuo external test"], null)!;
+        Draw = (ScriptDrawApi)Activator.CreateInstance(typeof(ScriptDrawApi), Flags, null, ["MasterPlayer_EnuoExternalTest_", Api], null)!;
+        Bridge = new(Api, Draw);
+    }
+    public void Dispose()
+    {
+        typeof(ScriptSafeZoneApi).GetMethod("Cleanup", Flags)!.Invoke(Api, null);
+        typeof(ScriptDrawApi).GetMethod("Cleanup", Flags)!.Invoke(Draw, null);
+        Runtime.Dispose();
+        typeof(MasterPlayerPlugin).GetProperty("Instance")!.SetValue(null, _previous);
+    }
+    public static void Check(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
+}

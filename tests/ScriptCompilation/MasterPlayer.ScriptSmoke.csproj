@@ -13,6 +13,7 @@
     <Compile Include="IntegrationRegression.cs" />
     <Compile Include="SkillSequenceRuntimeRegression.cs" />
     <Compile Include="BmrSourceInventory.cs" />
+    <Compile Include="EnuoExternalRegression.cs" />
     <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.CSharp.dll" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />

@@ -18,6 +18,7 @@
 | **智能走位** | 接近目标、避险和机制站位交给同一个安全区规划器；机制站位优先于攻击距离。关闭后只保留绘制、提示和路线规划 |
 | **机制库** | 内置机制脚本与机制模块，按副本启停；自定义脚本支持逐项设置、可视化编辑器和路网编辑。同区域专属脚本优先 |
 | **录制回放** | 录制战斗事件与对象快照，在回放窗口用雷达和时间轴复现，并驱动脚本检查绘制 |
+| **ARR 观看视角** | 切换观看角色时，雷达、个人机制提示、站位和路线预览随之切换；保持原队伍分工与机制历史，回放期间不下发实际控制 |
 | **技能序列** | 按职业保存多套预设，开战顺序执行，支持状态条件、循环、完成命令和工具箱分享码；技能交给 PR 本体释放 |
 
 内置机制：斗兽奇弈五盘（B01–B45）、金碟巨豆中心（糖豆人）、沙斯塔夏浸蚀洞窟、塔姆塔拉墓园、铜铃铜山。
@@ -54,7 +55,7 @@
 
 ### 前置
 
-- **.NET 10 SDK**（仅装 Runtime 无法编译）：`winget install --id Microsoft.DotNet.SDK.10 --exact`
+- **.NET 11 SDK**（仅装 Runtime 无法编译）：`winget install --id Microsoft.DotNet.SDK.11 --exact`。运行目标仍是 .NET 10；已引入的机制运行库使用 C# 15 集合构造参数，SDK 10 无法编译。
 - **与实际运行版本一致的 PromeRotation 程序集**（`PromeRotation.dll`、`PromeRotation.Scripting.dll`、`ECommons.dll` 等）
 - **XIVLauncherCN 的 Dalamud 开发环境**：`%AppData%\XIVLauncherCN\addon\Hooks\dev\`
 
@@ -110,6 +111,12 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 ## 机制脚本
 
 仓库 `Presets/<区域>/Entries/` 下的脚本随 DLL 内置加载（每个区域的实现、数据与入口都在 `Presets/<区域>/`），在「机制脚本」页勾选后进入对应区域自动启动；启用状态、设置与机制开关保存在 `MasterPlayer.json`。
+
+恩欧歼殛战（1362）新增「恩欧歼殛战 · 视频打法」，按四钱苏木 BV1uKRuBkEg7 的分工执行。使用 PR 中完整的 MT/ST/H1/H2/D1–D4 排序，智能走位总开关同时门控移动、转火、背对和机制技能；回放禁止所有控制发送。机制、回归范围及实机验收项见 [恩欧规格](docs/reference/Enuo.spec.md)。
+
+本地恩欧支持完整外部 `.cs`：运行 `python tools/enuo/build_script.py` 生成 `LocalOnly/Enuo/EnuoExtreme.cs`，放入 `pluginConfigs/PromeRotation/MasterPlayer/Scripts/` 后点「刷新脚本」。它沿用同 GUID 覆盖内置版本。首次使用 `0.4.0-local` 须先加载含当前玩家 API 的新 MP DLL；之后修改机制只需重新生成并刷新脚本。生成与回归命令见 [恩欧规格 · 外部脚本](docs/reference/Enuo.spec.md#本地外部脚本2026-11-16)。
+
+恩欧脚本设置中可开启「调试模式：显示所有职能的目标位置」（默认关）：独立小地图显示八职责的目标、当前位置与状态，场内/雷达有目标圈，场内带职责标签。重合目标合并标签；调试预览不参与走位解算，关闭窗口即关闭该模式。
 
 自定义 `.cs`、`.dll` 或 `*.mechanic.json` 放在配置目录（**不要**放进插件程序集目录）：
 

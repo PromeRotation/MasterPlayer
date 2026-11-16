@@ -10,6 +10,7 @@ using MasterPlayer.Spatial.SafeZone;
 var passed = 0;
 var shardCounter = 0;
 var failures = new List<string>();
+PlayerPerspectiveRegression.Run(Run);
 if (args.Contains("--radar-performance"))
 {
     NavigationPerformance.Radar();
@@ -347,6 +348,7 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 CrucibleMechanicRegression.Run(Run);
 SkillSequenceRegression.Run(Run);
 ArrDungeonRegression.Run(Run);
+EnuoRegression.Run(Run);
 BlundervilleRegression.Run(Run);
 BlundervillePresetRegression.Run(Run);
 BlundervilleGraphRegression.Run(Run);

@@ -12,6 +12,11 @@ if (args.Length == 3 && args[0] == "--bmr-arenas")
     return;
 }
 
+if (args.Length == 4 && args[0] == "--enuo-script")
+{
+    EnuoExternalRegression.Run(args[1], args[2], args[3]);
+    return;
+}
 if (args.Length != 2) throw new ArgumentException("Usage: <MasterPlayer repository> <compiled MasterPlayer.dll>");
 var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
     .Append(Path.GetFullPath(args[1])).Distinct(StringComparer.OrdinalIgnoreCase)
@@ -29,5 +34,5 @@ foreach (var file in Directory.EnumerateDirectories(Path.Combine(args[0], "Prese
     if (!result.Success) throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
-if (count != 9) throw new InvalidOperationException($"Expected five boards, three dungeons and Blunderville, got {count}.");
+if (count != 10) throw new InvalidOperationException($"Expected five boards, three dungeons, Blunderville and Enuo, got {count}.");
 ScriptCatalogRegression.Run(args[1], references);

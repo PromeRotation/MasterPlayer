@@ -364,6 +364,7 @@ internal static class BlundervilleNavigationRegression
         {
             var player = ScriptServiceProxy.Create<IPlayerCharacter>((name, _) => name switch
             {
+                "get_EntityId" => 1u,
                 "get_Position" => Vector3.Zero, "get_Rotation" => 0f,
                 "get_IsDead" => false, "get_IsCasting" => false,
                 _ => throw new NotSupportedException(name),

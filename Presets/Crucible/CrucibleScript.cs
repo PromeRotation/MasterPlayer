@@ -50,11 +50,11 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         if (_engine == null || _output == null || (!_dirty && _world.CurrentTime < _nextDraw)) return;
         _dirty = false;
         _nextDraw = _world.FutureTime(0.1);
-        _engine.Update();
+        _engine.Update(IsReplay);
         _world.NavigationMargin = MasterPlayer.Settings.MasterPlayerSettings.Instance.DodgeDangerMargin;
         var frame = _engine.Frame();
         if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && IsMechanismEnabled("走位引导")
-            && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true && _world.Player is { IsDeadOrDestroyed: false } player)
+            && !IsReplay && _world.Player is { IsDeadOrDestroyed: false } player)
         {
             var plan = CrucibleControlPlan.Build(frame.Hints, player, _world.CurrentTime);
             if (frame.Hints.InteractWithTarget is { } interact)
@@ -63,7 +63,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
                 plan = plan with { HoldActions = true, BlockCasts = true, CancelCast = !_interaction.Attempted && plan.CancelCast };
                 _control?.Apply(plan);
                 _interaction.Update(interact, player, _world.CurrentTime, PromeRotation.Plugin.Instance.GreenMoveSystem.IsRunning,
-                    Svc.Objects.LocalPlayer?.IsCasting == true, CrucibleInteraction.Interact);
+                    CurrentPlayer?.Cast != null, CrucibleInteraction.Interact);
             }
             else
             {
@@ -72,11 +72,14 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
             }
         }
         else { _control?.Clear(); _interaction.Clear(); }
-        _output.Apply(_engine, frame, Svc.Objects.LocalPlayer?.Position.Y ?? 0,
+        _output.Apply(_engine, frame, CurrentPlayer?.Position.Y ?? 0,
             IsMechanismEnabled("危险区域"), IsMechanismEnabled("走位引导"), IsMechanismEnabled("场地边界"));
         ApplyDirectRoute(frame.Hints.DirectRoute);
         DiagnoseMovement();
     }
+    protected override void OnCurrentPlayerChanged(ulong previous, ulong current)
+    { _nextScan = _nextDraw = default; _dirty = true; _world.Player = null; }
+
     protected override void OnStop() { ApplyDirectRoute(null); Reset(); }
 
     // A component's timed route (B31 breath through drifting clouds) runs as a direct traversal;
@@ -87,10 +90,10 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         var runtime = MasterPlayerPlugin.Instance?.SafeZone;
         if (runtime == null) return;
         var allowed = route is { Count: > 0 } && MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement
-            && IsMechanismEnabled("走位引导") && MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive != true;
+            && IsMechanismEnabled("走位引导") && !IsReplay;
         if (allowed)
         {
-            var y = Svc.Objects.LocalPlayer?.Position.Y ?? 0;
+            var y = CurrentPlayer?.Position.Y ?? 0;
             runtime.RequestAutomaticMovement(this, true);
             runtime.RequestDirectTraversal(this, route![^1].ToVec3(y), _world.CurrentTime, route.Select(p => p.ToVec3(y)).ToArray());
             _routing = true;
@@ -139,6 +142,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         var seen = new HashSet<ulong>();
         var created = new List<Actor>();
         var casts = new List<(Actor, ActorCastInfo)>();
+        _world.Player = null;
         for (var i = 0; i < Svc.Objects.Length; ++i)
         {
             if (Svc.Objects[i] is not { } obj || obj.EntityId is 0 or 0xE0000000 || obj.Address == 0) continue;
@@ -220,14 +224,14 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
                 }
                 else if (actor.CastInfo is { } previous && _world.CurrentTime > previous.FinishAt.AddSeconds(0.6)) _engine.FinishCast(actor);
             }
-            if (obj.EntityId == Svc.Objects.LocalPlayer?.EntityId) _world.Player = actor;
+            if (obj.EntityId == CurrentPlayerId) _world.Player = actor;
             if (!wasDead && actor.IsDead) _engine.Destroy(actor, false);
             if (oldState != actor.EventState) _engine.Dispatch(c => { c.OnActorEventStateChange(actor, actor.EventState); c.OnActorEState(actor, actor.EventState); });
         }
-        if (Svc.Objects.LocalPlayer == null) _world.Player = null;
+        if (CurrentPlayerId == 0) _world.Player = null;
         foreach (var actor in _world.Actors.Where(a => !seen.Contains(a.InstanceID)).ToArray()) _engine.Destroy(actor, true);
         var generation = _engine.Generation;
-        _engine.SelectGroup();
+        _engine.SelectGroup(IsReplay);
         if (generation == _engine.Generation)
         {
             foreach (var actor in created)

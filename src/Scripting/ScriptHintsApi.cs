@@ -22,7 +22,7 @@ public sealed class ScriptHintsApi
     /// <summary>请求宿主把角色面向转到 <paramref name="headingRadians"/>（FFXIV 弧度约定：0=+Z，π/2=+X）；null 撤销请求。</summary>
     public void SetFacing(float? headingRadians)
     {
-        if (_isReplay() || !Settings.MasterPlayerSettings.Instance.EnableSmartMovement)
+        if (_isReplay() || PlayerPerspective.IsReplay || !Settings.MasterPlayerSettings.Instance.EnableSmartMovement)
         {
             _facing.Clear();
             return;

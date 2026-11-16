@@ -15,10 +15,10 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
     {
         Module = null; _effects.Clear(); _disabled.Clear(); ++Generation;
     }
-    public void SelectGroup()
+    public void SelectGroup(bool retainWithoutPlayer = false)
     {
         var player = World.Player;
-        if (player == null || player.IsDeadOrDestroyed) { if (Module != null) Reset(); return; }
+        if (player == null || player.IsDeadOrDestroyed) { if (!retainWithoutPlayer && Module != null) Reset(); return; }
         bool Member(Actor a) => !a.IsDeadOrDestroyed && a.Type == ActorType.Enemy && a.OID != 9020 && a.HPMP.CurHP > 0
             && CrucibleCatalog.GroupFor(a.NameID) >= firstGroup && CrucibleCatalog.GroupFor(a.NameID) <= lastGroup
             && a.Position.InCircle(player.Position, 80);
@@ -85,10 +85,10 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
         actor.CastInfo = null; actor.Tether = default;
         if (removed) World.Actors.Remove(actor.InstanceID);
     }
-    public void Update()
+    public void Update(bool retainWithoutPlayer = false)
     {
-        SelectGroup();
-        if (Module == null) return;
+        SelectGroup(retainWithoutPlayer);
+        if (Module == null || World.Player == null || World.Player.IsDeadOrDestroyed) return;
         for (var i = 0; i < Module.Components.Length; ++i)
         {
             var c = Module.Components[i];

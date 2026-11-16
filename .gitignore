@@ -10,3 +10,4 @@ Directory.Build.local.props
 /analysis/promeradar-settings-cleanup/
 /analysis/
 /LocalOnly/
+__pycache__/

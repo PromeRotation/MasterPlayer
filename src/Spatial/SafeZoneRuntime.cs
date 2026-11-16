@@ -1,5 +1,4 @@
 using System.Numerics;
-using ECommons.DalamudServices;
 using MasterPlayer.Spatial.SafeZone;
 using MasterPlayer.Spatial.SafeZoneReborn;
 using MasterPlayer.Spatial.SafeZoneReborn.Solver;
@@ -14,6 +13,7 @@ public sealed class SafeZoneRuntime : IDisposable
 {
     private readonly SafeZoneRebornMovementSystem _movement;
     private Vector3? _previousPosition;
+    private ulong? _previousPlayerId;
     private bool _disposed;
     private readonly HashSet<object> _movementRequests = [];
     private readonly HashSet<object> _movementHolds = [];
@@ -163,14 +163,22 @@ public sealed class SafeZoneRuntime : IDisposable
         var capability = MovementCapability.CaptureFromMainThread(speedMultiplier,
             Setting.RuntimeBaseSpeed ?? MovementCapability.DefaultBaseSpeed);
         PlayerState? player = null;
-        if (Svc.Objects.LocalPlayer is { IsDead: false } actor)
+        var actor = PlayerPerspective.LivePlayer;
+        var playerId = actor is { IsDead: false } ? actor.EntityId : 0;
+        if (_previousPlayerId.HasValue && _previousPlayerId != playerId)
+        {
+            _movement.Reset();
+            _previousPosition = null;
+        }
+        _previousPlayerId = playerId;
+        if (actor is { IsDead: false })
         {
             var moving = _previousPosition is { } previous && Vector3.DistanceSquared(previous, actor.Position) > 0.0001f;
             player = PlayerState.CaptureFromMainThread(Manager.Version, capability.CurrentSpeed, moving);
             _previousPosition = actor.Position;
         }
         else _previousPosition = null;
-        _movement.Update(player, capability, CurrentTime, allowMovement);
+        _movement.Update(player, capability, CurrentTime, allowMovement && !PlayerPerspective.IsDutyReplay);
     }
 
     public void Clear()

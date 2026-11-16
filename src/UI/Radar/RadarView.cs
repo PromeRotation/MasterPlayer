@@ -67,8 +67,8 @@ public sealed class RadarView
     {
         var settings = MasterPlayerSettings.Instance;
         var plugin = PromeRotation.Plugin.Instance;
-        var player = Svc.Objects.LocalPlayer;
         var world = MasterPlayerPlugin.Instance?.Replay?.World;
+        var player = world == null ? PlayerPerspective.LivePlayer : null;
         var now = MasterPlayerPlugin.Instance!.SafeZone.CurrentTime;
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
         var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);

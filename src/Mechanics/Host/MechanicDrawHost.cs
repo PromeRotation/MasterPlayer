@@ -38,8 +38,10 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var module = _session.BossModules.ActiveModule;
+        var slot = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ? 0
+            : _session.World.Party.FindSlot(PlayerPerspective.GetId());
         if (!(settings.EnableRadarOverlay || settings.EnableRadar) || module == null || visibility == null
-            || module.Raid[0] is not { } pc)
+            || slot < 0 || module.Raid[slot] is not { } pc)
         {
             Sleep();
             return;
@@ -50,7 +52,7 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
         ActiveDrawModuleName = typeName;
         ExtrasKey = key;
 
-        var result = MechanicModuleDrawCapture.Capture(module, 0, new BossMod.Angle(CameraAzimuth()));
+        var result = MechanicModuleDrawCapture.Capture(module, slot, new BossMod.Angle(CameraAzimuth()));
         if (result.Errors.Count != 0)
             NoteErrors(typeName, result.Errors);
 
@@ -87,7 +89,7 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
         {
             foreach (var hint in module.CalculateGlobalHints())
                 _hints.Add((hint, false));
-            foreach (var (text, risk) in module.CalculateHintsForRaidMember(0, pc))
+            foreach (var (text, risk) in module.CalculateHintsForRaidMember(slot, pc))
                 _hints.Add((text, risk));
         }
         catch (Exception ex)

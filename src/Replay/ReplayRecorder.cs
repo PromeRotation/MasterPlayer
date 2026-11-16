@@ -148,7 +148,9 @@ public sealed class ReplayRecorder : IDisposable
 
     private double CaptureWorld(DateTime now)
     {
-        var world = _worldCapture.Capture(now);
+        var world = _worldCapture.Capture(now, PlayerPerspective.GetId());
+        if (PlayerPerspective.IsDutyReplay)
+            world = world with { LocalTimelineRole = world.Party.FirstOrDefault(p => p.EntityId == world.LocalPlayerId)?.Role ?? "None" };
         var t = Math.Max(_lastTime, (now - _startLocal.ToUniversalTime()).TotalSeconds);
         _writer!.WriteWorldFrame(t, ReplayWorldFrame.Delta(_lastWorld, world));
         _lastWorld = world;

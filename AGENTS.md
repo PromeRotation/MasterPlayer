@@ -14,6 +14,8 @@
 
 下文旧开关/界面描述与本节冲突时，以本节及当前源码为准；参考仓库、主线程纪律及机制规格继续有效。
 
+**脚本当前玩家约定**：统一使用 `MasterPlayerScript.CurrentPlayer` / `CurrentPlayerId`（来自 `IScriptHostContext`）：正常游戏取本人，ARR 取当前观看角色，MP 离线回放只取录制角色。`IsReplay` 同时覆盖 ARR 与离线回放；切人由 `OnCurrentPlayerChanged(previous, current)` 通知，保持战斗状态。不得在脚本中直读本地玩家或复制 ARR 判断。实现与迁移约束见 §5.6.2。
+
 ## 1. 项目定位
 
 MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud 插件：
@@ -63,6 +65,7 @@ MasterPlayer/
 │   ├── Crucible/                 # 斗兽奇弈：框架（Engine/Output/Model…）、Source/ 各组组件、Entries/ 五盘入口
 │   ├── Blunderville/             # 金碟巨豆中心：规划器、路网预设、Entries/ 入口
 │   ├── Dungeons/                 # ARR 地城：场地轮廓、技能表、Entries/ 三个入口
+│   ├── Enuo/                     # 恩欧歼殛战：视频分工、事件状态、导航与 PR 控制、Entries/ 入口
 │   └── Examples/                 # 示例脚本（编译进 DLL 做冒烟，不作为内置脚本加载）
 ├── MechanicRuntime/              # 机制运行库（独立项目，打包为 MasterPlayer.MechanicRuntime.dll）
 ├── tests/                        # 回归（MasterPlayer.RegressionTests）、脚本冒烟、界面兼容、运行库测试；Fixtures/ 录像夹具
@@ -411,7 +414,10 @@ public abstract class MasterPlayerScript
 {
     public IScriptHostContext Host { get; internal set; }
     public DateTime CurrentTime { get; }           // 实时UTC或录制时钟；暂停冻结
-    public Replay.ReplayWorldState? ReplayWorld { get; } // 回放世界，实时为null
+    public Replay.ReplayWorldState? ReplayWorld { get; } // MP 离线回放世界；ARR 时仍为 null
+    public Replay.ReplayActorState? CurrentPlayer { get; } // 当前视角玩家快照
+    public ulong CurrentPlayerId { get; }
+    public bool IsReplay { get; } // ARR 或 MP 离线回放
     public ScriptSafeZoneApi SafeZone { get; }      // => Host.SafeZone
     public ScriptMoveApi Move { get; }              // => Host.Move
     public ScriptDrawApi Draw { get; }              // => Host.Draw
@@ -442,6 +448,9 @@ public interface IScriptHostContext
 {
     DateTime CurrentTime { get; }                  // 默认实现DateTime.UtcNow，保持外部实现兼容
     Replay.ReplayWorldState? ReplayWorld { get; }   // 默认实现null，回放上下文提供独立世界
+    Replay.ReplayActorState? CurrentPlayer { get; } // 默认由 MP 解析；回放缺对象返回 null
+    ulong CurrentPlayerId { get; }               // 无效视角返回 0
+    bool IsReplay { get; }                       // ARR 或 MP 离线回放
     ScriptSafeZoneApi SafeZone { get; }
     ScriptMoveApi Move { get; }
     ScriptDrawApi Draw { get; }
@@ -503,7 +512,7 @@ public sealed class ScriptManager : IDisposable
 
 ### 4.1 构建前置
 
-1. **.NET 10 SDK 与实际运行的 PR DLL 就位**：`Directory.Build.props` 在当前用户仅安装一个 PR 版本时自动引用 `%AppData%\XIVLauncherCN\installedPlugins\PromeRotation\<版本>\`；多个版本时必须指定 `PromeRotationPath`。设置 `PromeRotationRoot` 时仍使用该源码仓库的 `PromeRotation\bin\Debug\` 产物。
+1. **.NET 11 SDK 与实际运行的 PR DLL 就位**：`Directory.Build.props` 在当前用户仅安装一个 PR 版本时自动引用 `%AppData%\XIVLauncherCN\installedPlugins\PromeRotation\<版本>\`；多个版本时必须指定 `PromeRotationPath`。设置 `PromeRotationRoot` 时仍使用该源码仓库的 `PromeRotation\bin\Debug\` 产物。
 2. **Dalamud CN 开发 DLL 就位**：`%AppData%\XIVLauncherCN\addon\Hooks\dev\` 下有 `Dalamud.dll`、`Dalamud.Bindings.ImGui.dll`、`FFXIVClientStructs.dll`、`Lumina.dll` 等（装了 XIVLauncherCN 开发者模式即有）。
 3. `XIVLauncherRoot` / `DalamudRoot` / `PromeRotationPath` 可通过命令行属性或已忽略的根目录 `Directory.Build.local.props` 覆盖，主项目及测试共用。源码仓库引用仍可覆盖 `PromeRotationRoot`：
    ```bash
@@ -641,6 +650,7 @@ public readonly record struct GreenMovePoint(
 - **元数据与覆盖**：`[MechanicScript(name, territorys, guid, version, author, note="")]`；配置目录成功加载的脚本按名称或 GUID（忽略大小写）覆盖内置版本，停用不取消覆盖，移除并刷新后恢复内置。外部加载失败保留错误与内置版本；可视化保存、改名、删除即时重算内置覆盖。`guid` 仍为启停/设置/机制开关主键，配置目录内同 GUID 重复报错并只保留先加载者。`territorys` 空数组 = 通用脚本。
 - **区域匹配**：`Territorys.Length == 0 || Territorys.Contains(Svc.ClientState.TerritoryType)`；进入匹配区域自动启动已启用脚本，离开自动停止（照抄 PromePainter `ScriptManager.IsTerritoryMatched`）。
 - **手动刷新**：脚本目录**不做文件监听**；面板「刷新脚本」调 `ScriptManager.ReloadScripts()`：停止全部运行中脚本（`OnStop` + 上下文 Dispose）→ `RefreshCatalog()` 重扫外部目录并发现内置脚本 → 按启用状态重启。内置脚本改动须重新构建并重载插件；目录发现及覆盖回归由 `tests/ScriptCompilation/MasterPlayer.ScriptSmoke.csproj` 运行实际编译 DLL 验证。
+- **本地恩欧迭代**：优先修改 `Presets/Enuo/` 后运行 `tools/enuo/build_script.py`，生成完整单文件 `LocalOnly/Enuo/EnuoExtreme.cs`，同步到上述外部脚本目录再刷新；不要为恩欧机制改动反复构建/部署 MP。生成器包含状态机、分工、事件、对象采样、绘制和控制实现；`External/EnuoMpApi.cs.in` 适配现有 DLL 的内部 owner/预览接口。使用 `ScriptSmoke --enuo-script <仓库> <现有 MP DLL> <生成脚本>` 验证实际加载及三份 ARR；参数和边界见恩欧规格。生成文件不要和第二份同 GUID 的 `.cs` 同时放进扫描目录。
 - **owner 清理**：每个脚本上下文持独立 ownerId（`PromeOwnerRegistry.CreateScriptSessionOwnerId()`），事件订阅全部经 `PromeEventBus` 挂在该 owner 下；停止时 `PromeOwnerRegistry.MarkClosing(ownerId)` + `PromeEventBus.UnsubscribeAll(ownerId)` + 三门面各自 `Cleanup()`（SafeZone 移除本脚本全部区域、Move 若接管过则 `Stop()`、Draw `RemoveByRegex("^MasterPlayer_Script_{guid}_")`）。
 - **异常隔离**：单脚本编译失败进 `ErrorMessage`（面板红字可滚动）；运行中 `OnUpdate`/事件回调异常只停止该脚本，不影响其他脚本与插件本体。
 - **编译引用定位**：部分程序集被流式加载（`Assembly.Location` 为空，如本插件自身，可能还包括宿主体）。`ScriptCompiler` 的引用解析回退链为：程序集 `Location` → `ConfigDirectory\Plugins\<程序集名>\` 包目录 → 宿主 PR 安装目录（`Svc.PluginInterface.AssemblyLocation`）；首次构建引用集时会 Info 日志记录引用数量、探测目录与未能解析的程序集名——脚本编译报 CS0234 类错误时先看这条日志。
@@ -653,6 +663,15 @@ public readonly record struct GreenMovePoint(
 - 规则按 Action ID 与可选施法者 Data ID（Dalamud `BaseId`）筛选；绑定用事件的 Entity ID。可视化规则通过事件级 `IsGenericDodgeSuppressed` 条件接管，不能使用全局 Action ID 压制，否则会漏掉其他施法者的同技能。
 - 运行器只使用安全区门面注册危险区，不操作 GreenMove 或场地边界；按事件时间扣除派发延迟，清理取消、打断、过期和停止的区域。位置与普通朝向跟随使用局部偏移，其他模式使用世界偏移；预览复用同一 PR 模板。
 - 角度偏移 `AngleOffsetDegrees` 默认 0，在 `RotationOffsetTemplate.Resolve` 中叠加，不修改绑定朝向，避免同时转动局部位置偏移；`DangerMarginInflator` 递归外扩内层模板，保留角度与安全余量。正角度左转、负角度右转。
+
+### 5.6.2 脚本当前玩家与回放视角
+
+- **唯一入口由 MP 提供**：`IScriptHostContext` 与 `MasterPlayerScript` 暴露 `ReplayActorState? CurrentPlayer`、`ulong CurrentPlayerId`、`bool IsReplay`。快照包含身份、位置、朝向、职业、血量、读条、状态和连线；缺失时分别返回 null / 0。正常游戏取本人；ARR（游戏内副本录像）取当前观看角色；MP 离线回放只取 `ReplayWorld.LocalPlayer`，缺对象绝不回退实时本人。队伍分工按该 ID 从原队伍表查找，不重排队伍。
+- **脚本只消费当前玩家**：ARR 检测、观看对象解析集中在 `src/Core/DutyReplayState.cs` / `PlayerPerspective.cs`；已核对当前 CN DLL：`ConditionFlag.DutyRecorderPlayback` 为 86，`TargetSystem.TargetObjectId.ObjectId` 对应 Kodakku 读取的 0x140 字段。不依赖 Kodakku 或 ARR IPC，不修改游戏指针。只有 MP 底层适配器可以据此读取 Dalamud/FFCS；脚本不得直接把 `Svc.Objects.LocalPlayer`、旧 `Svc.ClientState.LocalPlayer` 或同义宿主助手当作机制中的“我”，也不得各自复制 ARR 判断。
+- **切人保持场景状态**：基类先调用 `protected virtual OnCurrentPlayerChanged(ulong previous, ulong current)`，再调用当帧 `OnUpdate`；无效对象也作为 ID 0 通知。脚本在此清理个人输出、失效个人缓存并立即刷新，不重启整份脚本或丢弃已收到的战斗事件。模块绘制、文字及 AI 提示按观看角色所在槽位计算；解算切人时取消旧路径。恩欧持续维护八职能观察状态，切人选用对应历史，保留点名、塔位、冻结步进和挡枪方向记忆。
+- **观看身份与执行权限分开**：`IsReplay` 表示 ARR 或 MP 离线回放，`ReplayWorld != null` 只表示 MP 离线回放。宿主阻止两种回放中的实际移动、转向、自动动作及遥控发送；ARR 保留实时事件采样、绘制与路线规划。`OnPlayerDied` / `OnPlayerRevived` 的本人事件在 ARR 中不转发给脚本，观看角色的生死从 `CurrentPlayer.Dead` 判断，不可因录制者死亡清掉全场机制状态。不得把 `ScriptManager.ReplayModeActive` 设为 true 来模拟 ARR。
+- **迁移包含外部脚本产物**：内置恩欧、地城、糖豆人、斗兽脚本已接入入口；原生执行层仍须通过回放门控。外部旧源码/DLL 直接读取 Dalamud 时不会自动改变行为，应改用上述公共 API 并重新生成/编译。恩欧生成器保留 `CurrentPlayer` / `CurrentPlayerId` / `IsReplay` 调用，对象采样接收宿主传入的 ID，不独立决定玩家身份。生成脚本须配套新 MP DLL；仅刷新旧脚本不能升级插件 API。
+- **验证**：`tests/PlayerPerspectiveRegression.cs` 覆盖实际 TargetSystem 字段的 A/B/A 切换、无效对象、退出 ARR、离线世界隔离与只解算不移动；脚本冒烟检查真实 DLL/外部脚本，恩欧按三份 ARR 验证八职能历史与切换后的目标；遥控检查 ARR 阻断。游戏内切人显示效果仍需实机验收。
 
 ### 5.7 雷达悬浮窗（`src\UI\Radar\RadarOverlayWindow.cs`）
 
