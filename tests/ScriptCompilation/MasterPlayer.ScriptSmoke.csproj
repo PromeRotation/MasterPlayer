@@ -10,6 +10,7 @@
     <Compile Include="Program.cs" />
     <Compile Include="ScriptCatalogRegression.cs" />
     <Compile Include="ScriptMovementRegression.cs" />
+    <Compile Include="ScriptSettingsRegression.cs" />
     <Compile Include="IntegrationRegression.cs" />
     <Compile Include="SkillSequenceRuntimeRegression.cs" />
     <Compile Include="BmrSourceInventory.cs" />

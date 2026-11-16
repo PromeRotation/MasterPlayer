@@ -28,7 +28,9 @@ public abstract class MasterPlayerScript
     public ScriptHintsApi Hints => Host.Hints;
 
     /// <summary>本脚本的设置存取（[UserSetting] 属性自动映射，亦可键值读写）。</summary>
-    public ScriptSettingStore Settings => Host.Settings;
+    public ScriptSettingStore Settings => Host?.Settings ?? UnstartedSettings!;
+    // Metadata inspection needs setting defaults, but must not create a runtime host or owner.
+    internal ScriptSettingStore? UnstartedSettings { get; set; }
     public DateTime CurrentTime => Host.CurrentTime;
     public Replay.ReplayWorldState? ReplayWorld => Host.ReplayWorld;
     public Replay.ReplayActorState? CurrentPlayer => Host.CurrentPlayer;

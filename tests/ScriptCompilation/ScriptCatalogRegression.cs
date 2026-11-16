@@ -127,19 +127,28 @@ internal static class ScriptCatalogRegression
             var visualPath = Path.Combine((string)manager.ScriptsDirectory, "override.mechanic.json");
             var save = managerType.GetMethod("SaveVisualScript", BindingFlags.Instance | BindingFlags.NonPublic)!;
             var delete = managerType.GetMethod("DeleteVisualScript", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var getSettings = managerType.GetMethod("GetScriptSettings", BindingFlags.Instance | BindingFlags.NonPublic)!;
             string json = (string)save.Invoke((object)manager, [visualPath, (object)definition, null])!;
             ExpectOverride(visualId, "Visual");
             Refresh();
             ExpectOverride(visualId, "Visual");
             Pass("visual save and directory scan both override by name");
 
+            dynamic visualPreview = getSettings.Invoke((object)manager, [(object)Find(visualId)])!;
+            visualPreview.Set("preview-marker", 1);
             definition.Name = "Renamed visual script";
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
+            visualPreview.Set("preview-marker", 2);
+            Check((int)settings.ScriptSettings[visualId]["preview-marker"].GetValue<int>() == 1,
+                "Saving a visual replacement must retire its previous settings preview without a full reload.");
             Check(Scripts().Length == 10 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
+            visualPreview = getSettings.Invoke((object)manager, [(object)Find(visualId)])!;
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
+            visualPreview.Set("preview-marker", 3);
+            Check(!settings.ScriptSettings.ContainsKey(visualId), "A deleted visual preview must not recreate removed settings.");
             Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
@@ -206,6 +215,7 @@ internal static class ScriptCatalogRegression
             ScriptMovementRegression.Run(assembly, manager, (object)runtime);
             Check(moveCalls == 0, "Script holds must not issue GreenMove commands.");
             Console.WriteLine("PASS production local runtime: script registration, cleanup and replay transitions");
+            ScriptSettingsRegression.Run(assembly, manager);
             CheckReplaySession(assembly, manager, runtime, plugin);
             Check(moveCalls == 0, "Recorded playback must never invoke movement.");
         }

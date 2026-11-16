@@ -678,16 +678,17 @@ public sealed class MainWindow : IDisposable
         if (!string.IsNullOrWhiteSpace(metadata.Note)) ImGui.TextWrapped(metadata.Note);
         Hint(metadata.Territorys.Length == 0 ? "适用区域：通用"
             : "适用区域：" + string.Join("、", metadata.Territorys.Select(t => $"{MechanicHost.MechanicTerritoryCatalog.ResolveName(t)}（{t}）")));
-        if (manager.Running.TryGetValue(id, out var run))
+        try
         {
-            DrawScriptSettings(run);
-            DrawMechanismToggles(manager, id, run.Script.GetMechanisms());
+            DrawScriptSettings(manager.GetScriptSettings(descriptor));
+            DrawMechanismToggles(manager, id, manager.GetScriptMechanisms(descriptor));
         }
-        else
+        catch (Exception ex)
         {
-            DrawMechanismToggles(manager, id, Mechanisms(descriptor));
-            Hint("脚本设置在脚本运行后显示；机制开关现在即可调整，进入区域后生效。");
+            ImGui.TextWrapped($"无法读取脚本设置：{ex.Message}");
         }
+        if (!manager.Running.ContainsKey(id))
+            Hint("设置已自动保存，脚本运行时生效。");
         if (ImGui.TreeNode("文件信息"))
         {
             ImGui.TextWrapped(metadata.SourcePath);
@@ -696,9 +697,8 @@ public sealed class MainWindow : IDisposable
         ImGui.PopID();
     }
 
-    private static void DrawScriptSettings(RunningScript run)
+    private static void DrawScriptSettings(ScriptSettingStore store)
     {
-        var store = run.Settings;
         if (store.RegisteredSettings.Count == 0)
             return;
 
@@ -761,16 +761,6 @@ public sealed class MainWindow : IDisposable
         }
 
         ImGui.PopID();
-    }
-
-    private readonly Dictionary<string, string[]> _mechanisms = [];
-    // A script lists its mechanisms without starting; create it once to read the list.
-    private string[] Mechanisms(ScriptDescriptor descriptor)
-    {
-        if (_mechanisms.TryGetValue(descriptor.Metadata.Id, out var cached)) return cached;
-        try { cached = descriptor.CreateInstance().GetMechanisms().ToArray(); }
-        catch { cached = []; }
-        return _mechanisms[descriptor.Metadata.Id] = cached;
     }
 
     private static string SourceLabel(ScriptSource source) => source switch

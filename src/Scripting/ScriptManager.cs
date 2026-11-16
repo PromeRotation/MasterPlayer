@@ -10,6 +10,7 @@ public sealed class ScriptManager : IDisposable
 {
     private readonly List<ScriptDescriptor> _descriptors = new();
     private readonly Dictionary<string, RunningScript> _running = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ScriptConfiguration> _configurations = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     public IReadOnlyList<ScriptDescriptor> Scripts => _descriptors;
@@ -29,6 +30,8 @@ public sealed class ScriptManager : IDisposable
 
     public void RefreshCatalog()
     {
+        foreach (var id in _configurations.Keys.Where(id => !_running.ContainsKey(id)).ToArray())
+            _configurations.Remove(id);
         _descriptors.Clear();
         ErrorMessage = "";
 
@@ -110,7 +113,7 @@ public sealed class ScriptManager : IDisposable
         var descriptor = CreateVisualDescriptor(fullPath, definition);
         var json = VisualScriptStore.Save(fullPath, definition, expectedContent);
         StopScript(definition.Id);
-        if (existing != null) _descriptors.Remove(existing);
+        if (existing != null) RemoveDescriptor(existing);
         AddDescriptor(descriptor);
         LoadBuiltInScripts();
         if (MasterPlayerSettings.Instance.EnableMechanics && IsScriptEnabled(definition.Id)
@@ -125,7 +128,7 @@ public sealed class ScriptManager : IDisposable
         if (descriptor.Source != ScriptSource.Visual) throw new InvalidOperationException("只能在编辑器中删除可视化脚本。");
         VisualScriptStore.Delete(descriptor.SourcePath, expectedContent);
         StopScript(descriptor.Metadata.Id);
-        _descriptors.Remove(descriptor);
+        RemoveDescriptor(descriptor);
         LoadBuiltInScripts();
         var settings = MasterPlayerSettings.Instance;
         if (!_descriptors.Any(d => string.Equals(d.Metadata.Id, descriptor.Metadata.Id, StringComparison.OrdinalIgnoreCase)))
@@ -246,10 +249,18 @@ public sealed class ScriptManager : IDisposable
         foreach (var builtIn in _descriptors.Where(x => x.Source == ScriptSource.BuiltIn && MatchesScript(x, descriptor)).ToArray())
         {
             StopScript(builtIn.Metadata.Id);
-            _descriptors.Remove(builtIn);
+            RemoveDescriptor(builtIn);
         }
 
         _descriptors.Add(descriptor);
+    }
+
+    private void RemoveDescriptor(ScriptDescriptor descriptor)
+    {
+        _descriptors.Remove(descriptor);
+        if (_configurations.TryGetValue(descriptor.Metadata.Id, out var configuration)
+            && ReferenceEquals(configuration.Descriptor, descriptor))
+            _configurations.Remove(descriptor.Metadata.Id);
     }
 
     private static bool MatchesScript(ScriptDescriptor first, ScriptDescriptor second)
@@ -278,6 +289,7 @@ public sealed class ScriptManager : IDisposable
     /// <summary>router 非空时脚本以回放模式启动（事件来自 ReplayController 而非 PromeEventBus）。</summary>
     internal bool StartScript(string id, IScriptEventRouter? router)
     {
+        if (_disposed) return false;
         if (!MasterPlayerSettings.Instance.EnableMechanics) return false;
         var territory = (router as Replay.ReplayScriptEventRouter)?.World?.Territory ?? Svc.ClientState.TerritoryType;
         if (!MasterPlayerSettings.Instance.IsTerritoryEnabled(territory))
@@ -297,7 +309,7 @@ public sealed class ScriptManager : IDisposable
         try
         {
             script = descriptor.CreateInstance();
-            var settings = LoadScriptSettings(id, script);
+            var settings = CreateConfiguration(descriptor, script).Settings;
             var context = new MasterPlayerScriptContext(this, descriptor.Metadata, settings, router);
             script.Host = context;
 
@@ -326,6 +338,8 @@ public sealed class ScriptManager : IDisposable
                 }
             }
 
+            _configurations.Remove(id);
+
             SetError($"脚本启动失败：{descriptor.Metadata.Name} - {ex.Message}");
             Svc.Log.Error(ex, $"[MasterPlayer] Script start failed: {descriptor.Metadata.Name}");
             return false;
@@ -346,6 +360,12 @@ public sealed class ScriptManager : IDisposable
         catch (Exception ex)
         {
             Svc.Log.Error(ex, $"[MasterPlayer] Script stop failed: {running.Descriptor.Metadata.Name}");
+        }
+        finally
+        {
+            if (_configurations.TryGetValue(id, out var configuration)
+                && ReferenceEquals(configuration.Settings, running.Settings))
+                _configurations.Remove(id);
         }
 
         SetStatus($"已停止脚本：{running.Descriptor.Metadata.Name}");
@@ -479,33 +499,64 @@ public sealed class ScriptManager : IDisposable
 
     // ── 每脚本设置 ───────────────────────────────────
 
-    private ScriptSettingStore LoadScriptSettings(string id, MasterPlayerScript script)
-    {
-        var store = new ScriptSettingStore(() =>
-        {
-            SaveScriptSettings(id, script);
-            MasterPlayerSettings.Instance.Save();
-        });
+    /// <summary>未运行时只读取设置元数据；不创建运行上下文、不启动脚本。</summary>
+    internal ScriptSettingStore GetScriptSettings(ScriptDescriptor descriptor)
+        => GetConfiguration(descriptor).Settings;
 
+    internal IEnumerable<string> GetScriptMechanisms(ScriptDescriptor descriptor)
+    {
+        var configuration = GetConfiguration(descriptor);
+        return _running.ContainsKey(descriptor.Metadata.Id)
+            ? configuration.Script.GetMechanisms()
+            : configuration.Mechanisms ??= configuration.Script.GetMechanisms().ToArray();
+    }
+
+    private ScriptConfiguration GetConfiguration(ScriptDescriptor descriptor)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_descriptors.Contains(descriptor))
+            throw new InvalidOperationException("脚本已刷新，请重新选择。");
+
+        if (_configurations.TryGetValue(descriptor.Metadata.Id, out var configuration)
+            && (ReferenceEquals(configuration.Descriptor, descriptor) || _running.ContainsKey(descriptor.Metadata.Id)))
+            return configuration;
+
+        return CreateConfiguration(descriptor, descriptor.CreateInstance());
+    }
+
+    private ScriptConfiguration CreateConfiguration(ScriptDescriptor descriptor, MasterPlayerScript script)
+    {
+        var id = descriptor.Metadata.Id;
+        ScriptSettingStore? store = null;
+        store = new ScriptSettingStore(() => SaveScriptSettings(id, store!));
+
+        // Bind only the store before evaluating getters such as Settings.GetBool(key, true).
+        script.UnstartedSettings = store;
         store.RegisterProperties(script.GetType(), script);
         store.SetDisplayNames(script.GetType());
 
         if (MasterPlayerSettings.Instance.ScriptSettings.TryGetValue(id, out var obj) && obj != null)
             store.Deserialize(obj);
 
-        return store;
+        var configuration = new ScriptConfiguration(descriptor, script, store);
+        _configurations[id] = configuration;
+        return configuration;
     }
 
-    private void SaveScriptSettings(string id, MasterPlayerScript script)
+    private void SaveScriptSettings(string id, ScriptSettingStore store)
     {
-        if (_running.TryGetValue(id, out var running) && !ReferenceEquals(running.Script, script))
-            return;
-
-        var store = _running.TryGetValue(id, out var run) ? run.Settings : null;
-        if (store == null)
+        // A start, stop, refresh or descriptor replacement retires the previous store.
+        if (_disposed || !_configurations.TryGetValue(id, out var configuration)
+            || !ReferenceEquals(configuration.Settings, store))
             return;
 
         MasterPlayerSettings.Instance.ScriptSettings[id] = store.Serialize();
+        MasterPlayerSettings.Instance.Save();
+    }
+
+    private sealed record ScriptConfiguration(ScriptDescriptor Descriptor, MasterPlayerScript Script, ScriptSettingStore Settings)
+    {
+        public string[]? Mechanisms { get; set; }
     }
 
     // ── 手动刷新（面板「刷新脚本」按钮）─────────────────
@@ -524,7 +575,9 @@ public sealed class ScriptManager : IDisposable
 
             foreach (var id in wasRunning)
             {
-                if (IsScriptEnabled(id) && _descriptors.Any(d => string.Equals(d.Metadata.Id, id, StringComparison.OrdinalIgnoreCase)))
+                var descriptor = _descriptors.FirstOrDefault(d => string.Equals(d.Metadata.Id, id, StringComparison.OrdinalIgnoreCase));
+                if (IsScriptEnabled(id) && descriptor != null
+                    && IsTerritoryMatched(descriptor.Metadata, Svc.ClientState.TerritoryType))
                     StartScript(id);
             }
 
@@ -596,6 +649,7 @@ public sealed class ScriptManager : IDisposable
         {
             Svc.Log.Error(ex, "[MasterPlayer] 停止全部脚本失败");
         }
+        finally { _configurations.Clear(); }
     }
 }
 
