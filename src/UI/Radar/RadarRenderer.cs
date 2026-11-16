@@ -100,6 +100,26 @@ public sealed class RadarRenderer : IDisposable
         var frameIds = _frameIds;
         frameIds.Clear();
 
+        if (appearance.ShowAreas)
+            DrawAreas(plugin, snapshot, appearance, visibility, now, frameIds);
+        if (appearance.ShowPath)
+            DrawPath(plugin, frameIds);
+
+        foreach (var stale in _drawnIds)
+        {
+            if (!frameIds.Contains(stale))
+            {
+                draw.Remove(stale);
+            }
+        }
+
+        (_drawnIds, _frameIds) = (frameIds, _drawnIds);
+    }
+
+    private static void DrawAreas(PromeRotation.Plugin plugin, SafeZoneSnapshot snapshot, AoeViewSettings appearance,
+        AoeVisibilityRegistry? visibility, DateTime now, HashSet<string> frameIds)
+    {
+        var draw = plugin.DrawManager;
         if (snapshot.ArenaBoundary is { } boundary && boundary is not ILocalViewBoundary)
         {
             var id = IdPrefix + "Boundary";
@@ -153,18 +173,6 @@ public sealed class RadarRenderer : IDisposable
                 draw.AddTether(id, line.Start, line.End, line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs);
                 frameIds.Add(id);
             }
-
-        DrawPath(plugin, frameIds);
-
-        foreach (var stale in _drawnIds)
-        {
-            if (!frameIds.Contains(stale))
-            {
-                draw.Remove(stale);
-            }
-        }
-
-        (_drawnIds, _frameIds) = (frameIds, _drawnIds);
     }
 
     private void DrawPath(PromeRotation.Plugin plugin, HashSet<string> frameIds)

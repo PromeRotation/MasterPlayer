@@ -35,6 +35,83 @@ sealed class CrucibleMindflayerAdds(BossModule module) : BossComponent(module)
 // 49244 is visual, 49245 is a 5y ground circle, and 49247 is a 6y ground circle.
 class High2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngagement.ReplayValidatedCastAOEs(module)
 {
+    private readonly HashSet<ulong> _resolvedFireWhirls = [];
+    private AOEInstance[] _b32PocketAOEs = [];
+    private WPos? _b32Pocket;
+    private ulong _b32PocketTarget;
+    private WPos _b32PocketTargetPosition;
+
+    public override void OnEventCast(Actor caster, ActorCastEvent spell)
+    {
+        base.OnEventCast(caster, spell);
+        if (battle == Battle.B36 && spell.Action.ID == 49259)
+            _resolvedFireWhirls.Add(caster.InstanceID);
+    }
+
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        base.AddAIHints(slot, actor, assignment, hints);
+        if (battle == Battle.B36)
+        {
+            // Native spawn precedes the ring cast by about 2.7s.
+            var whirl = WorldState.Actors.FirstOrDefault(a => a.OID == 19699u && !a.IsDeadOrDestroyed && !_resolvedFireWhirls.Contains(a.InstanceID));
+            if (whirl != null) hints.GoalPoints.Add((whirl.Position, .5f, 150));
+            return;
+        }
+        if (battle != Battle.B32) return;
+        var visible = ActiveAOEs(slot, actor).ToArray().Where(a => a.Risky).ToArray();
+        var lanes = visible.Count(a => a.Shape is AOEShapeRect);
+        // run2361: the R16 escape waited >2s during 5382, then paralysis
+        // stopped the walk and the ordinary route became too late.
+        hints.NoEscapeDelay = lanes >= 2 || actor.FindStatus(5382) is { } paralysis && paralysis.ExpireAt > WorldState.CurrentTime;
+        if (lanes < 2)
+        {
+            _b32Pocket = null;
+            _b32PocketAOEs = [];
+            return;
+        }
+        // Aim for a pocket outside every already visible lane. The solver
+        // retains native activation times; unseen casts supply no information.
+        // run2037: a nearest-position pocket overrode FollowController while
+        // PAW selected a distant elemental, leaving the player unable to hit it.
+        var selected = WorldState.Actors.Find(actor.TargetID);
+        var elemental = selected is { OID: 19676u, IsTargetable: true, IsDeadOrDestroyed: false, HPMP.CurHP: > 0 }
+            ? selected : null;
+        // Keep the pocket fixed while its visible hazards and attack target
+        // are unchanged. A nearest pocket that follows each player scan makes
+        // delayed idle solves stale, leaving the previous chase route running.
+        if (_b32Pocket is { } retained && _b32PocketTarget == (elemental?.InstanceID ?? 0)
+            && _b32PocketTargetPosition == (elemental?.Position ?? default)
+            && _b32PocketAOEs.SequenceEqual(visible))
+        {
+            hints.GoalPoints.Add((retained, .75f, 120));
+            return;
+        }
+        var meleeRange = (elemental?.HitboxRadius ?? 0) + 2.5f;
+        WPos? best = null;
+        var bestDistance = float.MaxValue;
+        for (var x = -19f; x <= 19; x += .5f)
+            for (var z = -19f; z <= 19; z += .5f)
+            {
+                if (x*x+z*z > 19*19) continue;
+                var point = Module.Center + new WDir(x,z);
+                var distance = (point-actor.Position).LengthSq();
+                if (elemental != null)
+                    distance += 1000f * MathF.Max(0, (point-elemental.Position).Length() - meleeRange);
+                if (distance >= bestDistance) continue;
+                if (visible.Any(a => (a.ShapeDistance ?? a.Shape.Distance(a.Origin,a.Rotation)).Distance(point) < .9f)) continue;
+                bestDistance=distance; best=point;
+            }
+        // A sub-cell goal forced a 0.175y grid and unstable temporal replans
+        // among nine lanes (run1810). Keep the same safe center and clearance,
+        // but let navigation use the surrounding safe cells and its normal grid.
+        _b32Pocket = best;
+        _b32PocketAOEs = visible;
+        _b32PocketTarget = elemental?.InstanceID ?? 0;
+        _b32PocketTargetPosition = elemental?.Position ?? default;
+        if (best is {} goal) hints.GoalPoints.Add((goal,.75f,120));
+    }
+
     protected override AOEConfig? ConfigFor(uint actionID) => (battle, actionID) switch
     {
         (Battle.B32, 49186) => new(new AOEShapeCircle(6), true),
@@ -56,6 +133,13 @@ class High2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngageme
         (Battle.B35, 49247) => new(new AOEShapeCircle(6), true),
         (Battle.B35, 49248) => new(new AOEShapeCone(28, 60f.Degrees()), true),
         (Battle.B35, 49249) => new(new AOEShapeCone(30, 45f.Degrees()), true),
+        (Battle.B36, 49252) => new(new AOEShapeCircle(20), true),
+        // Fire drake damage helpers: installed CN Action/Omen rows identify
+        // the 120-degree R50 cone and repeated R4 ground fire separately.
+        (Battle.B36, 49256) => new(new AOEShapeCone(50, 60f.Degrees()), true),
+        (Battle.B36, 49258) => new(new AOEShapeCircle(4), true),
+        // R2 is a conservative observed-safe core, not a claimed exact inner radius.
+        (Battle.B36, 49259) => new(new AOEShapeDonut(2, 43), true),
         (Battle.B37, 49265) => new(new AOEShapeCircle(20), true),
         (Battle.B37, 49266) => new(new AOEShapeCircle(6), true),
         // The missile damage cast belongs to a generic 9020/NameID108 helper.
@@ -93,6 +177,7 @@ class High2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngageme
         (Battle.B41, 49378) => new(new AOEShapeRect(40, 4), true),
         (Battle.B41, 49379) => new(new AOEShapeRect(7, 2), true),
         // Lauda's origins can be 40y behind the boss. Use the packet location.
+        (Battle.B45, 49440 or 49441 or 49442) => new(new AOEShapeCircle(2), true),
         (Battle.B45, 49451) => new(new AOEShapeRect(80, 10), true),
         (Battle.B45, 49464 or 50848) => new(new AOEShapeRect(60, 3), true),
         (Battle.B45, 49443) => new(new AOEShapeCircle(8), true),
@@ -117,6 +202,16 @@ class High2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngageme
             if (battle == Battle.B45 && entry.ActionID is 49446 or 49449
                 && Module.FindComponent<CrucibleLaudaShockwave>()?.ResolvesAfterJump(actor, aoe.Activation) == true)
                 continue;
+
+            // Elemental lines: run2006/1810 stack up to 9 concurrent lanes, each hitting once at
+            // its packet (finish+0.25..0.37). The default 0.6s tail plus double margin filled the
+            // whole time-space (NoReachableSafeCell), although a dodge exists for every sequence.
+            if (battle == Battle.B32 && entry.ActionID is 49194 or 49195)
+            {
+                hints.ForbiddenZones.Add(new(aoe.ShapeDistance ?? aoe.Shape.Distance(aoe.Origin, aoe.Rotation),
+                    aoe.Activation, aoe.Activation.AddSeconds(.2)) { ExactTiming = true });
+                continue;
+            }
 
             hints.AddForbiddenZone(aoe.ShapeDistance ?? aoe.Shape.Distance(aoe.Origin, aoe.Rotation), aoe.Activation);
         }

@@ -264,10 +264,14 @@ sealed class CrucibleEyeBrands(BossModule module) : BossComponent(module)
     {
         if (_sides.TryGetValue(SafeAction(actor), out var side))
         {
-            // Stay clearly on the selected side; the angular edge is not measured yet.
-            var goal = side.origin + side.rotation.ToDirection() * 8;
-            hints.AddForbiddenConstraint(new SDInvertedCircle(goal, 3), side.activation.AddSeconds(-0.5), side.activation.AddSeconds(0.6));
-            hints.GoalZones.Add(p => p.InCircle(goal, 2) ? 10 : 0);
+            // Stay on the selected side but inside melee range. kano 11-10 run2299: the old point 8m out
+            // (allowed 5–11m) was outside melee for a 2.8m boss, so both half-room casts cost uptime.
+            // Hitbox + 1.5m along the side's axis, 1.5m tolerance: still well clear of the dividing line.
+            var caster = WorldState.Actors.Find(side.caster);
+            var reach = (caster?.HitboxRadius ?? 2.8f) + 1.5f;
+            var goal = side.origin + side.rotation.ToDirection() * reach;
+            hints.AddForbiddenConstraint(new SDInvertedCircle(goal, 1.5f), side.activation.AddSeconds(-0.5), side.activation.AddSeconds(0.6));
+            hints.GoalZones.Add(p => p.InCircle(goal, 1) ? 10 : 0);
         }
     }
 
@@ -278,4 +282,33 @@ sealed class CrucibleEyeBrands(BossModule module) : BossComponent(module)
     }
 }
 
-sealed class CrucibleEyeRaidwide(BossModule module) : Components.CastHints(module, [49428u, 49431u], "即死／核爆：注意宠物与减伤！");
+sealed class CrucibleEyeRaidwide(BossModule module) : Components.CastHints(module, [49428u, 49431u], "即死／核爆：注意宠物与减伤！")
+{
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        base.AddAIHints(slot, actor, assignment, hints);
+        var boss = Module.PrimaryActor;
+        if (Module.Group != 44 || boss.OID != 19736 || boss.IsDeadOrDestroyed || boss.HPMP.CurHP == 0 || !boss.IsTargetable || !boss.InCombat
+            || actor != WorldState.Player || actor.IsDeadOrDestroyed || actor.HPMP.CurHP == 0
+            || actor.FindStatus(2413) is not { } cover || cover.ExpireAt <= WorldState.CurrentTime
+            || WorldState.Actors.Find(cover.SourceID) is not { IsDeadOrDestroyed: false } pet
+            || pet == actor || pet.OwnerID != actor.InstanceID || pet.HPMP.CurHP == 0 || boss.TargetID != pet.InstanceID)
+            return;
+        // Roulette/brands own positioning. Unknown current targets and missing
+        // protection never fall back to a nearby companion or the boss facing.
+        if (hints.GoalPoints.Count != 0 || hints.GoalZones.Count != 0 || hints.ForcedMovement != null || hints.DirectRoute != null || hints.ForcedMarchImminent
+            || actor.Statuses.Any(s => s.ID is 3625 or 5536 or 5537 && s.ExpireAt > WorldState.CurrentTime)
+            || WorldState.Actors.Any(a => !a.IsDeadOrDestroyed && (a.OID == 19737 && a.HPMP.CurHP > 0
+                || a.CastInfo is { EventHappened: false } cast && cast.FinishAt > WorldState.CurrentTime
+                    && cast.Action.ID is 49418 or 49420 or 49425 or 49426))
+            || Module.FindComponent<CrucibleEyeAttract>()?.ActiveKnockbacks(slot, actor).Length is > 0)
+            return;
+        var offset = pet.Position - boss.Position;
+        if (!float.IsFinite(offset.X) || !float.IsFinite(offset.Z) || offset.LengthSq() < 0.25f)
+            return;
+        // 50940 is instant: pre-separate the non-target from its current L50,
+        // width-8 ray. Keep ordinary melee/attack goals and all safety margins;
+        // the pet remains the unavoidable primary target, not a dodged hit.
+        hints.AddForbiddenZone(new SDRect(boss.Position, offset.Normalized(), 50, 0, 4));
+    }
+}

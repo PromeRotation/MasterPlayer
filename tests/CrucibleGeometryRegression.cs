@@ -28,7 +28,7 @@ internal static class CrucibleGeometryRegression
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
             for (var i = 0; i < 10; ++i)
-                _ = FrozenConstraintGeometry.Create(p => capsule.Distance(p), new WPos(100, 200), 5f);
+                _ = FrozenConstraintFactory.Create(p => capsule.Distance(p), new WPos(100, 200), 5f);
             var frozenMs = sw.Elapsed.TotalMilliseconds / 10;
             sw.Restart();
             for (var i = 0; i < 10; ++i)

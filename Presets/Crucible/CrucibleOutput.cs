@@ -21,6 +21,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
     private ArenaBounds? _goalBounds;
     private WPos _goalCenter;
     private readonly Dictionary<WPos, bool> _goalFloor = [];
+    private const float FixedGoalMeleeSlack = 3.5f;
 
     internal (IGeometryShape Boundary, Vector3 Center)? GetRadarArena(IGeometryShape? navigationBoundary)
         => _boundary != null && _displayBoundary != null && ReferenceEquals(navigationBoundary, _boundary)
@@ -85,7 +86,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
             var key = shape.ContentKey();
             if (key != null && _shapeGeometryCache.TryGetValue(key, out var cached))
                 return cached;
-            var geometry = shape.Geometry(y) ?? FrozenConstraintGeometry.Create(p => shape.Distance(p), module.Center, y);
+            var geometry = shape.Geometry(y) ?? FrozenConstraintFactory.Create(p => shape.Distance(p), module.Center, y);
             if (key != null)
             {
                 if (_shapeGeometryCache.Count >= 512)
@@ -101,7 +102,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
             {
                 if (zone.Activation == DateTime.MaxValue) continue;
                 var geometry = Geometry(zone);
-                desired[$"danger/{i++}"] = new(geometry, zone.Activation, AreaKind.Danger, ExpiresAt: zone.ExpiresAt, ExactGeometry: zone.ExactGeometry);
+                desired[$"danger/{i++}"] = new(geometry, zone.Activation, AreaKind.Danger, ExpiresAt: zone.ExpiresAt, ExactGeometry: zone.ExactGeometry, RequireOutwardExit: zone.RequireOutwardExit, ExactTiming: zone.ExactTiming, ArenaMarginInterior: zone.ArenaMarginInterior?.Geometry(module.Center, y));
             }
             i = 0;
             foreach (var shape in frame.Hints.TemporaryObstacles)
@@ -124,6 +125,14 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         if (goalsEnabled)
         {
             var i = 0;
+            // run2109: melee-return goals also lit this signal, so the ACR refused every gap closer ("机制站位目标，不贴回").
+            // Only a goal held away from the current target's (or boss's) melee range is a fixed mechanic spot.
+            if (frame.Hints.GoalPoints.Count > 0)
+            {
+                var anchor = engine.World.Actors.Find(player.TargetID) is { IsDeadOrDestroyed: false } current ? current : module.PrimaryActor;
+                if (anchor == null || frame.Hints.GoalPoints.Any(point => (point.Position - anchor.Position).Length() - anchor.HitboxRadius - point.Radius > FixedGoalMeleeSlack))
+                    CrucibleGoalSignal.LastGoalUtc = DateTime.UtcNow;
+            }
             foreach (var point in frame.Hints.GoalPoints)
                 desired[$"goal/{i++}"] = new(new CircleGeometry(point.Position.ToVec3(y), point.Radius), default, AreaKind.Goal, point.Priority, PositionPreference.Center);
             if (frame.Hints.GoalPoints.Count == 0 && frame.Hints.GoalZones.Count > 0 && player.CastInfo == null)
@@ -152,8 +161,15 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                     var goals = frame.Hints.GoalZones;
                     var totals = new int[goals.Count];
                     var safeCounts = new int[goals.Count];
-                    bool Safe(WPos p) => !exclusions.Any(e => e.Mask.Contains(p.ToVec3(y)))
-                        && !frame.Hints.TemporaryObstacles.Any(o => o.Distance(p) <= 0);
+                    // Perf: the passes below and the frozen grid revisit the same points; Safe/Score are pure per Apply.
+                    var safeMemo = new Dictionary<WPos, bool>();
+                    bool Safe(WPos p)
+                    {
+                        if (!safeMemo.TryGetValue(p, out var ok))
+                            safeMemo[p] = ok = !exclusions.Any(e => e.Mask.Contains(p.ToVec3(y)))
+                                && !frame.Hints.TemporaryObstacles.Any(o => o.Distance(p) <= 0);
+                        return ok;
+                    }
                     // Measure each original preference before clipping.
                     for (var z = -radius; z <= radius; z += OptionalGoalSafety.SampleStep)
                         for (var x = -radius; x <= radius; x += OptionalGoalSafety.SampleStep)
@@ -170,7 +186,14 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                         }
                     var accepted = Enumerable.Range(0,goals.Count)
                         .Where(g => totals[g] > 0 && safeCounts[g] >= totals[g] * OptionalGoalSafety.MinSafeFraction).ToArray();
+                    var scoreMemo = new Dictionary<WPos, float>();
                     float Score(WPos p)
+                    {
+                        if (scoreMemo.TryGetValue(p, out var memo))
+                            return memo;
+                        return scoreMemo[p] = ScoreCore(p);
+                    }
+                    float ScoreCore(WPos p)
                     {
                         var score = 0f;
                         foreach (var g in accepted) score += Math.Max(0,goals[g](p));
@@ -186,7 +209,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                     if (max > 0)
                     {
                         var threshold = max * 0.9f;
-                        var geometry = FrozenConstraintGeometry.Create(p => OnFloor(p) ? threshold - Score(p) : 1, module.Center, y, radius: radius, visible: true, safeRegion: true);
+                        var geometry = FrozenConstraintFactory.Create(p => OnFloor(p) ? threshold - Score(p) : 1, module.Center, y, radius: radius, visible: true, safeRegion: true);
                         desired[$"goal/{i}"] = new(geometry, default, AreaKind.Goal, 1, PositionPreference.Nearest);
                     }
                 }
@@ -216,8 +239,8 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
                     var end = area.ExpiresAt;
                     if (end < now) continue;
                     handle = area.ExactGeometry
-                        ? safeZone.AddExactDangerSnapshot(template, transform, [new(start, end, now)])
-                        : safeZone.AddDangerSnapshot(template, transform, [new(start, end, now)]);
+                        ? safeZone.AddExactDangerSnapshot(template, transform, [new(start, end, now) { HasMotionEnvelope = area.ExactTiming, ArenaMarginInterior = area.ArenaMarginInterior }])
+                        : safeZone.AddDangerSnapshot(template, transform, [new(start, end, now) { RequireOutwardExit = area.RequireOutwardExit, HasMotionEnvelope = area.ExactTiming, ArenaMarginInterior = area.ArenaMarginInterior }]);
                 }
                 _areas[id] = (signatures[id], handle);
             }
@@ -277,7 +300,7 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
     private static IGeometryShape ZoneGeometry(AIHints.ForbiddenZone zone, BossModule module, float y)
         => zone.Shape is SDInvertedCircle circle
             ? new CircleComplementGeometry(circle.Origin.ToVec3(y), circle.Radius, module.Arena.Bounds.Geometry(module.Center, y).GetBounds())
-            : zone.Shape.Geometry(y) ?? FrozenConstraintGeometry.Create(p => zone.Shape.Distance(p), module.Center, y);
+            : zone.Shape.Geometry(y) ?? FrozenConstraintFactory.Create(p => zone.Shape.Distance(p), module.Center, y);
     private static string ActorName(Actor actor) => string.IsNullOrWhiteSpace(actor.Name) ? $"目标 {actor.NameID}" : actor.Name;
     private void Hint(string text, DateTime now)
     {
@@ -285,16 +308,17 @@ internal sealed class CrucibleOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi d
         _messages[text] = now.AddSeconds(8);
         log(text);
     }
-    private sealed record Area(IGeometryShape Geometry, DateTime Activation, AreaKind Kind, int Priority = 0, PositionPreference Preference = PositionPreference.Nearest, DateTime? ExpiresAt = null, bool ExactGeometry = false)
+    private sealed record Area(IGeometryShape Geometry, DateTime Activation, AreaKind Kind, int Priority = 0, PositionPreference Preference = PositionPreference.Nearest, DateTime? ExpiresAt = null, bool ExactGeometry = false, bool RequireOutwardExit = false, bool ExactTiming = false, IGeometryShape? ArenaMarginInterior = null)
     {
         public int GeometryHash { get; } = GeometrySignature(Geometry);
         public string Signature()
-            => $"{GeometryHash}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}:{ExactGeometry}";
+            => $"{GeometryHash}:{Activation.Ticks}:{ExpiresAt?.Ticks}:{Kind}:{Priority}:{Preference}:{ExactGeometry}:{ExactTiming}:{RequireOutwardExit}:{(ArenaMarginInterior == null ? 0 : GeometrySignature(ArenaMarginInterior))}";
         public static int GeometrySignature(IGeometryShape geometry)
         {
             var hash = new HashCode();
             hash.Add(geometry.Kind); hash.Add(geometry.Position.X); hash.Add(geometry.Position.Z); hash.Add(geometry.Rotation); hash.Add(geometry.GetBounds());
             if (geometry is CircleComplementGeometry circle) hash.Add(circle.SafeRadius);
+            else if (geometry is RectangleComplementGeometry rectangle) { hash.Add(rectangle.SafeHalfWidth); hash.Add(rectangle.SafeHalfHeight); }
             else if (geometry is FrozenConstraintGeometry grid) hash.Add(grid.ContentHash);
             else foreach (var contour in geometry.GetContours(24)) foreach (var p in contour) { hash.Add(p.X); hash.Add(p.Z); }
             return hash.ToHashCode();

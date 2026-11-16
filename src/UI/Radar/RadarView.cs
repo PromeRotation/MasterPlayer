@@ -84,7 +84,7 @@ public sealed class RadarView
             _center = boundary.Position;
             if (MasterPlayerPlugin.Instance?.Scripts is { } scripts)
                 foreach (var running in scripts.Running.Values)
-                    if (running.Script is CrucibleScript crucible && crucible.GetRadarArena(boundary) is { } arena)
+                    if (running.Script is ICrucibleRadarArena crucible && crucible.GetRadarArena(boundary) is { } arena)
                     {
                         display = arena.Boundary;
                         _center = arena.Center;
@@ -115,9 +115,13 @@ public sealed class RadarView
         DrawDisc(canvas, settings);
         DrawRangeRings(canvas, settings, _projection.Scale);
         DrawRimTicks(canvas);
-        DrawAreas(canvas, snapshot, settings, now, animT);
-        DrawMechanicExtras(drawList, canvas, settings);
-        DrawSolutionPath(canvas, plugin, animT);
+        if (settings.RadarAoe.ShowAreas)
+        {
+            DrawAreas(canvas, snapshot, settings, now, animT);
+            DrawMechanicExtras(drawList, canvas, settings);
+        }
+        if (settings.RadarAoe.ShowPath)
+            DrawSolutionPath(canvas, plugin, animT);
         if (world != null) DrawReplayActors(canvas, world, visibleRadius, animT);
         else DrawActors(canvas, player, visibleRadius, animT);
         DrawRim(canvas);

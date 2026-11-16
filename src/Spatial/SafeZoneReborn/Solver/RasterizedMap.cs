@@ -57,12 +57,24 @@ public sealed class RasterizedMap
     /// 但核心格始终按真实危险处理 → 玩家绕开 AOE 而非穿过。</para>
     /// </summary>
     private readonly bool[] _dangerCore;
+    // MaxG from danger cores only (no HardSafetyMargin ring). A cell can sit in one danger's core and
+    // another's margin ring; the start-escape exemption must drop only the ring (run1902 B26 Pitch Sea).
+    private readonly float[] _pixelCoreMaxG;
     private readonly List<DangerInterval>?[] _dangerIntervals;
+    private readonly Dictionary<FanGeometry, IReadOnlyList<IReadOnlyList<Vector3>>> _fanContours = new();
     private readonly List<bool[]> _exitOnlyAreas = new();
+    private readonly List<bool[]> _escapeAreas = new();
+    internal bool RequiresEscapeAt(int index)
+    {
+        foreach (var area in _escapeAreas)
+            if (area[index]) return true;
+        return false;
+    }
     private float _goalHeuristicDistance = float.MaxValue;
 
     internal readonly record struct DangerInterval(float From, float Until);
     internal bool HasFiniteDanger { get; private set; }
+    private readonly List<(Vector3 Center, float Radius)> _outwardEscapeAreas = [];
     internal IReadOnlyList<DangerInterval> DangerIntervalsAt(int index)
         => _dangerIntervals[index] is { } intervals ? intervals : Array.Empty<DangerInterval>();
 
@@ -70,6 +82,17 @@ public sealed class RasterizedMap
     {
         if (_pixelMaxG[toIndex] < 0f)
             return false;
+        foreach (var (center, radius) in _outwardEscapeAreas)
+        {
+            // Keep goal optimization, but never route through the chasing body
+            // to reach that goal. Other persistent escape contracts stay intact.
+            var from = CellCenter(fromIndex % Columns, fromIndex / Columns) - center;
+            var to = CellCenter(toIndex % Columns, toIndex / Columns) - center;
+            var fromDistance = from.X * from.X + from.Z * from.Z;
+            var toDistance = to.X * to.X + to.Z * to.Z;
+            if (fromDistance <= radius * radius && toDistance + .00001f < fromDistance)
+                return false;
+        }
         foreach (var area in _exitOnlyAreas)
         {
             if (!area[fromIndex] && area[toIndex])
@@ -105,6 +128,8 @@ public sealed class RasterizedMap
         _pixelGoalPreferenceScore = pixelGoalPreferenceScore;
         _pixelMinG = pixelMinG;
         _dangerCore = dangerCore;
+        _pixelCoreMaxG = new float[pixelMaxG.Length];
+        Array.Fill(_pixelCoreMaxG, float.MaxValue);
         _dangerIntervals = new List<DangerInterval>?[pixelMaxG.Length];
         WasCoarsened = wasCoarsened;
     }
@@ -179,6 +204,13 @@ public sealed class RasterizedMap
     /// </summary>
     public bool IsDangerCoreAt(int col, int row)
         => InBounds(col, row) && _dangerCore[(row * Columns) + col];
+
+    /// <summary>
+    /// 仅由危险核心（未膨胀几何）决定的 MaxG；无核心覆盖为 <c>MaxValue</c>。起点逃逸豁免期间用它代替
+    /// <see cref="PixelMaxGAt"/>，只豁免其他危险的 margin 环，不豁免本格自身核心的期限。
+    /// </summary>
+    internal float PixelCoreMaxGAt(int col, int row)
+        => InBounds(col, row) ? _pixelCoreMaxG[(row * Columns) + col] : BlockedMaxG;
 
     /// <summary>
     /// 从快照光栅化生成网格。
@@ -273,6 +305,10 @@ public sealed class RasterizedMap
 
         // 危险区几何 → PixelMaxG（保守膨胀 + 时间窗口投影）。
         map.RasterizeDangerAreas(snapshot, playerPosition, options, marginCells, solveTimeUtc, safeSpeed);
+        foreach (var danger in snapshot.DangerAreas)
+            if (danger.Geometry is CircleGeometry circle && circle.Contains(playerPosition)
+                && danger.DangerWindows.Any(w => w.RequireOutwardExit && w.IsActiveAt(solveTimeUtc)))
+                map._outwardEscapeAreas.Add((circle.Position, circle.Radius + options.HardSafetyMargin));
 
         // 目标区几何 → PixelPriority（保守：完整在内才记目标 + 仅激活窗口计入）。
         map.RasterizeGoalAreas(snapshot, solveTimeUtc, playerPosition);
@@ -319,24 +355,35 @@ public sealed class RasterizedMap
         else blocked = BuildBoundaryGrid(boundary, arenaMarginCells);
 
         var obstacles = snapshot.HardObstacles.Count == 0 ? null : new bool[blocked.Length];
+        // An obstacle whose margin already covers the player is only blocked by its own cells: dilating it
+        // walls in the start cell (run1902 B26: a miasma mine 1.81y away, contact R1.8, left the player
+        // NoReachableSafeCell under the dash cleave for two seconds).
+        var undilated = snapshot.HardObstacles.Count == 0 ? null : new bool[blocked.Length];
+        var (playerCol, playerRow) = WorldToCell(playerPosition);
         // 永久障碍：相交即阻挡。
         foreach (var obstacle in snapshot.HardObstacles)
         {
             if (obstacle.Geometry.Contains(playerPosition))
                 continue;
+            var cells = new List<int>();
+            var hugsPlayer = false;
             ForEachCellInGeometryBounds(obstacle.Geometry, marginExpand: 0, (col, row) =>
             {
                 if (CellIntersectsGeometry(obstacle.Geometry, col, row))
                 {
-                    obstacles![(row * Columns) + col] = true;
+                    cells.Add((row * Columns) + col);
+                    hugsPlayer |= Math.Max(Math.Abs(col - playerCol), Math.Abs(row - playerRow)) <= marginCells;
                 }
             });
+            var target = hugsPlayer ? undilated! : obstacles!;
+            foreach (var cell in cells)
+                target[cell] = true;
         }
 
         if (obstacles != null)
         {
             if (marginCells > 0) DilateBoolGrid(obstacles, marginCells);
-            for (var i = 0; i < blocked.Length; i++) blocked[i] |= obstacles[i];
+            for (var i = 0; i < blocked.Length; i++) blocked[i] |= obstacles[i] || undilated![i];
         }
 
         for (var i = 0; i < _pixelMaxG.Length; i++)
@@ -461,12 +508,57 @@ public sealed class RasterizedMap
             }
 
             // 每个持续区域分别约束退出方向，避免重叠区域相互掩盖退出后重入。
-            if (effectiveMinG == NeverSafeMinG)
-                _exitOnlyAreas.Add((bool[])footprint.Clone());
+            bool[]? persistentCore = effectiveMinG == NeverSafeMinG ? (bool[])footprint.Clone() : null;
+            if (persistentCore is not null)
+            {
+                // Cell intersection can put a geometrically safe player in a
+                // core cell. It does not authorize stepping into the real pool.
+                if (!danger.Geometry.Contains(playerPosition))
+                {
+                    var (pc, pr) = WorldToCell(playerPosition);
+                    persistentCore[pr * Columns + pc] = false;
+                }
+                _exitOnlyAreas.Add(persistentCore);
+            }
 
+            var core = marginCells > 0 ? (bool[])footprint.Clone() : footprint;
             if (marginCells > 0)
             {
                 DilateBoolGrid(footprint, marginCells);
+            }
+
+            // An active area covering the starting cell is an exit-only constraint,
+            // not a missed deadline for every subsequent edge. Keep each area
+            // separate: exiting one must never permit entering another. Pending
+            // windows (including an overlapping cone) retain their own deadlines.
+            var (startCol, startRow) = WorldToCell(playerPosition);
+            // Only a player actually inside the area must escape it. Standing in its margin ring only
+            // (e.g. a tiny "stay inside" knockback landing goal) keeps the ordinary margin handling;
+            // treating it as an escape returned NoReachableSafeCell (Crucible Durga ARR staging).
+            // But a player already escaping another persistent area (run1904-b2 B23: inside one acid pool, in the
+            // ring of the next) has no safe start: that ring must stay an escape too, or every first step is unsafe.
+            var ringFixOff = Environment.GetEnvironmentVariable("MP_RING_FIX") == "0";
+            if (effectiveMinG == NeverSafeMinG && footprint[startRow * Columns + startCol]
+                && (danger.Geometry.Contains(playerPosition)
+                    || (!ringFixOff && InsideAnyPersistentDanger(snapshot, playerPosition, solveTime))))
+            {
+                _escapeAreas.Add(footprint);
+                _exitOnlyAreas.Add(footprint);
+                continue;
+            }
+            // The player can also stand only in the dilated safety ring of a large persistent
+            // circular pool (run1991 B23: danger R6.9, player at 7.49y). Geometry says "not
+            // inside", so the branch above does not fire, but the start cell is still MaxG=0
+            // and the solver returns NoReachableSafeCell every frame, releasing control. Mark
+            // just the start cell as an escape; the real core stays exit-only via persistentCore,
+            // so this never permits walking into the pool. Small drifting clouds (<6.5y) and
+            // keep-in constraints (not CircleGeometry) keep the ordinary margin behavior.
+            if (!ringFixOff && effectiveMinG == NeverSafeMinG && footprint[startRow * Columns + startCol]
+                && danger.Geometry is CircleGeometry { Radius: >= 6.5f })
+            {
+                var startEscape = new bool[_pixelMaxG.Length];
+                startEscape[startRow * Columns + startCol] = true;
+                _escapeAreas.Add(startEscape);
             }
 
             // 硬阻挡格不被危险覆盖；其余格 MaxG 取 min(当前, effectiveMaxG)，MinG 同格多危险取 max（NeverSafeMinG 吸收一切）。
@@ -485,6 +577,10 @@ public sealed class RasterizedMap
                 {
                     _pixelMaxG[i] = effectiveMaxG;
                 }
+                if (core[i] && effectiveMaxG < _pixelCoreMaxG[i])
+                {
+                    _pixelCoreMaxG[i] = effectiveMaxG;
+                }
                 if (effectiveMinG == NeverSafeMinG)
                 {
                     _pixelMinG[i] = NeverSafeMinG;
@@ -495,6 +591,16 @@ public sealed class RasterizedMap
                 }
             }
         }
+    }
+
+    private static bool InsideAnyPersistentDanger(SafeZoneSnapshot snapshot, Vector3 position, DateTime now)
+    {
+        foreach (var danger in snapshot.DangerAreas)
+            if (danger.Geometry.Contains(position))
+                foreach (var window in danger.DangerWindows)
+                    if (window.DangerUntil is null && window.IsActiveAt(now))
+                        return true;
+        return false;
     }
 
     private static IEnumerable<DangerAreaSnapshot> EnumerateDangers(SafeZoneSnapshot snapshot, Vector3 playerPosition, DateTime solveTime)
@@ -828,15 +934,25 @@ public sealed class RasterizedMap
             return true;
         }
 
-        if (geometry.IntersectsSegment(c0, c1) ||
-            geometry.IntersectsSegment(c1, c2) ||
-            geometry.IntersectsSegment(c2, c3) ||
-            geometry.IntersectsSegment(c3, c0))
+        IReadOnlyList<IReadOnlyList<Vector3>>? cachedContours = null;
+        if (geometry is FanGeometry fan)
+        {
+            if (!_fanContours.TryGetValue(fan, out cachedContours))
+                _fanContours.Add(fan, cachedContours = fan.GetContours());
+        }
+        bool Intersects(Vector3 a, Vector3 b)
+        {
+            if (cachedContours is null) return geometry.IntersectsSegment(a, b);
+            foreach (var contour in cachedContours)
+                if (GeometryShape.ContourIntersectsSegment(contour, a, b, GeometryHelper.DefaultEpsilon)) return true;
+            return false;
+        }
+        if (Intersects(c0, c1) || Intersects(c1, c2) || Intersects(c2, c3) || Intersects(c3, c0))
         {
             return true;
         }
 
-        foreach (var contour in geometry.GetContours())
+        foreach (var contour in cachedContours ?? geometry.GetContours())
         {
             for (var i = 0; i < contour.Count; i++)
             {
@@ -890,33 +1006,38 @@ public sealed class RasterizedMap
 
     /// <summary>Chebyshev（方形）膨胀 radius 格。</summary>
     private void DilateBoolGrid(bool[] grid, int radius)
+        => DilateSquare(grid, Columns, Rows, radius);
+
+    internal static void DilateSquare(bool[] grid, int columns, int rows, int radius)
     {
-        if (radius <= 0)
+        if (radius <= 0) return;
+        radius = Math.Min(radius, Math.Max(columns, rows));
+        var horizontal = new bool[grid.Length];
+        for (var row = 0; row < rows; row++)
         {
-            return;
-        }
-
-        var source = (bool[])grid.Clone();
-        for (var row = 0; row < Rows; row++)
-        {
-            for (var col = 0; col < Columns; col++)
+            var offset = row * columns;
+            var count = 0;
+            for (var c = 0; c <= Math.Min(columns - 1, radius); c++)
+                if (grid[offset + c]) count++;
+            for (var col = 0; col < columns; col++)
             {
-                if (!source[(row * Columns) + col])
-                {
-                    continue;
-                }
-
-                var minCol = Math.Max(0, col - radius);
-                var maxCol = Math.Min(Columns - 1, col + radius);
-                var minRow = Math.Max(0, row - radius);
-                var maxRow = Math.Min(Rows - 1, row + radius);
-                for (var r = minRow; r <= maxRow; r++)
-                {
-                    for (var c = minCol; c <= maxCol; c++)
-                    {
-                        grid[(r * Columns) + c] = true;
-                    }
-                }
+                horizontal[offset + col] = count > 0;
+                if (col >= radius && grid[offset + col - radius]) count--;
+                if (col + radius + 1 < columns && grid[offset + col + radius + 1]) count++;
+            }
+        }
+        // A square dilation is the exact composition of horizontal and vertical
+        // windows. Read the intermediate mask so newly set cells cannot propagate.
+        for (var col = 0; col < columns; col++)
+        {
+            var count = 0;
+            for (var r = 0; r <= Math.Min(rows - 1, radius); r++)
+                if (horizontal[r * columns + col]) count++;
+            for (var row = 0; row < rows; row++)
+            {
+                grid[row * columns + col] = count > 0;
+                if (row >= radius && horizontal[(row - radius) * columns + col]) count--;
+                if (row + radius + 1 < rows && horizontal[(row + radius + 1) * columns + col]) count++;
             }
         }
     }

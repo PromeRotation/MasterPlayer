@@ -22,6 +22,28 @@ static class CrucibleLaudaFloor
 
     public static bool Contains(WPos pos) => Safe.Contains(pos - Center);
 
+    public static bool OnPlatform(WPos pos) => Display.Contains(pos - Center);
+
+    // Nearest standing point at least 1y inside a platform.
+    public static WPos Nearest(WPos pos)
+    {
+        var best = Center;
+        var bestDistance = float.MaxValue;
+        for (var x = 504f; x <= 536; x += .5f)
+            for (var z = -446f; z <= -394; z += .5f)
+            {
+                var p = new WPos(x, z);
+                var distance = (p - pos).LengthSq();
+                if (distance < bestDistance && Contains(p) && Contains(p + new WDir(.5f, 0)) && Contains(p - new WDir(.5f, 0))
+                    && Contains(p + new WDir(0, .5f)) && Contains(p - new WDir(0, .5f)))
+                {
+                    best = p;
+                    bestDistance = distance;
+                }
+            }
+        return best;
+    }
+
     public static bool SafeTravel(WPos start, WDir displacement)
     {
         // Electric floor can be crossed during flight, but neither endpoint may touch it.

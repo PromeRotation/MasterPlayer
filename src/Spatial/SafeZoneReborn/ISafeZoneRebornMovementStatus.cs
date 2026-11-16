@@ -9,6 +9,9 @@ namespace MasterPlayer.Spatial.SafeZoneReborn;
 /// </summary>
 public interface ISafeZoneRebornMovementStatus
 {
+    double LastSolveQueueMilliseconds { get; }
+    double LastSolveWorkMilliseconds { get; }
+    double LastSolvePublishMilliseconds { get; }
     SafeZoneSolution? LatestSolution { get; }
 
     bool HasControl { get; }

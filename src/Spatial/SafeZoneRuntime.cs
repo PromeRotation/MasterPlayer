@@ -13,11 +13,14 @@ public sealed class SafeZoneRuntime : IDisposable
 {
     private readonly SafeZoneRebornMovementSystem _movement;
     private Vector3? _previousPosition;
+    private readonly ObservedMoveSpeed _observedSpeed = new();
     private ulong? _previousPlayerId;
     private bool _disposed;
     private readonly HashSet<object> _movementRequests = [];
     private readonly HashSet<object> _movementHolds = [];
     private readonly HashSet<object> _straightPathRequests = [];
+    private readonly HashSet<object> _timedGoalRequests = [];
+    private readonly HashSet<object> _noEscapeDelayRequests = [];
     private readonly Dictionary<object, float> _movementSpeeds = [];
     private readonly Dictionary<object, float> _arenaMargins = [];
     private readonly Dictionary<object, float> _hardMargins = [];
@@ -31,8 +34,10 @@ public sealed class SafeZoneRuntime : IDisposable
     public ISafeZoneRebornMovementStatus MovementStatus => _movement;
     internal Func<DateTime>? ReplayClock { get; set; }
     public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
+    /// <summary>Measured steady run speed (y/s), when one has been observed.</summary>
+    internal float? ObservedRunSpeed => _observedSpeed.Observed;
 
-    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null)
+    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null, bool goalDirectedTemporalPlanning = false, bool noEscapeDelay = false)
     {
         if (_disposed) return;
         enabled &= Setting.MovementAllowed;
@@ -46,6 +51,10 @@ public sealed class SafeZoneRuntime : IDisposable
         if (enabled && hold) _movementHolds.Add(owner); else _movementHolds.Remove(owner);
         if (enabled && preferStraightPaths) _straightPathRequests.Add(owner); else _straightPathRequests.Remove(owner);
         Setting.RuntimePreferStraightPaths = _straightPathRequests.Count != 0;
+        if (enabled && goalDirectedTemporalPlanning) _timedGoalRequests.Add(owner); else _timedGoalRequests.Remove(owner);
+        Setting.RuntimeGoalDirectedTemporalPlanning = _timedGoalRequests.Count != 0;
+        if (enabled && noEscapeDelay) _noEscapeDelayRequests.Add(owner); else _noEscapeDelayRequests.Remove(owner);
+        Setting.RuntimeNoEscapeDelay = _noEscapeDelayRequests.Count != 0;
         if (enabled && baseSpeed is { } speed && float.IsFinite(speed) && speed is > 0 and <= 30) _movementSpeeds[owner] = speed;
         else _movementSpeeds.Remove(owner);
         if (enabled && arenaSafetyMargin is { } margin && float.IsFinite(margin) && margin is >= 0 and <= 2) _arenaMargins[owner] = margin;
@@ -90,13 +99,13 @@ public sealed class SafeZoneRuntime : IDisposable
     }
 
     internal void RequestDirectTraversal(object owner, Vector3? target, DateTime now, IReadOnlyList<Vector3>? path = null,
-        float headingTolerance = 0, DirectTraversalMotion? motion = null)
+        float headingTolerance = 0, DirectTraversalMotion? motion = null, DateTime? deadline = null)
     {
         if (_disposed) return;
         if (Setting.MovementAllowed && target.HasValue && _movementRequests.Contains(owner) && _movementRequests.Count == 1)
         {
             _directOwner = _directFeedbackOwner = owner;
-            _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance, motion, now);
+            _movement.SetDirectTraversal(target, now.AddSeconds(.25), path, headingTolerance, motion, now, deadline);
         }
         else if (ReferenceEquals(_directOwner, owner))
         {
@@ -119,6 +128,8 @@ public sealed class SafeZoneRuntime : IDisposable
         _movement.ClearJumpRoute();
         _movementRequests.Clear(); _movementHolds.Clear();
         _straightPathRequests.Clear(); Setting.RuntimePreferStraightPaths = false;
+        _timedGoalRequests.Clear(); Setting.RuntimeGoalDirectedTemporalPlanning = false;
+        _noEscapeDelayRequests.Clear(); Setting.RuntimeNoEscapeDelay = false;
         _movementSpeeds.Clear(); Setting.RuntimeBaseSpeed = null;
         _arenaMargins.Clear(); Setting.RuntimeArenaSafetyMargin = null;
         _hardMargins.Clear(); Setting.RuntimeHardSafetyMargin = null;
@@ -160,18 +171,24 @@ public sealed class SafeZoneRuntime : IDisposable
             _previousPosition = null;
             return;
         }
-        var capability = MovementCapability.CaptureFromMainThread(speedMultiplier,
-            Setting.RuntimeBaseSpeed ?? MovementCapability.DefaultBaseSpeed);
+        var baseSpeed = Setting.RuntimeBaseSpeed ?? MovementCapability.DefaultBaseSpeed;
         PlayerState? player = null;
-        var actor = PlayerPerspective.LivePlayer;
-        var playerId = actor is { IsDead: false } ? actor.EntityId : 0;
+        var actor = PlayerPerspective.LivePlayer is { IsDead: false } local ? local : null;
+        var playerId = actor?.EntityId ?? 0;
         if (_previousPlayerId.HasValue && _previousPlayerId != playerId)
         {
             _movement.Reset();
             _previousPosition = null;
         }
         _previousPlayerId = playerId;
-        if (actor is { IsDead: false })
+        // A script's own speed model (Blunderville) stays authoritative; otherwise
+        // plan with the measured run speed when a game-side slow is active.
+        if (actor != null) _observedSpeed.Record(CurrentTime, actor.Position, baseSpeed * speedMultiplier);
+        else _observedSpeed.Reset();
+        if (Setting.RuntimeBaseSpeed == null && speedMultiplier > 0)
+            baseSpeed = _observedSpeed.Effective(baseSpeed * speedMultiplier) / speedMultiplier;
+        var capability = MovementCapability.CaptureFromMainThread(speedMultiplier, baseSpeed);
+        if (actor != null)
         {
             var moving = _previousPosition is { } previous && Vector3.DistanceSquared(previous, actor.Position) > 0.0001f;
             player = PlayerState.CaptureFromMainThread(Manager.Version, capability.CurrentSpeed, moving);

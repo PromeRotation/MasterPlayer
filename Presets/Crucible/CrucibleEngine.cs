@@ -9,6 +9,7 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
     public BossModule? Module { get; private set; }
     public int Generation { get; private set; }
     public Func<string, bool> Enabled { get; set; } = _ => true;
+    public CrucibleHigh1Strategy High1Strategy { get; set; }
     private readonly HashSet<BossComponent> _disabled = [];
 
     public void Reset()
@@ -18,7 +19,10 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
     public void SelectGroup(bool retainWithoutPlayer = false)
     {
         var player = World.Player;
-        if (player == null || player.IsDeadOrDestroyed) { if (!retainWithoutPlayer && Module != null) Reset(); return; }
+        if (player == null || player.IsDestroyed) { if (!retainWithoutPlayer && Module != null) Reset(); return; }
+        // A ring revival continues this encounter. Keep observing its event state while dead;
+        // the script releases output immediately and battle end still resets the session.
+        if (player.IsDead) return;
         bool Member(Actor a) => !a.IsDeadOrDestroyed && a.Type == ActorType.Enemy && a.OID != 9020 && a.HPMP.CurHP > 0
             && CrucibleCatalog.GroupFor(a.NameID) >= firstGroup && CrucibleCatalog.GroupFor(a.NameID) <= lastGroup
             && a.Position.InCircle(player.Position, 80);
@@ -108,10 +112,16 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
         }
         foreach (var key in _effects.Where(e => e.Value <= World.CurrentTime).Select(e => e.Key).ToArray()) _effects.Remove(key);
     }
+    // Perf diagnostics: per-component cost of the last Frame() (ms), slowest first.
+    internal readonly List<(string Name, double Ms)> LastComponentMs = [];
     public CrucibleFrame Frame()
     {
+        LastComponentMs.Clear();
         var result = new CrucibleFrame();
-        if (Module == null || World.Player is not { } player) return result;
+        if (Module == null || World.Player is not { IsDeadOrDestroyed: false } player) return result;
+        var beastway3 = High1Strategy == CrucibleHigh1Strategy.Beastway3;
+        Module.FindComponent<CrucibleDragonWaves>()?.Configure(beastway3);
+        Module.FindComponent<CrucibleDragonBaits>()?.Configure(beastway3);
         Module.Arena.ClearDrawings();
         result.Hints.PathfindMapCenter = Module.Center;
         result.Hints.PathfindMapBounds = Module.FindComponent<CrucibleMiasma>()?.NavigationBounds ?? Module.Arena.Bounds;
@@ -119,10 +129,11 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
         foreach (var c in Module.Components)
         {
             if (_disabled.Contains(c)) continue;
+            var perfStart = System.Diagnostics.Stopwatch.GetTimestamp();
             var index = result.Hints.TemporaryObstacles.Count;
             c.AddAIHints(0, player, PartyRolesConfig.Assignment.Unassigned, result.Hints);
             // The original navigator used obstacles for pools too. PR must actively escape those.
-            if (c is not (CrucibleYmirRocks or CrucibleRockWalls or CrucibleMiasma or CrucibleGatlerTraps))
+            if (c is not (CrucibleB06PhysicalWalls or CrucibleYmirRocks or CrucibleRockWalls or CrucibleMiasma or CrucibleGatlerTraps))
             {
                 foreach (var shape in result.Hints.TemporaryObstacles.Skip(index)) result.Hints.AddForbiddenZone(shape);
                 result.Hints.TemporaryObstacles.RemoveRange(index, result.Hints.TemporaryObstacles.Count - index);
@@ -133,7 +144,10 @@ internal sealed class CrucibleEngine(WorldState world, int firstGroup, int lastG
             c.AddGlobalHints(result.Global);
             c.DrawArenaBackground(0, player);
             c.DrawArenaForeground(0, player);
+            var perfMs = System.Diagnostics.Stopwatch.GetElapsedTime(perfStart).TotalMilliseconds;
+            if (perfMs >= 0.5) LastComponentMs.Add((c.GetType().Name, perfMs));
         }
+        LastComponentMs.Sort((a, b) => b.Ms.CompareTo(a.Ms));
         return result;
     }
 }

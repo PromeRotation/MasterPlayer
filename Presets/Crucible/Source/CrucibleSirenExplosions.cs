@@ -8,12 +8,16 @@ sealed class CrucibleSirenExplosions(BossModule module) : Components.GenericAOEs
 {
     private readonly Dictionary<ulong, AOEInstance> _pending = [];
     private readonly HashSet<ulong> _resolved = [];
+    private bool _centerResolved;
     private static readonly AOEShapeCircle Shape = new(9);
 
     public override void OnActorCreated(Actor actor)
     {
         if (actor.OID == 19618 && !actor.IsDeadOrDestroyed && !_resolved.Contains(actor.InstanceID))
+        {
+            if (_pending.Count == 0) _centerResolved = false;
             _pending.TryAdd(actor.InstanceID, new(Shape, actor.Position, activation: WorldState.FutureTime(5.6), actorID: actor.InstanceID));
+        }
     }
     public override void OnCastStarted(Actor caster, ActorCastInfo spell)
     {
@@ -37,6 +41,26 @@ sealed class CrucibleSirenExplosions(BossModule module) : Components.GenericAOEs
     {
         foreach (var aoe in ActiveAOEs(slot, actor))
             CrucibleScorpionAI.Avoid(hints, aoe);
+        // A visible crawling ghoul binds its target before the random bombs
+        // appear. Do not chase it to the rim and get rooted inside an unknown
+        // outer blast. Stage at centre and let the already visible add approach;
+        // all published AOEs still take precedence through the usual planner.
+        if (_pending.Count == 0 && !actor.IsDeadOrDestroyed && !Module.PrimaryActor.IsDeadOrDestroyed
+            && Module.Enemies(19620).Any(a => !a.IsDeadOrDestroyed))
+        {
+            hints.GoalPoints.Add((Module.Center, .5f, 200));
+            hints.GoalDirectedTemporalPlanning = true;
+        }
+        if (_pending.Count > 0 && _centerResolved)
+        {
+            hints.GoalPoints.Add((Module.Center, .5f, 2));
+            // The diagonal gaps between outer circles can be narrower than the
+            // temporal grid. The runtime validates this walking segment against
+            // every registered danger before accepting it.
+            if (!actor.Position.InCircle(Module.Center, .5f))
+                hints.DirectRoute ??= [actor.Position, Module.Center];
+            hints.GoalDirectedTemporalPlanning = true;
+        }
     }
     public override void OnCastFinished(Actor caster, ActorCastInfo spell)
     {
@@ -47,6 +71,8 @@ sealed class CrucibleSirenExplosions(BossModule module) : Components.GenericAOEs
     {
         if (spell.Action.ID == WatchedAction)
         {
+            if (_pending.TryGetValue(caster.InstanceID, out var aoe) && aoe.Origin.AlmostEqual(Module.Center, 1))
+                _centerResolved = true;
             _pending.Remove(caster.InstanceID);
             _resolved.Add(caster.InstanceID);
             ++NumCasts;

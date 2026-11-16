@@ -49,6 +49,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private readonly Func<bool> _externalHasControl;
     private readonly SafeZoneSolver _solver = new();
     private readonly SolveOptions _options = CreateMovementOptions();
+    private Func<Func<AsyncSolveResult>, CancellationToken, Task<AsyncSolveResult>> _scheduleSolve =
+        (solve, token) => Task.Run(solve, token);
 
     /// <summary>注入解算传送边（机制导航桥发布，仅主线程）。</summary>
     public void SetTeleporters(System.Collections.Generic.IReadOnlyList<Solver.SolverTeleporter> teleporters)
@@ -63,6 +65,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private int _asyncSolveAcceptedCount;
     private int _asyncSolveCancelledCount;
     private int _asyncSolveDiscardedCount;
+    public double LastSolveQueueMilliseconds { get; private set; }
+    public double LastSolveWorkMilliseconds { get; private set; }
+    public double LastSolvePublishMilliseconds { get; private set; }
     private DateTime _lastSolveStartedAt;
     private int _lastSolveVersion = -1;
 
@@ -178,6 +183,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private int _directGeneration, _directDispatchedGeneration = -1, _directRejectedGeneration = -1;
     private float _directHeadingTolerance;
     private DirectTraversalMotion? _directMotion;
+    private DateTime? _directDeadline;
     private int _directProgress, _directOffset, _directValidationVersion;
     private DateTime _directNextValidation;
     private bool _directInputAcquired;
@@ -214,8 +220,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     }
 
     internal void SetDirectTraversal(Vector3? target, DateTime until, IReadOnlyList<Vector3>? path = null,
-        float headingTolerance = 0, DirectTraversalMotion? motion = null, DateTime? sampledAt = null)
+        float headingTolerance = 0, DirectTraversalMotion? motion = null, DateTime? sampledAt = null, DateTime? deadline = null)
     {
+        // Deadline budgets currently support ordinary walking only. Native motion
+        // has physical lock leases and must not silently bypass the budget.
+        if (deadline.HasValue && motion != null)
+            throw new ArgumentException("A direct traversal deadline requires ordinary walking.", nameof(deadline));
+        _directDeadline = target.HasValue ? deadline : null;
         path ??= target is { } p ? [p] : [];
         // Planned locked points include the approach to ice. Only a sampled
         // active game status proves that steering is currently irreversible.
@@ -261,6 +272,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                         || status.IsRunning && _directMotion.InputLockActive && _directMotion.Locked(absolute)) return;
                 }
             }
+            // A walking shortcut is optional until UpdateDirectTraversal validates and dispatches it.
+            // Offering one (or withdrawing one never dispatched) must not discard the solver's running
+            // escape: run1888-b4 B26 lost its validated exit from a chasing puddle when the staging
+            // shortcut appeared, then the shortcut's deadline rejected it and the player stood still.
+            var keepSolverRoute = motion == null && _directMotion == null
+                && (_directTarget == null ? target != null : target == null && _directDispatchedGeneration != _directGeneration);
             _directSuffixAmendment = null;
             ++_directGeneration;
             _directProgress = _directOffset = 0; _directNextValidation = default;
@@ -268,9 +285,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             _directPhysicalTail = null;
             _directRejectedGeneration = -1;
             _directOrigin = null;
-            CancelPendingSolve();
-            _latestSolution = _dispatchedSolution = null;
-            if (target == null || _directTarget == null) ReleaseControl();
+            if (!keepSolverRoute)
+            {
+                CancelPendingSolve();
+                _latestSolution = _dispatchedSolution = null;
+                if (target == null || _directTarget == null) ReleaseControl();
+            }
         }
         else _directSuffixAmendment = null;
         _directTarget = target; _directUntil = until;
@@ -285,7 +305,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         if (_directTarget is not { } target) return false;
         if (now > _directUntil)
         { SetDirectTraversal(null, now); return false; }
-        CancelPendingSolve();
+        if (_directRejectedGeneration == _directGeneration)
+        {
+            ReleaseControl();
+            _phase = DispatchPhase.Released;
+            return _directMotion != null;
+        }
+        if (_directMotion != null) CancelPendingSolve();
         if (!allowed || !_setting.EffectiveEnableAutoMovement || _externalMovementEnabled() || _externalHasControl())
         { ReleaseControl(); return true; }
         if (_directRejectedGeneration == _directGeneration)
@@ -354,6 +380,25 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             }
             _phase = DispatchPhase.Moving; return true;
         }
+        // A completion deadline is a live budget, unlike cached geometry. A speed
+        // drop or tightened deadline must stop this frame, not after the 50ms cache.
+        if (_directDeadline is {} deadlineBudget)
+        {
+            var arrival = now.AddSeconds(player.IsMoving || running && _directInputAcquired ? 0 : .1);
+            var origin = player.Position;
+            for(var i=next;i<_directPath.Count;i++)
+            {
+                var end = _directMotion?.Landing(i,_directPath[i]) ?? _directPath[i];
+                var speed = _directMotion?.Speed(i,player.CurrentSpeed) ?? player.CurrentSpeed;
+                arrival=arrival.AddSeconds(DirectTravelDuration(_directMotion,i,origin,end,speed));
+                origin=end;
+            }
+            if(arrival>deadlineBudget)
+            {
+                if (_directMotion == null) return RejectWalkingShortcut();
+                _phase=DispatchPhase.Released; ReleaseControl(); return true;
+            }
+        }
         if (running && now < _directNextValidation && _directValidationVersion == snapshot.Version) return true;
         _directNextValidation = now.AddSeconds(.05); _directValidationVersion = snapshot.Version;
         // Validate the complete run, including up to 100ms to acquire native input.
@@ -386,13 +431,16 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                         safe = IsTemporalSegmentSafe(snapshot, from, ray, time.AddSeconds(offset), arrival.AddSeconds(offset), .2f, endSafety: .1f);
                 }
             }
+            if (_directDeadline is {} deadline && end.AddSeconds(delay) > deadline) safe = false;
             points.Add(TimedWaypoint.Pass(to, end)); from = landing; time = end;
         }
         if (!safe)
         {
+            if (_directMotion == null) return RejectWalkingShortcut();
             if (_directMotion != null) _directRejectedGeneration = _directGeneration;
             _phase = DispatchPhase.Released; ReleaseControl(); return true;
         }
+        CancelPendingSolve();
         var solution = new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
             points)
             { UsesTemporalPlanning = true, MaxArrivalTolerance = .03f, ReducedDangerStartSafetyTime = .2f };
@@ -415,6 +463,19 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         }
         _hasControl = true; _phase = DispatchPhase.Moving;
         return true;
+    }
+
+    private bool RejectWalkingShortcut()
+    {
+        // An unsafe walking shortcut is optional. Leave an ordinary escape worker
+        // and its validated route running; only withdraw a route we sent directly.
+        if (_directDispatchedGeneration >= 0)
+        {
+            if (ReferenceEquals(_latestSolution, _dispatchedSolution)) _latestSolution = null;
+            ReleaseControl();
+            _directDispatchedGeneration = -1;
+        }
+        return false;
     }
 
     private void ApplyDirectSuffixAmendment(PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
@@ -747,6 +808,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
     public void Update(PlayerState? currentPlayer, MovementCapability capability, DateTime now, bool allowMovement = true)
     {
+        ClearEscapeWaitBlock();
         if (_disposed || _greenMove is null)
         {
             return;
@@ -850,6 +912,27 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         return true;
     }
 
+    internal const double SupersedeIntervalSeconds = 0.15;
+    private const float LastResortStartSafety = 0.05f;
+    private string? _pendingGoalKey;
+    private bool _pendingSupersedes;
+    private DateTime _lastSupersedeAt;
+
+    /// <summary>Active mechanic goals (priority &gt; 0; follow/uptime goals excluded) as a comparable key.</summary>
+    internal static string MechanicGoalKey(SafeZoneSnapshot snapshot, DateTime now)
+    {
+        var key = new System.Text.StringBuilder();
+        foreach (var goal in snapshot.GoalAreas)
+            foreach (var window in goal.GoalWindows)
+                if (window.Priority > 0 && window.IsActiveAt(now))
+                {
+                    key.Append(goal.Geometry.Position.X.ToString("F1")).Append(',')
+                        .Append(goal.Geometry.Position.Z.ToString("F1")).Append(':').Append(window.Priority).Append(';');
+                    break;
+                }
+        return key.ToString();
+    }
+
     private void StartPendingSolve(
         SafeZoneSnapshot snapshot,
         PlayerState player,
@@ -857,11 +940,25 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         DateTime solveTime,
         SafeZoneSolution? previousSolution)
     {
+        var goalKey = MechanicGoalKey(snapshot, solveTime);
+        var superseding = false;
         if (_pendingSolveTask is { IsCompleted: false })
         {
             // Moving hazards change the registry every frame. Let this bounded solve
             // finish, then validate its route against the newest snapshot before use.
-            return;
+            // A changed mechanic goal set is different: a solve started just before a new
+            // goal (the ring pocket after the steel) can only return the stale answer and
+            // holds a slow worker for the whole short window. Supersede it, rate-limited.
+            // A superseding solve always completes: a goal that keeps moving must not starve the worker.
+            if (goalKey == _pendingGoalKey || _pendingSupersedes || (solveTime - _lastSupersedeAt).TotalSeconds < SupersedeIntervalSeconds)
+                return;
+            _pendingSolveCts?.Cancel();
+            _asyncSolveCancelledCount++;
+            _pendingSolveTask = null;
+            _pendingSolveCts = null;
+            _lastSupersedeAt = solveTime;
+            _lastSolveVersion = 0;
+            superseding = true;
         }
 
         // Failed or rejected candidates have no usable TTL. Bound retries for
@@ -877,36 +974,50 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var token = cts.Token;
         _pendingSolveCts = cts;
         _pendingSolveSnapshotVersion = snapshot.Version;
+        _pendingGoalKey = goalKey;
+        _pendingSupersedes = superseding;
         _asyncSolveStartedCount++;
         _lastSolveStartedAt = solveTime;
         _lastSolveVersion = snapshot.Version;
         var options = CaptureSolveOptions();
 
-        _pendingSolveTask = Task.Run(() =>
+        var queuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        _pendingSolveTask = _scheduleSolve(() =>
         {
-            try
+            var startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            AsyncSolveResult Run()
             {
-                if (token.IsCancellationRequested)
+                try
                 {
-                    return AsyncSolveResult.Cancelled(snapshot.Version);
-                }
+                    if (token.IsCancellationRequested)
+                    {
+                        return AsyncSolveResult.Cancelled(snapshot.Version);
+                    }
 
-                var solution = _solver.Solve(snapshot, player, capability, options, solveTime, previousSolution);
-                return AsyncSolveResult.Completed(snapshot.Version, solution, token.IsCancellationRequested);
+                    var solution = _solver.Solve(snapshot, player, capability, options, solveTime, previousSolution);
+                    return AsyncSolveResult.Completed(snapshot.Version, solution, token.IsCancellationRequested);
+                }
+                catch (Exception ex)
+                {
+                    return AsyncSolveResult.Failed(snapshot.Version, ex);
+                }
             }
-            catch (Exception ex)
-            {
-                return AsyncSolveResult.Failed(snapshot.Version, ex);
-            }
+            var result = Run();
+            result.QueuedAt = queuedAt;
+            result.StartedAt = startedAt;
+            result.FinishedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            return result;
         }, token);
     }
+
+    private bool GoalDirectedTemporalPlanning => _setting.RuntimePreferStraightPaths || _setting.RuntimeGoalDirectedTemporalPlanning;
 
     private SolveOptions CaptureSolveOptions() => _options with
     {
         ArenaSafetyMargin = _setting.RuntimeArenaSafetyMargin ?? _options.ArenaSafetyMargin,
         HardSafetyMargin = _setting.RuntimeHardSafetyMargin ?? _options.HardSafetyMargin,
         PreferStraightPaths = _setting.RuntimePreferStraightPaths,
-        GoalDirectedTemporalPlanning = _setting.RuntimePreferStraightPaths,
+        GoalDirectedTemporalPlanning = GoalDirectedTemporalPlanning,
     };
 
     private void CompletePendingSolve(SafeZoneSnapshot currentSnapshot)
@@ -939,6 +1050,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         {
             return;
         }
+
+        LastSolveQueueMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(result.QueuedAt, result.StartedAt).TotalMilliseconds;
+        LastSolveWorkMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(result.StartedAt, result.FinishedAt).TotalMilliseconds;
+        LastSolvePublishMilliseconds = System.Diagnostics.Stopwatch.GetElapsedTime(result.FinishedAt).TotalMilliseconds;
 
         if (result.Exception is not null)
         {
@@ -1017,7 +1132,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // Ordinary traversal rejects that initial overlap; retain that verified
         // escape unchanged only while its source geometry version still matches.
         var validateCandidate = solution.SourceSnapshotVersion != snapshot.Version || solution.UsesTemporalPlanning
-            || !IsPointUnsafeNow(snapshot, player.Position, now);
+            || !IsPointUnsafeNow(snapshot, player.Position, now)
+            || !snapshot.HardObstacles.Any(o => o.Geometry.Contains(player.Position));
 
         if (!keepCurrentRoute && validateCandidate && !ReferenceEquals(solution, _dispatchedSolution))
         {
@@ -1032,7 +1148,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             // 候选过期不等于正在执行的路线失效；从当前路点按最新危险窗复核后继续。
             if (TryContinueDispatchedRoute(player, snapshot, now))
                 return;
-            if (!TryUseEmergencyRoute(ref solution, player, snapshot, now))
+            // A temporal phase without an intermediate wait has the same immediate escape
+            // contract; retain its end wait and also validate movement startup below.
+            if (!TryUseEmergencyRoute(ref solution, player, snapshot, now,
+                allowTemporal: solution.UsesTemporalPlanning && solution.ExecutablePath.SkipLast(1).All(p => !p.IsWaitPoint)))
             {
                 _latestSolution = null;
                 _phase = DispatchPhase.Released;
@@ -1066,12 +1185,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var shouldMove = solution.IsSuccess && solution.ExecutablePath.Count >= 2;
 
         // Waiting is allowed only while the delayed route still meets every damage window.
-        if (shouldMove && !solution.UsesTemporalPlanning && ShouldWaitForCast(solution, player, snapshot, now))
+        if (shouldMove && !solution.IsArenaMarginRecovery && (!solution.UsesTemporalPlanning || player.CastTimeRemaining <= ShortCastSeconds) && ShouldWaitForCast(solution, player, snapshot, now))
         {
             _phase = DispatchPhase.WaitingForCast;
             shouldMove = false;
         }
-        else if (shouldMove && ShouldWaitForEscape(solution, player, snapshot, now))
+        else if (shouldMove && !solution.IsArenaMarginRecovery && ShouldWaitForEscape(solution, player, snapshot, now))
         {
             _phase = DispatchPhase.WaitingForEscape;
             shouldMove = false;
@@ -1083,6 +1202,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             _phase = DispatchPhase.Released;
             shouldMove = false;
         }
+
+        // run1904-b4: an escape route out of a pending puddle was released half-way because the next
+        // solve (with the new staging goal) found no full temporal plan. A failed re-plan is not evidence
+        // that the running escape is unsafe; keep it while it still validates against the latest dangers.
+        if (!shouldMove && solution.Status is SolutionStatus.NoTemporalPath or SolutionStatus.NoReachableSafeCell
+            && SafeZoneSolver.HasPendingDangerAtPlayer(snapshot, player.Position, now) && TryContinueDispatchedRoute(player, snapshot, now))
+            return;
 
         if (!shouldMove)
         {
@@ -1113,6 +1239,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         {
             _greenMove!.MoveTo(BuildGreenMovePoints(solution, snapshot, now));
             _dispatchedSolution = solution;
+            // GreenMove now runs the solver's route; a rejected shortcut must not withdraw it.
+            _directDispatchedGeneration = -1;
             RememberTemporalContinuation(solution, snapshot);
             _dispatchCount++;
             _lastDispatchUtc = now;
@@ -1129,7 +1257,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return false;
         if (!IsTemporalPhaseSafe(previous, player, snapshot, now)
             && !TryUseEmergencyRoute(ref previous, player, snapshot, now,
-                allowTemporal: _setting.RuntimePreferStraightPaths && !previous.ExecutablePath.Any(p => p.IsWaitPoint)))
+                allowTemporal: GoalDirectedTemporalPlanning && !previous.ExecutablePath.Any(p => p.IsWaitPoint))
+            // An escape already under way out of a pending hit is never improved by stopping in it: keep it
+            // while it still clears the hit itself (spatial margins intact), even past the start cushion.
+            // (Gargoyle ring regression: released 1.6y short of the pocket 0.5s before the ring.)
+            && !(SafeZoneSolver.HasPendingDangerAtPlayer(snapshot, player.Position, now)
+                && IsTemporalPhaseSafe(previous, player, snapshot, now, LastResortStartSafety)))
             return false;
 
         _phase = DispatchPhase.Moving;
@@ -1170,7 +1303,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         if (solution.UsesTemporalPlanning && !allowTemporal || solution.ExecutablePath.Count < 2 || solution.ReducedDangerStartSafetyTime.HasValue
             || _options.DangerStartSafetyTime <= emergencyStartSafety
             || !SafeZoneSolver.HasPendingDangerAtPlayer(snapshot, player.Position, now)
-            || !IsTemporalPhaseSafe(solution, player, snapshot, now, emergencyStartSafety))
+            || !IsTemporalPhaseSafe(solution, player, snapshot, now, emergencyStartSafety)
+            || allowTemporal && !(_hasControl && _greenMove is { IsRunning: true })
+                && !IsTemporalPhaseSafe(solution, player, snapshot, now, emergencyStartSafety, startDelay: .1))
             return false;
 
         // Publication latency can spend the ordinary cushion after a successful
@@ -1188,6 +1323,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     {
         startSafety ??= solution.ReducedDangerStartSafetyTime;
         var path = solution.ExecutablePath;
+        if (solution.IsArenaMarginRecovery)
+            return path.Count is > 0 and <= 2 && path.All(p => !p.IsWaitPoint)
+                && ArenaMarginRecovery.IsSafe(snapshot, player.Position, path[^1].Position, now,
+                    player.CurrentSpeed, _options, solution.MaxArrivalTolerance, startDelay);
         if (path.Count == 0)
             return IsTemporalSegmentSafe(snapshot, player.Position, player.Position, now, now, startSafety);
         if (path.Count == 1 && GeometryHelper.DistanceXZ(player.Position, path[0].Position) > MinArrivalTolerance)
@@ -1202,7 +1341,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // A non-temporal escape may begin inside persistent damage. Permit only
         // the initial exit from those shapes, never re-entry or an unsafe endpoint.
         HashSet<IGeometryShape>? escaping = null;
-        if (!solution.UsesTemporalPlanning)
+        if (!solution.UsesTemporalPlanning || solution.ExitsInitialPersistentDanger)
         {
             escaping = [];
             foreach (var danger in snapshot.DangerAreas)
@@ -1245,6 +1384,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                 continue;
             foreach (var window in danger.DangerWindows)
             {
+                if (window.RequireOutwardExit && window.IsActiveAt(start) && danger.Geometry is CircleGeometry circle
+                    && circle.Contains(from) && GeometryHelper.DistanceSquaredPointToSegmentXZ(circle.Position, from, to)
+                        + .0001f < GeometryHelper.DistanceSquaredXZ(circle.Position, from))
+                    return false;
                 var buffered = window.Buffered(startSafety ?? _options.DangerStartSafetyTime, endSafety ?? _options.DangerEndSafetyTime);
                 if (buffered.OverlapsInterval(start, end))
                 {
@@ -1384,6 +1527,31 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return false;
         }
 
+        // A worker can decide to remain in its start cell while an earlier
+        // route keeps moving. Publishing that obsolete idle cell must not turn
+        // into a command to walk back after the player has already left it.
+        var candidatePath = newSolution.ExecutablePath;
+        var cellRadius = _options.GridResolution * .7071068f;
+        if (newSolution.SourceSnapshotVersion != snapshot.Version
+            && !newSolution.UsesTemporalPlanning && !_dispatchedSolution.UsesTemporalPlanning
+            && candidatePath.Count == 2 && candidatePath.All(p => !p.IsWaitPoint)
+            && GeometryHelper.DistanceXZ(candidatePath[0].Position, candidatePath[1].Position) <= cellRadius
+            && GeometryHelper.DistanceXZ(player.Position, candidatePath[1].Position) > _options.GridResolution
+            && ActiveGoalPriorityAt(snapshot, candidatePath[1].Position, now) == int.MinValue
+            && snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.IsActiveAt(now)))
+            && TryContinueDispatchedRoute(player, snapshot, now))
+            return true;
+
+        // Do not reverse a safe ongoing return for an older temporary pocket
+        // with lower goal priority. Recheck the route against the live snapshot.
+        if (!_dispatchedSolution.UsesTemporalPlanning
+            && _greenMove.GetStatus() is { IsRunning: true, FinalPoint: { } ongoing }
+            && newSolution.TargetPosition is { } candidate
+            && ActiveGoalPriorityAt(snapshot, ongoing.Position, now) > ActiveGoalPriorityAt(snapshot, candidate, now)
+            && !IsPointUnsafeNow(snapshot, ongoing.Position, now)
+            && TryContinueDispatchedRoute(player, snapshot, now))
+            return true;
+
         if (newSolution.SourceSnapshotVersion != _dispatchedSolution.SourceSnapshotVersion &&
             (newSolution.TargetPosition is not { } target || _dispatchedSolution.TargetPosition is not { } previousTarget ||
              GeometryHelper.DistanceXZ(target, previousTarget) > MinArrivalTolerance))
@@ -1490,6 +1658,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var tolerance = solution.UsesTemporalPlanning ? MinArrivalTolerance : MathF.Max(MinArrivalTolerance, _options.ArrivalRadius);
         tolerance = MathF.Min(tolerance, solution.MaxArrivalTolerance);
         var destination = path[path.Count - 1].Position;
+        // A short correction (e.g. back inside the eroded arena after a knockback) must not already count as
+        // arrived: GreenMove would stop at once and each re-plan restarts it (B26 replay: 14s frozen 0.4y from it).
+        tolerance = MathF.Min(tolerance, MathF.Max(MinArrivalTolerance, GeometryHelper.DistanceXZ(path[0].Position, destination) * 0.5f));
         foreach (var goal in snapshot.GoalAreas)
         {
             if (goal.Geometry is not CircleGeometry circle)
@@ -1530,8 +1701,32 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     {
         if (!player.IsCasting || player.CastTimeRemaining <= _options.CastSlideWindow)
             return false;
-        return CanDelayEscape(solution, player, snapshot, now,
-            player.CastTimeRemaining - _options.CastSlideWindow + DepartureReserveSeconds);
+        var delay = player.CastTimeRemaining - _options.CastSlideWindow + DepartureReserveSeconds;
+        return CanDelayEscape(solution, player, snapshot, now, delay) || CanFinishShortCast(solution, player, snapshot, now, delay);
+    }
+
+    // run1896: a 1s whistle cast was cut 5s before the hit because the route was temporal or a
+    // mechanic goal was active, which CanDelayEscape refuses. For short casts only, wait when the
+    // whole route still finishes well before the first hit on the player's current spot.
+    internal const float ShortCastSeconds = 1.2f, ShortCastSlackSeconds = 1.5f;
+    private bool CanFinishShortCast(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now, double delay)
+    {
+        if (player.CastTimeRemaining > ShortCastSeconds || !solution.IsSuccess || solution.ExecutablePath.Count < 2
+            || player.CurrentSpeed <= 0.1f || IsPointUnsafeNow(snapshot, player.Position, now))
+            return false;
+        DateTime? firstHit = null;
+        foreach (var danger in snapshot.DangerAreas)
+            foreach (var window in danger.DangerWindows)
+                if (window.DangerFrom > now && window.DangerFrom != DateTime.MaxValue && danger.Geometry.Contains(player.Position)
+                    && (firstHit is not { } f || window.DangerFrom < f))
+                    firstHit = window.DangerFrom;
+        if (firstHit is not { } hit)
+            return false;
+        var length = 0f;
+        for (var i = 1; i < solution.ExecutablePath.Count; ++i)
+            length += GeometryHelper.DistanceXZ(solution.ExecutablePath[i - 1].Position, solution.ExecutablePath[i].Position);
+        var arrival = now.AddSeconds(delay + length / player.CurrentSpeed + ShortCastSlackSeconds + _options.DangerStartSafetyTime);
+        return arrival < hit;
     }
 
     /// <summary>玩家当前位置此刻是否已处于激活危险区（几何覆盖 + 窗口 now 激活）。只读 DangerFrom/DangerUntil，不读 TelegraphFrom。</summary>
@@ -1698,6 +1893,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         }
 
         public int SnapshotVersion { get; }
+        public long QueuedAt { get; set; }
+        public long StartedAt { get; set; }
+        public long FinishedAt { get; set; }
 
         public SafeZoneSolution? Solution { get; }
 

@@ -19,11 +19,15 @@ public sealed class RadarOverlayWindow : IDisposable
     private DateTime _lastErrorLogUtc;
     private DateTime? _pendingSaveUtc;
 
+    /// <summary>设置页拖动雷达外观滑条时置位，让悬浮窗在关闭或无脚本区域也临时显示，所见即所调。</summary>
+    public static DateTime PreviewUntilUtc;
+
     public void Draw()
     {
         var settings = MasterPlayerSettings.Instance;
-        if (_disposed || !settings.EnableRadarOverlay ||
-            (settings.RadarOnlyWithScript && !HasZoneScript()))
+        var preview = DateTime.UtcNow < PreviewUntilUtc;
+        if (_disposed || (!preview && (!settings.EnableRadarOverlay ||
+            (settings.RadarOnlyWithScript && !HasZoneScript()))))
         {
             return;
         }
@@ -160,6 +164,9 @@ public sealed class RadarOverlayWindow : IDisposable
                 settings.RadarBackgroundOpacity = opacity / 100;
                 changed = true;
             }
+
+            changed |= ImGui.Checkbox("显示机制范围", ref settings.RadarAoe.ShowAreas);
+            changed |= ImGui.Checkbox("显示走位路线", ref settings.RadarAoe.ShowPath);
 
             var compass = settings.RadarShowCompass;
             if (ImGui.Checkbox("显示罗盘", ref compass))

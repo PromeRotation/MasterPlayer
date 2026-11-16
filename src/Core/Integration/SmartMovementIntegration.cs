@@ -29,6 +29,11 @@ internal sealed class SmartMovementIntegration : IDisposable
             Register("PromeRadar.IsReady", () => ready);
             Register("PromeRadar.GetSmartMovementEnabled", () => enabledState);
             Register("PromeRadar.GetState", () => state);
+            // 位置在接下来 seconds 秒内是否安全（不在将要判定的危险区、硬障碍内，且在场地边界内）；
+            // 供 ACR 判断能否用突进贴回 Boss。仅主线程（PR 决策在 Framework.Update 中调用）。
+            var positionSafe = Svc.PluginInterface.GetIpcProvider<float, float, float, bool>("PromeRadar.IsPositionSafe");
+            positionSafe.RegisterFunc(IsPositionSafe);
+            unregister.Add(positionSafe.UnregisterFunc);
             var setter = Svc.PluginInterface.GetIpcProvider<bool, object>("PromeRadar.SetSmartMovementEnabled");
             setter.RegisterAction(enabled => { if (ready) requests.Enqueue(enabled); });
             unregister.Add(setter.UnregisterAction);
@@ -53,6 +58,15 @@ internal sealed class SmartMovementIntegration : IDisposable
             }
             throw;
         }
+    }
+
+    private static bool IsPositionSafe(float x, float z, float seconds)
+    {
+        if (MasterPlayerPlugin.Instance is not { } plugin) return false;
+        var now = DateTime.UtcNow;
+        var snapshot = plugin.SafeZone.Manager.BuildSnapshot(now);
+        var point = new System.Numerics.Vector3(x, Svc.Objects.LocalPlayer?.Position.Y ?? 0, z);
+        return Follow.PositionSafety.IsSafe(snapshot, point, now, now.AddSeconds(Math.Max(0, seconds)));
     }
 
     private void Register<T>(string name, Func<T> query)
@@ -102,6 +116,13 @@ internal sealed class SmartMovementIntegration : IDisposable
                 && !Spatial.HostMovement.AutomaticMovementEnabled && !Spatial.HostMovement.HasControl,
             HasMovementControl = plugin.SafeZone.MovementStatus.HasControl,
             MovementPhase = plugin.SafeZone.MovementStatus.PhaseText,
+            EscapeWaitBlock = (plugin.SafeZone.MovementStatus as Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem)?.EscapeWaitBlock,
+            EscapeWaitBlockAtUtc = (plugin.SafeZone.MovementStatus as Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem)?.EscapeWaitBlockAtUtc,
+            plugin.SafeZone.MovementStatus.LastSolveQueueMilliseconds,
+            plugin.SafeZone.MovementStatus.LastSolveWorkMilliseconds,
+            plugin.SafeZone.MovementStatus.AsyncSolveCancelledCount,
+            plugin.SafeZone.MovementStatus.AsyncSolveDiscardedCount,
+            MechanicGoalActive = Mechanics.Crucible.CrucibleGoalSignal.Active,
             ReplayActive = replay,
             TerritoryId = Svc.ClientState.TerritoryType,
             MechanicsEnabled = MasterPlayerSettings.Instance.EnableMechanics,

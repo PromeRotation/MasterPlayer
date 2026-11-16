@@ -86,7 +86,7 @@ sealed class CrucibleBombFuryKnockback(BossModule module) : HighCrucibleKnockbac
             // Three chained landings leave a narrow valid starting pocket.
             // The ordinary 0.5y conservative snapshot can erase it completely.
             // Cache a finer immutable snapshot only when sources/pools change.
-            return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), center, y, radius: 21, step: 0.1f);
+            return _geometry = FrozenConstraintFactory.Create(p => Distance(p), center, y, radius: 21, step: 0.1f);
         }
         private void EnsureCandidates()
         {

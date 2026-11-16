@@ -47,7 +47,7 @@ sealed class CrucibleMinotaurStomp(BossModule module) : Components.GenericKnockb
     {
         if (ActiveKnockbacks(slot, actor).Length == 0) return;
         var sources = _pending.Values.OrderBy(k => k.Activation).ToArray();
-        var distances = sources.Select(k => IsImmune(slot, k.Activation) ? 0f : k.Distance).ToArray();
+        var distances = sources.Select(k => IsImmune(slot, k.Activation) || CoveredByPet(actor, k.Activation) ? 0f : k.Distance).ToArray();
         if (distances.All(d => d == 0)) return;
         var aoes = Module.Components.OfType<Components.GenericAOEs>().SelectMany(c => c.ActiveAOEs(slot, actor).ToArray()).ToArray();
         if (_landing == null || _center != Module.Center || !_sources.SequenceEqual(sources) || !_distances.SequenceEqual(distances) || !_aoes.SequenceEqual(aoes))
@@ -61,13 +61,21 @@ sealed class CrucibleMinotaurStomp(BossModule module) : Components.GenericKnockb
         hints.AddForbiddenConstraint(_landing, sources[0].Activation.AddSeconds(-0.4));
     }
 
+    // run2217/run2225 ACT: 冲击波 48199/48202 只打一个目标（老哥/老弟的当前目标=人物），人物有 被保护 2413 时
+    // 由魔兽代吃（2225 47:59.5 魔石精 -369 人物原地不动；2217 两次都打魔石精）。被保护撑过判定就不按 20 米击退规划，
+    // 否则 MP 会把人冻在场边 ~8s 不能近战。保护提前掉（最后一击收回等）时这里自动恢复原约束。
+    private const uint Protected = 2413;
+    private bool CoveredByPet(Actor actor, DateTime activation)
+        => actor.FindStatus(Protected) is { ExpireAt: var until } && until > activation.AddSeconds(0.3)
+            && WorldState.Actors.Any(a => a.OwnerID == actor.InstanceID && !a.IsDeadOrDestroyed && a.HPMP.CurHP > 0);
+
     private sealed class Landing(WPos center, Knockback[] sources, float[] distances, ShapeDistance[][] hazards) : ShapeDistance
     {
         private FrozenConstraintGeometry? _geometry;
         public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {
             if (_geometry != null && _geometry.Position.Y == y) return _geometry;
-            return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), center, y, radius: 21);
+            return _geometry = FrozenConstraintFactory.Create(p => Distance(p), center, y, radius: 21);
         }
 
         public override float Distance(in WPos p)

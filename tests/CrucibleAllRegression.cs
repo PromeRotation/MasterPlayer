@@ -11,6 +11,63 @@ internal static class CrucibleAllRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        run("High2 B32 retains its safe pocket while delayed movement advances the player", () =>
+        {
+            using var f = new Fight(14631, new(120, 0));
+            f.Player.Position = new(120, 0);
+            f.Cast(49194, 4, new(110, -30), caster: f.Spawn(9020, new(110, -30)));
+            f.Cast(49195, 7, new(130, -30), caster: f.Spawn(9020, new(130, -30)));
+            var original = f.Frame.Hints.GoalPoints.Single().Position;
+            f.Player.Position = new(122, 0);
+            Check(f.Frame.Hints.GoalPoints.Single().Position == original,
+                "The pocket followed the moving player and invalidated a delayed idle solve.");
+        });
+        run("High2 B32 replaces a retained pocket when a newly visible lane covers it", () =>
+        {
+            using var f = new Fight(14631, new(120, 0));
+            f.Player.Position = new(120, 0);
+            f.Cast(49194, 4, new(110, -30), caster: f.Spawn(9020, new(110, -30)));
+            f.Cast(49195, 7, new(130, -30), caster: f.Spawn(9020, new(130, -30)));
+            var original = f.Frame.Hints.GoalPoints.Single().Position;
+            f.Player.Position = new(122, 0);
+            f.Cast(49194, 5, new(120, -30), caster: f.Spawn(9020, new(120, -30)));
+            var frame = f.Frame;
+            var goal = frame.Hints.GoalPoints.Single().Position;
+            Check(goal != original && frame.Aoes.All(a =>
+                (a.Aoe.ShapeDistance ?? a.Aoe.Shape.Distance(a.Aoe.Origin, a.Aoe.Rotation)).Distance(goal) >= .9f),
+                "A new telegraph left the cached pocket inside a visible lane.");
+        });
+        run("High2 B32 lane pocket reaches the selected elemental without entering either lane", () =>
+        {
+            using var f = new Fight(14631, new(120, 0));
+            f.Player.Position = new(120, 0);
+            var elemental = f.Spawn(19676, new(135, 0), 14632);
+            f.Player.TargetID = elemental.InstanceID;
+            f.Cast(49194, 4, new(110, -30), caster: f.Spawn(9020, new(110, -30)));
+            f.Cast(49195, 7, new(130, -30), caster: f.Spawn(9020, new(130, -30)));
+            var frame = f.Frame;
+            var goal = frame.Hints.GoalPoints.Single();
+            Check(goal.Position.InCircle(elemental.Position, elemental.HitboxRadius + 2.5f),
+                "The safe pocket left the selected elemental outside melee while blocking ordinary follow.");
+            Check(frame.Aoes.All(a => (a.Aoe.ShapeDistance ?? a.Aoe.Shape.Distance(a.Aoe.Origin, a.Aoe.Rotation)).Distance(goal.Position) >= .9f),
+                "Following the selected elemental reduced the existing lane clearance.");
+        });
+        run("High2 B32 lane pocket preserves safety when no elemental melee position is safe", () =>
+        {
+            using var f = new Fight(14631, new(120, 0));
+            var elemental = f.Spawn(19676, new(130, 0), 14632);
+            f.Player.TargetID = elemental.InstanceID;
+            f.Cast(49195, 4, new(130, -30), caster: f.Spawn(9020, new(130, -30)));
+            f.Cast(49194, 7, new(110, -30), caster: f.Spawn(9020, new(110, -30)));
+            var frame = f.Frame;
+            var goal = frame.Hints.GoalPoints.Single();
+            Check(!goal.Position.InCircle(elemental.Position, 2.5f), "Unsafe melee was preferred over a safe pocket.");
+            Check(frame.Aoes.All(a => (a.Aoe.ShapeDistance ?? a.Aoe.Shape.Distance(a.Aoe.Origin, a.Aoe.Rotation)).Distance(goal.Position) >= .9f),
+                "An unreachable elemental pulled the pocket into a line.");
+            elemental.IsDead = true;
+            Check((f.Frame.Hints.GoalPoints.Single().Position-f.Player.Position).Length() < .01f,
+                "A dead elemental continued to pull the player away from the nearest safe pocket.");
+        });
         run("ARR perspective retains Crucible encounter history while the viewed actor is unavailable", () =>
         {
             using var f = new Fight(14693, new(520, -420));
@@ -47,7 +104,7 @@ internal static class CrucibleAllRegression
         });
         run("sampled safe regions draw only exposed edges, including hole boundaries", () =>
         {
-            var grid = FrozenConstraintGeometry.Create(p => Math.Max(Math.Abs(p.X), Math.Abs(p.Z)) <= 1 ? 1 : -1,
+            var grid = FrozenConstraintFactory.Create(p => Math.Max(Math.Abs(p.X), Math.Abs(p.Z)) <= 1 ? 1 : -1,
                 new(0,0), 0, radius: 3, step: 1, visible: true);
             foreach (var (a, b) in grid.GetBoundarySegments())
             {
@@ -201,7 +258,7 @@ internal static class CrucibleAllRegression
             var inflated = DangerMarginInflator.Inflate(template, 0.5f).Resolve(Vector3.Zero, 0, null);
             Check(inflated.Contains(new(6.4f, 0, 0)) && !inflated.Contains(new(6.6f, 0, 0)), "configured margin was lost");
             var origin = new WPos(0,0);
-            var frozen = FrozenConstraintGeometry.Create(p => (p - origin).Length() - 3, origin, 0, 5);
+            var frozen = FrozenConstraintFactory.Create(p => (p - origin).Length() - 3, origin, 0, 5);
             origin = new(20,20);
             Check(frozen.Contains(Vector3.Zero) && !frozen.Contains(origin.ToVec3()), "solver captured live state");
         });
@@ -284,7 +341,16 @@ internal static class CrucibleAllRegression
                 for (var i = 0; i < count; ++i) f.Cast(start + (uint)i, 3 + i * 2, f.Boss.Position, caster: f.Spawn(9020, f.Boss.Position));
                 f.Render();
                 var windows = f.Snapshot.DangerAreas.SelectMany(a => a.DangerWindows).Where(w => w.DangerUntil != null).Select(w => w.DangerFrom).Distinct().ToArray();
-                Check(windows.Length >= count, $"future sequence waves missing for {name}");
+                if (name == 14618)
+                {
+                    var rings = f.Engine.Module!.Components.OfType<CrucibleTreantAOEs>().Single().ActiveAOEs(0, f.Player);
+                    Check(rings.Length == count, "Treant must retain every future ring preview.");
+                    f.World.CurrentTime = f.World.FutureTime(1);
+                    f.Render();
+                    Check(f.Snapshot.DangerAreas.SelectMany(a => a.DangerWindows).Any(w => w.DangerUntil != null),
+                        "Treant must publish the next ring as its preparation window approaches.");
+                }
+                else Check(windows.Length >= count, $"future sequence waves missing for {name}");
             }
         });
         run("B11 rotation icon predicts next swings, duplicate effects advance once, cancel clears", () =>
@@ -322,6 +388,8 @@ internal static class CrucibleAllRegression
             f.Spawn(0x1EB704, new(925, -419), type: ActorType.EventObj); f.Tick();
             Check(f.Snapshot.GoalAreas.Single().Geometry.Position == p1, "unrelated pool advanced route");
             var oldHandle = f.Snapshot.GoalAreas.Single().Handle;
+            f.Engine.Effect(f.Boss, new() { Action = new(48809), GlobalSequence = 100 });
+            f.World.CurrentTime = f.World.FutureTime(.6);
             f.Spawn(0x1EB704, f.Player.Position, type: ActorType.EventObj); f.Tick();
             var p2 = f.Snapshot.GoalAreas.Single().Geometry.Position;
             Check(Math.Abs(Vector3.Distance(p1, p2) - 7) < 0.01f, "wrong rectangular route depth");
@@ -335,9 +403,11 @@ internal static class CrucibleAllRegression
             for (var i = 0; i < 4; ++i)
             {
                 f.Render(); f.Player.Position = WPos.FromVec3(f.Snapshot.GoalAreas.Single().Geometry.Position);
+                f.Engine.Effect(f.Boss, new() { Action = new(i == 0 ? 48809u : 48810u), GlobalSequence = (uint)(100 + i) });
+                f.World.CurrentTime = f.World.FutureTime(.6);
                 f.Spawn(0x1EB704, f.Player.Position, type: ActorType.EventObj); f.Tick();
             }
-            Check(f.Snapshot.GoalAreas.Count == 0, "fourth pool did not release bait");
+            Check(!f.Snapshot.GoalAreas.Any(a => a.Geometry.Contains(f.Player.Position.ToVec3())), "Fourth pool retained a placement goal inside the new poison.");
             Check(f.Snapshot.DangerAreas.Any(a => a.Geometry.Contains(f.Player.Position.ToVec3()) && a.DangerWindows.Any(w => w.DangerUntil == null)), "last pool was not activated immediately");
         });
         run("B31 outer landing holds center preview out of navigation until the outer hit", () =>

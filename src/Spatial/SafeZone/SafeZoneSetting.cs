@@ -19,6 +19,9 @@ public sealed class SafeZoneSetting
     internal bool RuntimeMovementHeld { get; set; }
     internal float? RuntimeHardSafetyMargin { get; set; }
     internal bool RuntimePreferStraightPaths { get; set; }
+    internal bool RuntimeGoalDirectedTemporalPlanning { get; set; }
+    /// <summary>A mechanic chases the player's position (e.g. puddles under the player): escape immediately, never hold for uptime.</summary>
+    internal bool RuntimeNoEscapeDelay { get; set; }
     internal float? RuntimeBaseSpeed { get; set; }
     internal float? RuntimeArenaSafetyMargin { get; set; }
     internal bool EffectiveEnableSafeZone => EnableSafeZone || RuntimeMovementRequested;

@@ -12,7 +12,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private void RememberTemporalContinuation(SafeZoneSolution solution, SafeZoneSnapshot snapshot)
     {
-        _temporalContinuation = _setting.RuntimePreferStraightPaths && solution.ContinuationPath.Count > 1
+        _temporalContinuation = GoalDirectedTemporalPlanning && solution.ContinuationPath.Count > 1
             && snapshot.GoalAreas.Any(g => g.Geometry.Contains(solution.ContinuationPath[^1].Position)
                 && g.GoalWindows.Any(w => w.IsActiveAt(snapshot.CreatedAt))) ? solution : null;
         _temporalGoals = _temporalContinuation == null ? [] : snapshot.GoalAreas;
@@ -24,7 +24,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
     private bool TryContinueTemporalPhase(PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
         if (_temporalContinuation is not { } previous) return false;
-        if (!_hasControl || !_setting.RuntimePreferStraightPaths || now < previous.SolveTime
+        if (!_hasControl || !GoalDirectedTemporalPlanning || now < previous.SolveTime
             || now - previous.SolveTime > TimeSpan.FromSeconds(_options.PlanningHorizon)
             || !SameTemporalGoals(snapshot.GoalAreas, now))
         { _temporalContinuation = null; return false; }
@@ -91,6 +91,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
         { _temporalContinuation = null; return false; }
         _greenMove!.MoveTo(BuildGreenMovePoints(candidate, snapshot, now));
         _dispatchedSolution = _latestSolution = _temporalContinuation = candidate;
+        _directDispatchedGeneration = -1;
         _dispatchCount++; _lastDispatchUtc = now;
         _phase = DispatchPhase.Moving;
         return true;

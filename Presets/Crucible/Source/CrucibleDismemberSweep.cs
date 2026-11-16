@@ -12,16 +12,38 @@ sealed class CrucibleDismemberSweep(BossModule module) : CriticalEngagement.Repl
     private static readonly AOEShapeRect Strip = new(35f, 4f);
     // Exact strips do not receive the user's navigation margin; keep a small one of our own.
     private static readonly AOEShapeRect Guarded = new(35f, 4.4f);
+    // Everything beyond the waiting band, across the rest of the floor.
+    private static readonly AOEShapeRect Beyond = new(35f, 20f);
     private const int MaxPredicted = 6;
     // Hit end margin (0.3s) + reduced start margin (0.2s) + the step and dispatch delay.
     private const double MinCrossingGap = 0.9;
     // If the earlier strip's effect is late, release the later strip this long before it hits.
     private const double LatestRelease = 0.8;
+    // How far past the earlier strip's guarded edge the player may wait for it.
+    private const float WaitBand = 2;
     private readonly List<(WPos Origin, Angle Rotation, DateTime Activation)> _seen = [];
     private (WPos Earlier, WPos Later)? _crossing;
     private ArenaBounds? _bounds;
+    private readonly Dictionary<ulong, DateTime> _lanceActivations = [];
+    // The preceding lance wave measures cast-bar/effect skew before a crossing is selected.
+    // Spend that observed delay in the gap budget, without moving a locked crossing later.
+    private double _effectDelay;
 
     protected override AOEConfig? ConfigFor(uint actionID) => actionID == Dismember ? new(Strip, true) : null;
+
+    public override void OnCastStarted(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID == 46876)
+            _lanceActivations[caster.InstanceID] = Module.CastFinishAt(spell);
+        base.OnCastStarted(caster, spell);
+    }
+
+    public override void OnEventCast(Actor caster, ActorCastEvent spell)
+    {
+        if (spell.Action.ID == 46876 && _lanceActivations.Remove(caster.InstanceID, out var activation))
+            _effectDelay = Math.Max(_effectDelay, (WorldState.CurrentTime - activation).TotalSeconds);
+        base.OnEventCast(caster, spell);
+    }
 
     protected override void AddAOEForbiddenZones(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
@@ -44,6 +66,17 @@ sealed class CrucibleDismemberSweep(BossModule module) : CriticalEngagement.Repl
         if (_crossing is { } crossing && Find(pending, crossing.Earlier) is { } earlier && Find(pending, crossing.Later) is { } later
             && now < later.Activation.AddSeconds(-LatestRelease))
             hideFrom = later.Activation;
+        // 2026-10-30 00:54: a 46884 bait on the waiting spot (and 46876 lines) pushed the player
+        // away from the earlier strip, deep into the hidden later ones; when they were released it
+        // had to outrun two strips (12y). Until the earlier strip fires, keep the wait next to it.
+        if (_crossing is { } c && Find(pending, c.Earlier) is { } first
+            // Predicted later strips must not make this boundary appear only on their cast start.
+            && (hideFrom != null || Find(pending, c.Later) == null))
+        {
+            var along = (c.Later - c.Earlier).Normalized();
+            var origin = c.Earlier + along * (Guarded.HalfWidth + WaitBand + Beyond.HalfWidth);
+            hints.ForbiddenZones.Add(new(Beyond.Distance(origin, first.Rotation), now, first.Activation, ExactGeometry: true));
+        }
         foreach (var entry in pending)
         {
             var aoe = entry.AOE;
@@ -92,7 +125,7 @@ sealed class CrucibleDismemberSweep(BossModule module) : CriticalEngagement.Repl
         for (var i = 0; i + 1 < strips.Count; ++i)
         {
             var (a, b) = (strips[i], strips[i + 1]);
-            if ((b.Activation - a.Activation).TotalSeconds < MinCrossingGap || a.Activation <= WorldState.CurrentTime)
+            if ((b.Activation - a.Activation).TotalSeconds < MinCrossingGap + _effectDelay || a.Activation <= WorldState.CurrentTime)
                 continue;
             var boundary = a.Origin + (b.Origin - a.Origin) * 0.5f;
             var distance = MathF.Abs((actor.Position - boundary).Dot(along));

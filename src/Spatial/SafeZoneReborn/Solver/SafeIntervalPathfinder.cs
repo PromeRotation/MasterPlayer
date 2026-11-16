@@ -76,7 +76,7 @@ internal static class SafeIntervalPathfinder
             if (++expansions > MaxExpansions)
                 break;
             var currentInterval = Intervals(current.State.Cell)[current.State.Interval];
-            if (requireGoal && current.Parent >= 0 && currentInterval.Until >= horizon
+            if (requireGoal && current.Parent >= 0 && !map.RequiresEscapeAt(current.State.Cell) && currentInterval.Until >= horizon
                 && Heuristic(current.State.Cell) < goalDistance - TimeEpsilon)
             {
                 goalProgress = index;
@@ -85,15 +85,15 @@ internal static class SafeIntervalPathfinder
             // A conservative hit tail can temporarily prevent planning the entire
             // sequence. Still leave the current hazard for a strictly longer safe
             // interval; effect packets and the next solve can open the continuation.
-            if (safestPartial < 0 && current.Parent >= 0 && currentInterval.Until > safestUntil + TimeEpsilon)
+            if (safestPartial < 0 && current.Parent >= 0 && !map.RequiresEscapeAt(current.State.Cell) && currentInterval.Until > safestUntil + TimeEpsilon)
             {
                 safestPartial = index;
                 safestUntil = currentInterval.Until;
             }
-            if (requireGoal
+            if (!map.RequiresEscapeAt(current.State.Cell) && (requireGoal
                 ? currentInterval.Until >= current.Arrival + .5f
                     && map.PixelPriorityAt(current.State.Cell % map.Columns, current.State.Cell / map.Columns) >= map.MaxGoalPriority
-                : currentInterval.Until >= horizon)
+                : currentInterval.Until >= horizon))
             {
                 var path = BuildPath(map, nodes, index, player, now);
                 return new BossModStyleAStar.Result(path, path[^1].Position, requireGoal ? BossModStyleAStar.Score.SafeMaxPrio : BossModStyleAStar.Score.Safe,
@@ -110,6 +110,12 @@ internal static class SafeIntervalPathfinder
                 if (!map.InBounds(nc, nr))
                     continue;
                 var cell = nr * map.Columns + nc;
+                if (!map.CanTraverse(current.State.Cell, cell)) continue;
+                if ((dir & 1) != 0 &&
+                    (!map.CanTraverse(current.State.Cell, row * map.Columns + nc) ||
+                     !map.CanTraverse(row * map.Columns + nc, cell) ||
+                     !map.CanTraverse(current.State.Cell, nr * map.Columns + col) ||
+                     !map.CanTraverse(nr * map.Columns + col, cell))) continue;
                 var nextIntervals = Intervals(cell);
                 var duration = GeometryHelper.DistanceXZ(position, map.CellCenter(nc, nr)) / speed;
                 for (var intervalIndex = 0; intervalIndex < nextIntervals.Count; intervalIndex++)
@@ -131,6 +137,8 @@ internal static class SafeIntervalPathfinder
                         }
                     }
                     var arrival = departure + duration;
+                    if (map.RequiresEscapeAt(current.State.Cell) && departure > current.Arrival + TimeEpsilon)
+                        continue;
                     var waited = current.Waited + departure - current.Arrival;
                     if (arrival >= currentInterval.Until || arrival >= nextInterval.Until || arrival > horizon ||
                         waited > MathF.Max(0f, options.MaximumWaitTime))
@@ -200,7 +208,8 @@ internal static class SafeIntervalPathfinder
             path[^1] = last with
             {
                 PlannedDepartureTime = departure,
-                IsWaitPoint = departure > last.PlannedArrivalTime.AddSeconds(TimeEpsilon / 2f),
+                IsWaitPoint = departure > last.PlannedArrivalTime.AddSeconds(TimeEpsilon / 2f)
+                    && (i > 1 || node.Departure > nodes[chain[0]].Arrival + TimeEpsilon / 2f),
             };
             path.Add(TimedWaypoint.Pass(map.CellCenter(node.State.Cell % map.Columns, node.State.Cell / map.Columns),
                 now.AddSeconds(node.Arrival)));

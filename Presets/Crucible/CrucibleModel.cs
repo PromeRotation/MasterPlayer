@@ -74,6 +74,7 @@ internal sealed class ActorCollection : IEnumerable<Actor>
 internal sealed class WorldState
 {
     public float NavigationMargin = 0.5f;
+    public float WalkingSpeed = 6;
     public DateTime CurrentTime;
     public ActorCollection Actors { get; } = new();
     public Actor? Player;
@@ -96,6 +97,11 @@ internal sealed class AIHints
 {
     public readonly record struct ForbiddenZone(ShapeDistance Shape, DateTime Activation, DateTime? ExpiresAt, bool ExactGeometry = false)
     {
+        public bool RequireOutwardExit { get; init; }
+        public ArenaBounds? ArenaMarginInterior { get; init; }
+        // Use the producer's window verbatim: skip the global start/end safety
+        // buffer. Only for mechanics whose hit is a narrow, explicitly timed pulse.
+        public bool ExactTiming { get; init; }
         public ShapeDistance ShapeDistance => Shape;
         public ShapeDistance shapeDistance => Shape;
         public DateTime activation => Activation;
@@ -124,6 +130,13 @@ internal sealed class AIHints
     public Vector3? ForcedMovement;
     // A timed route the player should walk now (no waits); executed as a direct traversal.
     public List<WPos>? DirectRoute;
+    public bool GoalDirectedTemporalPlanning;
+    // Send the summoned beast here (it drags whatever holds it as top threat).
+    public WPos? PetMoveTo;
+    // Chasing hazards (dropped under the player): escape at once instead of holding for uptime.
+    public bool NoEscapeDelay;
+    public DateTime? DirectRouteDeadline;
+    public float? ArenaSafetyMargin;
     public Angle? DesiredFacing;
     public DateTime DesiredFacingExpire;
     // A hit has a finite window. A positioning deadline remains binding until its component releases it.

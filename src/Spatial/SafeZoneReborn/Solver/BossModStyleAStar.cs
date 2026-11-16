@@ -1,4 +1,4 @@
-using MasterPlayer.Spatial.SafeZone;
+﻿using MasterPlayer.Spatial.SafeZone;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -177,6 +177,7 @@ public static class BossModStyleAStar
         var leewayBaseline = startPoisoned ? float.MaxValue : startMaxG;
         var startEscaped = !startPoisoned;
         var startScore = CalculateScore(startMaxG, startMaxG, leewayBaseline, startPrio, startPrio, startMaxG);
+        if (map.RequiresEscapeAt(startIndex)) startScore = Score.UnsafeAsStart;
 
         nodes[startIndex] = new Node
         {
@@ -195,6 +196,9 @@ public static class BossModStyleAStar
         };
 
         var open = new PriorityQueue<int, float>();
+        // A solve reads one immutable map. Repeated parent/target traces with identical
+        // cumulative state produce exactly the same alternative, including failed traces.
+        var lineCache = new Dictionary<(int Parent, int Target, float G, float Leeway, float MinG, bool Escaped), (bool Success, Node Alternative)>();
         open.Enqueue(startIndex, nodes[startIndex].HScore);
 
         var bestIndex = startIndex;
@@ -274,10 +278,9 @@ public static class BossModStyleAStar
             // 当前格"有效 MaxG"（仅用于 leeway，不影响 Score 的 cellMaxG/pathMinG）：
             //   · 起点格（玩家几何安全时）：恒豁免为 ∞。
             //   · 其余格：路径尚未逃逸且该格不是危险核心（margin 环）时豁免为 ∞；否则用真实值。
-            var curExempt = currentIndex == startIndex
-                ? startPoisoned
-                : (!current.HasEscaped && !map.IsDangerCoreAt(curX, curY));
-            var curEff = curExempt ? float.MaxValue : curReal;
+            var curEff = currentIndex == startIndex
+                ? (startPoisoned ? float.MaxValue : curReal)
+                : !current.HasEscaped ? map.PixelCoreMaxGAt(curX, curY) : curReal;
             var curEscaped = current.HasEscaped;
 
             for (var dir = 0; dir < 8; dir++)
@@ -312,9 +315,8 @@ public static class BossModStyleAStar
                     continue;
                 }
 
-                // 邻居有效 MaxG（leeway 用）：未逃逸 + 非核心 → 豁免 ∞；核心格永不豁免。
-                var nExempt = !curEscaped && !map.IsDangerCoreAt(nx, ny);
-                var nEff = nExempt ? float.MaxValue : nReal;
+                // 邻居有效 MaxG（leeway 用）：未逃逸时只取危险核心的期限（margin 环豁免）；核心期限永不豁免。
+                var nEff = !curEscaped ? map.PixelCoreMaxGAt(nx, ny) : nReal;
 
                 var stepLeeway = MathF.Min(nEff, curEff) - newG;
                 var pathLeeway = MathF.Min(current.PathLeeway, stepLeeway);
@@ -322,6 +324,7 @@ public static class BossModStyleAStar
                 var pathMinG = MathF.Min(current.PathMinG, nReal);
                 var nPrio = map.PixelPriorityAt(nx, ny);
                 var newScore = CalculateScore(nReal, pathMinG, pathLeeway, nPrio, startPrio, startMaxG);
+                if (map.RequiresEscapeAt(nIndex)) newScore = Score.UnsafeAsStart;
                 var hScore = CalculateHScore(map, nx, ny);
                 // 踩上真安全地面即视为已逃逸，此后恢复正常危险约束。
                 var nEscaped = curEscaped || nReal >= float.MaxValue;
@@ -345,6 +348,7 @@ public static class BossModStyleAStar
 
                 var alt = stepAlt;
                 if (TryBuildLineOfSightAlternative(
+                        lineCache,
                         map,
                         nodes,
                         startIndex,
@@ -415,13 +419,13 @@ public static class BossModStyleAStar
                     var newGT = curGT + stepG;
                     if (newGT > maxG)
                         return;
-                    var tExempt = !curEscaped && !map.IsDangerCoreAt(tx, ty);
-                    var tEff = tExempt ? float.MaxValue : tReal;
+                    var tEff = !curEscaped ? map.PixelCoreMaxGAt(tx, ty) : tReal;
                     var stepLeewayT = MathF.Min(tEff, curEff) - newGT;
                     var pathLeewayT = MathF.Min(curLeewayT, stepLeewayT);
                     var pathMinGT = MathF.Min(curMinGT, tReal);
                     var tPrio = map.PixelPriorityAt(tx, ty);
                     var newScoreT = CalculateScore(tReal, pathMinGT, pathLeewayT, tPrio, startPrio, startMaxG);
+                    if (map.RequiresEscapeAt(tIndex)) newScoreT = Score.UnsafeAsStart;
                     var hScoreT = CalculateHScore(map, tx, ty);
                     var tEscaped = curEscaped || tReal >= float.MaxValue;
                     if (requireSafePath && pathLeewayT < 0f)
@@ -580,6 +584,7 @@ public static class BossModStyleAStar
     }
 
     private static bool TryBuildLineOfSightAlternative(
+        Dictionary<(int Parent, int Target, float G, float Leeway, float MinG, bool Escaped), (bool Success, Node Alternative)> cache,
         RasterizedMap map,
         Node[] nodes,
         int startIndex,
@@ -622,20 +627,29 @@ public static class BossModStyleAStar
             return false;
         }
 
-        // 同格已有不更长的安全路径时，视线扫描不可能改善安全档、目标偏好或距离。
+        // 同格已有不更长的安全路径，或该格强制为起点逃逸档时，
+        // 视线扫描不可能改善安全档、目标偏好或距离。
         ref var target = ref nodes[targetIndex];
-        if (target.Visited && target.Score >= Score.Safe && newG + 1e-5f >= target.GScore)
+        if (target.Visited && (target.Score >= Score.Safe || map.RequiresEscapeAt(targetIndex)) && newG + 1e-5f >= target.GScore)
             return false;
 
+        var cacheKey = (parentIndex, targetIndex, parent.GScore, parent.PathLeeway, parent.PathMinG, parent.HasEscaped);
+        if (cache.TryGetValue(cacheKey, out var cached))
+        {
+            alt = cached.Alternative;
+            return cached.Success;
+        }
         var trace = new LineTraceState(parent.PathLeeway, parent.PathMinG, parent.HasEscaped, parentIndex);
         if (!TraceLineOfSight(map, from, to, parent.GScore, segmentLength, startIndex, startPoisoned, ref trace))
         {
+            cache[cacheKey] = (false, default);
             return false;
         }
 
         var nReal = map.PixelMaxGAt(targetCol, targetRow);
         var nPrio = map.PixelPriorityAt(targetCol, targetRow);
         var score = CalculateScore(nReal, trace.PathMinG, trace.PathLeeway, nPrio, startPrio, startMaxG);
+        if (map.RequiresEscapeAt(targetIndex)) score = Score.UnsafeAsStart;
         alt = new Node
         {
             GScore = newG,
@@ -652,6 +666,7 @@ public static class BossModStyleAStar
             HasEscaped = trace.HasEscaped,
         };
 
+        cache[cacheKey] = (true, alt);
         return true;
     }
 
@@ -790,10 +805,9 @@ public static class BossModStyleAStar
         }
 
         state.CellIndex = index;
-        var exempt = index == startIndex
-            ? startPoisoned
-            : (!state.HasEscaped && !map.IsDangerCoreAt(col, row));
-        var effective = exempt ? float.MaxValue : real;
+        var effective = index == startIndex
+            ? (startPoisoned ? float.MaxValue : real)
+            : !state.HasEscaped ? map.PixelCoreMaxGAt(col, row) : real;
         state.PathLeeway = MathF.Min(state.PathLeeway, effective - gAtCellExit);
         state.PathMinG = MathF.Min(state.PathMinG, real);
         if (real >= float.MaxValue)

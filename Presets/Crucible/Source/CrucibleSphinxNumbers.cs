@@ -18,9 +18,13 @@ sealed class CrucibleSphinxNumbers(BossModule module) : Components.GenericAOEs(m
 
     private (uint rule, DateTime expires) Rule(Actor actor)
     {
+        uint rule = 0;
+        var expires = DateTime.MaxValue;
         foreach (var status in actor.Statuses)
-            if (status.ID is >= 5148 and <= 5151 && status.ExpireAt > WorldState.CurrentTime)
-                return (status.ID, status.ExpireAt);
+            if (status.ID is >= 5148 and <= 5151 && status.ExpireAt > WorldState.CurrentTime && status.ExpireAt < expires)
+                (rule, expires) = (status.ID, status.ExpireAt);
+        if (rule != 0)
+            return (rule, expires);
         return _spokenExpires > WorldState.CurrentTime ? (_spokenRule, _spokenExpires) : default;
     }
 
@@ -91,7 +95,7 @@ sealed class CrucibleSphinxNumbers(BossModule module) : Components.GenericAOEs(m
         public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
         {
             if (_geometry != null && _geometry.Position.Y == y) return _geometry;
-            return _geometry = FrozenConstraintGeometry.Create(p => Distance(p), center, y, radius: 21);
+            return _geometry = FrozenConstraintFactory.Create(p => Distance(p), center, y, radius: 21);
         }
     }
 

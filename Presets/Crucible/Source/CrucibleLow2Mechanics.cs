@@ -19,18 +19,54 @@ class Low2CrucibleCastAOEs(BossModule module, Battle battle) : CriticalEngagemen
         (Battle.B10, 48182) => new(new AOEShapeCircle(10), true),
         (Battle.B10, 48186) => new(new AOEShapeCircle(18), true),
         (Battle.B11, 48198 or 48201) => new(new AOEShapeCircle(5), true),
+        (Battle.B11, 48204) => new(new AOEShapeRect(65, 4)),
         (Battle.B11, 48206) => new(new AOEShapeCircle(8), true),
         (Battle.B13, 48227) => new(new AOEShapeCone(60, 45f.Degrees()), true),
         (Battle.B13, 48229) => new(new AOEShapeCircle(8), true),
         (Battle.B13, 48231) => new(new AOEShapeDonut(4, 40), true),
+        (Battle.B13, 48233) => new(new AOEShapeCircle(8), true),
+        (Battle.B13, 48236) => new(new AOEShapeCross(40, 4), true),
+        (Battle.B13, 48237) => new(new AOEShapeCircle(6), true),
         (Battle.B13, 48519) => new(new AOEShapeCircle(6), true),
         _ => null
     };
 
+    // B13 48233：18 个 R8 圆同时读 4.7s。ARR 01.49.45 t945.92：人在离圆心 6.36 处被打中，MP 日志在 3.6s/2.6s 两次
+    // NoTemporalPath，剩 1.64s 才「等待撤离时机」出发，差约 2m。圆间安全缝离圆心仅约 8.4–8.8（ARR 21.52.36 t1011.16
+    // 站在离最近圆心 8.41 处未中）；Avoid 的 +0.35、危险外扩 0.5 和求解器硬余量 0.5 叠成 9.35，把缝全部堵死。
+    // 半径 8 由 ARR 核对（最远命中 6.36，最近未中 8.41），这里只用精确几何，不再外扩；圆数多时立刻撤离。
+    public const uint FieldCircles = 48233;
+    public const int DenseFieldCircles = 6;
+    // 48229（尾王自身 R8 回旋剑）也是 R8 圆，但施放者是尾王本体；48233 的施放者是 9020 辅助体。
+    private bool IsFieldCircle(in AOEInstance aoe)
+    {
+        foreach (var boss in Module.Enemies(19557))
+            if (boss.InstanceID == aoe.ActorID) return false;
+        return true;
+    }
+
     protected override void AddAOEForbiddenZones(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
+        var field = 0;
         foreach (ref readonly var aoe in ActiveAOEs(slot, actor))
+            if (battle == Battle.B13 && aoe.Shape is AOEShapeCircle { Radius: 8 } && IsFieldCircle(aoe)) ++field;
+        if (field >= DenseFieldCircles) hints.NoEscapeDelay = true;
+        foreach (ref readonly var aoe in ActiveAOEs(slot, actor))
+        {
+            if (battle == Battle.B13 && aoe.Shape is AOEShapeCircle { Radius: 8 } && IsFieldCircle(aoe))
+            {
+                hints.ForbiddenZones.Add(new(aoe.Shape.Distance(aoe.Origin, aoe.Rotation),
+                    aoe.Activation == default ? default : aoe.Activation.AddSeconds(-0.25d),
+                    aoe.Activation == default ? null : aoe.Activation.AddSeconds(0.6), ExactGeometry: true));
+                continue;
+            }
             CrucibleScorpionAI.Avoid(hints, aoe);
+            // B10 zombies can cause confusion before Dark Orb resolves. Leaving
+            // at the last safe instant can therefore leave the player unable to
+            // move. Start the escape while player control is still available.
+            if (battle == Battle.B10 && aoe.Shape is AOEShapeCircle { Radius: 18 })
+                hints.NoEscapeDelay = true;
+        }
     }
 }
 
@@ -90,7 +126,9 @@ abstract class CrucibleMovingContact(BossModule module, float radius, float look
     private readonly record struct Motion(WPos Position, DateTime SampledAt, WDir Velocity);
     private readonly Dictionary<ulong, Motion> _motion = [];
     private readonly List<AOEInstance> _display = [];
-    public IEnumerable<Actor> Sources => WorldState.Actors.Where(a => oids.Contains(a.OID) && !a.IsDeadOrDestroyed);
+    public virtual IEnumerable<Actor> Sources => WorldState.Actors.Where(a => oids.Contains(a.OID) && !a.IsDeadOrDestroyed);
+    protected virtual bool KeepMotionBetweenPositionUpdates => false;
+    protected virtual float MotionLookAheadSeconds => 1.1f;
 
     public override void Update()
     {
@@ -104,6 +142,12 @@ abstract class CrucibleMovingContact(BossModule module, float radius, float look
                 var dt = (WorldState.CurrentTime - previous.SampledAt).TotalSeconds;
                 if (dt < 0.05) continue;
                 var delta = source.Position - previous.Position;
+                // B11 native positions arrive as discrete updates. An
+                // unchanged sample between them is not a measured stop.
+                // Keep at most 0.5s of already observed motion; other moving
+                // hazards retain their existing sampling policy.
+                if (KeepMotionBetweenPositionUpdates && dt <= 0.5 && delta.LengthSq() < 0.0025f)
+                    continue;
                 if (dt <= 0.5 && delta.LengthSq() >= 0.0025f && delta.Length() / dt <= 12)
                     velocity = delta / (float)dt;
             }
@@ -120,7 +164,7 @@ abstract class CrucibleMovingContact(BossModule module, float radius, float look
             _display.Add(new(new AOEShapeCircle(radius), source.Position, actorID: source.InstanceID));
             if (!_motion.TryGetValue(source.InstanceID, out var motion) || (WorldState.CurrentTime - motion.SampledAt).TotalSeconds > 0.5)
                 continue;
-            var length = Math.Min(lookAhead, motion.Velocity.Length() * 1.1f);
+            var length = Math.Min(lookAhead, motion.Velocity.Length() * MotionLookAheadSeconds);
             if (length < 0.05f) continue;
             var direction = motion.Velocity.Normalized();
             _display.Add(new(new AOEShapeRect(length, radius), source.Position, Angle.FromDirection(direction), actorID: source.InstanceID));
@@ -186,23 +230,22 @@ sealed class CrucibleMinotaurSequence(BossModule module) : CriticalEngagement.Re
         _ => null
     };
 
-    private sealed class OutsideEdge(ShapeDistance shape, float width) : ShapeDistance
-    {
-        public override float Distance(in WPos p) => width - shape.Distance(p);
-    }
-
     protected override void AddAOEForbiddenZones(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         var aoes = ActiveAOEs(slot, actor);
         foreach (ref readonly var aoe in aoes)
-            CrucibleScorpionAI.Avoid(hints, aoe);
+            if (aoe.Risky)
+                CrucibleScorpionAI.Avoid(hints, aoe);
         if (aoes.Length > 1 && !aoes[1].Risky)
         {
             var first = aoes[0];
-            hints.AddForbiddenConstraint(new OutsideEdge(first.Shape.Distance(first.Origin, first.Rotation), 2f), first.Activation.AddSeconds(-1), first.Activation.AddSeconds(0.6));
-            // Prefer the part of that edge closest to the next safe region.
+            var edge = first.Shape.Distance(first.Origin, first.Rotation);
+            // Edge staging is a preference, not an additional mechanic. A hard
+            // two-yalm band becomes sub-cell after navigation margins and can
+            // reject the otherwise reachable safe crescent entirely.
             var next = aoes[1].Shape.Distance(aoes[1].Origin, aoes[1].Rotation);
-            hints.GoalZones.Add(p => Math.Clamp(30f + next.Distance(p), 0f, 60f));
+            hints.GoalZones.Add(p => edge.Distance(p) is >= 1f and <= 3f
+                ? Math.Clamp(150f + 5f * next.Distance(p), 100f, 200f) : 0f);
         }
     }
 }
@@ -292,8 +335,15 @@ sealed class CrucibleMinotaurRotation(BossModule module) : Components.GenericAOE
     {
         foreach (ref readonly var aoe in ActiveAOEs(slot, actor))
             CrucibleScorpionAI.Avoid(hints, aoe);
+        // 攻略 (game8 第2盤 / インフィ note, 11-08): the chasing brother's rotating 30-degree
+        // cones are dodged with one large move, never by last-moment small steps.
+        if (_next is { } spin && spin.Activation.AddSeconds(2) >= WorldState.CurrentTime)
+            hints.NoEscapeDelay = true;
         if (_next is { } next && next.Activation.AddSeconds(2) >= WorldState.CurrentTime)
-            hints.AddForbiddenConstraint(new SDInvertedCircle(next.Origin, 8f), next.Activation.AddSeconds(-0.5d), next.Activation.AddSeconds(0.6));
+            // Staying near the pivot reduces travel, but the other brother's
+            // R8 contact can cover that whole region. It is not a mechanic
+            // that forces the player into this circle.
+            hints.GoalZones.Add(p => Math.Clamp(8f - (p - next.Origin).Length(), 0f, 3f));
     }
 }
 
@@ -326,10 +376,20 @@ sealed class CrucibleGoblinBombs(BossModule module) : Components.GenericAOEs(mod
     }
     public override void OnActorModelStateChange(Actor actor, byte modelState, byte animState1, byte animState2)
     {
-        if (actor.OID == 19561 && animState1 == 1)
-            _ignited.TryAdd(actor.InstanceID, WorldState.FutureTime(7.1d));
+        if (actor.OID == 19561)
+        {
+            if (animState1 == 1)
+                _ignited.TryAdd(actor.InstanceID, WorldState.FutureTime(7.1d));
+            else
+                _ignited.Remove(actor.InstanceID);
+        }
     }
     public override void OnActorCreated(Actor actor)
+    {
+        _resolved.Remove(actor.InstanceID);
+        _ignited.Remove(actor.InstanceID);
+    }
+    public override void OnActorDestroyed(Actor actor)
     {
         _resolved.Remove(actor.InstanceID);
         _ignited.Remove(actor.InstanceID);
@@ -341,39 +401,120 @@ sealed class CrucibleGoblinBombs(BossModule module) : Components.GenericAOEs(mod
     }
 }
 
-// Sand pillars travel at 5y/0.3s between the six pits. Once two impacts identify
-// a line, warn along its remaining path; only continue to an observed pit on that
-// line, never extrapolate across arbitrary space. A gap resets the route.
+// Sand pillars travel at 5y/0.3s between the six pits. All seven run2003 bursts
+// begin 5y from their source pit: a unique source + collinear destination can
+// identify the first segment. Otherwise two impacts must identify the line.
+// Never extrapolate past an observed pit or retain a route across a gap.
 sealed class CrucibleSandPillars(BossModule module) : Components.GenericAOEs(module, 48225u)
 {
     private WPos? _last;
     private DateTime _lastTime;
     private AOEInstance? _route;
+    private bool _burrowing;
+    public override void OnCastStarted(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID is 48226 or 48227 or 48239)
+            _burrowing = false;
+    }
     public override void OnEventCast(Actor caster, ActorCastEvent spell)
     {
+        if (spell.Action.ID == 48224)
+            _burrowing = true;
+        else if (spell.Action.ID is 48227 or 48239 or 48240)
+            _burrowing = false;
         if (spell.Action.ID != WatchedAction)
             return;
+        _burrowing = true;
         var pos = caster.Position;
+        _route = null;
         if (_last is { } last && (WorldState.CurrentTime - _lastTime).TotalSeconds is > 0.15d and < 0.6d)
-        {
-            var delta = pos - last;
-            if (delta.LengthSq() is > 16f and < 36f)
-            {
-                var dir = delta.Normalized();
-                var end = Module.Enemies(2015270).Where(a => !a.IsDeadOrDestroyed)
-                    .Select(a => a.Position).Where(p => (p - pos).Dot(dir) > 0 && Math.Abs((p - pos).Cross(dir)) < 1f)
-                    .OrderBy(p => (p - pos).LengthSq()).FirstOrDefault();
-                if (end != default)
-                    _route = new(new AOEShapeRect((end - pos).Length() + 4, 4, 4), pos, Angle.FromDirection(dir), WorldState.FutureTime(0.3d));
-            }
-        }
+            _route = Route(last, pos);
         else
-            _route = null;
+        {
+            var starts = Pits().Where(p => (pos - p).LengthSq() is > 16f and < 36f).Take(2).ToArray();
+            if (starts.Length == 1)
+                _route = Route(starts[0], pos);
+        }
         _last = pos;
         _lastTime = WorldState.CurrentTime;
     }
+    private IEnumerable<WPos> Pits() => Module.Enemies(2015270)
+        .Where(a => a.EventState != 7 && !a.IsDeadOrDestroyed).Select(a => a.Position);
+    private AOEInstance? Route(WPos previous, WPos pos)
+    {
+        var delta = pos - previous;
+        if (delta.LengthSq() is not (> 16f and < 36f))
+            return null;
+        var dir = delta.Normalized();
+        var ends = Pits().Where(p => (p - pos).Dot(dir) > 0 && Math.Abs((p - pos).Cross(dir)) < 1f)
+            .Take(2).ToArray();
+        return ends.Length == 1
+            // This is an already active travelling corridor. Refreshing a
+            // future 0.3s deadline at every pulse repeatedly makes escape
+            // infeasible, cancelling a route that was already being walked.
+            // Its lifetime is bounded by ActiveAOEs and the next impact.
+            ? new(new AOEShapeRect((ends[0] - pos).Length() + 4, 4, 4), pos, Angle.FromDirection(dir))
+            : null;
+    }
     public override ReadOnlySpan<AOEInstance> ActiveAOEs(int slot, Actor actor)
         => _route is { } route && (WorldState.CurrentTime - _lastTime).TotalSeconds < 0.7d ? new[] { route } : [];
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        foreach (ref readonly var aoe in ActiveAOEs(slot, actor))
+        {
+            CrucibleScorpionAI.Avoid(hints, aoe);
+            hints.NoEscapeDelay = true;
+        }
+        AddStagingGoal(slot, actor, hints);
+    }
+
+    private void AddStagingGoal(int slot, Actor actor, AIHints hints)
+    {
+        if (!_burrowing || actor.CastInfo != null || hints.GoalPoints.Count > 0
+            || !Module.Enemies(19558).Any(a => !a.IsDeadOrDestroyed)
+            || Module.Enemies(19557).FirstOrDefault(a => !a.IsDeadOrDestroyed) is not { } goblin)
+            return;
+        var pits = Pits().ToArray();
+        if (pits.Length != 6)
+            return;
+        var range = 2.5f + goblin.HitboxRadius + actor.HitboxRadius;
+        var margin = WorldState.NavigationMargin + 0.35f;
+        var hazards = Module.Components.OfType<Components.GenericAOEs>()
+            .SelectMany(c => c.ActiveAOEs(slot, actor).ToArray()).Where(a => a.Risky)
+            .Select(a => a.ShapeDistance ?? a.Shape.Distance(a.Origin, a.Rotation)).ToArray();
+        var candidates = new List<(WPos Position, float PitGap, float RouteGap)>();
+        for (var x = (int)MathF.Ceiling((goblin.Position.X - range) * 2); x <= (goblin.Position.X + range) * 2; ++x)
+            for (var z = (int)MathF.Ceiling((goblin.Position.Z - range) * 2); z <= (goblin.Position.Z + range) * 2; ++z)
+            {
+                var p = new WPos(x * 0.5f, z * 0.5f);
+                if ((p - goblin.Position).LengthSq() > range * range || !Module.Arena.InBounds(p)
+                    || hazards.Any(h => h.Distance(p) <= margin))
+                    continue;
+                var pitGap = pits.Min(pit => (p - pit).Length() - 6f - margin);
+                if (pitGap <= 0)
+                    continue;
+                var routeGap = float.PositiveInfinity;
+                for (var i = 0; i < pits.Length; ++i)
+                    for (var j = i + 1; j < pits.Length; ++j)
+                    {
+                        var delta = pits[j] - pits[i];
+                        var along = Math.Clamp((p - pits[i]).Dot(delta) / delta.LengthSq(), 0, 1);
+                        routeGap = Math.Min(routeGap, (p - (pits[i] + delta * along)).Length() - 4f - margin);
+                    }
+                candidates.Add((p, pitGap, routeGap));
+            }
+        if (candidates.Count == 0)
+            return;
+        // All pit-to-pit directions are possible here; the future chosen line
+        // is deliberately unknown. Prefer a point clear of every line if one
+        // exists in melee. Otherwise maximize fixed-pit clearance in melee,
+        // without claiming that this fallback is safe from every future line.
+        var outsideEveryRoute = candidates.Any(c => c.RouteGap > 0);
+        var best = candidates.Where(c => !outsideEveryRoute || c.RouteGap > 0)
+            .OrderByDescending(c => outsideEveryRoute ? c.RouteGap : c.PitGap)
+            .ThenBy(c => (c.Position - actor.Position).LengthSq()).First();
+        hints.GoalPoints.Add((best.Position, 0.6f, 30));
+    }
 }
 
 sealed class CrucibleNecromancerHint(BossModule module) : Components.CastHints(module, [48183u], "全体伤害；优先击杀僵尸，避开持续瘴气！");

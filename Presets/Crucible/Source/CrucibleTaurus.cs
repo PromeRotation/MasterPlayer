@@ -37,6 +37,8 @@ class CrucibleTaurusAOEs(BossModule module) : CriticalEngagement.ReplayValidated
             var origin = aoes[0].Origin;
             hints.GoalZones.Add(p => Math.Clamp(12f - (p - origin).Length(), 0, 3));
         }
+        if (aoes.Length > 0 && aoes[0].Risky && Stage(aoes, actor.Position) is { } stage)
+            hints.GoalPoints.Add((stage, 0.3f, 100));
         foreach (var aoe in aoes)
         {
             if (!aoe.Risky || aoe.Shape is not AOEShapeDonut)
@@ -56,6 +58,82 @@ class CrucibleTaurusAOEs(BossModule module) : CriticalEngagement.ReplayValidated
                 }
         }
     }
+    // Sim 0.3s publish delay (run1837/1841/1845 b2/b3): the R8 circle (48159) and
+    // the lane->donut pairs (48150 -> 48161/48163) left only ~0.4s after the
+    // first wave, so a late re-plan stood still and was hit. Stage for the next
+    // wave while the first one is still pending: just outside a risky circle, or
+    // as deep inside the following donut's hole as the current wave allows.
+    private WPos? Stage(ReadOnlySpan<AOEInstance> aoes, WPos player)
+    {
+        const float Clearance = 1.1f; // 0.35 registration + 0.5 solver hard margin + slack
+        var first = aoes[0];
+        if ((first.Activation - WorldState.CurrentTime).TotalSeconds > 2.5)
+            return null;
+        AOEInstance? next = null;
+        foreach (var aoe in aoes)
+            if (!aoe.Risky && aoe.Shape is AOEShapeDonut or AOEShapeCircle && aoe.Activation > first.Activation
+                && aoe.Activation <= first.Activation.AddSeconds(aoe.Shape is AOEShapeDonut ? 4 : 2.5))
+            {
+                next = aoe;
+                break;
+            }
+        if (next is not { } donut)
+            return null;
+        var risky = new List<ShapeDistance>();
+        foreach (var aoe in aoes)
+            if (aoe.Risky)
+                risky.Add(aoe.Shape.Distance(aoe.Origin, aoe.Rotation));
+        // Only pulses that land while the staging spot is held (first wave .. next wave).
+        foreach (var (origin, radius, at) in Module.FindComponent<CrucibleTaurusExplosions>()?.Forecast(donut.Activation.AddSeconds(1.2)) ?? [])
+            if (at >= first.Activation.AddSeconds(-0.6))
+                risky.Add(new AOEShapeCircle(radius).Distance(origin, default));
+        bool Clear(WPos p) => p.InRect(Module.Center, 19f, 14f) && risky.All(s => s.Distance(p) >= Clearance);
+        WPos? best = null;
+        var bestScore = float.MaxValue;
+        if (donut.Shape is AOEShapeCircle)
+        {
+            // Another wave, then a circle: the nearest spot clear of both.
+            var after = donut.Shape.Distance(donut.Origin, donut.Rotation);
+            for (var x = -19f; x <= 19f; x += 0.5f)
+                for (var z = -14f; z <= 14f; z += 0.5f)
+                {
+                    var p = Module.Center + new WDir(x, z);
+                    var score = (p - player).Length();
+                    if (score < bestScore && after.Distance(p) >= Clearance + 0.4f && Clear(p)) { best = p; bestScore = score; }
+                }
+            return best;
+        }
+        var inner = ((AOEShapeDonut)donut.Shape).InnerRadius;
+        if (first.Shape is AOEShapeCircle circle && first.Origin.AlmostEqual(donut.Origin, 0.5f))
+        {
+            // Circle then donut on the same spot: wait just outside the circle,
+            // on the player's side, ready to step back into the hole.
+            var r = circle.Radius + 1.25f;
+            for (var deg = 0; deg < 360; deg += 5)
+            {
+                var p = first.Origin + r * ((float)deg).Degrees().ToDirection();
+                var score = (p - player).Length();
+                if (score < bestScore && Clear(p)) { best = p; bestScore = score; }
+            }
+            return best;
+        }
+        if (first.Shape is AOEShapeDonut)
+            return null;
+        // Another wave first: the deepest hole point it leaves free, then the closest.
+        for (var r = 0f; r <= inner + 1.5f; r += 0.1f)
+        {
+            for (var deg = 0; deg < 360; deg += 5)
+            {
+                var p = donut.Origin + r * ((float)deg).Degrees().ToDirection();
+                var score = r * 100 + (p - player).Length();
+                if (score < bestScore && Clear(p)) { best = p; bestScore = score; }
+            }
+            if (best != null)
+                return best;
+        }
+        return null;
+    }
+
     internal static bool NeedsDonutStaging(AOEInstance donut, AOEInstance bomb)
         => donut.Risky && donut.Shape is AOEShapeDonut ring && bomb.Shape is AOEShapeCircle circle
             && bomb.Activation > donut.Activation && bomb.Activation <= donut.Activation.AddSeconds(1.5)
@@ -126,6 +204,17 @@ sealed class CrucibleTaurusExplosions(BossModule module) : Components.GenericAOE
             _display.Add(new(Shapes[orb.Completed / 4], orb.Position, activation: orb.Activation, actorID: id));
         return CollectionsMarshal.AsSpan(_display);
     }
+    // Upcoming pulses (every ~3.08s, growing every four) for staging decisions only.
+    internal IEnumerable<(WPos Origin, float Radius, DateTime Activation)> Forecast(DateTime until)
+    {
+        foreach (var orb in _orbs.Values)
+            for (var k = 0; orb.Completed + k < 12; ++k)
+            {
+                var at = orb.Activation.AddSeconds(3.08 * k);
+                if (at > until) break;
+                yield return (orb.Position, Shapes[(orb.Completed + k) / 4].Radius, at);
+            }
+    }
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         var rings = Module.FindComponent<CrucibleTaurusAOEs>()?.ActiveAOEs(slot, actor).ToArray() ?? [];
@@ -172,7 +261,17 @@ sealed class CrucibleTaurusExplosions(BossModule module) : Components.GenericAOE
 // Hold the selected edge until the orb is actually created, then dodge normally.
 sealed class CrucibleTaurusDarkRay(BossModule module) : BossComponent(module)
 {
-    private readonly Dictionary<ulong, (WPos Position, DateTime Expires)> _baits = [];
+    // run2067/2093/2094/2098/2104, 30 icons: 48144 starts +0.09s, 48145 lands +6.10-6.13s and the orb spawns
+    // +6.55-7.09s after icon 234. The player used to walk off at the icon and idle ~4.5s in the corner. Keep
+    // attacking and leave when the remaining straight distance at run speed plus a buffer (solve delay, orb
+    // detours) only just fits before 48145. Once leaving, keep the goal until the orb exists as before.
+    // kano 11-08 (run2169/2173/2177): 6.0 + 1.5 still left ~icon+1.5 and idled 2-4s in the corner every bait.
+    // The orb snapshots the player at spawn (>= +6.55), so arriving just after 48145 (+6.10) is the limit.
+    private const double BaitArriveAfterIcon = 6.3;
+    private const double BaitDepartBuffer = 0.6;
+    private const float BaitRunSpeed = 6f;
+    private readonly Dictionary<ulong, (WPos Position, DateTime Expires, DateTime Arrive)> _baits = [];
+    private readonly HashSet<ulong> _departed = [];
     public override void OnEventIcon(Actor actor, uint iconID, ulong targetID)
     {
         if (iconID != 234)
@@ -183,13 +282,39 @@ sealed class CrucibleTaurusDarkRay(BossModule module) : BossComponent(module)
             Module.Center + new WDir(-17, 12), Module.Center + new WDir(17, 12) };
         var explosions = Module.FindComponent<CrucibleTaurusExplosions>()?.ActiveAOEs(0, actor).ToArray() ?? [];
         var safe = corners.Where(p => !explosions.Any(e => e.Check(p))).ToArray();
-        var goal = (safe.Length > 0 ? safe : corners).OrderBy(p => (p - actor.Position).LengthSq()).First();
-        _baits[actor.InstanceID] = (goal, WorldState.FutureTime(10));
+        // Keep an eventual R18 orb clear of the only proved cleanse pad.
+        // This only ranks the existing visible-safe bait corners: all original
+        // hazards and the cleanse forecast guard still decide movement legality.
+        static bool ClearOfPad(WPos p)
+        {
+            var nearest = new WPos(Math.Clamp(p.X, 517.5f, 522.5f), Math.Clamp(p.Z, 5f, 10f));
+            return (p - nearest).Length() > 18f + 0.85f + 0.6f;
+        }
+        var boss = Module.PrimaryActor;
+        var closestPad = new WPos(Math.Clamp(boss.Position.X, 517.5f, 522.5f),
+            Math.Clamp(boss.Position.Z, 5f, 10f));
+        var padOutsideMelee = (closestPad - boss.Position).Length()
+            > boss.HitboxRadius + actor.HitboxRadius + 3f;
+        // A preferred corner must remain clear of all already observed orbs
+        // throughout the existing 12s bait hold, including their real growth.
+        // If none qualifies, retain the original nearest visible-safe corner.
+        var forecast = Module.FindComponent<CrucibleTaurusExplosions>()?.Forecast(WorldState.FutureTime(12)).ToArray() ?? [];
+        bool SafeHold(WPos p) => forecast.All(pulse => (p - pulse.Origin).Length() > pulse.Radius + 0.85f + 0.6f);
+        var goal = (safe.Length > 0 ? safe : corners)
+            .OrderBy(p => padOutsideMelee && ClearOfPad(p) && SafeHold(p) ? 0 : 1)
+            .ThenBy(p => (p - actor.Position).LengthSq()).First();
+        // Recorded icon->orb can reach 10.1s; expiring first starts a full-arena
+        // re-solve just before the orb spawns. Creation still clears the bait.
+        _baits[actor.InstanceID] = (goal, WorldState.FutureTime(12), WorldState.FutureTime(BaitArriveAfterIcon));
+        _departed.Remove(actor.InstanceID);
     }
     public override void OnActorCreated(Actor actor)
     {
         if (actor.OID == 19541)
+        {
             _baits.Clear();
+            _departed.Clear();
+        }
     }
     private bool Bait(Actor actor, out WPos position)
     {
@@ -199,8 +324,19 @@ sealed class CrucibleTaurusDarkRay(BossModule module) : BossComponent(module)
             return true;
         }
         _baits.Remove(actor.InstanceID);
+        _departed.Remove(actor.InstanceID);
         position = default;
         return false;
+    }
+    private bool Leaving(Actor actor, WPos position)
+    {
+        if (_departed.Contains(actor.InstanceID))
+            return true;
+        var travel = (position - actor.Position).Length() / BaitRunSpeed + BaitDepartBuffer;
+        if (WorldState.CurrentTime < _baits[actor.InstanceID].Arrive.AddSeconds(-travel))
+            return false;
+        _departed.Add(actor.InstanceID);
+        return true;
     }
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
@@ -209,8 +345,10 @@ sealed class CrucibleTaurusDarkRay(BossModule module) : BossComponent(module)
     }
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
-        if (Bait(actor, out var p))
-            hints.GoalPoints.Add((p, 0.3f, 100));
+        // R0.6: the orb spawns on the player, so edge precision adds nothing, and a
+        // R0.3 goal refines the whole arena to 0.15y (multi-second solves, run2008).
+        if (Bait(actor, out var p) && Leaving(actor, p))
+            hints.GoalPoints.Add((p, 0.6f, 100));
     }
     public override void DrawArenaForeground(int pcSlot, Actor pc)
     {

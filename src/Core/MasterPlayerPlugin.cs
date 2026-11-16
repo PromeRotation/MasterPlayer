@@ -151,21 +151,35 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var settings = MasterPlayerSettings.Instance;
         ApplyMovementPolicy(settings);
         var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
-        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
+        var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, _smartMovementEnabled, settings.OptimizeDodgeTiming);
         _mechanicHost?.Update();
         _dodge?.Update();
         _mechanics?.Update();
+        var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
         _replayRecorder?.Update();
         _replayController?.Update(deltaTime);
         _skillSequences?.Update();
+        var t2 = System.Diagnostics.Stopwatch.GetTimestamp();
         _scripts?.Update(deltaTime);
+        var t3 = System.Diagnostics.Stopwatch.GetTimestamp();
         _follow?.Update();
         _safeZone?.Update(PromeRotation.Plugin.Instance.SpeedMultiplierService.EffectiveMultiplier,
             _scripts?.ReplayModeActive != true);
+        var t4 = System.Diagnostics.Stopwatch.GetTimestamp();
         AoeVisibility?.Update(SafeZone.Manager);
         _radar?.Update();
         _integration?.Update(this);
+        var t5 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var total = System.Diagnostics.Stopwatch.GetElapsedTime(t0, t5).TotalMilliseconds;
+        if (total >= 12 && DateTime.UtcNow >= _nextPerfLog)
+        {
+            _nextPerfLog = DateTime.UtcNow.AddSeconds(1);
+            static double Ms(long a, long b) => System.Diagnostics.Stopwatch.GetElapsedTime(a, b).TotalMilliseconds;
+            Svc.Log.Info($"[MP-PERF] 帧 {total:F1}ms host/dodge={Ms(t0, t1):F1} replay={Ms(t1, t2):F1} scripts={Ms(t2, t3):F1} safezone={Ms(t3, t4):F1} radar/aoe={Ms(t4, t5):F1} ver={_safeZone?.Manager.Version}");
+        }
     }
+    private DateTime _nextPerfLog;
 
     public void SetSmartMovementEnabled(bool enabled)
     {
@@ -179,9 +193,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void ApplyMovementPolicy(MasterPlayerSettings settings)
     {
-        var movementAllowed = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
-        if (_smartMovementEnabled == movementAllowed) return;
-        _smartMovementEnabled = movementAllowed;
+        var movementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
+        if (_smartMovementEnabled == movementEnabled) return;
+        _smartMovementEnabled = movementEnabled;
         if (!_smartMovementEnabled)
         {
             if (_safeZone != null) _safeZone.Setting.MovementAllowed = false;
@@ -192,7 +206,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             try { _safeZone?.SuspendMovement(); }
             catch (Exception ex) { Svc.Log.Error(ex, "[PromeRadar] 停止智能走位失败"); }
         }
-        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
+        _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, movementEnabled, settings.OptimizeDodgeTiming);
     }
 
     private void ClearLiveSafeZone()

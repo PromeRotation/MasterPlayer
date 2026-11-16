@@ -64,11 +64,17 @@ public sealed class SafeZoneSolution
     /// <summary>该路径是已验证时间路线的当前阶段，必须到等待点停下并重解，不能按普通目标路线延用。</summary>
     internal bool UsesTemporalPlanning { get; init; }
     internal bool IsPartialEscape { get; init; }
+    internal bool IsArenaMarginRecovery { get; init; }
+    /// <summary>找不到安全格时退而求其次：走向危险区重叠最少的可达点（11-14 kano：不要原地松手挨打）。</summary>
+    internal bool IsLeastDangerFallback { get; init; }
+    internal int LeastDangerOverlap { get; init; }
+    internal bool ExitsInitialPersistentDanger { get; init; }
     internal IReadOnlyList<TimedWaypoint> ContinuationPath { get; init; } = EmptyPath;
 
     // A failed ordinary solve or dispatch may spend part of its early-start cushion.
     // The actual damage window and all spatial/end margins remain unchanged.
     internal float? ReducedDangerStartSafetyTime { get; set; }
+    internal float? RefinedGridResolution { get; set; }
 
     internal SafeZoneSolution WithReducedDangerStartSafetyTime(float safety)
     {
@@ -82,8 +88,10 @@ public sealed class SafeZoneSolution
             EscapeDeadline, EscapeDuration, SettledTargetPosition)
         {
             UsesTemporalPlanning = UsesTemporalPlanning, IsPartialEscape = IsPartialEscape,
+            ExitsInitialPersistentDanger = ExitsInitialPersistentDanger, IsArenaMarginRecovery = IsArenaMarginRecovery,
+            IsLeastDangerFallback = IsLeastDangerFallback, LeastDangerOverlap = LeastDangerOverlap,
             ReducedDangerStartSafetyTime = ReducedDangerStartSafetyTime, MaxArrivalTolerance = MaxArrivalTolerance,
-            ContinuationPath = ContinuationPath,
+            ContinuationPath = ContinuationPath, RefinedGridResolution = RefinedGridResolution,
         };
 
     /// <summary>逃离时的到达容差上限，保证停止位置仍位于搜索验证过的终点格内。</summary>

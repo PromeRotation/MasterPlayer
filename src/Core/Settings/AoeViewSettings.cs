@@ -12,6 +12,9 @@ public sealed class AoeViewSettings
     public Vector4 SafeFill = new(0f, 1f, 0f, 0.25f);
     public Vector4 SafeOutline = new(0f, 1f, 0f, 1f);
     public bool FadeDanger = true;
+    // Mechanic ranges and the player's planned route switch independently.
+    public bool ShowAreas = true;
+    public bool ShowPath = true;
     public bool ShowDanger = true;
     public bool ShowSafe = true;
     public bool ShowCircles = true;

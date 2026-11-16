@@ -9,8 +9,9 @@ using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
 namespace MasterPlayer.Mechanics.Crucible;
 
-public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlayerScript
+public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlayerScript, ICrucibleRadarArena
 {
+    protected virtual CrucibleHigh1Strategy High1Strategy => CrucibleHigh1Strategy.NormalLeveling;
     private readonly WorldState _world = new();
     private CrucibleEngine? _engine;
     private CrucibleOutput? _output;
@@ -23,6 +24,8 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
     private bool _dirty;
     internal (MasterPlayer.Spatial.Geometry.IGeometryShape Boundary, Vector3 Center)? GetRadarArena(MasterPlayer.Spatial.Geometry.IGeometryShape? navigationBoundary)
         => _output?.GetRadarArena(navigationBoundary);
+    (MasterPlayer.Spatial.Geometry.IGeometryShape Boundary, Vector3 Center)? ICrucibleRadarArena.GetRadarArena(MasterPlayer.Spatial.Geometry.IGeometryShape? navigationBoundary)
+        => GetRadarArena(navigationBoundary);
     public override IEnumerable<string> GetMechanisms() => ["危险区域", "走位引导", "场地边界", "文字提示"];
 
     protected override void OnStart()
@@ -35,7 +38,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         _events = new(_engine, Find, e => CastRotation.TryGet(e, out var r) ? r : null, Scan, LogError);
         SuppressGenericDodge(CrucibleActionCatalog.ClaimedActions);
         OnLogEvent(OnEvent);
-        OnPlayerDied(Suspend);
+        OnPlayerDied(ClearOutput);
         OnBattleEnded(Suspend);
         OnBattleStarted(Resume);
         OnPlayerRevived(Resume);
@@ -50,9 +53,22 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         if (_engine == null || _output == null || (!_dirty && _world.CurrentTime < _nextDraw)) return;
         _dirty = false;
         _nextDraw = _world.FutureTime(0.1);
+        var perfT0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var perfGc0 = GC.CollectionCount(0);
+        var perfGc2 = GC.CollectionCount(2);
         _engine.Update(IsReplay);
+        var perfT1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        // In ARR perspective an unavailable viewed player keeps the encounter; a dead one still releases output.
+        if (ViewedPlayer() is { Present: true } viewed ? viewed.Dead : !IsReplay)
+        {
+            ClearOutput();
+            return;
+        }
         _world.NavigationMargin = MasterPlayer.Settings.MasterPlayerSettings.Instance.DodgeDangerMargin;
+        _world.WalkingSpeed = Math.Clamp(MasterPlayerPlugin.Instance!.SafeZone.ObservedRunSpeed ?? 6, 1.5f, 6);
+        _engine.High1Strategy = High1Strategy;
         var frame = _engine.Frame();
+        var perfT2 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && IsMechanismEnabled("走位引导")
             && !IsReplay && _world.Player is { IsDeadOrDestroyed: false } player)
         {
@@ -63,7 +79,7 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
                 plan = plan with { HoldActions = true, BlockCasts = true, CancelCast = !_interaction.Attempted && plan.CancelCast };
                 _control?.Apply(plan);
                 _interaction.Update(interact, player, _world.CurrentTime, PromeRotation.Plugin.Instance.GreenMoveSystem.IsRunning,
-                    CurrentPlayer?.Cast != null, CrucibleInteraction.Interact);
+                    ViewedPlayer().Casting, CrucibleInteraction.Interact);
             }
             else
             {
@@ -72,30 +88,71 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
             }
         }
         else { _control?.Clear(); _interaction.Clear(); }
-        _output.Apply(_engine, frame, CurrentPlayer?.Position.Y ?? 0,
+        var perfT3 = System.Diagnostics.Stopwatch.GetTimestamp();
+        _output.Apply(_engine, frame, ViewedPlayer().Y,
             IsMechanismEnabled("危险区域"), IsMechanismEnabled("走位引导"), IsMechanismEnabled("场地边界"));
-        ApplyDirectRoute(frame.Hints.DirectRoute);
+        var perfT4 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var perfTotal = System.Diagnostics.Stopwatch.GetElapsedTime(perfT0, perfT4).TotalMilliseconds;
+        if (perfTotal >= PerfLogThresholdMs && _world.CurrentTime >= _nextPerfLog)
+        {
+            _nextPerfLog = _world.CurrentTime.AddSeconds(1);
+            static double Ms(long a, long b) => System.Diagnostics.Stopwatch.GetElapsedTime(a, b).TotalMilliseconds;
+            var slow = string.Join(", ", _engine.LastComponentMs.Take(4).Select(c => $"{c.Name} {c.Ms:F1}"));
+            Svc.Log?.Info($"[MP-PERF] 斗兽tick {perfTotal:F1}ms update={Ms(perfT0, perfT1):F1} frame={Ms(perfT1, perfT2):F1} [{slow}] control={Ms(perfT2, perfT3):F1} apply={Ms(perfT3, perfT4):F1} gc0+{GC.CollectionCount(0) - perfGc0} gc2+{GC.CollectionCount(2) - perfGc2}");
+        }
+        MovePet(frame.Hints.PetMoveTo);
+        ApplyDirectRoute(frame.Hints.DirectRoute, frame.Hints.GoalDirectedTemporalPlanning, frame.Hints.ArenaSafetyMargin, frame.Hints.DirectRouteDeadline, frame.Hints.NoEscapeDelay);
         DiagnoseMovement();
     }
+    // Per-frame view of the perspective player without capturing a full replay actor snapshot.
+    private (bool Present, bool Dead, float Y, bool Casting) ViewedPlayer()
+    {
+        if (ReplayWorld != null)
+            return ReplayWorld.LocalPlayer is { } r ? (true, r.Dead, r.Position.Y, r.Cast != null) : default;
+        return PlayerPerspective.LivePlayer is { } p ? (true, p.IsDead, p.Position.Y, p.IsCasting) : default;
+    }
+
     protected override void OnCurrentPlayerChanged(ulong previous, ulong current)
     { _nextScan = _nextDraw = default; _dirty = true; _world.Player = null; }
 
     protected override void OnStop() { ApplyDirectRoute(null); Reset(); }
+    private const double PerfLogThresholdMs = 8;
+    private DateTime _nextPerfLog;
+
+    // Tested on normal low1 (.review/candidates/pet-command-test): UseAction waits for a ground click and
+    // UseActionLocation refuses PetAction; this is the command the game itself sends. 3 = Move, command 1800.
+    private const int PetCommand = 1800, PetMove = 3;
+    private const double PetMoveInterval = 3;
+    private WPos? _petGoal;
+    private DateTime _petMovedAt;
+    private unsafe void MovePet(WPos? goal)
+    {
+        if (goal == null) { _petGoal = null; return; }
+        if (_petGoal == goal && (_world.CurrentTime - _petMovedAt).TotalSeconds < PetMoveInterval) return;
+        if (MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true || !IsMechanismEnabled("走位引导")
+            || !MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement) return;
+        var position = goal.Value.ToVec3(Svc.Objects.LocalPlayer?.Position.Y ?? 0);
+        FFXIVClientStructs.FFXIV.Client.Game.GameMain.ExecuteLocationCommand(PetCommand, &position, PetMove, 0, 0, 0);
+        (_petGoal, _petMovedAt) = (goal, _world.CurrentTime);
+    }
 
     // A component's timed route (B31 breath through drifting clouds) runs as a direct traversal;
     // the runtime still validates it against the registered dangers every frame.
     private bool _routing;
-    private void ApplyDirectRoute(List<WPos>? route)
+    private void ApplyDirectRoute(List<WPos>? route, bool timedGoals = false, float? arenaSafetyMargin = null, DateTime? deadline = null, bool noEscapeDelay = false)
     {
         var runtime = MasterPlayerPlugin.Instance?.SafeZone;
         if (runtime == null) return;
-        var allowed = route is { Count: > 0 } && MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement
+        var allowed = (route is { Count: > 0 } || timedGoals || noEscapeDelay) && MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement
             && IsMechanismEnabled("走位引导") && !IsReplay;
         if (allowed)
         {
-            var y = CurrentPlayer?.Position.Y ?? 0;
-            runtime.RequestAutomaticMovement(this, true);
-            runtime.RequestDirectTraversal(this, route![^1].ToVec3(y), _world.CurrentTime, route.Select(p => p.ToVec3(y)).ToArray());
+            var y = ViewedPlayer().Y;
+            runtime.RequestAutomaticMovement(this, true, arenaSafetyMargin: arenaSafetyMargin, goalDirectedTemporalPlanning: timedGoals, noEscapeDelay: noEscapeDelay);
+            if (route is { Count: > 0 })
+                runtime.RequestDirectTraversal(this, route[^1].ToVec3(y), _world.CurrentTime, route.Select(p => p.ToVec3(y)).ToArray(), deadline: deadline);
+            else
+                runtime.RequestDirectTraversal(this, null, _world.CurrentTime);
             _routing = true;
         }
         else if (_routing)
@@ -106,7 +163,8 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         }
     }
     protected override void OnMovementDisabled() { ApplyDirectRoute(null); _control?.Clear(); _interaction.Clear(); }
-    private void Reset() { _control?.Clear(); _interaction.Clear(); _events?.Clear(); _output?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
+    private void ClearOutput() { ApplyDirectRoute(null); _control?.Clear(); _interaction.Clear(); _output?.Clear(); }
+    private void Reset() { ClearOutput(); _events?.Clear(); _engine?.Reset(); _world.Actors.Clear(); _world.Player = null; }
     private void Suspend() { _suspended = true; ApplyDirectRoute(null); Reset(); }
     private void Resume() { _suspended = false; _nextScan = default; _dirty = true; }
 
@@ -126,13 +184,30 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         var casts = string.Join(",", _world.Actors.Where(a => a.CastInfo != null).Select(a =>
             $"{a.CastInfo!.Action.ID}@{a.CastInfo.Rotation.Deg:F1}°({a.CastInfo.LocXZ.X:F1},{a.CastInfo.LocXZ.Z:F1})"));
         Log($"[斗兽躲避诊断 B{module.Group}] 覆盖危险={dangers.Length}, 判定余量={deadline:F2}s, "
-            + $"位置=({player.Position.X:F1},{player.Position.Z:F1}), 状态={movement.PhaseText}, "
+            + $"位置=({player.Position.X:F1},{player.Position.Z:F1}), 实测移速={MasterPlayerPlugin.Instance!.SafeZone.ObservedRunSpeed?.ToString("F1") ?? "-"}, 状态={movement.PhaseText}, "
             + $"解算={solution?.Status.ToString() ?? "无"}, 路点={solution?.ExecutablePath.Count ?? 0}, "
             + $"快照={snapshot.Version}/{solution?.SourceSnapshotVersion}, "
             + $"解算开始/接受/丢弃={movement.AsyncSolveStartedCount}/{movement.AsyncSolveAcceptedCount}/{movement.AsyncSolveDiscardedCount}, "
             + $"结果年龄={(solution == null ? -1 : (_world.CurrentTime - solution.SolveTime).TotalMilliseconds):F0}ms, "
+            + $"排队/解算/发布={movement.LastSolveQueueMilliseconds:F0}/{movement.LastSolveWorkMilliseconds:F0}/{movement.LastSolvePublishMilliseconds:F0}ms, "
             + $"自动移动={MasterPlayerPlugin.Instance!.SafeZone.Setting.EnableAutoMovement}, 持有/执行={movement.HasControl}/{moveRunning}, 读条={casts}");
+        // 11-14 B23 02:41:23：NoReachableSafeCell 时只看到「覆盖危险=2」，事后无法知道是哪些禁区把场地铺满。
+        // 这种时候把全部现存危险区（类型/几何/生效时间）和场上事件物体一起记下来，下次出现就能直接定位。
+        if (solution?.Status.ToString() is "NoReachableSafeCell" or "NoTemporalPath" && _world.CurrentTime >= _nextDangerDump)
+        {
+            _nextDangerDump = _world.FutureTime(3);
+            var areas = string.Join(" | ", snapshot.DangerAreas.Select(a =>
+            {
+                var from = a.DangerWindows.Count == 0 ? double.NaN : a.DangerWindows.Min(w => (w.DangerFrom - _world.CurrentTime).TotalSeconds);
+                var text = a.Geometry.ToString() ?? a.Geometry.GetType().Name;
+                return $"{a.Geometry.GetType().Name}[{(text.Length > 90 ? text[..90] : text)}]@{from:F1}s";
+            }));
+            var objects = string.Join(",", _world.Actors.Where(a => a.Type == ActorType.EventObj || a.OID is 2006848 or 2004778)
+                .Select(a => $"{a.OID}/{a.EventState}({a.Position.X:F1},{a.Position.Z:F1})"));
+            Log($"[斗兽躲避诊断 B{module.Group} 禁区明细] 共 {snapshot.DangerAreas.Count} 个：{areas}；事件物体：{objects}");
+        }
     }
+    private DateTime _nextDangerDump;
 
     private unsafe void Scan()
     {
@@ -232,6 +307,12 @@ public abstract class CrucibleScript(int firstGroup, int lastGroup) : MasterPlay
         foreach (var actor in _world.Actors.Where(a => !seen.Contains(a.InstanceID)).ToArray()) _engine.Destroy(actor, true);
         var generation = _engine.Generation;
         _engine.SelectGroup(IsReplay);
+        if (_engine.Module?.FindComponent<CrucibleGiantSlimes>() is { } slimes)
+        {
+            var nativeGame = FFXIVClientStructs.FFXIV.Client.Game.GameMain.Instance();
+            slimes.Configure(Svc.ClientState.TerritoryType == 1343 && nativeGame != null
+                && nativeGame->CurrentContentFinderConditionId == 1092);
+        }
         if (generation == _engine.Generation)
         {
             foreach (var actor in created)

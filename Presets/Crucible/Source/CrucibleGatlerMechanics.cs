@@ -38,7 +38,7 @@ sealed class CrucibleGatlerTorrent(BossModule module) : Components.GenericKnockb
         private FrozenConstraintGeometry? _geometry;
         public override MasterPlayer.Spatial.Geometry.IGeometryShape Geometry(float y)
             => _geometry != null && _geometry.Position.Y == y ? _geometry
-                : _geometry = FrozenConstraintGeometry.Create(p => Distance(p), component.Module.Center, y);
+                : _geometry = FrozenConstraintFactory.Create(p => Distance(p), component.Module.Center, y);
     }
 
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
@@ -102,9 +102,24 @@ sealed class CrucibleGatlerBait(BossModule module) : Components.GenericBaitAway(
         if (spell.EventHappened || Module.CastFinishAt(spell) <= WorldState.CurrentTime)
             return;
         if (spell.Action.ID == 48612)
-            _lockAt = Module.CastFinishAt(spell, -0.4);
+        {
+            // ARR fixtures carry the 19626 helper cast but not its tether event, so
+            // the live-only OnTethered path never seeds the bait offline. The tether
+            // and the 48612 cast share source/target; seed the same bait from the cast.
+            if (_point == null && WorldState.Player is { IsDeadOrDestroyed: false } player)
+                SetBait(caster, player, Module.CastFinishAt(spell, -0.4));
+            else
+                _lockAt = Module.CastFinishAt(spell, -0.4);
+        }
         else if (spell.Action.ID == 48614)
             Clear(); // Helper start locks the ground line: stop holding and evade it.
+    }
+    private void SetBait(Actor source, Actor target, DateTime lockAt)
+    {
+        Clear();
+        _point = new(Module.Center.X, Module.Center.Z + (target.Position.Z >= source.Position.Z ? 22.5f : -22.5f));
+        _lockAt = lockAt;
+        CurrentBaits.Add(new(source, target, new AOEShapeRect(60, 3), lockAt));
     }
     public override void OnCastFinished(Actor caster, ActorCastInfo spell)
     {
@@ -259,4 +274,76 @@ sealed class CrucibleGatlerFireKnife(BossModule module) : BossComponent(module)
             _explosion = null;
     }
     public override void OnActorDeath(Actor actor) => OnActorDestroyed(actor);
+}
+
+// [low3-gatler-20261110] 新增：霹雳(48620) 读条期间把宠物移出直线。
+// 依据（按劳妲类推，加特勒无实录）：
+//  - Low3.md：48620 霹雳 Rect(50,3)、读条 5s、麻痹[5388]，与劳妲 49470 同形状同读条。
+//  - 劳妲 run2278 两遍：霹雳读完时宠物站在劳妲与玩家之间，胡蜂两次被这一下打死，之后无宠。
+//    run2295 两遍 4 次霹雳都只打到人物、没有打到宠物（劳妲那边的同名组件当时是否已部署，本次没有核对部署记录）。
+//  - 加特勒攻略配队含胡蜂，同样怕这一下。
+// 实现是 CrucibleLaudaThunderPetDodge 的逐行拷贝，只改了技能 ID（49470 -> 48620）和类名，
+// 并去掉了 [SkipLocalsInit]（本文件没有 using System.Runtime.CompilerServices）。
+// 场地用同一个 CrucibleLaudaFloor（f1x3 加特勒与 f1x5 劳妲共用 gim05 地板，见 CrucibleLaudaFloor.cs 注释）。
+// 需要在 CrucibleCatalog.cs 第 21 组里登记后才生效；不登记时本类不会被构造，对现有行为零影响。
+sealed class CrucibleGatlerThunderPetDodge(BossModule module) : BossComponent(module)
+{
+    private const uint Thunder = 48620;
+    private const float HalfWidth = 3f;
+    private const float Clear = 6.5f;
+    private readonly List<(Actor Caster, ulong Target, DateTime End)> _casts = [];
+
+    public override void OnCastStarted(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID != Thunder || spell.EventHappened || Module.CastFinishAt(spell) <= WorldState.CurrentTime)
+            return;
+        _casts.RemoveAll(c => c.Caster == caster);
+        _casts.Add((caster, spell.TargetID, Module.CastFinishAt(spell, 0.8f)));
+    }
+
+    public override void OnEventCast(Actor caster, ActorCastEvent spell)
+    {
+        if (spell.Action.ID == Thunder)
+            _casts.RemoveAll(c => c.Caster == caster);
+    }
+
+    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID == Thunder && spell.Interrupted)
+            _casts.RemoveAll(c => c.Caster == caster);
+    }
+
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        _casts.RemoveAll(c => c.End <= WorldState.CurrentTime || c.Caster.IsDeadOrDestroyed);
+        if (_casts.Count == 0 || hints.PetMoveTo != null)
+            return;
+        var (caster, targetId, _) = _casts[0];
+        var target = WorldState.Actors.Find(targetId) ?? actor;
+        var dirVec = target.Position - caster.Position;
+        if (dirVec.LengthSq() < 0.01f)
+            return;
+        var dir = dirVec.Normalized();
+        var perp = dir.OrthoL();
+        foreach (var pet in CrucibleNightmare.Pets(WorldState, actor))
+        {
+            if (targetId == pet.InstanceID)
+                continue; // 宠物自己被点名时躲不开
+            var rel = pet.Position - caster.Position;
+            var along = rel.Dot(dir);
+            var side = rel.Dot(perp);
+            if (along < -2f || MathF.Abs(side) >= HalfWidth + 1.5f)
+                continue;
+            var sign = side >= 0 ? 1f : -1f;
+            WPos? pick = null;
+            foreach (var s in new[] { sign, -sign })
+            {
+                var p = caster.Position + perp * (s * Clear) + dir * -1f;
+                if (CrucibleLaudaFloor.Contains(p)) { pick = p; break; }
+            }
+            if (pick != null)
+                hints.PetMoveTo = pick;
+            return;
+        }
+    }
 }

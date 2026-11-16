@@ -16,7 +16,10 @@ sealed class CrucibleGiantSlimes(BossModule module) : BossComponent(module)
     private uint _firstColour;
     private ulong _target;
     private DateTime _expires;
-    private bool _locked, _pullAway;
+    private bool _locked, _pullAway, _firstStompLocked, _beastway3;
+
+    // Observed CFC1092 + territory1343 only; ordinary high2 retains its old route.
+    internal void Configure(bool beastway3) => _beastway3 = beastway3;
 
     private static bool LivingSlime(Actor a) => a.OID is 19717 or 19719 && !a.IsDeadOrDestroyed;
 
@@ -47,6 +50,7 @@ sealed class CrucibleGiantSlimes(BossModule module) : BossComponent(module)
         foreach (var slime in available)
             _handled.Add(slime.InstanceID);
         _locked = true;
+        _firstStompLocked = true;
         _baitSlime = null;
         _target = 0;
         _expires = WorldState.FutureTime(40);
@@ -56,6 +60,12 @@ sealed class CrucibleGiantSlimes(BossModule module) : BossComponent(module)
     {
         _boss = WorldState.Actors.FirstOrDefault(a => a.NameID == 14670 && a.OID != 9020 && !a.IsDeadOrDestroyed);
         if (_boss == null)
+        {
+            _baitSlime = _attackSlime = null;
+            _target = 0;
+            return;
+        }
+        if (_beastway3 && _firstStompLocked)
         {
             _baitSlime = _attackSlime = null;
             _target = 0;
@@ -115,6 +125,13 @@ sealed class CrucibleGiantSlimes(BossModule module) : BossComponent(module)
     {
         if (_boss == null || actor.IsDeadOrDestroyed)
             return;
+        if (_beastway3 && _boss.IsTargetable)
+        {
+            hints.SetPriority(_boss, 10);
+            hints.ForcedTarget = _boss;
+        }
+        if (_beastway3 && _firstStompLocked)
+            return;
         if (_locked)
         {
             // Keep the other colour as the attack target after lock. The fixed
@@ -149,6 +166,11 @@ sealed class CrucibleGiantSlimes(BossModule module) : BossComponent(module)
 
     public override void AddHints(int slot, Actor actor, TextHints hints)
     {
+        if (_beastway3 && _firstStompLocked)
+        {
+            hints.Add("兽道3：首批小史莱姆只用首宠最后一击，之后全力打巨人！", false);
+            return;
+        }
         if (_locked)
         {
             if (_attackSlime is { IsDeadOrDestroyed: false, IsTargetable: true })

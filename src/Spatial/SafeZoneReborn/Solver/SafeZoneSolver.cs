@@ -23,7 +23,39 @@ public sealed class SafeZoneSolver
     /// <param name="options">解算选项。</param>
     /// <param name="solveTime">路径时间计算基准（绝对 UTC，通常为 DateTime.UtcNow）。</param>
     /// <param name="previousSolution">上一份解算结果（可选），用于目标内落点锁复用等稳定性判断。</param>
-    public SafeZoneSolution Solve(
+    internal const float NarrowGapResolution = .25f;
+
+    internal static bool HasNarrowFanThreat(SafeZoneSnapshot? snapshot, DateTime now)
+        => snapshot is { HardObstacles.Count: > 0 } && snapshot.DangerAreas.Any(d =>
+            d.Geometry.Kind == GeometryKind.Fan && d.DangerWindows.Any(w => w.DangerFrom > now));
+
+    public SafeZoneSolution Solve(SafeZoneSnapshot? snapshot, PlayerState player,
+        MovementCapability capability, SolveOptions options, DateTime solveTime,
+        SafeZoneSolution? previousSolution = null)
+    {
+        options ??= SolveOptionsDefaults.Default;
+        var eligible = options.GridResolution > NarrowGapResolution + .0001f
+            && HasNarrowFanThreat(snapshot, solveTime);
+        SafeZoneSolution Refine()
+        {
+            var fine = SolveCore(snapshot, player, capability,
+                options with { GridResolution = NarrowGapResolution }, solveTime, previousSolution);
+            if (fine.IsSuccess) fine.RefinedGridResolution = NarrowGapResolution;
+            return fine;
+        }
+        if (eligible && previousSolution is { IsSuccess: true, RefinedGridResolution: <= NarrowGapResolution })
+            return Refine();
+        var coarse = SolveCore(snapshot, player, capability, options, solveTime, previousSolution);
+        // Only a failed reachability search can justify the additional raster/search.
+        // Core recursion retains emergency timing behavior but never invokes refinement.
+        if (!eligible || !(coarse.IsLeastDangerFallback || coarse.Status is SolutionStatus.NoTemporalPath or SolutionStatus.NoReachableSafeCell))
+            return coarse;
+        // A real (finer-grid) route always beats the least-danger fallback.
+        var refined = Refine();
+        return refined.IsSuccess && !refined.IsLeastDangerFallback || !coarse.IsSuccess ? refined : coarse;
+    }
+
+    private SafeZoneSolution SolveCore(
         SafeZoneSnapshot? snapshot,
         PlayerState player,
         MovementCapability capability,
@@ -45,7 +77,7 @@ public sealed class SafeZoneSolver
             && options.DangerStartSafetyTime > retainedSafety
             && HasPendingDangerAtPlayer(snapshot, player.Position, solveTime))
         {
-            var continued = Solve(snapshot, player, capability,
+            var continued = SolveCore(snapshot, player, capability,
                 options with { DangerStartSafetyTime = retainedSafety, EnablePathSmoothing = false }, solveTime, previousSolution);
             if (continued.IsSuccess)
                 continued.ReducedDangerStartSafetyTime = retainedSafety;
@@ -70,6 +102,10 @@ public sealed class SafeZoneSolver
         }
 
         var playerInDangerNow = IsPlayerInDangerNow(snapshot, player.Position, solveTime);
+
+        if (map.PixelMaxGAt(startCol, startRow) < 0 && ArenaMarginRecovery.HasSource(snapshot)
+            && TryRecoverArenaMargin(snapshot, map, player.Position, capability, options, solveTime, markedOnly: true) is { } marginRecovery)
+            return marginRecovery;
 
         if (options.GoalDirectedTemporalPlanning && map.PixelMaxGAt(startCol, startRow) < 0
             && TryRecoverArenaMargin(snapshot, map, player.Position, capability, options, solveTime) is { } recovery)
@@ -97,7 +133,7 @@ public sealed class SafeZoneSolver
             capability.MovementStartDelay,
             options,
             playerGeometricallySafe: !playerInDangerNow,
-            requireSafePath: map.HasFiniteDanger && !playerInDangerNow);
+            requireSafePath: map.RequiresEscapeAt(startRow * map.Columns + startCol) || map.HasFiniteDanger && !playerInDangerNow);
 
         // A race must cross periodic obstacles to reach its waypoint. A safe
         // pocket before a hammer is only a staging point, not a completed goal.
@@ -115,15 +151,16 @@ public sealed class SafeZoneSolver
                 if (options.DangerStartSafetyTime > emergencyStartSafety &&
                     HasPendingDangerAtPlayer(snapshot, player.Position, solveTime))
                 {
-                    var emergency = Solve(snapshot, player, capability,
+                    var emergency = SolveCore(snapshot, player, capability,
                         options with { DangerStartSafetyTime = emergencyStartSafety, EnablePathSmoothing = false }, solveTime, previousSolution);
-                    if (emergency.IsSuccess && emergency.ExecutablePath.Count >= 2)
+                    if (emergency.IsSuccess && !emergency.IsLeastDangerFallback && emergency.ExecutablePath.Count >= 2)
                     {
                         emergency.ReducedDangerStartSafetyTime = emergencyStartSafety;
                         return emergency;
                     }
                 }
-                return SafeZoneSolution.Failed(SolutionStatus.NoTemporalPath, version, solveTime, solvedAt);
+                return TryLeastDanger(snapshot, player, capability, options, solveTime)
+                    ?? SafeZoneSolution.Failed(SolutionStatus.NoTemporalPath, version, solveTime, solvedAt);
             }
 
             // GreenMove 不消费时间戳。只下发首次等待前的连续移动；竞速保存后续路段，解禁后按最新快照复核接续。
@@ -138,7 +175,7 @@ public sealed class SafeZoneSolver
                         break;
                 }
             }
-            if (options.PreferStraightPaths && phase.Count > 2)
+            if ((options.PreferStraightPaths || options.GoalDirectedTemporalPlanning) && phase.Count > 2)
             {
                 // Keep absolute arrival/departure times and every wait. GreenMove
                 // should not spend a frame advancing through each collinear cell.
@@ -156,6 +193,8 @@ public sealed class SafeZoneSolver
                 phase.Count >= 2 ? phase[^1].Position : null, phase, BuildDebug(options, temporal, map))
                 {
                     UsesTemporalPlanning = true, IsPartialEscape = temporal.IsPartialEscape,
+                    ExitsInitialPersistentDanger = map.RequiresEscapeAt(startRow * map.Columns + startCol),
+                    MaxArrivalTolerance = map.RequiresEscapeAt(startRow * map.Columns + startCol) ? map.Resolution * .45f : float.PositiveInfinity,
                     ContinuationPath = options.GoalDirectedTemporalPlanning && phase.Count > 0 && phase[^1].IsWaitPoint
                         ? temporal.Path.SkipWhile(p => p.Position != phase[^1].Position || !p.IsWaitPoint).ToArray() : [],
                 };
@@ -164,8 +203,9 @@ public sealed class SafeZoneSolver
         // 无路径（起点就是 best）→ 无需移动空成功。
         if (!result.HasPath)
         {
-            if (playerInDangerNow || HasPendingDangerAtPlayer(snapshot, player.Position, solveTime))
-                return SafeZoneSolution.Failed(SolutionStatus.NoReachableSafeCell, version, solveTime, solvedAt);
+            if (playerInDangerNow || map.RequiresEscapeAt(startRow * map.Columns + startCol) || HasPendingDangerAtPlayer(snapshot, player.Position, solveTime))
+                return TryLeastDanger(snapshot, player, capability, options, solveTime)
+                    ?? SafeZoneSolution.Failed(SolutionStatus.NoReachableSafeCell, version, solveTime, solvedAt);
 
             var settledTarget = !playerInDangerNow &&
                                 IsPositionInAnyActiveGoal(snapshot, player.Position, solveTime) &&
@@ -198,7 +238,7 @@ public sealed class SafeZoneSolver
         // Grid scoring can select a bent route even on an open straight bridge.
         // Prefer continuous input only when the shorter segment passes the same
         // buffered cells, boundary edges, obstacles and damage-time checks.
-        if (options.PreferStraightPaths && !playerInDangerNow && executable.Count > 2 && options.Teleporters.Count == 0)
+        if ((options.PreferStraightPaths || options.GoalDirectedTemporalPlanning) && !playerInDangerNow && executable.Count > 2 && options.Teleporters.Count == 0)
         {
             var start = executable[0];
             var end = executable[^1];
@@ -253,6 +293,74 @@ public sealed class SafeZoneSolver
         };
     }
 
+    // ── 退而求其次（kano 11-14）────────────────────────────────────────────
+    // 高1 run2426 B23（3 个酸池 + 2 个酸雾读条 + 地震落点）、低2 run2424 B11（无尽回转追角落）：
+    // 找不到安全格时求解器返回失败，MovementSystem 松手，人原地连吃。改成：在一次能走到的范围里，
+    // 挑「到达时仍会压着的危险区个数」最少的点走过去（同分取更近），只有比原地严格更少才走。
+    internal const float LeastDangerStep = .5f, LeastDangerHorizon = 2.5f, LeastDangerMaxRadius = 20f, LeastDangerMinRadius = 3f;
+
+    internal static int OverlapAt(SafeZoneSnapshot snapshot, Vector3 position, DateTime from, DateTime until)
+    {
+        var count = 0;
+        foreach (var danger in snapshot.DangerAreas)
+        {
+            if (!danger.Geometry.Contains(position)) continue;
+            foreach (var w in danger.DangerWindows)
+                if (w.DangerFrom <= until && (w.DangerUntil == null || w.DangerUntil > from)) { ++count; break; }
+        }
+        return count;
+    }
+
+    internal static SafeZoneSolution? TryLeastDanger(SafeZoneSnapshot snapshot, PlayerState player,
+        MovementCapability capability, SolveOptions options, DateTime now)
+    {
+        if (snapshot.ArenaBoundary is not { } boundary || !boundary.Contains(player.Position)) return null;
+        var speed = MathF.Max(.1f, capability.CurrentSpeed);
+        var delay = MathF.Max(0, capability.MovementStartDelay);
+        // 到最早一个压着人物的危险生效为止能走多远（至少 3 米，至多 20 米）。
+        var earliest = double.PositiveInfinity;
+        foreach (var danger in snapshot.DangerAreas)
+            if (danger.Geometry.Contains(player.Position))
+                foreach (var w in danger.DangerWindows)
+                    if (w.DangerUntil == null || w.DangerUntil > now)
+                        earliest = Math.Min(earliest, Math.Max(0, (w.DangerFrom - now).TotalSeconds));
+        var budget = double.IsPositiveInfinity(earliest) ? 3.0 : earliest;
+        var radius = Math.Clamp((float)(budget - delay) * speed, LeastDangerMinRadius, LeastDangerMaxRadius);
+        var origin = player.Position;
+        var here = OverlapAt(snapshot, origin, now, now.AddSeconds(LeastDangerHorizon + delay));
+        if (here == 0) return null;
+        var bestCount = here;
+        var bestDistance = float.PositiveInfinity;
+        Vector3? best = null;
+        for (var dx = -radius; dx <= radius; dx += LeastDangerStep)
+            for (var dz = -radius; dz <= radius; dz += LeastDangerStep)
+            {
+                var d2 = dx * dx + dz * dz;
+                if (d2 > radius * radius || d2 < .25f) continue;
+                var target = new Vector3(origin.X + dx, origin.Y, origin.Z + dz);
+                var distance = MathF.Sqrt(d2);
+                if (best != null && distance >= bestDistance && bestCount == 0) continue;
+                if (!boundary.Contains(target) || !ArenaBoundaryTraversal.ContainsSegment(boundary, origin, target)) continue;
+                if (snapshot.HardObstacles.Any(o => o.Geometry.Contains(target, options.HardSafetyMargin)
+                    || o.Geometry.IntersectsSegment(origin, target, options.HardSafetyMargin))) continue;
+                var arrival = now.AddSeconds(delay + distance / speed);
+                var count = OverlapAt(snapshot, target, arrival, arrival.AddSeconds(LeastDangerHorizon));
+                if (count < bestCount || count == bestCount && best != null && distance < bestDistance)
+                {
+                    bestCount = count;
+                    bestDistance = distance;
+                    best = target;
+                }
+            }
+        if (best is not { } goal || bestCount >= here) return null;
+        var departure = now.AddSeconds(delay);
+        TimedWaypoint[] path = [TimedWaypoint.Pass(origin, departure), TimedWaypoint.Pass(goal, departure.AddSeconds(bestDistance / speed))];
+        return new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, goal, path)
+        {
+            IsLeastDangerFallback = true, LeastDangerOverlap = bestCount, MaxArrivalTolerance = LeastDangerStep * .9f,
+        };
+    }
+
     internal static bool HasPendingDangerAtPlayer(SafeZoneSnapshot snapshot, Vector3 position, DateTime now)
     {
         foreach (var danger in snapshot.DangerAreas)
@@ -267,7 +375,7 @@ public sealed class SafeZoneSolver
     }
 
     private static SafeZoneSolution? TryRecoverArenaMargin(SafeZoneSnapshot snapshot, RasterizedMap map, Vector3 player,
-        MovementCapability capability, SolveOptions options, DateTime now)
+        MovementCapability capability, SolveOptions options, DateTime now, bool markedOnly = false)
     {
         // The actor can stand inside the real floor but outside the eroded grid
         // after input tolerance or a knockback. Authorize only a short, fully
@@ -282,12 +390,18 @@ public sealed class SafeZoneSolver
                 if (map.InBounds(x, z) && map.PixelMaxGAt(x, z) >= 0)
                 {
                     var p = map.CellCenter(x, z);
-                    if (GeometryHelper.DistanceXZ(player, p) <= radius) candidates.Add(p);
+                    if (GeometryHelper.DistanceXZ(player, p) <= radius)
+                    {
+                        candidates.Add(p);
+                        if (markedOnly)
+                            candidates.AddRange(ArenaMarginRecovery.ProjectedCandidates(snapshot, player, p)
+                                .Where(q => GeometryHelper.DistanceXZ(player, q) <= radius && IsPointSafeOnMap(map, q)));
+                    }
                 }
         // A fine race grid can put its first legal cell only a few centimetres
         // away. A 0.1m tolerance consumes it without input (20:57 FirstB ARR).
         var tolerance = MathF.Min(.1f, map.Resolution * .25f);
-        foreach (var target in candidates.OrderBy(p => GeometryHelper.DistanceXZ(player, p)))
+        foreach (var target in candidates.Distinct().OrderBy(p => GeometryHelper.DistanceXZ(player, p)))
         {
             if (GeometryHelper.DistanceXZ(player, target) <= tolerance) continue;
             if (!ArenaBoundaryTraversal.ContainsSegment(boundary, player, target)) continue;
@@ -295,6 +409,14 @@ public sealed class SafeZoneSolver
                 || o.Geometry.IntersectsSegment(player, target))) continue;
             var departure = now.AddSeconds(MathF.Max(0, capability.MovementStartDelay));
             var arrival = departure.AddSeconds(GeometryHelper.DistanceXZ(player, target) / MathF.Max(.1f, capability.CurrentSpeed));
+            if (markedOnly)
+            {
+                if (!ArenaMarginRecovery.IsSafe(snapshot, player, target, now, capability.CurrentSpeed,
+                    options, tolerance, MathF.Max(0, capability.MovementStartDelay), requireInitialMargin: true)) continue;
+                return new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
+                    [TimedWaypoint.Pass(player, departure), TimedWaypoint.Pass(target, arrival)], null)
+                    { UsesTemporalPlanning = true, IsArenaMarginRecovery = true, MaxArrivalTolerance = tolerance };
+            }
             if (snapshot.DangerAreas.Any(d => (d.Geometry.Contains(player, options.HardSafetyMargin)
                     || d.Geometry.Contains(target, options.HardSafetyMargin) || d.Geometry.IntersectsSegment(player, target, options.HardSafetyMargin))
                 && d.DangerWindows.Any(w => w.Buffered(options.DangerStartSafetyTime,
@@ -398,7 +520,7 @@ public sealed class SafeZoneSolver
             return rawPath;
         }
 
-        if (options.EnablePathSmoothing && !options.PreferStraightPaths && simplified.Count >= 3)
+        if (options.EnablePathSmoothing && !options.PreferStraightPaths && !options.GoalDirectedTemporalPlanning && simplified.Count >= 3)
         {
             try
             {
@@ -558,7 +680,7 @@ public sealed class SafeZoneSolver
     private static bool IsPointSafeOnMap(RasterizedMap map, Vector3 position)
     {
         var (col, row) = map.WorldToCell(position);
-        return map.InBounds(col, row) && map.PixelMaxGAt(col, row) >= float.MaxValue;
+        return map.InBounds(col, row) && !map.RequiresEscapeAt(row * map.Columns + col) && map.PixelMaxGAt(col, row) >= float.MaxValue;
     }
 
     /// <summary>玩家几何上是否在任一硬障碍或激活危险区内（不含光栅 margin 膨胀）。</summary>

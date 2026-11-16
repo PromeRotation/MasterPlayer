@@ -103,8 +103,10 @@ public sealed class FollowController : IDisposable
             ClearFollowGoal();
             return;
         }
+        // 只排除判定前 2.5 秒内的危险：读条刚开始就把近战位挖掉会让人提前几秒离开 Boss，
+        // 斗兽实测每场 13–42% 时间不在近战；更早的走位时机交给解算器的时间窗。
         var template = new DangerAwareFollowGoalTemplate(distance, snapshot.DangerAreas
-            .Where(a => a.DangerWindows.Any(w => OptionalGoalSafety.Pending(w.DangerFrom, w.DangerUntil, now)))
+            .Where(a => a.DangerWindows.Any(w => OptionalGoalSafety.MasksFollowGoal(w.DangerFrom, w.DangerUntil, now, a.Geometry)))
             .Select(a => a.Geometry).Concat(snapshot.HardObstacles.Select(a => a.Geometry)), snapshot.ArenaBoundary);
         var active = template.HasSafeArea(targetPosition);
         GoalWindow[] windows = active ? [new GoalWindow(now, null, -1, PositionPreference.Nearest)] : [];

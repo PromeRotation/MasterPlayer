@@ -41,15 +41,21 @@ static class CrucibleSpells
         [46905] = new(new AOEShapeDonut(18f, 24f)),  // 地面隆起 | 奇子·祸蛛蝎
         [46908] = new(new AOEShapeCircle(9f), LocationTargeted: true),  // 毒蛛网 | 奇子·祸蛛蝎
         [46909] = new(new AOEShapeRect(40f, 2f)),  // 蛛网屏 | 奇子·灵蛛蝎 [14537]
-        [46912] = new(new AOEShapeCone(40f, 60f.Degrees())),  // 燃烧猛击 | 奇子·食人魔 [14538]
+        // 2026-10-30 11:23/12:44 ARRs: 49688 hit players 60.1° off its axis, 8–11y out; the user margin only
+        // grows a fan's radius, so the planner parked on the 60° edge. 3° gives ~0.5y of edge clearance there.
+        [46912] = new(new AOEShapeCone(40f, 63f.Degrees())),  // 燃烧猛击 | 奇子·食人魔 [14538]
         [46916] = new(new AOEShapeCircle(3f), LocationTargeted: true),  // 熔岩 | 奇子·食人魔
         [46917] = new(new AOEShapeCircle(5f), LocationTargeted: true),  // 熔岩 | 奇子·食人魔
         [46924] = new(new AOEShapeDonut(8f, 40f)),  // 血雨 | 魅惑女妖 帕德索 [14541]
         [46926] = new(new AOEShapeCircle(8f)),  // 血雨 | 魅惑女妖 帕德索
         [46929] = new(new AOEShapeCircle(10f), LocationTargeted: true),  // 虚空烈炎 | 奇子·梦魔法师 [14542]
         [46930] = new(new AOEShapeCone(10f, 60f.Degrees())),  // 甜钢 | 奇子·梦魔骑士 [14543]
-        [46932] = new(new AOEShapeRect(60f, 4f)),  // 虚空烈风 | 魅惑女妖 帕德索
-        [46933] = new(new AOEShapeCone(60f, 10f.Degrees())),  // 虚空烈风 | 魅惑女妖 帕德索
+        // run1803 seq16030 hit0.86m behind the cast origin; seq16046 hit10.1deg off the fan axis.
+        // These are conservative planning bounds, not measured exact hitbox sizes. Fan margins only grow radius.
+        [46932] = new(new AOEShapeRect(60f, 4f, 1.5f)),  // 虚空烈风：不把贴身穿过起点当作已脱离
+        [46933] = new(new AOEShapeCone(60f, 11f.Degrees())),  // 虚空烈风：留出扇形角度余量，保留25°间隔的中线
+        [46936] = new(new AOEShapeCircle(30f)),  // 欺瞒雾 | 客户端 Action CastType2/R30；run1794 三次各 410–460+噩梦5383，攻略视频跑出 30 米外无伤
+        [46938] = new(new AOEShapeCircle(24f), LocationTargeted: true),  // 碎裂 | 信息素汇合，run1763 / 客户端 Action 表
         [48137] = new(new AOEShapeCircle(30f)),  // 重锤跃击 | 奇子·曼提克 [14545]
         [48155] = new(new AOEShapeCircle(8f)),  // 中心破灭 | 奇子·牛头魔 [14546]
         [48157] = new(new AOEShapeDonut(7f, 50f)),  // 外环破灭 | 未找到详情引用 | 内半径来自 Omen 命名，待实测
@@ -153,11 +159,14 @@ static class CrucibleSpells
         [49411] = new(new AOEShapeCross(25f, 2.5f)),  // 十字放雷 | 雷元精 [14686]
         [49415] = new(new AOEShapeCircle(12f)),  // 大漩涡 | 奇子·贝希摩斯 [14684]
         [49470] = new(new AOEShapeRect(50f, 3f)),  // 霹雳 | 魔斧之主 劳妲 [14693]
+        [49440] = new(new AOEShapeCircle(2f), true),
+        [49441] = new(new AOEShapeCircle(2f), true),
+        [49442] = new(new AOEShapeCircle(2f), true),
         [49451] = new(new AOEShapeRect(80f, 10f), true),
         [49464] = new(new AOEShapeRect(60f, 3f), true),
         [49483] = new(new AOEShapeRect(50f, 2.5f), true),
         [50848] = new(new AOEShapeRect(60f, 3f), true),
-        [49688] = new(new AOEShapeCone(40f, 60f.Degrees())),  // 燃烧猛击 | 奇子·食人魔
+        [49688] = new(new AOEShapeCone(40f, 63f.Degrees())),  // 燃烧猛击 | 奇子·食人魔（见 46912）
         [49886] = new(new AOEShapeCircle(5f), LocationTargeted: true),  // 虚空冰封 | 奇子·夺灵魔 [14535] | 手工补充（ARR 实测）
         [50662] = new(new AOEShapeRect(5f, 1.5f)),  // 敲击 | 奇子·蹒跚鬼 [14585]
         [50943] = new(new AOEShapeCircle(6f)),  // 绒绒陨石雨 | 奇子·莫古小术 [14679]
@@ -173,7 +182,7 @@ class CrucibleCastAOEs(BossModule module, Battle battle) : ReplayValidatedCastAO
     protected override AOEConfig? ConfigFor(uint actionID)
     {
         if ((_battle == Battle.B03 && actionID == 46889)
-            || (_battle == Battle.B02 && actionID == CrucibleDismemberSweep.Dismember)
+            || (_battle == Battle.B02 && actionID is CrucibleDismemberSweep.Dismember or CrucibleAbyssalLances.Lance)
             || (_battle == Battle.B04 && (CrucibleGroundUpliftAOEs.IsUplift(actionID) || actionID == 46908))
             || !CrucibleSpells.Table.TryGetValue(actionID, out var spell))
         {
@@ -219,6 +228,8 @@ static class CrucibleSpellBattles
         [46930] = [Battle.B06],
         [46932] = [Battle.B06],
         [46933] = [Battle.B06],
+        [46936] = [Battle.B06],
+        [46938] = [Battle.B06],
         [48137] = [Battle.B07],
         [48155] = [Battle.B08],
         [48157] = [Battle.B08],
@@ -311,6 +322,7 @@ static class CrucibleSpellBattles
         [49359] = [Battle.B41],
         [49361] = [Battle.B41],
         [49363] = [Battle.B41],
+        [49364] = [Battle.B41],
         [49366] = [Battle.B41],
         [49379] = [Battle.B41],
         [49367] = [Battle.B41],
@@ -479,7 +491,7 @@ sealed class XBMB35AOE(BossModule module) : High2CrucibleCastAOEs(module, Battle
 
 // 第 36 组（斗兽奇弈高段 第二盘）
 [SkipLocalsInit]
-sealed class XBMB36AOE(BossModule module) : CrucibleCastAOEs(module, Battle.B36);
+sealed class XBMB36AOE(BossModule module) : High2CrucibleCastAOEs(module, Battle.B36);
 
 // 第 37 组（斗兽奇弈高段 第二盘）
 [SkipLocalsInit]
@@ -641,7 +653,7 @@ sealed class XBMB33Hint1(BossModule module) : Components.CastHints(module, [(uin
 
 // 第 34 组提示：Blind (raidwide)
 [SkipLocalsInit]
-sealed class XBMB34Hint0(BossModule module) : Components.CastHints(module, [(uint)AID.A49231], "Blind (raidwide)");
+sealed class XBMB34Hint0(BossModule module) : Components.CastHints(module, [(uint)AID.A49231], "暗黑冲击：打仇恨目标，让魔兽拉住");
 
 // 第 34 组提示：Invisible (raidwide)
 [SkipLocalsInit]
