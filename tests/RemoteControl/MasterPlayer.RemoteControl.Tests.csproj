@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\src\Core\DutyReplayState.cs" Link="DutyReplayState.cs" />
     <Compile Include="..\..\src\Core\Integration\RemoteControlClient.cs" Link="RemoteControlClient.cs" />
     <Compile Include="..\..\src\Core\Integration\RemoteRoomSnapshot.cs" Link="RemoteRoomSnapshot.cs" />
     <Compile Include="..\..\src\Core\Integration\RemoteRoomMember.cs" Link="RemoteRoomMember.cs" />

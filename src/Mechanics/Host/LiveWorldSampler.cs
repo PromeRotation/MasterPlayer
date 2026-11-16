@@ -184,10 +184,10 @@ internal static class LiveWorldSampler
         {
             party = [];
         }
-        for (var i = 1; i < party.Count && slots.Count < 8; ++i)
+        for (var i = 0; i < party.Count && slots.Count < 8; ++i)
         {
             var id = Id(party[i]);
-            if (id == 0)
+            if (id == 0 || id == localId || slots.Any(s => s.InstanceId == id))
                 continue;
             slots.Add(new(slots.Count,
                 partyInfo.TryGetValue(id, out var info) ? info.ContentId : 0,

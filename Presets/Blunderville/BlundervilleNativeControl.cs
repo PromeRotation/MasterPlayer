@@ -123,11 +123,11 @@ internal sealed unsafe class BlundervilleNativeControl : IDisposable
 
     private static IPlayerCharacter? LivePlayer()
     {
-        if (Svc.ClientState.TerritoryType != Territory || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true
+        if (Svc.ClientState.TerritoryType != Territory || PlayerPerspective.IsReplay
             || Svc.Condition[ConditionFlag.BetweenAreas] || Svc.Condition[ConditionFlag.BetweenAreas51]
             || Svc.Condition[ConditionFlag.OccupiedInCutSceneEvent] || Svc.Condition[ConditionFlag.WatchingCutscene]
             || Svc.Condition[ConditionFlag.WatchingCutscene78]) return null;
-        return Svc.Objects.LocalPlayer is { IsDead: false, Address: not 0 } player ? player : null;
+        return PlayerPerspective.LivePlayer is { IsDead: false, Address: not 0 } player ? player : null;
     }
 
     private bool HasFloor(Vector3 position, float rise, float drop)

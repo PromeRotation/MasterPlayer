@@ -29,7 +29,8 @@ internal sealed class CrucibleInteraction
     }
     public static unsafe bool Interact(ulong id)
     {
-        var player = Svc.Objects.LocalPlayer;
+        if (PlayerPerspective.IsReplay) return false;
+        var player = PlayerPerspective.LivePlayer;
         var target = Svc.Objects.SearchByEntityId((uint)id);
         if (player == null || player.IsDead || player.Address == 0 || target == null || target.EntityId != id
             || target.BaseId != 2015459 || !target.IsTargetable || target.Address == 0) return false;

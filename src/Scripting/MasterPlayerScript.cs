@@ -11,6 +11,7 @@ namespace MasterPlayer.Scripting;
 public abstract class MasterPlayerScript
 {
     private bool _started;
+    private ulong _currentPlayerId;
 
     /// <summary>宿主注入的运行上下文（事件订阅、三门面、设置读写）。</summary>
     public IScriptHostContext Host { get; internal set; } = null!;
@@ -30,6 +31,9 @@ public abstract class MasterPlayerScript
     public ScriptSettingStore Settings => Host.Settings;
     public DateTime CurrentTime => Host.CurrentTime;
     public Replay.ReplayWorldState? ReplayWorld => Host.ReplayWorld;
+    public Replay.ReplayActorState? CurrentPlayer => Host.CurrentPlayer;
+    public ulong CurrentPlayerId => Host.CurrentPlayerId;
+    public bool IsReplay => Host.IsReplay;
 
     /// <summary>
     /// 暴露给用户的机制开关列表。返回的每个名称都会在 UI 显示独立开关，
@@ -55,6 +59,9 @@ public abstract class MasterPlayerScript
     {
     }
 
+    /// <summary>视角角色变化（包括不可用的 0）时先于 OnUpdate 调用；保留战斗状态，仅刷新个人输出。</summary>
+    protected virtual void OnCurrentPlayerChanged(ulong previous, ulong current) { }
+
     /// <summary>脚本停止（宿主随后清理事件订阅 / 安全区 / 移动 / 绘制，这里做脚本自身收尾）。</summary>
     protected virtual void OnStop()
     {
@@ -77,11 +84,19 @@ public abstract class MasterPlayerScript
         if (_started)
             return;
         _started = true;
+        _currentPlayerId = CurrentPlayerId;
         OnStart();
     }
 
     internal void UpdateInternal(float dt)
     {
+        var current = CurrentPlayerId;
+        if (current != _currentPlayerId)
+        {
+            var previous = _currentPlayerId;
+            _currentPlayerId = current;
+            OnCurrentPlayerChanged(previous, current);
+        }
         OnUpdate(dt);
     }
 

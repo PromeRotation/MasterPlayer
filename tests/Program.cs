@@ -10,6 +10,7 @@ using MasterPlayer.Spatial.SafeZone;
 var passed = 0;
 var shardCounter = 0;
 var failures = new List<string>();
+PlayerPerspectiveRegression.Run(Run);
 if (args.Contains("--radar-performance"))
 {
     NavigationPerformance.Radar();

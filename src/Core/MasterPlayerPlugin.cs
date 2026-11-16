@@ -67,11 +67,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
             () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
         _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
-        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, ClearLiveSafeZone);
+        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, () => { if (!PlayerPerspective.IsDutyReplay) ClearLiveSafeZone(); });
         _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, ClearLiveSafeZone);
         _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
         _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
-        _smartMovementEnabled = settings.EnableSmartMovement;
+        _smartMovementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
 
         _radar = new Radar.RadarRenderer();
         _dodge = new Dodge.DodgeController();
@@ -179,8 +179,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void ApplyMovementPolicy(MasterPlayerSettings settings)
     {
-        if (_smartMovementEnabled == settings.EnableSmartMovement) return;
-        _smartMovementEnabled = settings.EnableSmartMovement;
+        var movementAllowed = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
+        if (_smartMovementEnabled == movementAllowed) return;
+        _smartMovementEnabled = movementAllowed;
         if (!_smartMovementEnabled)
         {
             if (_safeZone != null) _safeZone.Setting.MovementAllowed = false;

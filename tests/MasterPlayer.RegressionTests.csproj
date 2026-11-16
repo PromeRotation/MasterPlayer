@@ -16,6 +16,9 @@
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blunderville\*.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\src\Core\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
+    <Compile Include="..\src\Core\PlayerPerspective.cs" Link="PlayerPerspective.cs" />
+    <Compile Include="..\src\Core\DutyReplayState.cs" Link="DutyReplayState.cs" />
+    <Compile Include="..\src\Replay\ReplayWorldCapture.cs" Link="Replay\ReplayWorldCapture.cs" />
     <Compile Include="..\src\Core\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
     <Compile Include="..\src\Core\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
     <Compile Include="..\src\Movement\Follow\FollowController.cs" Link="FollowController.cs" />

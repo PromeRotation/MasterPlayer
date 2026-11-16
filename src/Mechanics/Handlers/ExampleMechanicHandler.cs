@@ -107,8 +107,8 @@ public sealed class ExampleMechanicHandler : IMechanicHandler
             durationMs: 3000f);
 
         // 机制移动示例（演示用，保持注释）：自己被点名时让 GreenMove 向 +X 方向走 3 米
-        // var me = Svc.ClientState.LocalPlayer;
-        // if (me != null && ev.TargetId == me.EntityId)
+        // var me = PlayerPerspective.LivePlayer;
+        // if (!PlayerPerspective.IsReplay && me != null && ev.TargetId == me.EntityId)
         //     PromeRotation.Plugin.Instance.GreenMoveSystem.MoveTo(
         //         new PromeRotation.GreenMoveSystem.GreenMovePoint(me.Position + new Vector3(3f, 0f, 0f)));
     }

@@ -46,8 +46,10 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     public ScriptSettingStore Settings => _settings;
     public Replay.ReplayWorldState? ReplayWorld => (_router as Replay.ReplayScriptEventRouter)?.World;
     public DateTime CurrentTime => ReplayWorld?.CurrentTime ?? DateTime.UtcNow;
+    public Replay.ReplayActorState? CurrentPlayer => PlayerPerspective.Capture(ReplayWorld, CurrentTime);
+    public ulong CurrentPlayerId => PlayerPerspective.GetId(ReplayWorld);
 
-    internal bool IsReplay => !ReferenceEquals(_router, LiveScriptEventRouter.Instance);
+    public bool IsReplay => !ReferenceEquals(_router, LiveScriptEventRouter.Instance) || PlayerPerspective.IsDutyReplay;
 
     public bool IsMechanismEnabled(string mechanism)
         => _manager.IsMechanismEnabled(_metadata.Id, mechanism);
@@ -76,7 +78,11 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
     // ── 事件订阅（经 IScriptEventRouter；实时= PromeEventBus 按 owner 归属，停止统一清理）──
 
     public IDisposable Subscribe(string eventName, Delegate handler)
-        => _router.Subscribe(this, eventName, handler);
+    {
+        if (eventName is "PlayerDied" or "PlayerRevived" && handler is Action action)
+            handler = (Action)(() => { if (!PlayerPerspective.IsDutyReplay) action(); });
+        return _router.Subscribe(this, eventName, handler);
+    }
 
     public IDisposable OnBattleStarted(Action handler)
         => _router.Subscribe(this, "BattleStarted", handler);
@@ -85,10 +91,10 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         => _router.Subscribe(this, "BattleEnded", handler);
 
     public IDisposable OnPlayerDied(Action handler)
-        => _router.Subscribe(this, "PlayerDied", handler);
+        => Subscribe("PlayerDied", handler);
 
     public IDisposable OnPlayerRevived(Action handler)
-        => _router.Subscribe(this, "PlayerRevived", handler);
+        => Subscribe("PlayerRevived", handler);
 
     public IDisposable OnPlayerMoveStateChanged(Action<bool> handler)
         => _router.Subscribe(this, "PlayerMoveStateChanged", handler);

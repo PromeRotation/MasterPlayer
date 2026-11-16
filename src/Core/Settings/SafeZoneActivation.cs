@@ -16,7 +16,7 @@ internal sealed class SafeZoneActivation(SafeZoneSetting setting, Func<DateTime>
         if (_disposed)
             return;
 
-        setting.MovementAllowed = enableSmartMovement;
+        setting.MovementAllowed = enableSmartMovement && !PlayerPerspective.IsReplay;
 
         // 本地开关被手动关闭后放弃归属，避免之后撤销用户手动重新开启的状态。
         _ownsSafeZone &= setting.EnableSafeZone;

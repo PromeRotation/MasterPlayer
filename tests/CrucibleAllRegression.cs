@@ -11,6 +11,22 @@ internal static class CrucibleAllRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        run("ARR perspective retains Crucible encounter history while the viewed actor is unavailable", () =>
+        {
+            using var f = new Fight(14693, new(520, -420));
+            f.Render();
+            var module = f.Engine.Module;
+            Check(module != null, "Missing initial encounter.");
+            f.World.Player = null;
+            f.Engine.Update(retainWithoutPlayer: true);
+            Check(ReferenceEquals(module, f.Engine.Module), "Missing ARR player reset the encounter.");
+            f.World.Player = f.Player;
+            f.Engine.Update(retainWithoutPlayer: true);
+            Check(ReferenceEquals(module, f.Engine.Module), "Restoring the ARR player rebuilt the encounter.");
+            f.World.Player = null;
+            f.Engine.Update();
+            Check(f.Engine.Module == null, "Normal play lost its original encounter cleanup.");
+        });
         run("Crucible radar display follows the owning encounter and clears with its navigation boundary", () =>
         {
             using var f = new Fight(14693, new(520,-420));

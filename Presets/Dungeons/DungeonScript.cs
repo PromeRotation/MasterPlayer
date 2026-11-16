@@ -55,6 +55,9 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
         _messages.Clear();
     }
 
+    protected override void OnCurrentPlayerChanged(ulong previous, ulong current)
+    { _nextScan = default; _messages.Clear(); }
+
     private void Suspend()
     {
         _suspended = true;
@@ -76,7 +79,7 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                 var cast = a.Cast is { } c ? new DungeonCastObservation(c.ActionId, c.Location, c.Rotation, c.StartedAt, c.FinishAt, c.TargetId) : null;
                 return new DungeonActor(a.Id, a.Oid, a.Position, a.Dead, a.Targetable, a.InCombat, cast, a.TargetId, a.Name, member?.Slot ?? -1, member?.Role ?? "");
             });
-            _encounter.Synchronize(replayActors, !_suspended && world.LocalPlayer is { Dead: false } p ? p.Position : null, now, IsMechanismEnabled);
+            _encounter.Synchronize(replayActors, !_suspended && CurrentPlayer is { Dead: false } p ? p.Position : null, now, IsMechanismEnabled);
             foreach (var a in world.Actors.Values)
                 if (a.EventAnimation is { } state) _encounter.Animation(a.Id, state);
             return;
@@ -107,8 +110,8 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
             actors.Add(new(id, obj.BaseId, obj.Position, obj.IsDead, obj.IsTargetable, combat, cast,
                 obj.TargetObjectId, obj.Name.TextValue, member?.Slot ?? -1, member?.Role ?? ""));
         }
-        var player = Svc.Objects.LocalPlayer;
-        _encounter.Synchronize(actors, !_suspended && player is { IsDead: false } ? player.Position : null, now, IsMechanismEnabled);
+        var player = CurrentPlayer;
+        _encounter.Synchronize(actors, !_suspended && player is { Dead: false } ? player.Position : null, now, IsMechanismEnabled);
     }
 
     private void HandleEvent(LogSystemEvent ev)
@@ -124,7 +127,7 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
         if (_encounter == null) return;
         _output?.Apply(_encounter, now, IsMechanismEnabled("水纹预览"));
         if (!IsMechanismEnabled("文字提示")) return;
-        var position = ReplayWorld is { } world ? world.LocalPlayer?.Position : Svc.Objects.LocalPlayer?.Position;
+        var position = CurrentPlayer?.Position;
         foreach (var hint in _encounter.Hints(position))
         {
             if (_messages.TryGetValue(hint, out var last) && now - last < TimeSpan.FromSeconds(10)) continue;

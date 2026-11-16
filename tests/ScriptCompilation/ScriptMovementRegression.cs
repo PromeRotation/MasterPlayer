@@ -76,6 +76,36 @@ internal static class ScriptMovementRegression
             Reject(() => settings.EnableSmartMovement = false, () => settings.EnableSmartMovement = true);
             Reject(() => allowed.SetValue(setting, false), () => allowed.SetValue(setting, true));
             Reject(() => replay.SetValue(manager, true), () => replay.SetValue(manager, false));
+            var oldCondition = ECommons.DalamudServices.Svc.Condition;
+            var conditionProperty = typeof(ECommons.DalamudServices.Svc).GetProperty("Condition")!;
+            Reject(() => conditionProperty.SetValue(null, CatalogServiceProxy.Create<Dalamud.Plugin.Services.ICondition>((name, args) =>
+                    name == "get_Item" && (Dalamud.Game.ClientState.Conditions.ConditionFlag)args[0]! == Dalamud.Game.ClientState.Conditions.ConditionFlag.DutyRecorderPlayback)),
+                () => conditionProperty.SetValue(null, oldCondition));
+            var contextType = assembly.GetType("MasterPlayer.Scripting.MasterPlayerScriptContext")!;
+            var context = RuntimeHelpers.GetUninitializedObject(contextType);
+            var routerType = assembly.GetType("MasterPlayer.Replay.ReplayScriptEventRouter")!;
+            using var router = (IDisposable)Activator.CreateInstance(routerType, [null])!;
+            SetField(context, "_router", router);
+            var personalEvents = 0;
+            var battleEvents = 0;
+            contextType.GetMethod("OnPlayerDied")!.Invoke(context, [(Action)(() => personalEvents++)]);
+            contextType.GetMethod("OnPlayerRevived")!.Invoke(context, [(Action)(() => personalEvents++)]);
+            contextType.GetMethod("Subscribe")!.Invoke(context, ["PlayerDied", (Action)(() => personalEvents++)]);
+            contextType.GetMethod("OnBattleEnded")!.Invoke(context, [(Action)(() => battleEvents++)]);
+            void Fire(string name) => routerType.GetMethod("InvokeNamed", INTERNAL)!.Invoke(router, [name, Array.Empty<object>()]);
+            var inArr = true;
+            try
+            {
+                conditionProperty.SetValue(null, CatalogServiceProxy.Create<Dalamud.Plugin.Services.ICondition>((name, args) =>
+                    name == "get_Item" && (Dalamud.Game.ClientState.Conditions.ConditionFlag)args[0]! == Dalamud.Game.ClientState.Conditions.ConditionFlag.DutyRecorderPlayback && inArr));
+                Fire("PlayerDied"); Fire("PlayerRevived"); Fire("BattleEnded");
+                Check(personalEvents == 0 && battleEvents == 1, "ARR forwarded recording-owner death or suppressed a shared battle event.");
+                inArr = false;
+                Fire("PlayerDied"); Fire("PlayerRevived");
+                Check(personalEvents == 3, "Leaving ARR did not restore typed and named player events.");
+            }
+            finally { conditionProperty.SetValue(null, oldCondition); }
+            Console.WriteLine("PASS ARR player events: preserve shared battle events; suppress and restore typed/named local death events");
             legacySetting.EnableSafeZone = true;
             Reject(() => legacySetting.EnableAutoMovement = true, () => legacySetting.EnableAutoMovement = false);
             Reject(() => SetField(legacy, "_hasControl", true), () => SetField(legacy, "_hasControl", false));

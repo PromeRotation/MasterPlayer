@@ -69,8 +69,8 @@ public abstract class BlundervilleScript : MasterPlayerScript
         if (now < _nextScan && _nextScan - now <= TimeSpan.FromSeconds(0.1)
             && (ReplayWorld == null || ReplayWorld.Version == _replayVersion))
         {
-            if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && AutomaticRace && ReplayWorld == null && _native?.SupportsMisdirection == true && _decision is { DirectTraversal: true } && _race is { HasMisdirection: true }
-                && IsMechanismEnabled("竞速路线与机制处理") && Svc.Objects.LocalPlayer is { IsDead: false } player)
+            if (MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement && AutomaticRace && !IsReplay && _native?.SupportsMisdirection == true && _decision is { DirectTraversal: true } && _race is { HasMisdirection: true }
+                && IsMechanismEnabled("竞速路线与机制处理") && CurrentPlayer is { Dead: false } player)
             {
                 _decision = _arrowPlanner.Apply(_decision, _race, player.Position, _native?.ReadArrowDirection(), now, _navigation?.HasMovementControl == true);
                 _navigation?.ApplyDirectFrame(_race, _decision, now);
@@ -78,6 +78,17 @@ public abstract class BlundervilleScript : MasterPlayerScript
             ApplyPendingJump(now); return;
         }
         Scan(now); Render(now);
+    }
+
+    protected override void OnCurrentPlayerChanged(ulong previous, ulong current)
+    {
+        _nextScan = default; _lastTick = default;
+        _navigation?.Clear(); _native?.Apply(CurrentTime, false, false, null, null);
+        _race?.ResetPerspective(); _planner?.Reset(); _jumpExecution.Clear(); _routeTiming.Reset();
+        _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _arrowPlanner.Reset();
+        _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset();
+        foreach (var lane in LanePlanners) lane.Reset();
+        _decision = null; _recoveryCorridor = null;
     }
 
     protected override void OnStop()
@@ -112,9 +123,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
         if (ReplayWorld is { } world)
         {
             _replayVersion = world.Version;
-            _player = world.LocalPlayer is { Dead: false } player ? player.Position : null;
-            _facing = world.LocalPlayer is { Dead: false } facingPlayer ? facingPlayer.Rotation : null;
-            _race?.SynchronizeStatuses(world.LocalPlayer?.Statuses.Select(s => new BlundervilleRaceStatus(s.Id, s.Param, s.ExpiresAt)) ?? [], now);
+            _player = CurrentPlayer is { Dead: false } player ? player.Position : null;
+            _facing = CurrentPlayer is { Dead: false } facingPlayer ? facingPlayer.Rotation : null;
+            _race?.SynchronizeStatuses(CurrentPlayer?.Statuses.Select(s => new BlundervilleRaceStatus(s.Id, s.Param, s.ExpiresAt)) ?? [], now);
             _encounter.Synchronize(world.Actors.Values.Where(a => BlundervilleCatalog.IsActor(a.Oid)).Select(a =>
                 new BlundervilleActor(a.Id, a.Oid, a.Position, a.Dead,
                     a.Cast is { } c ? new(c.ActionId, c.Location, c.Rotation, c.StartedAt, c.FinishAt, a.Position) : null, a.Rotation, a.HitboxRadius)), now);
@@ -138,10 +149,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
             }
             actors.Add(new(id, obj.BaseId, obj.Position, obj.IsDead, cast, obj.Rotation, obj.HitboxRadius));
         }
-        _player = Svc.Objects.LocalPlayer is { IsDead: false } livePlayer ? livePlayer.Position : null;
-        _facing = Svc.Objects.LocalPlayer is { IsDead: false } liveFacing ? liveFacing.Rotation : null;
-        _race?.SynchronizeStatuses(Svc.Objects.LocalPlayer?.StatusList.Select(s => new BlundervilleRaceStatus(s.StatusId, s.Param,
-            Replay.ReplayStatus.Expiration(now, s.RemainingTime))) ?? [], now);
+        _player = CurrentPlayer is { Dead: false } livePlayer ? livePlayer.Position : null;
+        _facing = CurrentPlayer is { Dead: false } liveFacing ? liveFacing.Rotation : null;
+        _race?.SynchronizeStatuses(CurrentPlayer?.Statuses.Select(s => new BlundervilleRaceStatus(s.Id, s.Param, s.ExpiresAt)) ?? [], now);
         _encounter.Synchronize(actors, now);
         _encounter.DeliverySchedule.SetStart(_race is { Course: BlundervilleCourse.Delivery, IsRacing: true, StartedByDirector: true } delivery
             ? delivery.StartedAt : null);
@@ -203,7 +213,7 @@ public abstract class BlundervilleScript : MasterPlayerScript
             _planner.Reset(); _bridgePlanner?.Reset(); _jumpPlanner?.Reset(); _recoveryCorridor = null;
             _decision = null; _jumpExecution.Clear(); _arrowPlanner.Reset(); _bumperPlanner.Reset(); _spinBridge.Reset(); _slimeRamp.Reset(); foreach (var lane in LanePlanners) lane.Reset(); return;
         }
-        var replay = ReplayWorld != null;
+        var replay = IsReplay;
         var motion = default(BlundervilleNativeState);
         Vector3? executionTarget = null;
         if (!replay)
@@ -315,9 +325,9 @@ public abstract class BlundervilleScript : MasterPlayerScript
 
     private void ApplyPendingJump(DateTime now)
     {
-        if (!MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement || !AutomaticRace || ReplayWorld != null
+        if (!MasterPlayer.Settings.MasterPlayerSettings.Instance.EnableSmartMovement || !AutomaticRace || IsReplay
             || !IsMechanismEnabled("竞速路线与机制处理") || _race?.CanJump(now) != true
-            || _decision is not { Hold: false } || Svc.Objects.LocalPlayer is not { IsDead: false } player)
+            || _decision is not { Hold: false } || CurrentPlayer is not { Dead: false } player)
         { _jumpExecution.Clear(); _navigation?.ReleaseJump(); return; }
         if (_jumpExecution.Corridor == null) return;
         var runtime = MasterPlayerPlugin.Instance!.SafeZone;

@@ -260,7 +260,7 @@ internal sealed class VisualScriptEditor
         {
             var position = rule.Position;
             if (ImGui.InputFloat3("固定坐标 X / Y / Z", ref position, format: "%.2f")) { rule.Position = position; _dirty = true; }
-            var player = Svc.Objects.LocalPlayer;
+            var player = PlayerPerspective.LivePlayer;
             ImGui.BeginDisabled(player == null);
             if (ImGui.Button("取玩家坐标") && player != null) { rule.Position = player.Position; _dirty = true; }
             ImGui.EndDisabled();

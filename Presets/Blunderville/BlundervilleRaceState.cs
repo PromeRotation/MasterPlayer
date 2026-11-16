@@ -11,6 +11,7 @@ internal sealed class BlundervilleRaceState
     private readonly Dictionary<uint, BlundervilleRaceStatus> _statuses = [];
     private DateTime _lastTime;
     private bool _ended;
+    private bool _roundActive;
 
     public BlundervilleCourse Course { get; private set; }
     public bool IsRacing { get; private set; }
@@ -68,6 +69,7 @@ internal sealed class BlundervilleRaceState
                 if (IsRacing && Course == course) break;
                 Course = course;
                 IsRacing = true;
+                _roundActive = true;
                 IsPrepared = false;
                 Qualified = false;
                 _ended = false;
@@ -88,6 +90,7 @@ internal sealed class BlundervilleRaceState
             case 6:
             case 8:
                 IsRacing = false;
+                _roundActive = false;
                 IsPrepared = false;
                 _ended = true;
                 break;
@@ -127,6 +130,7 @@ internal sealed class BlundervilleRaceState
             || HasStatus(149, now) || HasStatus(3782, now) || HasStatus(3708, now)) return false;
         Course = course;
         IsRacing = true;
+        _roundActive = true;
         StartedAt = now; StartedByDirector = false;
         RoundVersion++;
         return true;
@@ -176,10 +180,24 @@ internal sealed class BlundervilleRaceState
         return difference <= tolerance;
     }
 
+    public void ResetPerspective()
+    {
+        // Switching the viewed actor invalidates personal status/carry history,
+        // but must keep the Director clock used by the arena's hazard forecasts.
+        _statuses.Clear();
+        Score = _pickupScore = 0;
+        LastCrystalParam = 0;
+        Qualified = false;
+        IsRacing = _roundActive;
+        if (_roundActive) _ended = false;
+        RoundVersion++;
+    }
+
     public void Reset()
     {
         Course = BlundervilleCourse.None;
         IsRacing = false;
+        _roundActive = false;
         IsPrepared = false;
         Qualified = false;
         Score = 0;
@@ -195,6 +213,7 @@ internal sealed class BlundervilleRaceState
     {
         Course = BlundervilleCourse.None;
         IsRacing = false;
+        _roundActive = false;
         IsPrepared = true;
         Qualified = false;
         Score = 0;

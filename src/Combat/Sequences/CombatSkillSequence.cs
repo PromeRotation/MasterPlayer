@@ -52,7 +52,7 @@ internal sealed unsafe class CombatSkillSequence : IDisposable
     private void UpdateCore()
     {
         if (disposed) return;
-        if (MasterPlayerPlugin.Instance?.Replay?.SessionActive == true || !MasterPlayerSettings.Instance.EnableSkillSequences
+        if (PlayerPerspective.IsReplay || !MasterPlayerSettings.Instance.EnableSkillSequences
             || Svc.Objects.LocalPlayer is not { IsDead: false } player)
         {
             Stop();

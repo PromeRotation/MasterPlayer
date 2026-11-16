@@ -27,6 +27,7 @@ internal sealed class MechanicFacingControl : IDisposable
 
     public void Apply(float? heading)
     {
+        if (PlayerPerspective.IsReplay) heading = null;
         Resolve();
         if (_update == null)
         {

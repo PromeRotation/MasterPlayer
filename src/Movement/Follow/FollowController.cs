@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
@@ -47,9 +47,9 @@ public sealed class FollowController : IDisposable
     private void UpdateInternal()
     {
         var settings = MasterPlayerSettings.Instance;
-        var player = Svc.Objects.LocalPlayer;
+        var player = PlayerPerspective.LivePlayer;
 
-        if (player == null || player.IsDead || MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true)
+        if (player == null || player.IsDead || PlayerPerspective.IsReplay)
         {
             ClearFollowGoal();
             return;
