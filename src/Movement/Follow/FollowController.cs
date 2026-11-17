@@ -126,11 +126,17 @@ public sealed class FollowController : IDisposable
         _followGoal = manager.AddGoalArea(template,
             new FollowEntityPosition(targetId, Vector2.Zero, 0, MissingEntityPolicy.RemoveArea),
             windows);
+        // 攻击距离目标区只给解算器用：形状每帧在“整圆 / 扣掉危险的圆”之间切换，读条时还会被撤掉，画出来就是一直闪的绿圈。
+        MasterPlayerPlugin.Instance?.AoeVisibility?.SetNavigationOnly(_followGoal, true);
     }
 
     private void ClearFollowGoal()
     {
-        if (_followGoal.IsValid) _goalManager?.RemoveArea(_followGoal);
+        if (_followGoal.IsValid)
+        {
+            _goalManager?.RemoveArea(_followGoal);
+            MasterPlayerPlugin.Instance?.AoeVisibility?.Remove(_followGoal);
+        }
         _followGoal = default;
         _goalManager = null;
     }

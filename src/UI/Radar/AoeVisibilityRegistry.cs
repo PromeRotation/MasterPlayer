@@ -67,6 +67,7 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
         _nextPruneUtc = now.AddSeconds(0.5);
         foreach (var handle in _areaSources.Keys.Where(h => !manager.ContainsArea(h)).ToArray())
             Remove(handle);
+        _navigationOnly.RemoveWhere(h => !manager.ContainsArea(h));
         foreach (var preview in _previews.Values.Where(p => now >= p.ExpiresUtc).ToArray())
             _previews.Remove(preview.Id);
     }

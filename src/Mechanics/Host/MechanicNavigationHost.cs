@@ -168,8 +168,15 @@ public sealed class MechanicNavigationHost : IDisposable
             _terrainPrims = null;
         }
 
+        // 机制模块自己的绘制（MechanicDrawHost 预览）已画出原始形状；这里注册的危险区/补集目标区按躲避余量外扩过，
+        // 再画一遍就是“外面多一圈”。只给导航用，不画；障碍（地形位图）保持可见。
         _differ.Sync(registry, manager, dangers, obstacles, settings.DodgeDangerMargin,
-            visibility != null ? h => visibility.Track(h, key, typeName) : null);
+            visibility != null ? h =>
+            {
+                visibility.Track(h, key, typeName);
+                if (h.Kind != MasterPlayer.Spatial.SafeZone.AreaKind.Obstacle)
+                    visibility.SetNavigationOnly(h, true);
+            } : null);
 
         ApplyBoundary(module, y);
         if (NavigationActive) ApplyFacing(now);

@@ -208,6 +208,7 @@ public sealed class RadarView
 
         foreach (var goal in snapshot.GoalAreas)
         {
+            if (visibility?.IsNavigationOnly(goal.Handle) == true) continue;
             if (!appearance.IsVisible(goal.Geometry, true, visibility?.GetVisibility(goal.Handle).Radar ?? true))
                 continue;
             var style = appearance.GetSafeStyle();
