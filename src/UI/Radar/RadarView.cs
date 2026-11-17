@@ -29,7 +29,8 @@ public sealed class RadarView
     private static readonly Vector4 RingColor = new(1f, 1f, 1f, 0.08f);
     private static readonly Vector4 TickColor = new(1f, 1f, 1f, 0.16f);
     private static readonly Vector4 BoundaryColor = new(1f, 1f, 1f, 0.80f);
-    private static readonly Vector4 PathColor = new(0.30f, 0.95f, 1f, 0.85f);
+    private static readonly Vector4 PathColor = new(0.30f, 0.95f, 1f, 0.95f);
+    private static readonly Vector4 PathCasingColor = new(0.02f, 0.06f, 0.10f, 0.60f);
     private static readonly Vector4 SelfColor = new(1f, 1f, 1f, 1f);
     private static readonly Vector4 SelfAccentColor = new(0.30f, 0.85f, 1f, 0.85f);
     private static readonly Vector4 SelfHaloColor = new(0.30f, 0.85f, 1f, 0.16f);
@@ -386,11 +387,18 @@ public sealed class RadarView
         }
 
         if (!RadarPathDashes.TryBuild(_pathPoints, animT, _pathDashes)) return;
+        // Dark casing + dim solid track keep the route readable over danger fills; bright dashes show direction.
+        var casing = ImGui.GetColorU32(PathCasingColor);
+        var track = ImGui.GetColorU32(PathColor with { W = PathColor.W * 0.35f });
+        for (var i = 1; i < _pathPoints.Count; ++i)
+            canvas.StrokeSegment(_pathPoints[i - 1], _pathPoints[i], casing, 4.5f);
+        for (var i = 1; i < _pathPoints.Count; ++i)
+            canvas.StrokeSegment(_pathPoints[i - 1], _pathPoints[i], track, 2f);
         foreach (var dash in _pathDashes)
         {
             var color = PathColor;
-            color.W *= 0.45f + 0.55f * dash.Progress;
-            canvas.StrokeSegment(dash.Start, dash.End, ImGui.GetColorU32(color), 2f);
+            color.W *= 0.60f + 0.40f * dash.Progress;
+            canvas.StrokeSegment(dash.Start, dash.End, ImGui.GetColorU32(color), 2.5f);
         }
 
         var destination = _pathPoints[^1];
@@ -399,16 +407,14 @@ public sealed class RadarView
             return;
         }
 
-        _quad[0] = destination + new Vector2(0f, -5f);
-        _quad[1] = destination + new Vector2(5f, 0f);
-        _quad[2] = destination + new Vector2(0f, 5f);
-        _quad[3] = destination + new Vector2(-5f, 0f);
-        canvas.FillPolygon(_quad, ImGui.GetColorU32(PathColor));
+        canvas.FillCircle(destination, 6.5f, casing, 24);
+        canvas.StrokeCircle(destination, 5f, ImGui.GetColorU32(PathColor), 2f, 24);
+        canvas.FillCircle(destination, 2f, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 0.95f)), 12);
 
         var ping = PositiveModulo(animT * 1.5f, 1f);
         var ring = PathColor;
         ring.W *= (1f - ping) * 0.7f;
-        canvas.StrokeCircle(destination, 4f + 5f * ping, ImGui.GetColorU32(ring), 1.5f, 32);
+        canvas.StrokeCircle(destination, 6f + 6f * ping, ImGui.GetColorU32(ring), 1.5f, 32);
     }
 
     private void DrawActors(RadarCanvas canvas, IPlayerCharacter? player, float visibleRadius, float animT)

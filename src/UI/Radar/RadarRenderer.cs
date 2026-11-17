@@ -21,8 +21,18 @@ public sealed class RadarRenderer : IDisposable
     private const float SelfExpireMs = 500f;
 
     private static readonly DrawStyle BoundaryStyle = new(null, new Vector4(1f, 1f, 1f, 0.9f));
-    private static readonly DrawStyle PathLineStyle = new(null, new Vector4(0f, 1f, 1f, 0.6f));
-    private static readonly DrawStyle PathDotStyle = new(new Vector4(0f, 1f, 1f, 0.7f), new Vector4(0f, 1f, 1f, 1f));
+    private static readonly Vector4 PathColor = new(0.30f, 0.95f, 1f, 1f);
+    private static readonly Vector4 PathShadeColor = new(0.02f, 0.10f, 0.16f, 1f);
+    private static readonly DrawStyle PathCoreStyle = new(PathColor with { W = 0.62f }, null);
+    private static readonly DrawStyle PathEdgeStyle = new(PathShadeColor with { W = 0.55f }, null);
+    private static readonly DrawStyle PathChevronStyle = new(new Vector4(1f, 1f, 1f, 0.95f), PathShadeColor with { W = 0.85f }, 1.5f);
+    private static readonly DrawStyle PathGoalRingStyle = new(PathColor with { W = 0.80f }, PathShadeColor with { W = 0.85f }, 1.5f);
+    private static readonly DrawStyle PathGoalDotStyle = new(new Vector4(1f, 1f, 1f, 0.95f), PathShadeColor with { W = 0.85f }, 1.5f);
+
+    private readonly List<Vector3> _pathInput = new(64);
+    private readonly List<Vector3> _pathPoints = new(64);
+    private readonly List<RadarWorldPathQuad> _pathQuads = new(96);
+    private readonly List<RadarWorldPathChevron> _pathChevrons = new(RadarWorldPath.MaxChevrons);
 
     private HashSet<string> _drawnIds = new(StringComparer.Ordinal);
     private HashSet<string> _frameIds = new(StringComparer.Ordinal);
@@ -176,6 +186,7 @@ public sealed class RadarRenderer : IDisposable
             }
     }
 
+    // Route = mitered ribbon + arrow heads flowing to the destination + a pulsing destination marker.
     private void DrawPath(PromeRotation.Plugin plugin, HashSet<string> frameIds)
     {
         var path = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution?.ExecutablePath;
@@ -184,21 +195,60 @@ public sealed class RadarRenderer : IDisposable
             return;
         }
 
-        var draw = plugin.DrawManager;
-        for (var i = 0; i < path.Count; i++)
+        _pathInput.Clear();
+        foreach (var waypoint in path)
         {
-            var dotId = $"{IdPrefix}Path_Dot_{i}";
-            draw.Add(dotId, HostDrawingGeometry.Convert(new CircleGeometry(path[i].Position, 0.3f)), PathDotStyle, durationMs: SelfExpireMs);
-            frameIds.Add(dotId);
-
-            if (i > 0)
-            {
-                var segmentId = $"{IdPrefix}Path_Seg_{i}";
-                draw.AddTether(segmentId, path[i - 1].Position, path[i].Position, PathLineStyle,
-                    width: 0.15f, endRadius: 0f, durationMs: SelfExpireMs);
-                frameIds.Add(segmentId);
-            }
+            _pathInput.Add(waypoint.Position);
         }
+
+        var time = Environment.TickCount64 % 3_600_000L / 1000d;
+        if (!RadarWorldPath.TryBuild(_pathInput, time, _pathPoints, _pathQuads, _pathChevrons, out var destination))
+        {
+            return;
+        }
+
+        var draw = plugin.DrawManager;
+        for (var i = 0; i < _pathQuads.Count; i++)
+        {
+            var quad = _pathQuads[i];
+            AddPathPolygon(draw, frameIds, $"{IdPrefix}Path_Quad_{i}",
+                quad.Part == RadarWorldPathPart.Core ? PathCoreStyle : PathEdgeStyle,
+                quad.A, quad.B, quad.C, quad.D);
+        }
+
+        for (var i = 0; i < _pathChevrons.Count; i++)
+        {
+            var chevron = _pathChevrons[i];
+            AddPathPolygon(draw, frameIds, $"{IdPrefix}Path_Chevron_{i}", PathChevronStyle,
+                chevron.Tip, chevron.LeftFront, chevron.LeftBack, chevron.Notch, chevron.RightBack, chevron.RightFront);
+        }
+
+        var pulse = (float)(time * 0.9d % 1d);
+        var pulseColor = PathColor with { W = 0.75f * (1f - pulse) };
+        AddPathShape(draw, frameIds, IdPrefix + "Path_GoalPulse",
+            new CircleGeometry(destination, 0.50f + 0.60f * pulse), new DrawStyle(null, pulseColor, 2f));
+        AddPathShape(draw, frameIds, IdPrefix + "Path_GoalRing", new DonutGeometry(destination, 0.30f, 0.44f), PathGoalRingStyle);
+        AddPathShape(draw, frameIds, IdPrefix + "Path_GoalDot", new CircleGeometry(destination, 0.13f), PathGoalDotStyle);
+    }
+
+    private static void AddPathPolygon(PromeRotation.Spatial.Drawing.DrawManager draw, HashSet<string> frameIds,
+        string id, DrawStyle style, params Vector3[] points)
+    {
+        try
+        {
+            AddPathShape(draw, frameIds, id, new WorldPolygonGeometry(points), style);
+        }
+        catch (ArgumentException)
+        {
+            // A degenerate sliver on a very sharp turn is skipped rather than failing the whole frame.
+        }
+    }
+
+    private static void AddPathShape(PromeRotation.Spatial.Drawing.DrawManager draw, HashSet<string> frameIds,
+        string id, IGeometryShape shape, DrawStyle style)
+    {
+        draw.Add(id, HostDrawingGeometry.Convert(shape), style, durationMs: SelfExpireMs);
+        frameIds.Add(id);
     }
 
 }
