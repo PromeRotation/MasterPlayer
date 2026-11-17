@@ -82,9 +82,10 @@ public sealed partial class MainWindow
             settings.Save();
         }
         Md.EndCard();
-        _mechanicsPage = Md.Segmented("##mechanics_sections", ["机制脚本", "按区域启停"], _mechanicsPage, Md.Em * 14);
+        _mechanicsPage = Md.Segmented("##mechanics_sections", ["机制脚本", "副本列表", "按区域启停"], _mechanicsPage, Md.Em * 21);
         Md.Gap(0.3f);
         if (_mechanicsPage == 0) DrawScriptsTab();
+        else if (_mechanicsPage == 1) DrawDutiesTab();
         else DrawTerritories();
     }
 
