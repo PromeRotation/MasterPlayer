@@ -14,7 +14,7 @@
 
 下文旧开关/界面描述与本节冲突时，以本节及当前源码为准；参考仓库、主线程纪律及机制规格继续有效。
 
-**脚本当前玩家约定**：统一使用 `MasterPlayerScript.CurrentPlayer` / `CurrentPlayerId`（来自 `IScriptHostContext`）：正常游戏取本人，ARR 取当前观看角色，MP 离线回放只取录制角色。`IsReplay` 同时覆盖 ARR 与离线回放；切人由 `OnCurrentPlayerChanged(previous, current)` 通知，保持战斗状态。不得在脚本中直读本地玩家或复制 ARR 判断。实现与迁移约束见 §5.6.2。
+**脚本当前玩家约定**：统一使用 `MasterPlayerScript.CurrentPlayer` / `CurrentPlayerId`（来自 `IScriptHostContext`）：正常游戏取本人，ARR 优先取队伍列表等方式点选的玩家、无玩家目标时取观看角色，MP 离线回放只取录制角色。`IsReplay` 同时覆盖 ARR 与离线回放；切人由 `OnCurrentPlayerChanged(previous, current)` 通知，保持战斗状态。不得在脚本中直读本地玩家或复制 ARR 判断。实现与迁移约束见 §5.6.2。
 
 ## 1. 项目定位
 
@@ -665,8 +665,8 @@ public readonly record struct GreenMovePoint(
 
 ### 5.6.2 脚本当前玩家与回放视角
 
-- **唯一入口由 MP 提供**：`IScriptHostContext` 与 `MasterPlayerScript` 暴露 `ReplayActorState? CurrentPlayer`、`ulong CurrentPlayerId`、`bool IsReplay`。快照包含身份、位置、朝向、职业、血量、读条、状态和连线；缺失时分别返回 null / 0。正常游戏取本人；ARR（游戏内副本录像）取当前观看角色；MP 离线回放只取 `ReplayWorld.LocalPlayer`，缺对象绝不回退实时本人。队伍分工按该 ID 从原队伍表查找，不重排队伍。
-- **脚本只消费当前玩家**：ARR 检测、观看对象解析集中在 `src/Core/DutyReplayState.cs` / `PlayerPerspective.cs`；已核对当前 CN DLL：`ConditionFlag.DutyRecorderPlayback` 为 86，`TargetSystem.TargetObjectId.ObjectId` 对应 Kodakku 读取的 0x140 字段。不依赖 Kodakku 或 ARR IPC，不修改游戏指针。只有 MP 底层适配器可以据此读取 Dalamud/FFCS；脚本不得直接把 `Svc.Objects.LocalPlayer`、旧 `Svc.ClientState.LocalPlayer` 或同义宿主助手当作机制中的“我”，也不得各自复制 ARR 判断。
+- **唯一入口由 MP 提供**：`IScriptHostContext` 与 `MasterPlayerScript` 暴露 `ReplayActorState? CurrentPlayer`、`ulong CurrentPlayerId`、`bool IsReplay`。快照包含身份、位置、朝向、职业、血量、读条、状态和连线；缺失时分别返回 null / 0。正常游戏取本人；ARR（游戏内副本录像）优先取当前点选的玩家（包括队伍列表点选），未选中玩家时取 ARR 观看角色；选中敌人不将敌人作为当前玩家；MP 离线回放只取 `ReplayWorld.LocalPlayer`，缺对象绝不回退实时本人。队伍分工按该 ID 从原队伍表查找，不重排队伍。
+- **脚本只消费当前玩家**：ARR 检测、观看对象解析集中在 `src/Core/DutyReplayState.cs` / `PlayerPerspective.cs`；已核对当前 CN DLL：`ConditionFlag.DutyRecorderPlayback` 为 86；先读取 `Svc.Targets.Target` 中的有效玩家，再回退到 `TargetSystem.TargetObjectId.ObjectId`（对应 Kodakku 读取的 0x140 字段）。队伍点选与观看字段必须分别验证，不能只模拟后者就认为实机切人已验证。不依赖 Kodakku 或 ARR IPC，不修改游戏指针。只有 MP 底层适配器可以据此读取 Dalamud/FFCS；脚本不得直接把 `Svc.Objects.LocalPlayer`、旧 `Svc.ClientState.LocalPlayer` 或同义宿主助手当作机制中的“我”，也不得各自复制 ARR 判断。
 - **切人保持场景状态**：基类先调用 `protected virtual OnCurrentPlayerChanged(ulong previous, ulong current)`，再调用当帧 `OnUpdate`；无效对象也作为 ID 0 通知。脚本在此清理个人输出、失效个人缓存并立即刷新，不重启整份脚本或丢弃已收到的战斗事件。模块绘制、文字及 AI 提示按观看角色所在槽位计算；解算切人时取消旧路径。角色相关机制应维护必要的个人历史，切人后按新角色 ID 选择对应状态。
 - **观看身份与执行权限分开**：`IsReplay` 表示 ARR 或 MP 离线回放，`ReplayWorld != null` 只表示 MP 离线回放。宿主阻止两种回放中的实际移动、转向、自动动作及遥控发送；ARR 保留实时事件采样、绘制与路线规划。`OnPlayerDied` / `OnPlayerRevived` 的本人事件在 ARR 中不转发给脚本，观看角色的生死从 `CurrentPlayer.Dead` 判断，不可因录制者死亡清掉全场机制状态。不得把 `ScriptManager.ReplayModeActive` 设为 true 来模拟 ARR。
 - **迁移包括外部脚本**：内置地城、糖豆人、斗兽脚本已接入入口；原生执行层仍须通过回放门控。外部旧源码/DLL 直接读取 Dalamud 时不会自动改变行为，应改用上述公共 API 并重新编译。外部脚本须配套提供这些入口的新 MP DLL；仅刷新旧脚本不能升级插件 API。

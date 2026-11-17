@@ -11,6 +11,7 @@ internal sealed class MasterPlayerPlugin : IDisposable
     public static MasterPlayerPlugin? Instance { get; private set; }
     public SafeZoneRuntime SafeZone { get; }
     public ReplayState Scripts { get; } = new();
+    public Radar.AoeVisibilityRegistry? AoeVisibility { get; set; }
 
     public MasterPlayerPlugin(IGreenMoveSystem? movement = null,
         Func<bool>? externalMovementEnabled = null, Func<bool>? externalHasControl = null)

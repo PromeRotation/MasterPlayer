@@ -15,6 +15,9 @@ internal static class PlayerPerspective
         get
         {
             if (!IsDutyReplay) return Svc.Objects?.LocalPlayer;
+            // Party-list selection can change independently of ARR's camera subject.
+            if (Svc.Targets?.Target is IPlayerCharacter selected && selected.EntityId is not (0 or 0xE0000000))
+                return selected;
             var target = TargetSystem.Instance();
             var id = target != null ? target->TargetObjectId.ObjectId : 0;
             return id is 0 or 0xE0000000 ? null : Svc.Objects.SearchByEntityId(id) as IPlayerCharacter;

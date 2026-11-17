@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -41,9 +42,19 @@ internal static class PlayerPerspectiveRegression
         {
             using var scope = new Scope();
             scope.Target->TargetObjectId = 2;
+            scope.Selected = 2;
             Check(PlayerPerspective.GetId() == 1, "A normal hard target changed the local perspective.");
             scope.Playback = true;
+            scope.Target->TargetObjectId = 1;
             Check(PlayerPerspective.GetId() == 2 && PlayerPerspective.LivePlayer!.Position.X == 12, "ARR did not select B.");
+            scope.Selected = 1;
+            Check(PlayerPerspective.GetId() == 1, "ARR party-list selection did not return to A.");
+            scope.Selected = 2;
+            Check(PlayerPerspective.GetId() == 2, "ARR kept A's camera subject after selecting B in the party list.");
+            scope.Target->TargetObjectId = 2;
+            scope.Selected = 99;
+            Check(PlayerPerspective.GetId() == 2, "An enemy target replaced the ARR player perspective.");
+            scope.Selected = 0;
             scope.Target->TargetObjectId = 1;
             Check(PlayerPerspective.GetId() == 1, "ARR did not return to A.");
             foreach (var id in new uint[] { 0, 0xE0000000, 99 })
@@ -103,15 +114,24 @@ internal static class PlayerPerspectiveRegression
     {
         private readonly IObjectTable _objects = Svc.Objects;
         private readonly ICondition _condition = Svc.Condition;
+        private readonly ITargetManager _targets = Svc.Targets;
         private readonly nint _targetAddress = TargetSystem.Addresses.Instance.Value;
         public TargetSystem* Target { get; } = (TargetSystem*)NativeMemory.AllocZeroed((nuint)sizeof(TargetSystem));
         public bool Playback, RejectLiveReads;
+        public uint Selected;
         public Scope()
         {
             var a = Player(1, 0); var b = Player(2, 12);
+            var enemy = ScriptServiceProxy.Create<IGameObject>((_, _) => throw new InvalidOperationException("Enemy target was used as a player."));
             TargetSystem.Addresses.Instance.Value = (nint)Target;
             Set(nameof(Svc.Condition), ScriptServiceProxy.Create<ICondition>((name, args) =>
                 name == "get_Item" && (ConditionFlag)args[0]! == ConditionFlag.DutyRecorderPlayback && Playback));
+            Set(nameof(Svc.Targets), ScriptServiceProxy.Create<ITargetManager>((name, _) =>
+            {
+                if (RejectLiveReads) throw new InvalidOperationException("Offline touched live targets.");
+                return name == "get_Target" ? Selected switch { 1 => a, 2 => b, 0 => null, _ => enemy }
+                    : throw new NotSupportedException(name);
+            }));
             Set(nameof(Svc.Objects), ScriptServiceProxy.Create<IObjectTable>((name, args) =>
             {
                 if (RejectLiveReads) throw new InvalidOperationException("Offline touched live objects.");
@@ -135,6 +155,7 @@ internal static class PlayerPerspectiveRegression
         public void Dispose()
         {
             Set(nameof(Svc.Objects), _objects); Set(nameof(Svc.Condition), _condition);
+            Set(nameof(Svc.Targets), _targets);
             TargetSystem.Addresses.Instance.Value = _targetAddress;
             NativeMemory.Free(Target);
         }
