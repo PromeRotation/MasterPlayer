@@ -174,9 +174,6 @@ public sealed class ReplayTimeline
                 case LogSystemNpcYellEvent yell:
                     ticks.Add(new ReplayTick(t, ReplayLane.Misc, "NpcYell", $"台词 #{yell.NpcYellId}", yell.SourceId, null));
                     break;
-                case LogSystemInstanceContentTextEvent contentText:
-                    ticks.Add(new ReplayTick(t, ReplayLane.Misc, "InstanceContentText", $"台词 {contentText.RowID}：{contentText.Text}", null, null));
-                    break;
                 case LogSystemObjectCreateEvent create:
                     ticks.Add(new ReplayTick(t, ReplayLane.Misc, "ObjectCreate", $"出现 {create.Name}（{create.DataId}）", create.SourceId, create.DataId));
                     break;
@@ -209,6 +206,13 @@ public sealed class ReplayTimeline
                     break;
                 case LogSystemWeatherChangedEvent weather:
                     ticks.Add(new ReplayTick(t, ReplayLane.Misc, "WeatherChanged", $"天气 #{weather.WeatherId}", null, null));
+                    break;
+                // 新版 PR 提供此事件，NuGet SDK 的宿主引用尚未定义它。
+                case { } contentText when contentText.GetType().FullName == "PromeRotation.LogSystem.LogSystemInstanceContentTextEvent":
+                    var eventType = contentText.GetType();
+                    var rowId = eventType.GetProperty("RowID")?.GetValue(contentText);
+                    var text = eventType.GetProperty("Text")?.GetValue(contentText);
+                    ticks.Add(new ReplayTick(t, ReplayLane.Misc, "InstanceContentText", $"台词 {rowId}：{text}", null, null));
                     break;
                 default:
                     ticks.Add(new ReplayTick(t, ReplayLane.Misc, entry.Event.Kind.ToString(), "", null, null));

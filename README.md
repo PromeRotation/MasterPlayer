@@ -106,6 +106,20 @@ dotnet run --project tests/MechanicRuntime/MasterPlayer.MechanicRuntime.Tests.cs
 
 在游戏内 PR 插件管理器中启用 PromeRadar；重新构建后在插件管理器热重载即可，无需重启游戏。替换前建议先给旧 DLL 加时间戳备份。
 
+### 发布
+
+维护者在 GitHub Actions 的 **Release PromeRadar** 中选择 `main`，填写新的四段插件版本（如 `0.1.0.1`）。工作流从 NuGet 还原 `PromeRotation.SDK.CNGL`，构建并发布 `PromeRadar-v<版本>.zip` 和 `masterplayer.json`，再将同一份 JSON 提交到 `main`，供 PR 检查更新。
+
+SDK 版本和对应的 Dalamud API 级别固定在 `Directory.Build.props`。当前为 `0.1.0-preview.3`（PR 1.5.9.4、Dalamud API 15）。清单从编译引用读取 PR 程序集版本。发布包使用宿主提供的 `PromeRotation.Scripting`。
+
+本地可用相同的 NuGet 依赖构建到 `bin/Release`：
+
+```powershell
+dotnet build MasterPlayer.csproj -c Release -p:CI=true -p:UsePromeRotationSdk=true
+```
+
+若 Release 已公开而下载源未更新，使用 **Re-run jobs** 重跑同一次任务，工作流会校验已发布的 ZIP，并用原清单补交下载源。
+
 ---
 
 ## 机制脚本

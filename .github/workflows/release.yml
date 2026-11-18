@@ -1,0 +1,47 @@
+name: Release PromeRadar
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '插件版本，四段数字，例如 0.1.0.1'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promeradar-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PLUGIN_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: 还原 NuGet 依赖、构建并生成 ZIP 和插件清单
+        shell: pwsh
+        run: |
+          ./tools/release/New-PromeRadarPackage.ps1 `
+            -Version $env:PLUGIN_VERSION `
+            -Repository $env:GITHUB_REPOSITORY `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'promeradar-release')
+
+      - name: 发布 Release 并更新下载源
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python ./tools/release/publish.py (Join-Path $env:RUNNER_TEMP 'promeradar-release') $env:PLUGIN_VERSION

@@ -232,7 +232,7 @@ internal sealed class SmartMovementIntegration : IDisposable
         if (dtr != null)
         {
             dtr.OnClick = null;
-            dtr.Dispose();
+            dtr.Remove();
             dtr = null;
         }
     }

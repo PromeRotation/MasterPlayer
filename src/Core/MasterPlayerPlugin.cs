@@ -14,7 +14,7 @@ namespace MasterPlayer;
     name: "PromeRadar",
     author: "XSZ",
     description: "雷达悬浮窗 + 真实世界绘制 + 智能走位 + 机制库 + 录制回放",
-    version: "0.1.0.0")]
+    version: PluginBuildVersion.Value)]
 public sealed class MasterPlayerPlugin : IPromePlugin
 {
     private const string PanelCommand = "/prpr";

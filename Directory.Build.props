@@ -7,7 +7,11 @@
     <PromeRotationInstalledDirectories Condition="'$(PromeRotationPath)' == '' and Exists('$(XIVLauncherRoot)\installedPlugins\PromeRotation')">$([System.IO.Directory]::GetDirectories('$(XIVLauncherRoot)\installedPlugins\PromeRotation'))</PromeRotationInstalledDirectories>
     <PromeRotationPath Condition="'$(PromeRotationPath)' == '' and '$(PromeRotationInstalledDirectories)' != '' and !$(PromeRotationInstalledDirectories.Contains(';'))">$(PromeRotationInstalledDirectories)</PromeRotationPath>
   </PropertyGroup>
-  <Target Name="ValidateDevelopmentDependencies" BeforeTargets="ResolveAssemblyReferences">
+  <PropertyGroup Condition="'$(UsePromeRotationSdk)' == 'true'">
+    <PromeRotationSdkVersion>0.1.0-preview.3</PromeRotationSdkVersion>
+    <PromeRotationSdkDalamudApiLevel>15</PromeRotationSdkDalamudApiLevel>
+  </PropertyGroup>
+  <Target Name="ValidateDevelopmentDependencies" BeforeTargets="ResolveAssemblyReferences" Condition="'$(UsePromeRotationSdk)' != 'true'">
     <Error Condition="!Exists('$(DalamudRoot)\Dalamud.dll')" Text="Dalamud 开发依赖不存在，请设置 DalamudRoot 或 XIVLauncherRoot。" />
     <Error Condition="'$(MSBuildProjectName)' != 'MasterPlayer.MechanicRuntime' and '$(MSBuildProjectName)' != 'MasterPlayer.MechanicRuntime.Tests' and !Exists('$(PromeRotationPath)\PromeRotation.dll')" Text="请设置 PromeRotationPath 为实际使用的 PR DLL 目录；多个安装版本需要明确指定。也可通过 PromeRotationRoot 指定本体源码仓库。" />
   </Target>

@@ -25,6 +25,14 @@
     <ProjectReference Include="MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
     <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\PromeRotation.LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UsePromeRotationSdk)' == 'true'">
+    <PackageReference Include="PromeRotation.SDK.CNGL" Version="[$(PromeRotationSdkVersion)]" GeneratePathProperty="true" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" ExcludeAssets="runtime;analyzers" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UsePromeRotationSdk)' != 'true'">
     <Reference Include="Dalamud">
       <HintPath>$(DalamudRoot)\Dalamud.dll</HintPath>
       <Private>false</Private>
@@ -71,8 +79,18 @@
     </Reference>
   </ItemGroup>
 
+  <Target Name="GeneratePluginBuildVersion" BeforeTargets="CoreCompile" DependsOnTargets="GetAssemblyVersion">
+    <WriteLinesToFile File="$(IntermediateOutputPath)PluginBuildVersion.g.cs"
+                      Lines="namespace MasterPlayer%3B internal static class PluginBuildVersion { public const string Value = &quot;$(AssemblyVersion)&quot;%3B }"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)PluginBuildVersion.g.cs" />
+      <FileWrites Include="$(IntermediateOutputPath)PluginBuildVersion.g.cs" />
+    </ItemGroup>
+  </Target>
+
   <!-- PR 子插件需要 PromeRotation.Scripting.dll 在插件目录（PR 加载器在该目录解析子插件依赖） -->
-  <Target Name="CopyPromeRotationScripting" AfterTargets="Build">
+  <Target Name="CopyPromeRotationScripting" AfterTargets="Build" Condition="'$(UsePromeRotationSdk)' != 'true'">
     <Copy SourceFiles="$(PromeRotationPath)\PromeRotation.Scripting.dll"
           DestinationFolder="$(OutputPath)"
           SkipUnchangedFiles="true" />

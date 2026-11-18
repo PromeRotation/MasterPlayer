@@ -36,7 +36,7 @@ MasterPlayer 是 **PromeRotation（PR）的卫星插件**，不是独立 Dalamud
 
 查询 API 时按归属查阅对应仓库：PR 封装查 PromeRotation，卫月服务与接口查 Dalamud，游戏原生结构与函数查 FFCS。核对具体签名、类型和调用约束，不凭记忆臆造成员；同时确认源码版本与当前编译引用及运行环境匹配。
 
-> **警告：编译必须引用用户实际运行的那份 PromeRotation.dll**（默认自动发现单个已安装版本，可用 `PromeRotationPath` 指定 DLL 目录，或经 `PromeRotationRoot` 引用本体仓库的 `bin\Debug`）。PR 本体更新后必须重新编译本插件，否则运行时出现 `MissingMethodException` / 类型身份不一致。分发时目标用户的 PR 版本必须与编译引用版本一致。
+> **本地部署默认引用实际运行的 PromeRotation.dll**（默认自动发现单个已安装版本，可用 `PromeRotationPath` 指定 DLL 目录，或经 `PromeRotationRoot` 引用本体仓库的 `bin\Debug`）。手动发布工作流使用固定的 `PromeRotation.SDK.CNGL` 引用，清单记录编译所用的 PR 版本和 Dalamud API 级别。升级宿主或 SDK 后须重编并验证接口兼容性。
 
 ## 3. 目录结构与共享契约
 
@@ -510,7 +510,7 @@ public sealed class ScriptManager : IDisposable
 
 ## 4. 开发模式 / 构建部署
 
-### 4.1 构建前置
+### 4.1 本地部署构建前置
 
 1. **.NET 11 SDK 与实际运行的 PR DLL 就位**：`Directory.Build.props` 在当前用户仅安装一个 PR 版本时自动引用 `%AppData%\XIVLauncherCN\installedPlugins\PromeRotation\<版本>\`；多个版本时必须指定 `PromeRotationPath`。设置 `PromeRotationRoot` 时仍使用该源码仓库的 `PromeRotation\bin\Debug\` 产物。
 2. **Dalamud CN 开发 DLL 就位**：`%AppData%\XIVLauncherCN\addon\Hooks\dev\` 下有 `Dalamud.dll`、`Dalamud.Bindings.ImGui.dll`、`FFXIVClientStructs.dll`、`Lumina.dll` 等（装了 XIVLauncherCN 开发者模式即有）。
@@ -639,7 +639,7 @@ public readonly record struct GreenMovePoint(
 
 > **注意**：`Microsoft.CodeAnalysis` 两项是 2025-09 月为支持子插件 Roslyn 热编译新加入白名单的（本体 fork `PromeExAssemblyLoader.cs` 本地修改），**依赖重新构建并部署后的本体 DLL 才生效**（部署前该版本本体仍按旧白名单运行）。
 
-例外：**仅 `PromeRotation.Scripting.dll` 需要随包拷贝到插件目录**（PR 加载器在该目录解析子插件依赖，本体版本一致无冲突），由 csproj 里 `AfterTargets="Build"` 的拷贝目标自动完成（照抄 PromePainter.csproj 的 `CopyPromeRotationScripting` target）。**`MasterPlayer.MechanicRuntime.dll` 同样随包输出**（csproj `ProjectReference` 默认 Private=true；MechanicRuntime 自身的 Dalamud/FFCS/Lumina 等引用全是 Private=false 白名单共享程序集，不拷包）。
+本地直接部署时，`CopyPromeRotationScripting` 仍将宿主的实际 `PromeRotation.Scripting.dll` 复制到输出目录。使用 NuGet SDK 构建的 Release 由 PR 加载器解析宿主的脚本程序集。**`MasterPlayer.MechanicRuntime.dll` 随包输出**（csproj `ProjectReference` 默认 Private=true），其他共享程序集由宿主提供。
 
 **白名单之外的依赖不进包**（csproj 保持 `Private=false`）：PR 加载器只解析白名单到宿主，其余依赖 miss 后由 `src/Scripting/HostDependencyProbe.cs` 的 ALC `Resolving` 兜底——按「插件自身目录 → 宿主 PR 安装目录」顺序探测同名 DLL 并流式加载（宿主目录里的依赖版本天然与运行中本体一致）。该探针现在作为白名单方案的额外兜底保留。新增非白名单依赖无需改 csproj；仅当两处目录都没有该 DLL 时才会加载失败（报原始 `FileNotFoundException`）。
 
