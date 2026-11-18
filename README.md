@@ -7,6 +7,16 @@
 
 为保持已安装插件、外部脚本与配置兼容，插件 ID、程序集、命名空间和数据目录仍沿用 `MasterPlayer` 命名。
 
+## 安装
+
+插件链接（PR 社区插件 JSON 来源）：
+
+```text
+https://raw.githubusercontent.com/PromeRotation/MasterPlayer/main/masterplayer.json
+```
+
+在 PR 插件管理器打开「插件下载」→「管理社区插件 JSON 来源」，添加上面的地址，刷新目录后安装 **PromeRadar**，再到插件管理器启用。详见 [快速开始](docs/快速开始.md)。
+
 ---
 
 ## 功能
