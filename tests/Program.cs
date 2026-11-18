@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.Json;
 using MasterPlayer.Dodge;
+using MasterPlayer.Mechanics.PilgrimsTraverse;
 using MasterPlayer.Radar;
 using MasterPlayer.Settings;
 using PromeRotation.Helpers;
@@ -48,10 +49,32 @@ if (args.Contains("--upstream-sync"))
 }
 
 Run("PT30 native encounter", NativePt30Tests.Run);
+Run("PT30 central hole uses boundary styling", () =>
+{
+    var now = DateTime.UtcNow;
+    var visibility = new AoeVisibilityRegistry([], () => now);
+    using var manager = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
+    var binding = new StaticTransform(Vector3.Zero, 0);
+    var hole = manager.AddObstacle(Pt30Arena.Hole(0), binding);
+    var ordinary = manager.AddObstacle(new CircleTemplate(2), binding);
+    visibility.Track(hole, "script/promeradar.pt30/", "PT30", drawAsBoundary: true);
+    visibility.Track(ordinary, "script/other/", "Other obstacle");
+
+    var snapshot = manager.BuildSnapshot(now);
+    Check(snapshot.DangerAreas.Count == 0 && snapshot.HardObstacles.Single(o => o.Handle == hole).Geometry.Contains(new(-300, 0, -300)),
+        "The central hole must remain a hard obstacle.");
+    Check(visibility.DrawsAsBoundary(hole) && !visibility.IsNavigationOnly(hole) && !visibility.DrawsAsBoundary(ordinary),
+        "Only the terrain obstacle should be visible as a boundary.");
+
+    manager.RemoveArea(hole);
+    visibility.Update(manager);
+    Check(!visibility.DrawsAsBoundary(hole), "Removing the obstacle must clear its drawing classification.");
+});
 Run("PT30 follow footprint", Pt30FollowFootprintTests.Run);
 Run("PT30 temporal windows and swept balls", Pt30TemporalRegression.Run);
 Run("PT30 partial refuge refresh", Pt30PassageRegression.PartialRefugeRefresh);
 Run("PT30 recorded Reach passages", Pt30PassageRegression.Run);
+Run("PT30 recorded moving balls safe refuge", Pt30MovingBallRecordedRegression.Run);
 
 for (var flags = 0; flags < 8; flags++)
 {

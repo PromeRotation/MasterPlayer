@@ -79,6 +79,22 @@ internal static partial class FollowRegression
             Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).Version == first.Version, "An unchanged goal must not invalidate each solve.");
         });
 
+        run("PT30 safe refuge suspends optional follow until the owner releases it", () =>
+        {
+            using var scope = new FollowScope();
+            var runtime = MasterPlayerPlugin.Instance!.SafeZone;
+            var owner = new object();
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "Follow must register its ordinary goal first.");
+            runtime.RequestAutomaticMovement(owner, true, preferSafeRefuge: true);
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 0 && scope.StopCount == 0,
+                "Safe refuge must clear the optional goal without stopping GreenMove.");
+            runtime.RequestAutomaticMovement(owner, false);
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "Follow must resume after the owner releases safe refuge.");
+        });
+
         run("Follow updates its goal when distance or target size changes", () =>
         {
             using var scope = new FollowScope();

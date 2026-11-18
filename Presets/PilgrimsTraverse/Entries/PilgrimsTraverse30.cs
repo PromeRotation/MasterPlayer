@@ -140,10 +140,7 @@ public sealed class PilgrimsTraverse30 : MasterPlayerScript
             manager.SetArenaBoundary(boundary);
         }
         if (!manager.ContainsArea(hole))
-        {
-            hole = SafeZone.AddObstacle(Pt30Arena.Hole(player.Position.Y), new StaticTransform(Vector3.Zero, 0));
-            SafeZone.SetNavigationOnly(hole, true);
-        }
+            hole = SafeZone.AddTerrainObstacle(Pt30Arena.Hole(player.Position.Y), new StaticTransform(Vector3.Zero, 0));
         var wanted = encounter.Hazards(now, CurrentPlayerId, player.Position);
         var nextHalo = wanted.Where(h => h.Shape is DonutTemplate).MinBy(h => h.From);
         var keys = wanted.Select(h => h.Key).ToHashSet();
@@ -186,7 +183,8 @@ public sealed class PilgrimsTraverse30 : MasterPlayerScript
             : encounter.ReachGoal;
         runtime.RequestAutomaticMovement(this, !IsReplay, goalDirectedTemporalPlanning: encounter.ReachGoal != null,
             hardSafetyMargin: Pt30Encounter.NAVIGATION_GRID_MARGIN, arenaSafetyMargin: Pt30Encounter.NAVIGATION_GRID_MARGIN,
-            noEscapeDelay: encounter.BallCount > 0 || encounter.Remaining > 0 || encounter.ReachGoal != null);
+            noEscapeDelay: encounter.BallCount > 0 || encounter.Remaining > 0 || encounter.ReachGoal != null,
+            preferSafeRefuge: encounter.BallCount > 0);
         if (desiredGoal is { } destination)
         {
             var binding = new StaticTransform(destination.Position, destination.Rotation);

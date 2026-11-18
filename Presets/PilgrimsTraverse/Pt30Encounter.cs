@@ -28,7 +28,7 @@ internal sealed class Pt30Encounter
     }
     private readonly Dictionary<string, Hazard> casts = [];
     private readonly Dictionary<string, DateTime> castFinishTimes = [];
-    private readonly Dictionary<ulong, (Actor Actor, DateTime At, float Velocity)> balls = [];
+    private readonly Dictionary<ulong, BallMotion> balls = [];
     private readonly HashSet<ulong> activeBalls = [];
     private readonly HashSet<ulong> inactiveBalls = [];
     private readonly HashSet<(ulong, uint)> seenEffects = [];
@@ -59,19 +59,10 @@ internal sealed class Pt30Encounter
         foreach (var ball in list.Where(a => a.Oid == BALL_OID && !a.Dead && !inactiveBalls.Contains(a.Id)))
         {
             seen.Add(ball.Id);
-            var velocity = 0f;
-            if (balls.TryGetValue(ball.Id, out var old))
-            {
-                var elapsed = (float)(now - old.At).TotalSeconds;
-                velocity = old.Velocity;
-                if (elapsed > .05f && Vector3.DistanceSquared(ball.Position, old.Actor.Position) > .0025f)
-                {
-                    var delta = MathF.IEEERemainder(Angle(ball.Position) - Angle(old.Actor.Position), 2 * MathF.PI);
-                    velocity = Math.Clamp(delta / elapsed, -.8f, .8f);
-                }
-                else if (elapsed > .05f) velocity *= .5f;
-            }
-            balls[ball.Id] = (ball, now, velocity);
+            if (balls.TryGetValue(ball.Id, out var motion))
+                motion.Observe(ball.Position, now);
+            else
+                balls.Add(ball.Id, new(ball.Position, now));
         }
         foreach (var id in balls.Keys.Where(id => !seen.Contains(id)).ToArray()) balls.Remove(id);
         foreach (var key in casts.Where(p => now > p.Value.Until).Select(p => p.Key).ToArray()) casts.Remove(key);
@@ -177,7 +168,7 @@ internal sealed class Pt30Encounter
         {
             if (MathF.Abs(ball.Velocity) < .02f)
             {
-                result.Add(new($"ball/{id}/0", "Bounds of Indulgence", new CircleTemplate(4), ball.Actor.Position, 0, now, DateTime.MaxValue)
+                result.Add(new($"ball/{id}/0", "Bounds of Indulgence", new CircleTemplate(4), ball.Position, 0, now, DateTime.MaxValue)
                     { HasMotionEnvelope = true });
                 continue;
             }
@@ -186,16 +177,16 @@ internal sealed class Pt30Encounter
             const float slot = .5f, timeReserve = .1f;
             // Cover the solver's entire ten-second horizon: ending after two
             // seconds lets SIPP repeatedly wait for a fictitious disappearance.
+            var angle = Angle(ball.Position);
+            var radius = Radius(ball.Position);
+            var sagitta = radius * (1 - MathF.Cos(MathF.Abs(ball.Velocity) * (slot * .5f + timeReserve)));
             for (var i = 0; i < BALL_PREDICTION_SLICES; i++)
             {
-                var angle = Angle(ball.Actor.Position);
-                var radius = Radius(ball.Actor.Position);
-                var from = Point(angle + ball.Velocity * (i * slot - timeReserve), radius, ball.Actor.Position.Y);
-                var to = Point(angle + ball.Velocity * ((i + 1) * slot + timeReserve), radius, ball.Actor.Position.Y);
-                var sagitta = radius * (1 - MathF.Cos(MathF.Abs(ball.Velocity) * (slot * .5f + timeReserve)));
-                result.Add(new($"ball/{id}/{i}", "Bounds of Indulgence 移动预测", new Pt30BallSweepTemplate(from, to, 4.15f + sagitta), ball.Actor.Position, 0,
+                var from = Point(angle + ball.Velocity * (i * slot - timeReserve), radius, ball.Position.Y);
+                var to = Point(angle + ball.Velocity * ((i + 1) * slot + timeReserve), radius, ball.Position.Y);
+                result.Add(new($"ball/{id}/{i}", "Bounds of Indulgence 移动预测", new Pt30BallSweepTemplate(from, to, 4.15f + sagitta), ball.Position, 0,
                     now.AddSeconds(i * slot - timeReserve), now.AddSeconds((i + 1) * slot + timeReserve))
-                    { HasMotionEnvelope = true, BallPreviewPosition = i == 0 ? ball.Actor.Position : null });
+                    { HasMotionEnvelope = true, BallPreviewPosition = i == 0 ? ball.Position : null });
             }
         }
         if (Remaining > 0 && chasingPlayer == playerId)
@@ -258,4 +249,38 @@ internal sealed class Pt30Encounter
     private static float Angle(Vector3 p) => MathF.Atan2(p.X + 300, p.Z + 300);
     private static float Radius(Vector3 p) => new Vector2(p.X + 300, p.Z + 300).Length();
     private static Vector3 Point(float angle, float radius, float y) => new(-300 + MathF.Sin(angle) * radius, y, -300 + MathF.Cos(angle) * radius);
+
+    private sealed class BallMotion(Vector3 position, DateTime at)
+    {
+        private const double SAMPLE_WINDOW_SECONDS = .8;
+        private const double STOPPED_SECONDS = .45;
+        private readonly Queue<(DateTime At, float Angle)> samples = new([(at, Angle(position))]);
+        private DateTime lastMovement = at;
+
+        public Vector3 Position { get; private set; } = position;
+        public float Velocity { get; private set; }
+
+        public void Observe(Vector3 position, DateTime now)
+        {
+            var relocated = MathF.Abs(Radius(position) - Radius(Position)) > 1;
+            if (Vector3.DistanceSquared(position, Position) > .0025f) lastMovement = now;
+            Position = position;
+            var angle = Angle(position);
+            if (relocated || (now - lastMovement).TotalSeconds >= STOPPED_SECONDS)
+            {
+                samples.Clear();
+                Velocity = 0;
+            }
+
+            // At long range single-update position corrections exaggerate a ball's future displacement.
+            while (samples.TryPeek(out var oldest) && (now - oldest.At).TotalSeconds > SAMPLE_WINDOW_SECONDS)
+                samples.Dequeue();
+            if (samples.TryPeek(out var first) && (now - first.At).TotalSeconds > .05)
+            {
+                var delta = MathF.IEEERemainder(angle - first.Angle, MathF.Tau);
+                Velocity = Math.Clamp(delta / (float)(now - first.At).TotalSeconds, -.8f, .8f);
+            }
+            samples.Enqueue((now, angle));
+        }
+    }
 }

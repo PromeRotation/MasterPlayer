@@ -201,6 +201,7 @@ public sealed class RadarView
 
         foreach (var obstacle in snapshot.HardObstacles)
         {
+            if (visibility?.DrawsAsBoundary(obstacle.Handle) == true) continue;
             if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).Radar ?? true))
                 continue;
             var style = appearance.GetDangerStyle();
@@ -248,6 +249,11 @@ public sealed class RadarView
                 var style = line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle();
                 canvas.StrokeSegment(_projection.Project(line.Start), _projection.Project(line.End), ImGui.GetColorU32(style.StrokeColor!.Value), style.StrokeThickness);
             }
+
+        if (visibility != null)
+            foreach (var obstacle in snapshot.HardObstacles)
+                if (visibility.DrawsAsBoundary(obstacle.Handle) && !visibility.IsNavigationOnly(obstacle.Handle) && visibility.GetVisibility(obstacle.Handle).Radar)
+                    DrawBoundaryContours(canvas, obstacle.Geometry);
 
         DrawBoundary(canvas, snapshot);
     }
@@ -315,7 +321,12 @@ public sealed class RadarView
                 canvas.StrokeSegment(_projection.Project(a), _projection.Project(b), ImGui.GetColorU32(BoundaryColor), 1.5f);
             return;
         }
-        foreach (var contour in boundary.GetContours())
+        DrawBoundaryContours(canvas, boundary);
+    }
+
+    private void DrawBoundaryContours(RadarCanvas canvas, IGeometryShape geometry)
+    {
+        foreach (var contour in geometry.GetContours())
         {
             ProjectInto(contour, _projectedA);
             canvas.StrokeContourGlow(_projectedA, BoundaryColor, 1.5f);

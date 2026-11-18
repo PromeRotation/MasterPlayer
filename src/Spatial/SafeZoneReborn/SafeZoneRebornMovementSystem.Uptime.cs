@@ -30,6 +30,18 @@ internal sealed partial class SafeZoneRebornMovementSystem
         EscapeWaitBlockAtUtc = null;
     }
 
+    private bool CanHoldSafeRefuge(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
+    {
+        if (!_setting.RuntimePreferSafeRefuge || _hasControl && _greenMove is { IsRunning: true }
+            || solution.IsLeastDangerFallback || solution.IsArenaMarginRecovery || solution.ReducedDangerStartSafetyTime.HasValue
+            || snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(now))))
+            return false;
+
+        // Leave the full ball predictions in the planner. A safe pocket can be held
+        // only while the executable phase also validates with a later departure.
+        return IsTemporalPhaseSafe(solution, player, snapshot, now, startDelay: DepartureReserveSeconds);
+    }
+
     private bool ShouldWaitForEscape(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
         ClearEscapeWaitBlock();

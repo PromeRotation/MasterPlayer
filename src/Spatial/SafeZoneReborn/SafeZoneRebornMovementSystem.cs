@@ -1201,7 +1201,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             _phase = DispatchPhase.WaitingForCast;
             shouldMove = false;
         }
-        else if (shouldMove && !solution.IsArenaMarginRecovery && ShouldWaitForEscape(solution, player, snapshot, now))
+        else if (shouldMove && !solution.IsArenaMarginRecovery &&
+            (CanHoldSafeRefuge(solution, player, snapshot, now) || ShouldWaitForEscape(solution, player, snapshot, now)))
         {
             _phase = DispatchPhase.WaitingForEscape;
             shouldMove = false;

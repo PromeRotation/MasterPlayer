@@ -10,24 +10,26 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 {
     private DateTime Now => clock?.Invoke() ?? DateTime.UtcNow;
     private const string OtherKey = "other";
-    private readonly Dictionary<SafeZoneAreaHandle, string> _areaSources = new();
+    private readonly Dictionary<SafeZoneAreaHandle, (string Key, bool DrawAsBoundary)> _areaSources = new();
     private readonly HashSet<SafeZoneAreaHandle> _navigationOnly = [];
     private readonly Dictionary<string, AoePreview> _previews = new(StringComparer.Ordinal);
     private readonly Dictionary<string, AoeLinePreview> _lines = new(StringComparer.Ordinal);
     private DateTime _nextPruneUtc;
 
-    public void Track(SafeZoneAreaHandle handle, string key, string name)
+    public void Track(SafeZoneAreaHandle handle, string key, string name, bool drawAsBoundary = false)
     {
         if (!handle.IsValid)
             return;
-        _areaSources[handle] = key;
+        _areaSources[handle] = (key, drawAsBoundary);
         GetRule(key, name);
     }
 
     public AoeVisibility GetVisibility(SafeZoneAreaHandle handle)
-        => _areaSources.TryGetValue(handle, out var key)
-            ? rules[key]
+        => _areaSources.TryGetValue(handle, out var source)
+            ? rules[source.Key]
             : GetRule(OtherKey, "其他／未标记来源的 AOE");
+
+    public bool DrawsAsBoundary(SafeZoneAreaHandle handle) => _areaSources.GetValueOrDefault(handle).DrawAsBoundary;
 
     public bool IsNavigationOnly(SafeZoneAreaHandle handle) => _navigationOnly.Contains(handle);
     public void SetNavigationOnly(SafeZoneAreaHandle handle, bool value)

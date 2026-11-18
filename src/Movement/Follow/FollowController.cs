@@ -46,6 +46,12 @@ public sealed class FollowController : IDisposable
 
     private void UpdateInternal()
     {
+        if (MasterPlayerPlugin.Instance?.SafeZone.Setting.RuntimePreferSafeRefuge == true)
+        {
+            ClearFollowGoal();
+            return;
+        }
+
         var settings = MasterPlayerSettings.Instance;
         var player = PlayerPerspective.LivePlayer;
 

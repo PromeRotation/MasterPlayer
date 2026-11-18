@@ -93,6 +93,9 @@ public sealed class ScriptSafeZoneApi
     public SafeZoneAreaHandle AddObstacle(GeometryTemplate template, TransformBinding binding)
         => Track(Registry.AddObstacle(template, binding));
 
+    internal SafeZoneAreaHandle AddTerrainObstacle(GeometryTemplate template, TransformBinding binding)
+        => Track(Registry.AddObstacle(template, binding), drawAsBoundary: true);
+
     // ── 移除 / 清理 ────────────────────────────────────
 
     /// <summary>按句柄移除本脚本注册的区域。返回是否实际移除。</summary>
@@ -121,13 +124,13 @@ public sealed class ScriptSafeZoneApi
         _handles.Clear();
     }
 
-    private SafeZoneAreaHandle Track(SafeZoneAreaHandle handle)
+    private SafeZoneAreaHandle Track(SafeZoneAreaHandle handle, bool drawAsBoundary = false)
     {
         if (handle.IsValid)
         {
             _handles.Add(handle);
             var (key, name) = DrawingSource;
-            MasterPlayerPlugin.Instance?.AoeVisibility?.Track(handle, key, name);
+            MasterPlayerPlugin.Instance?.AoeVisibility?.Track(handle, key, name, drawAsBoundary);
         }
         return handle;
     }

@@ -21,6 +21,7 @@ public sealed class SafeZoneRuntime : IDisposable
     private readonly HashSet<object> _straightPathRequests = [];
     private readonly HashSet<object> _timedGoalRequests = [];
     private readonly HashSet<object> _noEscapeDelayRequests = [];
+    private readonly HashSet<object> _safeRefugeRequests = [];
     private readonly Dictionary<object, float> _movementSpeeds = [];
     private readonly Dictionary<object, float> _arenaMargins = [];
     private readonly Dictionary<object, float> _hardMargins = [];
@@ -37,7 +38,7 @@ public sealed class SafeZoneRuntime : IDisposable
     /// <summary>Measured steady run speed (y/s), when one has been observed.</summary>
     internal float? ObservedRunSpeed => _observedSpeed.Observed;
 
-    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null, bool goalDirectedTemporalPlanning = false, bool noEscapeDelay = false)
+    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null, bool goalDirectedTemporalPlanning = false, bool noEscapeDelay = false, bool preferSafeRefuge = false)
     {
         if (_disposed) return;
         enabled &= Setting.MovementAllowed;
@@ -55,6 +56,8 @@ public sealed class SafeZoneRuntime : IDisposable
         Setting.RuntimeGoalDirectedTemporalPlanning = _timedGoalRequests.Count != 0;
         if (enabled && noEscapeDelay) _noEscapeDelayRequests.Add(owner); else _noEscapeDelayRequests.Remove(owner);
         Setting.RuntimeNoEscapeDelay = _noEscapeDelayRequests.Count != 0;
+        if (enabled && preferSafeRefuge) _safeRefugeRequests.Add(owner); else _safeRefugeRequests.Remove(owner);
+        Setting.RuntimePreferSafeRefuge = _safeRefugeRequests.Count != 0;
         if (enabled && baseSpeed is { } speed && float.IsFinite(speed) && speed is > 0 and <= 30) _movementSpeeds[owner] = speed;
         else _movementSpeeds.Remove(owner);
         if (enabled && arenaSafetyMargin is { } margin && float.IsFinite(margin) && margin is >= 0 and <= 2) _arenaMargins[owner] = margin;
@@ -130,6 +133,7 @@ public sealed class SafeZoneRuntime : IDisposable
         _straightPathRequests.Clear(); Setting.RuntimePreferStraightPaths = false;
         _timedGoalRequests.Clear(); Setting.RuntimeGoalDirectedTemporalPlanning = false;
         _noEscapeDelayRequests.Clear(); Setting.RuntimeNoEscapeDelay = false;
+        _safeRefugeRequests.Clear(); Setting.RuntimePreferSafeRefuge = false;
         _movementSpeeds.Clear(); Setting.RuntimeBaseSpeed = null;
         _arenaMargins.Clear(); Setting.RuntimeArenaSafetyMargin = null;
         _hardMargins.Clear(); Setting.RuntimeHardSafetyMargin = null;

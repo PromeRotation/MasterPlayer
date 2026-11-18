@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
 using PromeRotation.Spatial.Drawing;
@@ -21,6 +22,7 @@ public sealed class RadarRenderer : IDisposable
     private const float SelfExpireMs = 500f;
 
     private static readonly DrawStyle BoundaryStyle = new(null, new Vector4(1f, 1f, 1f, 0.9f));
+    private static readonly ConditionalWeakTable<IGeometryShape, PromeRotation.Spatial.Geometry.IGeometryShape> TerrainDrawingGeometries = new();
     private static readonly Vector4 PathColor = new(0.30f, 0.95f, 1f, 1f);
     private static readonly Vector4 PathShadeColor = new(0.02f, 0.10f, 0.16f, 1f);
     private static readonly DrawStyle PathCoreStyle = new(PathColor with { W = 0.62f }, null);
@@ -139,11 +141,15 @@ public sealed class RadarRenderer : IDisposable
 
         foreach (var obstacle in snapshot.HardObstacles)
         {
-            if (visibility?.IsNavigationOnly(obstacle.Handle) == true) continue;
-            if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).World ?? true))
+            if (visibility?.IsNavigationOnly(obstacle.Handle) == true || visibility?.GetVisibility(obstacle.Handle).World == false)
                 continue;
+            var drawAsBoundary = visibility?.DrawsAsBoundary(obstacle.Handle) == true;
+            if (!drawAsBoundary && !appearance.IsVisible(obstacle.Geometry, false)) continue;
             var id = $"{IdPrefix}Obstacle_{obstacle.Handle.Id}";
-            draw.Add(id, HostDrawingGeometry.Convert(obstacle.Geometry), appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+            if (drawAsBoundary)
+                draw.Add(id, TerrainDrawingGeometries.GetValue(obstacle.Geometry, HostDrawingGeometry.Convert), BoundaryStyle, durationMs: SelfExpireMs);
+            else
+                draw.Add(id, HostDrawingGeometry.Convert(obstacle.Geometry), appearance.GetDangerStyle(), durationMs: SelfExpireMs);
             frameIds.Add(id);
         }
 
