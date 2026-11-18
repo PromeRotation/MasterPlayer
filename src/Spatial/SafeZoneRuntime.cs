@@ -22,6 +22,7 @@ public sealed class SafeZoneRuntime : IDisposable
     private readonly HashSet<object> _timedGoalRequests = [];
     private readonly HashSet<object> _noEscapeDelayRequests = [];
     private readonly HashSet<object> _safeRefugeRequests = [];
+    private readonly HashSet<object> _measuredSpeedRequests = [];
     private readonly Dictionary<object, float> _movementSpeeds = [];
     private readonly Dictionary<object, float> _arenaMargins = [];
     private readonly Dictionary<object, float> _hardMargins = [];
@@ -37,8 +38,9 @@ public sealed class SafeZoneRuntime : IDisposable
     public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
     /// <summary>Measured steady run speed (y/s), when one has been observed.</summary>
     internal float? ObservedRunSpeed => _observedSpeed.Observed;
+    internal float PlanningSpeed { get; private set; }
 
-    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null, bool goalDirectedTemporalPlanning = false, bool noEscapeDelay = false, bool preferSafeRefuge = false)
+    internal void RequestAutomaticMovement(object owner, bool enabled, bool hold = false, float? baseSpeed = null, float? arenaSafetyMargin = null, bool preferStraightPaths = false, float? hardSafetyMargin = null, bool goalDirectedTemporalPlanning = false, bool noEscapeDelay = false, bool preferSafeRefuge = false, bool useMeasuredRunSpeed = false)
     {
         if (_disposed) return;
         enabled &= Setting.MovementAllowed;
@@ -58,6 +60,7 @@ public sealed class SafeZoneRuntime : IDisposable
         Setting.RuntimeNoEscapeDelay = _noEscapeDelayRequests.Count != 0;
         if (enabled && preferSafeRefuge) _safeRefugeRequests.Add(owner); else _safeRefugeRequests.Remove(owner);
         Setting.RuntimePreferSafeRefuge = _safeRefugeRequests.Count != 0;
+        if (enabled && useMeasuredRunSpeed) _measuredSpeedRequests.Add(owner); else _measuredSpeedRequests.Remove(owner);
         if (enabled && baseSpeed is { } speed && float.IsFinite(speed) && speed is > 0 and <= 30) _movementSpeeds[owner] = speed;
         else _movementSpeeds.Remove(owner);
         if (enabled && arenaSafetyMargin is { } margin && float.IsFinite(margin) && margin is >= 0 and <= 2) _arenaMargins[owner] = margin;
@@ -134,6 +137,9 @@ public sealed class SafeZoneRuntime : IDisposable
         _timedGoalRequests.Clear(); Setting.RuntimeGoalDirectedTemporalPlanning = false;
         _noEscapeDelayRequests.Clear(); Setting.RuntimeNoEscapeDelay = false;
         _safeRefugeRequests.Clear(); Setting.RuntimePreferSafeRefuge = false;
+        _measuredSpeedRequests.Clear();
+        _observedSpeed.Reset();
+        PlanningSpeed = 0;
         _movementSpeeds.Clear(); Setting.RuntimeBaseSpeed = null;
         _arenaMargins.Clear(); Setting.RuntimeArenaSafetyMargin = null;
         _hardMargins.Clear(); Setting.RuntimeHardSafetyMargin = null;
@@ -170,6 +176,8 @@ public sealed class SafeZoneRuntime : IDisposable
         if (_disposed) return;
         if (!allowMovement)
         {
+            _observedSpeed.Reset();
+            PlanningSpeed = 0;
             _movement.Update(null, default, CurrentTime, false);
             Manager.PruneExpiredAreas(CurrentTime - TimeSpan.FromSeconds(MathF.Max(0f, SolveOptionsDefaults.Default.DangerEndSafetyTime)));
             _previousPosition = null;
@@ -182,16 +190,19 @@ public sealed class SafeZoneRuntime : IDisposable
         if (_previousPlayerId.HasValue && _previousPlayerId != playerId)
         {
             _movement.Reset();
+            _observedSpeed.Reset();
             _previousPosition = null;
         }
         _previousPlayerId = playerId;
-        // A script's own speed model (Blunderville) stays authoritative; otherwise
-        // plan with the measured run speed when a game-side slow is active.
-        if (actor != null) _observedSpeed.Record(CurrentTime, actor.Position, baseSpeed * speedMultiplier);
+        // A script's explicit base speed stays authoritative. PT30 opts in to
+        // confirmed faster motion so it can use short crossing windows.
+        var useMeasuredRunSpeed = Setting.RuntimeBaseSpeed == null && _measuredSpeedRequests.Count != 0;
+        if (actor != null) _observedSpeed.Record(CurrentTime, actor.Position, baseSpeed * speedMultiplier, useMeasuredRunSpeed);
         else _observedSpeed.Reset();
         if (Setting.RuntimeBaseSpeed == null && speedMultiplier > 0)
-            baseSpeed = _observedSpeed.Effective(baseSpeed * speedMultiplier) / speedMultiplier;
+            baseSpeed = _observedSpeed.Effective(baseSpeed * speedMultiplier, useMeasuredRunSpeed) / speedMultiplier;
         var capability = MovementCapability.CaptureFromMainThread(speedMultiplier, baseSpeed);
+        PlanningSpeed = capability.CurrentSpeed;
         if (actor != null)
         {
             var moving = _previousPosition is { } previous && Vector3.DistanceSquared(previous, actor.Position) > 0.0001f;

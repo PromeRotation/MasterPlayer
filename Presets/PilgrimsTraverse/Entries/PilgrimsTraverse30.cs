@@ -53,7 +53,8 @@ public sealed class PilgrimsTraverse30 : MasterPlayerScript
         if (encounter.Active && now >= nextLog)
         {
             nextLog = now.AddSeconds(2);
-            Log($"[PT30] {encounter.Status}; dangers={hazards.Count}; player={CurrentPlayer?.Position}; hp={CurrentPlayer?.Hp}; replay={IsReplay}");
+            var speed = MasterPlayerPlugin.Instance?.SafeZone.PlanningSpeed;
+            Log($"[PT30] {encounter.Status}; dangers={hazards.Count}; player={CurrentPlayer?.Position}; hp={CurrentPlayer?.Hp}; replay={IsReplay}; planSpeed={speed:F2}");
         }
     }
 
@@ -181,10 +182,11 @@ public sealed class PilgrimsTraverse30 : MasterPlayerScript
         var desiredGoal = chaseGoal is { } chaseDestination
             ? new Pt30Encounter.Hazard("chase-goal", "Divine Favor 连续移动", new CircleTemplate(1), chaseDestination, 0, now, now.AddSeconds(1))
             : encounter.ReachGoal;
-        runtime.RequestAutomaticMovement(this, !IsReplay, goalDirectedTemporalPlanning: encounter.ReachGoal != null,
+        var overlappingGrip = encounter.BallCount > 0 && nextHalo != null && wanted.Any(h => h.Shape is RayRectangleTemplate);
+        runtime.RequestAutomaticMovement(this, !IsReplay, goalDirectedTemporalPlanning: encounter.ReachGoal != null || overlappingGrip,
             hardSafetyMargin: Pt30Encounter.NAVIGATION_GRID_MARGIN, arenaSafetyMargin: Pt30Encounter.NAVIGATION_GRID_MARGIN,
             noEscapeDelay: encounter.BallCount > 0 || encounter.Remaining > 0 || encounter.ReachGoal != null,
-            preferSafeRefuge: encounter.BallCount > 0);
+            preferSafeRefuge: encounter.BallCount > 0, useMeasuredRunSpeed: true);
         if (desiredGoal is { } destination)
         {
             var binding = new StaticTransform(destination.Position, destination.Rotation);

@@ -7,8 +7,7 @@ namespace MasterPlayer.Spatial;
 /// <para>The solver models speed as 6 y/s × PR's speed multiplier, which cannot see
 /// game-side slows. 2026-10-29 06:37 High2 ARR: a run-long status cut the player
 /// to ~4.9 y/s from ~450s on; uptime waits and escapes timed for 6 y/s left too
-/// late for the Gigantis R15 and stopped inside it. Only a slower observation is
-/// used, so an unobserved haste never shortens an escape.</para>
+/// late for the Gigantis R15 and stopped inside it.</para>
 /// <para>2026-10-30 10:00 Low1 ARR: half-second creeps (arrival, short nudges) at
 /// 2.2–3.8 y/s were taken as a slow while the player really ran 6–9 y/s; the
 /// planner then saw no escape (NoTemporalPath) and stood in 46916. A slow now has
@@ -22,10 +21,13 @@ internal sealed class ObservedMoveSpeed
     private const float MaxHalfDifference = .08f;
     private const float MinSpeed = 1.5f;
     private const double MemorySeconds = 15;
+    private const double FasterMemorySeconds = 8;
 
     private readonly List<(DateTime Time, Vector3 Position)> _samples = [];
     private readonly List<(DateTime Time, float Speed)> _runs = [];
     private float _modelAtObservation;
+    private float? _confirmedFasterSpeed;
+    private DateTime _lastFasterRun;
 
     internal float? Observed => _runs.Count == 0 ? null : _runs.Max(r => r.Speed);
 
@@ -33,12 +35,18 @@ internal sealed class ObservedMoveSpeed
     {
         _samples.Clear();
         _runs.Clear();
+        _confirmedFasterSpeed = null;
     }
 
-    internal void Record(DateTime now, Vector3 position, float modelSpeed)
+    internal void Record(DateTime now, Vector3 position, float modelSpeed, bool allowFaster = false)
     {
-        if (_runs.Count > 0 && MathF.Abs(modelSpeed - _modelAtObservation) > .01f)
-            _runs.Clear(); // PR multiplier changed; the old ratio no longer applies.
+        if (MathF.Abs(modelSpeed - _modelAtObservation) > .01f)
+        {
+            Reset();
+            _modelAtObservation = modelSpeed;
+        }
+        if (!allowFaster || (now - _lastFasterRun).TotalSeconds > FasterMemorySeconds)
+            _confirmedFasterSpeed = null;
         _runs.RemoveAll(r => (now - r.Time).TotalSeconds > MemorySeconds);
         if (_samples.Count > 0)
         {
@@ -58,20 +66,33 @@ internal sealed class ObservedMoveSpeed
         var mid = _samples.Count / 2;
         var first = PathSpeed(0, mid);
         var second = PathSpeed(mid, _samples.Count - 1);
-        if (first < MinSpeed || second < MinSpeed || MathF.Abs(first - second) > MaxHalfDifference * MathF.Max(first, second))
-            return;
+        if (first < MinSpeed || second < MinSpeed) return;
+        var steady = MathF.Abs(first - second) <= MaxHalfDifference * MathF.Max(first, second);
+        // Both halves must confirm the higher speed. A gradual increase may
+        // inform the next solve, using the lower measured half as its bound.
+        if (allowFaster && first > modelSpeed * 1.03f && second > modelSpeed * 1.03f
+            && (steady || second > first && second <= first * 1.35f))
+        {
+            _confirmedFasterSpeed = MathF.Max(modelSpeed, (steady ? PathSpeed(0, _samples.Count - 1) : first) * .97f);
+            _lastFasterRun = now;
+        }
+        else if (allowFaster && steady && MathF.Max(first, second) <= modelSpeed * 1.03f)
+            _confirmedFasterSpeed = null;
+
+        if (!steady) return;
         var speed = PathSpeed(0, _samples.Count - 1);
         // Below half speed it is a deliberate creep, not a run under a slow.
         if (speed < modelSpeed * .5f) return;
         // Sprint or haste: a full-speed run, which rules out any slow it overlaps.
         _runs.Add((now, MathF.Min(speed, modelSpeed)));
-        _modelAtObservation = modelSpeed;
     }
 
-    /// <summary>The speed to plan with: the model, unless running was measured slower.</summary>
-    internal float Effective(float modelSpeed)
-        => Observed is { } observed && observed < modelSpeed * .97f && MathF.Abs(modelSpeed - _modelAtObservation) <= .01f
-            ? observed : modelSpeed;
+    internal float Effective(float modelSpeed, bool allowFaster = false)
+    {
+        if (MathF.Abs(modelSpeed - _modelAtObservation) > .01f) return modelSpeed;
+        if (allowFaster && _confirmedFasterSpeed is { } faster) return faster;
+        return Observed is { } observed && observed < modelSpeed * .97f ? observed : modelSpeed;
+    }
 
     private float PathSpeed(int from, int to)
     {

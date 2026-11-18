@@ -12,9 +12,11 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private void RememberTemporalContinuation(SafeZoneSolution solution, SafeZoneSnapshot snapshot)
     {
+        var goals = snapshot.GoalAreas;
         _temporalContinuation = GoalDirectedTemporalPlanning && solution.ContinuationPath.Count > 1
-            && snapshot.GoalAreas.Any(g => g.Geometry.Contains(solution.ContinuationPath[^1].Position)
-                && g.GoalWindows.Any(w => w.IsActiveAt(snapshot.CreatedAt))) ? solution : null;
+            && (_setting.RuntimePreferSafeRefuge && goals.Count == 0 && !solution.IsPartialEscape
+                || goals.Any(g => g.Geometry.Contains(solution.ContinuationPath[^1].Position)
+                    && g.GoalWindows.Any(w => w.IsActiveAt(snapshot.CreatedAt)))) ? solution : null;
         _temporalGoals = _temporalContinuation == null ? [] : snapshot.GoalAreas;
     }
 
@@ -26,6 +28,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
         if (_temporalContinuation is not { } previous) return false;
         if (!_hasControl || !GoalDirectedTemporalPlanning || now < previous.SolveTime
             || now - previous.SolveTime > TimeSpan.FromSeconds(_options.PlanningHorizon)
+            || _temporalGoals.Count == 0 && !_setting.RuntimePreferSafeRefuge
             || !SameTemporalGoals(snapshot.GoalAreas, now))
         { _temporalContinuation = null; return false; }
 
@@ -44,7 +47,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
         {
             if (!IsTemporalSegmentSafe(snapshot, player.Position, player.Position, now, end.PlannedDepartureTime))
             { _temporalContinuation = null; return false; }
-            return false;
+            return _phase == DispatchPhase.HoldingForDeparture && _temporalGoals.Count == 0;
         }
 
         var remaining = previous.ContinuationPath;

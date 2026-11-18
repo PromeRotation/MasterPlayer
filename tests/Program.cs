@@ -75,6 +75,8 @@ Run("PT30 temporal windows and swept balls", Pt30TemporalRegression.Run);
 Run("PT30 partial refuge refresh", Pt30PassageRegression.PartialRefugeRefresh);
 Run("PT30 recorded Reach passages", Pt30PassageRegression.Run);
 Run("PT30 recorded moving balls safe refuge", Pt30MovingBallRecordedRegression.Run);
+Run("PT30 observed run speed", Pt30MovingBallRecordedRegression.ObservedSpeed);
+Run("PT30 recorded Halo and Grip overlap", Pt30MovingBallRecordedRegression.HaloGripOverlap);
 
 for (var flags = 0; flags < 8; flags++)
 {
