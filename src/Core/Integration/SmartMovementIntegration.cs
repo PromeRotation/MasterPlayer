@@ -11,6 +11,7 @@ namespace MasterPlayer.Integration;
 internal sealed class SmartMovementIntegration : IDisposable
 {
     private readonly ConcurrentQueue<bool> requests = new();
+    private readonly ConcurrentQueue<bool> fsdRequests = new();
     private readonly List<Action> unregister = [];
     private readonly ICallGateProvider<bool, object> enabledChanged;
     private readonly ICallGateProvider<string, object> stateChanged;
@@ -20,6 +21,10 @@ internal sealed class SmartMovementIntegration : IDisposable
     private volatile bool enabledState;
     private bool? previousEnabled;
     private bool disposed;
+    private bool fsdActive;
+    private bool fsdOwnsSwitch;
+    private bool fsdOwnsPt30Script;
+    private DateTime nextPublish;
 
     public SmartMovementIntegration()
     {
@@ -37,6 +42,9 @@ internal sealed class SmartMovementIntegration : IDisposable
             var setter = Svc.PluginInterface.GetIpcProvider<bool, object>("PromeRadar.SetSmartMovementEnabled");
             setter.RegisterAction(enabled => { if (ready) requests.Enqueue(enabled); });
             unregister.Add(setter.UnregisterAction);
+            var fsdSetter = Svc.PluginInterface.GetIpcProvider<bool, object>("PromeRadar.SetFsdSessionActive");
+            fsdSetter.RegisterAction(active => { if (ready) fsdRequests.Enqueue(active); });
+            unregister.Add(fsdSetter.UnregisterAction);
             enabledChanged = Svc.PluginInterface.GetIpcProvider<bool, object>("PromeRadar.SmartMovementChanged");
             stateChanged = Svc.PluginInterface.GetIpcProvider<string, object>("PromeRadar.StateChanged");
             try
@@ -84,8 +92,31 @@ internal sealed class SmartMovementIntegration : IDisposable
 
     public void ApplyRequests(MasterPlayerPlugin plugin)
     {
+        while (fsdRequests.TryDequeue(out var active))
+        {
+            if (active == fsdActive) continue;
+            fsdActive = active;
+            if (active)
+            {
+                fsdOwnsSwitch = !MasterPlayerSettings.Instance.EnableSmartMovement;
+                fsdOwnsPt30Script = plugin.Scripts?.IsScriptEnabled("promeradar.pt30") != true;
+                plugin.Scripts?.SetScriptEnabled("promeradar.pt30", true);
+                plugin.SetSmartMovementEnabled(true);
+            }
+            else
+            {
+                if (fsdOwnsSwitch) plugin.SetSmartMovementEnabled(false);
+                if (fsdOwnsPt30Script) plugin.Scripts?.SetScriptEnabled("promeradar.pt30", false);
+                fsdOwnsSwitch = false;
+                fsdOwnsPt30Script = false;
+            }
+            Svc.Log.Information($"[PromeRadar] FSD session active={active}, ownsSwitch={fsdOwnsSwitch}");
+        }
         while (requests.TryDequeue(out var enabled))
+        {
+            fsdOwnsSwitch = false;
             plugin.SetSmartMovementEnabled(enabled);
+        }
     }
 
     public void Update(MasterPlayerPlugin plugin)
@@ -105,29 +136,66 @@ internal sealed class SmartMovementIntegration : IDisposable
         }
         var replay = PlayerPerspective.IsReplay;
         var player = replay ? null : PlayerPerspective.LivePlayer;
+        // Bound serialization and broadcasts: CapturedAtUtc otherwise makes every frame a change.
+        var now = DateTime.UtcNow;
+        if (!changed && now < nextPublish) return;
+        nextPublish = now.AddMilliseconds(100);
+        var pt30 = plugin.Scripts?.Running.Values.Select(r => r.Script)
+            .OfType<Scripts.PilgrimsTraverse.PilgrimsTraverse30>().FirstOrDefault();
+        var solution = plugin.SafeZone.MovementStatus.LatestSolution;
         var nextState = JsonSerializer.Serialize(new
         {
             ApiVersion = 1,
+            CapturedAtUtc = now,
+            BuildMvid = typeof(MasterPlayerPlugin).Module.ModuleVersionId,
+            MechanicRuntimeBuildMvid = typeof(MechanicRuntime.MechanicSession).Module.ModuleVersionId,
             Ready = true,
             SmartMovementEnabled = enabled,
+            FsdSessionActive = fsdActive,
+            Pt30ScriptAvailable = plugin.Scripts?.Scripts.Any(s => s.Metadata.Id == "promeradar.pt30") == true,
+            Pt30ScriptReady = pt30?.NavigationReady == true,
+            Pt30ScriptVersion = "1.0.0",
+            Pt30State = pt30?.DiagnosticState,
+            ScriptError = plugin.Scripts?.ErrorMessage,
+            Pt30ChaseRemaining = pt30?.ChaseRemaining ?? 0,
+            Pt30PreviewCount = pt30?.PreviewCount ?? 0,
+            FrameMilliseconds = Svc.Framework.UpdateDelta.TotalMilliseconds,
+            RecordingActive = plugin.Recorder?.IsRecording == true,
+            RecordingPath = plugin.Recorder?.CurrentFilePath,
             CanMove = enabled && player is { IsDead: false } && !replay
                 && plugin.SafeZone.Setting.EffectiveEnableSafeZone
                 && plugin.SafeZone.Setting.EffectiveEnableAutoMovement
                 && !Spatial.HostMovement.AutomaticMovementEnabled && !Spatial.HostMovement.HasControl,
             HasMovementControl = plugin.SafeZone.MovementStatus.HasControl,
             MovementPhase = plugin.SafeZone.MovementStatus.PhaseText,
+            SolveStatus = solution?.Status.ToString(),
+            SolveTimeUtc = solution?.SolveTime,
+            SolutionTemporal = solution?.UsesTemporalPlanning,
+            SolutionPartial = solution?.IsPartialEscape,
+            SolutionFallback = solution?.IsLeastDangerFallback,
+            PathWaypointCount = solution?.ExecutablePath.Count ?? 0,
+            PlannedWaitUntilUtc = solution?.ExecutablePath.Where(p => p.IsWaitPoint)
+                .Select(p => (DateTime?)p.PlannedDepartureTime).FirstOrDefault(),
+            EscapeDeadlineUtc = solution?.EscapeDeadline,
             EscapeWaitBlock = (plugin.SafeZone.MovementStatus as Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem)?.EscapeWaitBlock,
             EscapeWaitBlockAtUtc = (plugin.SafeZone.MovementStatus as Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem)?.EscapeWaitBlockAtUtc,
             plugin.SafeZone.MovementStatus.LastSolveQueueMilliseconds,
             plugin.SafeZone.MovementStatus.LastSolveWorkMilliseconds,
             plugin.SafeZone.MovementStatus.AsyncSolveCancelledCount,
             plugin.SafeZone.MovementStatus.AsyncSolveDiscardedCount,
-            MechanicGoalActive = Mechanics.Crucible.CrucibleGoalSignal.Active,
+            MechanicGoalActive = Mechanics.Crucible.CrucibleGoalSignal.Active || pt30?.GoalCount > 0,
             ReplayActive = replay,
             TerritoryId = Svc.ClientState.TerritoryType,
             MechanicsEnabled = MasterPlayerSettings.Instance.EnableMechanics,
             RunningScriptCount = plugin.Scripts?.Running.Count ?? 0,
             ActiveModule = plugin.MechanicHost?.HasActiveModule == true ? plugin.MechanicHost.ActiveModuleName : null,
+            NavigationActive = pt30?.NavigationReady == true || plugin.MechanicHost?.NavigationActive == true,
+            CaptureActive = plugin.MechanicHost?.CaptureActive == true,
+            MechanicError = pt30?.NavigationReady == true ? null : plugin.MechanicHost?.LastError,
+            DangerZoneCount = pt30?.EncounterActive == true ? pt30.DangerCount : plugin.MechanicHost?.NavDangerZoneCount ?? 0,
+            ObstacleCount = pt30?.NavigationReady == true ? 1 : plugin.MechanicHost?.NavObstacleCount ?? 0,
+            GoalZoneCount = pt30?.NavigationReady == true ? pt30.GoalCount : plugin.MechanicHost?.NavGoalZoneCount ?? 0,
+            ChaseStatus = pt30?.EncounterActive == true ? pt30.DiagnosticState : plugin.MechanicHost?.ChaseStatus,
         });
         var stateDiffers = state != nextState;
         state = nextState;

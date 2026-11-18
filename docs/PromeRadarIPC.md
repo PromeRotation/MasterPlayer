@@ -8,11 +8,12 @@
 | `PromeRadar.IsReady` | `Func<bool>` | 插件已初始化且未卸载 |
 | `PromeRadar.GetSmartMovementEnabled` | `Func<bool>` | 用户选择的智能走位开关 |
 | `PromeRadar.SetSmartMovementEnabled` | `Action<bool>` | 请求设置开关并保存配置 |
+| `PromeRadar.SetFsdSessionActive` | `Action<bool>` | NewFolder3 获取/释放整轮 FSD 会话；获取时启用智能走位和 PT30 内置脚本 |
 | `PromeRadar.SmartMovementChanged` | `Action<bool>` 通知 | 首次初始化及开关变化时发布 |
 | `PromeRadar.GetState` | `Func<string>` | 最近一次主线程采样的 JSON 状态 |
 | `PromeRadar.StateChanged` | `Action<string>` 通知 | 状态变化与卸载时发布 JSON |
 
-设置接口可从任意线程调用，请求按顺序在下一次 Framework 更新执行。调用返回表示请求已入队，使用查询或变更通知确认应用。通知在游戏主线程同步执行，订阅者应快速返回，不抛异常；卸载调用方时退订相同委托。
+设置接口可从任意线程调用，在下一次 Framework 更新执行。调用返回表示请求已入队，使用查询或变更通知确认应用。会话操作先于普通开关操作，普通开关代表用户选择，取消会话对移动开关的恢复权限。会话获取/释放幂等；整轮运行（含普通楼层、Boss、失败重进）保持开启，释放时只恢复本会话临时开启的移动/脚本开关。通知在游戏主线程同步执行，订阅者应快速返回，不抛异常；卸载调用方时退订相同委托。
 
 ```csharp
 var enabled = pluginInterface.GetIpcSubscriber<bool>("PromeRadar.GetSmartMovementEnabled").InvokeFunc();
@@ -31,6 +32,15 @@ JSON 字段：
 | `ApiVersion` | int | 状态格式版本，当前为 1 |
 | `Ready` | bool | 插件就绪 |
 | `SmartMovementEnabled` | bool | 持久化的智能走位开关 |
+| `CapturedAtUtc` | UTC timestamp | 最多每 100ms 发布一次缓存，消费者检查区域和三秒新鲜度 |
+| `FsdSessionActive` | bool | MP 已在主线程接受 FSD 会话 |
+| `Pt30ScriptAvailable` / `Pt30ScriptReady` | bool | 内置脚本存在 / 正在接管 Boss 且场地输出就绪 |
+| `Pt30ScriptVersion` / `Pt30State` / `Pt30ChaseRemaining` | string / string? / int | PT30 契约版本、机制状态、追踪剩余次数 |
+| `Pt30PreviewCount` | int | 实际注册的 PT30 危险区预览数；未来光球预测只参与导航，勿与 `DangerZoneCount` 混为绘制数量 |
+| `ScriptError` | string? | 脚本框架错误；脚本未启动时不要只检查机制库错误 |
+| `FrameMilliseconds` | double | 本帧 Framework 间隔，供性能实测关联，不等于 MP 自身 CPU 耗时 |
+| `RecordingActive` / `RecordingPath` | bool / string? | MP 自身事件录制状态；与 ARR 分开 |
+| `DangerZoneCount` / `ObstacleCount` / `GoalZoneCount` | int | PT30 脚本活动时报告其输出数，否则报告机制库导航桥数量 |
 | `CanMove` | bool | 当前允许执行智能走位：开关开启、玩家存活、非回放、本地解算和自动移动有效、PR 本体未占用移动 |
 | `HasMovementControl` | bool | 本插件的安全区当前持有移动控制权 |
 | `MovementPhase` | string | 当前调度阶段的中文说明 |
@@ -39,8 +49,17 @@ JSON 字段：
 | `MechanicsEnabled` | bool | 机制库总开关 |
 | `RunningScriptCount` | int | 运行中的脚本数量 |
 | `ActiveModule` | string/null | 当前激活且未被禁用/压制的内置模块 |
+| `BuildMvid` | string | MP 构建标识，用于确认实际加载版本 |
+| `MechanicRuntimeBuildMvid` | string | 实际加载的机制运行库构建标识，单独更新适配或模块时也须核对 |
+| `NavigationActive` / `CaptureActive` | bool | 自有脚本或模块导航输出就绪 / 效果包捕获可用；与执行资格、实际移动控制权分别判断 |
+| `MechanicError` | string/null | 机制宿主最近错误 |
+| `ChaseStatus` | string/null | PT30 自有脚本状态，包含 Divine Favor 连续走位方向、剩余攻击数和目标 |
 
 `CanMove` 表示执行资格，不代表此刻需要移动；`HasMovementControl` 表示实际接管。回放中即使 `SmartMovementEnabled=true`，也不会移动。卸载前发送保留原字段的状态，将 `Ready`、`CanMove`、`HasMovementControl` 设为 false、`MovementPhase` 设为“已卸载”；调用方应优先检查 `Ready`。卸载不改变用户保存的开关。
+
+解算诊断附加字段：`SolveStatus`（成功或明确失败原因）、`SolveTimeUtc`（快照时钟）、`SolutionTemporal/Partial/Fallback`（时间路径/分段逃离/最少危险降级，未解算时为 null）、`PathWaypointCount`、`PlannedWaitUntilUtc`（当前阶段首个等待点的解禁时间）、`EscapeDeadlineUtc`（读条让位的逃离截止）。这些字段与 `HasMovementControl`、`EscapeWaitBlock` 联合检查，可区分正常等待、无路、等待读条和执行器未接管；`SolveStatus=Success` 本身不能证明实际执行或最终无伤。
+
+NewFolder3 入场前通过 `SetFsdSessionActive(true)` 获取会话，任务结束以 `false` 释放；死亡重开属于同一会话。普通楼层在新鲜、同区域的 `HasMovementControl=true` 期间暂停自身路线。PT30 检查同区域、三秒内采样、非回放、`FsdSessionActive/SmartMovementEnabled/CanMove/NavigationActive/Pt30ScriptReady=true` 和 `Pt30ScriptVersion="1.0.0"`，由 MP 自有脚本处理；该 Boss 的 BMR 绘制和导航已停止。用户中途关闭时不每帧重开。调用请求入队不代表已经应用，需查询确认。
 
 脚本开发：使用 `SafeZone` 注册规划约束、`Move` 执行手动移动、`Hints` 请求面向，均遵守智能走位开关。持有额外原生控制的脚本须覆盖 `OnMovementDisabled()` 立即撤销自身控制，保留机制和绘制状态。此机制不对任意外部脚本代码做沙箱隔离。
 

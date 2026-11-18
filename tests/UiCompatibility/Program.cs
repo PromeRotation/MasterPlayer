@@ -16,7 +16,25 @@ using System.Numerics;
 namespace Dalamud.Bindings.ImGui {
 public enum ImGuiCol { Text }
 [Flags] public enum ImGuiColorEditFlags { NoInputs = 1, NoLabel = 2 }
+public enum ImDrawFlags { None }
+public struct ImDrawListPtr {
+public void AddText(Vector2 p, uint c, string s) { }
+public void AddRectFilled(Vector2 a, Vector2 b, uint c, float r) { }
+public void AddRect(Vector2 a, Vector2 b, uint c, float r, ImDrawFlags f, float t) { }
+public void AddCircleFilled(Vector2 p, float r, uint c) { }
+}
+public struct ImGuiIOPtr { public float DeltaTime => 1f / 60f; }
 public static class ImGui {
+public static float GetFontSize() => 20;
+public static float GetFrameHeight() => 24;
+public static uint GetID(string s) => 1;
+public static bool InvisibleButton(string s, Vector2 v) => false;
+public static Vector2 GetItemRectMin() => default;
+public static ImDrawListPtr GetWindowDrawList() => default;
+public static bool IsItemHovered() => false;
+public static uint GetColorU32(Vector4 c) => 0;
+public static ImGuiIOPtr GetIO() => default;
+public static float GetCursorPosX() => 0;
 public static void SameLine(float a = 0, float b = 0) { }
 public static void PushStyleColor(ImGuiCol c, Vector4 v) { }
 public static void TextWrapped(string s) { }
@@ -36,7 +54,7 @@ public static void AlignTextToFramePadding() { }
 public static bool ColorEdit3(string s, ref Vector3 v, ImGuiColorEditFlags f) => false;
 }}
 namespace PromeRotation.UI.Components {
-public static class PromeUiTheme { public static Vector4 TextMuted => default; public static Vector4 Accent => default; }
+public static class PromeUiTheme { public static Vector4 TextMuted => default; public static Vector4 Accent => default; public static Vector4 Text => default; }
 public static class PromeUi {
 public static bool TabButton(string i, string l, bool a) => false;
 HOST_METHOD

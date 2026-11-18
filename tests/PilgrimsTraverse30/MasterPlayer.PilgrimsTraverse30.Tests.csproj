@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Presets/PilgrimsTraverse/Pt30*.cs" Link="Pt30/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Spatial/Geometry/*.cs" Link="Geometry/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Spatial/SafeZone/*.cs" Link="SafeZone/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Mechanics/Host/MechanicHintsConvert.cs" Link="MechanicHintsConvert.cs" />
+    <Compile Include="../../src/Movement/Dodge/DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
+    <Compile Include="../../src/Scripting/Visual/RotationOffsetTemplate.cs" Link="RotationOffsetTemplate.cs" />
+    <Compile Include="../../Presets/Crucible/Core/CrucibleCoreGeometry.cs" Link="CrucibleCoreGeometry.cs" />
+    <ProjectReference Include="../../MechanicRuntime/MasterPlayer.MechanicRuntime.csproj" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)/Dalamud.dll" />
+    <Reference Include="ECommons" HintPath="$(PromeRotationPath)/ECommons.dll" />
+    <Reference Include="Dalamud.Common" HintPath="$(DalamudRoot)/Dalamud.Common.dll" />
+    <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)/Dalamud.Bindings.ImGui.dll" />
+    <Reference Include="Dalamud.Bindings.ImPlot" HintPath="$(DalamudRoot)/Dalamud.Bindings.ImPlot.dll" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)/FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)/InteropGenerator.Runtime.dll" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)/Lumina.dll" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)/Lumina.Excel.dll" />
+  </ItemGroup>
+</Project>

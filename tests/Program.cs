@@ -7,6 +7,18 @@ using PromeRotation.Helpers;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 
+if (args.Length == 3 && args[0] == "--pt30-export-fixture")
+{
+    Pt30TemporalRegression.InspectRecording(args[1], [75, 77, 97, 99, 204, 205], args[2]);
+    return;
+}
+
+if (args.Length >= 2 && args[0] == "--pt30-recording")
+{
+    Pt30TemporalRegression.InspectRecording(args[1], args.Length > 2 ? args.Skip(2).Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() : null);
+    return;
+}
+
 var passed = 0;
 var shardCounter = 0;
 var failures = new List<string>();
@@ -34,6 +46,12 @@ if (args.Contains("--upstream-sync"))
     Console.WriteLine($"PASS: {passed} upstream sync scenarios");
     return;
 }
+
+Run("PT30 native encounter", NativePt30Tests.Run);
+Run("PT30 follow footprint", Pt30FollowFootprintTests.Run);
+Run("PT30 temporal windows and swept balls", Pt30TemporalRegression.Run);
+Run("PT30 partial refuge refresh", Pt30PassageRegression.PartialRefugeRefresh);
+Run("PT30 recorded Reach passages", Pt30PassageRegression.Run);
 
 for (var flags = 0; flags < 8; flags++)
 {

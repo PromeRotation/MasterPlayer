@@ -18,6 +18,7 @@ public static class DangerMarginInflator
 
         return template switch
         {
+            Mechanics.PilgrimsTraverse.Pt30BallSweepTemplate sweep => sweep with { Radius = sweep.Radius + margin },
             Mechanics.Crucible.ResolvedGeometryTemplate snapshot => snapshot.Inflate(margin),
             RotationOffsetTemplate rotated => rotated with { Inner = Inflate(rotated.Inner, margin) },
             CircleTemplate circle => new CircleTemplate(circle.Radius + margin),

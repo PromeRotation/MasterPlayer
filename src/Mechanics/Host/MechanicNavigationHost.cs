@@ -16,6 +16,7 @@ public sealed class MechanicNavigationHost : IDisposable
     private readonly AIHints _hints = new();
     private readonly MechanicNavAreaDiffer _differ = new();
     private readonly MechanicFacingControl _facing = new();
+    public string ChaseStatus => "";
     private bool _boundaryApplied;
     private string? _boundarySignature;
     private Bitmap? _terrainBitmap;

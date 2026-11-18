@@ -46,13 +46,15 @@ public sealed class MechanicHostController : IDisposable
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
     public bool HasActiveModule => ModulesEnabled && !(_replaySession != null ? IsReplaySuppressed() : IsSuppressed)
-        && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null;
+        && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null
+        && ActiveSession.BossModules.ActiveModule.PrimaryActor.OID != 0x4609;
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
         && MasterPlayerSettings.Instance.IsTerritoryEnabled(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     public IReadOnlyList<MechanicTerritoryEntry> Territories { get; private set; } = [];
     public bool NavigationActive => _navBridge?.NavigationActive == true;
     public int NavDangerZoneCount => _navBridge?.DangerZoneCount ?? 0;
     public int NavGoalZoneCount => _navBridge?.GoalZoneCount ?? 0;
+    public string? ChaseStatus => _navBridge?.ChaseStatus;
     public int NavObstacleCount => _navBridge?.ObstacleZoneCount ?? 0;
     public bool NavBoundaryActive => _navBridge?.BoundaryActive == true;
     public string? SpecialModeHint => _navBridge?.SpecialModeHint;
@@ -196,6 +198,7 @@ public sealed class MechanicHostController : IDisposable
             _feed.ApplyFrame(frame);
             _feed.Flush();
             _session.Update();
+            if (SleepMpOwnedBoss()) return;
             _navBridge?.Update();
             _drawBridge?.Update();
             UpdateTimeline();
@@ -331,6 +334,7 @@ public sealed class MechanicHostController : IDisposable
                 _replayFeed.Enqueue(effect);
             _replayFeed.Flush();
             _replaySession.Update();
+            if (SleepMpOwnedBoss()) return;
             _navBridge?.Update();
             _drawBridge?.Update();
             UpdateTimeline();
@@ -349,6 +353,8 @@ public sealed class MechanicHostController : IDisposable
             return false;
         foreach (var running in scripts.Running.Values)
         {
+            if (running.Script is Scripts.PilgrimsTraverse.PilgrimsTraverse30 pt30 && !pt30.EncounterActive)
+                continue;
             if (running.Descriptor.Metadata.Territorys.Length != 0)
                 return true;
         }
@@ -356,6 +362,17 @@ public sealed class MechanicHostController : IDisposable
     }
 
     internal void SuspendMovement() => _navBridge?.SuspendMovement();
+
+    private bool SleepMpOwnedBoss()
+    {
+        if (ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID != 0x4609) return false;
+        // PT30 is implemented by the MP script. Never publish BMR's triangle previews or navigation,
+        // including the first frame before ScriptManager starts it and when a user disables the script.
+        _navBridge?.Sleep();
+        _drawBridge?.Sleep();
+        CurrentTimeline = null;
+        return true;
+    }
 
     private void LogReplayError(string stage, Exception ex)
     {
@@ -400,6 +417,8 @@ public sealed class MechanicHostController : IDisposable
         var territory = (ushort)Svc.ClientState.TerritoryType;
         foreach (var running in scripts.Running.Values)
         {
+            if (running.Script is Scripts.PilgrimsTraverse.PilgrimsTraverse30 pt30 && !pt30.EncounterActive)
+                continue;
             var territorys = running.Descriptor.Metadata.Territorys;
             if (territorys.Length != 0 && territorys.Contains(territory))
                 return true;

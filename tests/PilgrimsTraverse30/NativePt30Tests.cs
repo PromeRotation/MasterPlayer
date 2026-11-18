@@ -1,0 +1,103 @@
+using System.Numerics;
+using MasterPlayer.Mechanics.PilgrimsTraverse;
+using MasterPlayer.Spatial.SafeZone;
+
+internal static class NativePt30Tests
+{
+    public static void Run()
+    {
+        var start = new DateTime(2026, 11, 17, 8, 0, 0, DateTimeKind.Utc);
+        var center = new Vector3(-300, 0, -300);
+        var boss = new Pt30Encounter.Actor(1, Pt30Encounter.BOSS_OID, center, 0, false, true);
+        var e = new Pt30Encounter();
+        e.Synchronize([boss], start);
+        var arena = Pt30Arena.Boundary(0);
+        var holeTemplate = (WorldPolygonTemplate)Pt30Arena.Hole(0);
+        var hole = holeTemplate.Resolve(Vector3.Zero, 0, null);
+        Check(ReferenceEquals(hole, holeTemplate.Resolve(center, MathF.PI, null)), "static world polygon reuses validated geometry across snapshots");
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 100; ++i) _ = new MasterPlayer.Spatial.Geometry.WorldPolygonGeometry(holeTemplate.WorldPoints);
+        var repeatedValidation = timer.Elapsed.TotalMilliseconds;
+        timer.Restart();
+        for (var i = 0; i < 100; ++i) _ = holeTemplate.Resolve(Vector3.Zero, 0, null);
+        Console.WriteLine($"PT30 hole: 100 repeated validations {repeatedValidation:F2}ms; 100 cached resolves {timer.Elapsed.TotalMilliseconds:F3}ms.");
+        Check(arena.Contains(new(-284, 0, -300)) && !hole.Contains(new(-288, 0, -300)), "inner east platform remains walkable");
+        Check(hole.Contains(center) && !arena.Contains(new(-270, 0, -300)), "central hole and outer bounds");
+        var rings = new[] { (39642u, 9f, 14f), (39643u, 14f, 19f), (39674u, 19f, 24f), (39743u, 24f, 29f) };
+        foreach (var (action, inner, outer) in rings)
+        {
+            e.Cast(10, action, center, 0, start, start.AddSeconds(12));
+            var h = e.Hazards(start, 100, new(-283.3f, 0, -300)).Single();
+            Check(h.Shape is DonutTemplate d && d.InnerRadius == inner && d.OuterRadius == outer, "exact halo radii");
+            Check(e.Hazards(start, 100, center).Count == 1, "one whole donut, no triangle expansion");
+            e.Effect(10, action, action, center, start.AddSeconds(12));
+        }
+        foreach (var action in new uint[] { 40551, 44927 })
+        {
+            e.Cast(10, action, center, 0, start, start.AddSeconds(7.7));
+            Check(e.Hazards(start, 100, center).Count == 2, "rectangle plus predicted cone");
+            Check(e.ReachGoal == null, "Reach goal must not pull into an unresolved Grip rectangle");
+            e.Effect(10, action, action, center, start.AddSeconds(7.7));
+            e.Hazards(start.AddSeconds(7.7), 100, center);
+            Check(e.ReachGoal is { } preposition && !e.Hazards(start, 100, center).Single(h => h.Shape is FanTemplate).Shape
+                .Resolve(center, action == 40551 ? 70 * MathF.PI / 180 : -70 * MathF.PI / 180, null)
+                .Contains(center + new Vector3(MathF.Sin(preposition.Rotation) * 16.7f, 0, MathF.Cos(preposition.Rotation) * 16.7f)), "Grip resolution publishes safe-sector prepositioning 7.5 seconds before Reach");
+            var coneAction = action == 40551 ? 40552u : 40553u;
+            e.Cast(11, coneAction, center, MathF.PI, start, start.AddSeconds(1));
+            var cone = e.Hazards(start, 100, center).Single(h => h.Shape is FanTemplate);
+            Check(Math.Abs(cone.Rotation - MathF.PI) < .001f && cone.Shape is FanTemplate f && Math.Abs(f.AngleRadians - 220 * MathF.PI / 180) < .001f, "actual cone replaces prediction with locked facing");
+            e.Cancel(10); e.Cancel(11);
+        }
+        // Actual 2026-11-17 packet: helper's native TargetLocation was zero, but the
+        // network origin is offset behind the arena and contains the observed hit point.
+        e.Reset();
+        e.Synchronize([boss], start);
+        var packetOrigin = new Vector3(-285.26746f, -.015258789f, -330.12897f);
+        e.Cast(10, 40551, packetOrigin, -.9187247f, start, start.AddSeconds(7.7));
+        var grip = e.Hazards(start, 100, center).Single(h => h.Shape is RayRectangleTemplate);
+        Check(grip.Position == packetOrigin && grip.Shape.Resolve(grip.Position, grip.Rotation, null).Contains(new(-314.28424f, .04997635f, -292.16037f)), "recorded Grip packet origin identifies actual hit point");
+        e.Cancel(10);
+        var ball = new Pt30Encounter.Actor(50, Pt30Encounter.BALL_OID, new(-283.3f, 0, -300), 0, false, true);
+        e.Synchronize([boss, ball], start);
+        e.Timeline(50, 0x1E46);
+        for (var i = 1; i <= 1000; ++i)
+        {
+            var angle = i * .01f;
+            e.Synchronize([boss, ball with { Position = center + new Vector3(MathF.Cos(angle) * 16.7f, 0, MathF.Sin(angle) * 16.7f) }], start.AddSeconds(i * .1));
+            var hazards = e.Hazards(start.AddSeconds(i * .1), 100, center);
+            Check(hazards.Count <= Pt30Encounter.BALL_PREDICTION_SLICES && hazards.All(h => h.From.Year < 9999 && h.Until > h.From), "1000 moving frames bounded and finite");
+        }
+        e.Timeline(50, 0x1E3C);
+        Check(e.Hazards(start, 100, center).Count == 0, "ball removed by timeline");
+        e.Icon(100, 197, start);
+        var player = new Vector3(-283.3f, 0, -300);
+        e.Cast(10, 44918, player, 0, start, start.AddSeconds(3));
+        e.Hazards(start, 100, player);
+        var goal = e.Goal;
+        Check(goal != null && !hole.Contains(goal.Value), "chase starts without heading dependency");
+        Check(e.Hazards(start.AddSeconds(.1), 100, player).Count == 1 && e.Goal == goal, "stable chase waypoint");
+        var lastHit = player;
+        for (uint pulse = 0; pulse < 8; ++pulse)
+        {
+            var now = start.AddSeconds(3 + pulse * .6);
+            e.Hazards(now, 100, player);
+            var delta = e.Goal!.Value - player;
+            if (delta.Length() > .01f) player += Vector3.Normalize(delta) * Math.Min(3.6f, delta.Length());
+            var action = pulse == 0 ? 44918u : 44919u;
+            if (pulse > 0) lastHit += Vector3.Normalize(player - lastHit) * Math.Min(3.5f, Vector3.Distance(player, lastHit));
+            e.Effect(10, 1000 + pulse, action, lastHit, now);
+            var remaining = e.Remaining;
+            e.Effect(10, 1000 + pulse, action, lastHit, now);
+            Check(e.Remaining == remaining, "AOE per-target effects deduplicated");
+        }
+        Check(e.Remaining == 0 && e.Goal == null, "eight hits clear chase");
+        e.Reset();
+        Check(!e.Active && e.CastCount == 0 && e.BallCount == 0, "wipe and stop cleanup");
+        Console.WriteLine("PASS MP native PT30: four donuts, both cones, arena/hole, 1000-frame bounded ball output, eight chase effects and cleanup.");
+    }
+
+    private static void Check(bool value, string message)
+    {
+        if (!value) throw new InvalidOperationException(message);
+    }
+}

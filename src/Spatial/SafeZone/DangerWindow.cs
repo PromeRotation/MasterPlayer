@@ -18,11 +18,13 @@ public readonly record struct DangerWindow(DateTime DangerFrom, DateTime? Danger
     // A swept moving body already includes sampling/trajectory uncertainty.
     // Applying cast preparation time to every slice blocks positions it has left.
     internal bool HasMotionEnvelope { get; init; }
+    // Packet-calibrated hit windows already include their preparation/tail reserve.
+    internal bool HasExplicitTiming { get; init; }
     // Chasing hazards cannot be escaped by first walking deeper through them.
     internal bool RequireOutwardExit { get; init; }
     // Explicit boundary provenance, never inferred from a danger shape.
     internal MasterPlayer.Spatial.Geometry.IGeometryShape? ArenaMarginInterior { get; init; }
-    internal DangerWindow Buffered(float start, float end) => HasMotionEnvelope ? this
+    internal DangerWindow Buffered(float start, float end) => HasMotionEnvelope || HasExplicitTiming ? this
         : this with { DangerFrom = DangerFrom.AddSeconds(-MathF.Max(0, start)), DangerUntil = DangerUntil?.AddSeconds(MathF.Max(0, end)) };
     /// <summary>创建一个永久危险窗口（无结束时间，无预告）。</summary>
     public static DangerWindow Persistent(DateTime dangerFrom) => new(dangerFrom, null, null);

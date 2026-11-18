@@ -887,7 +887,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // Keep a validated temporary refuge until the next event opens a route.
         // Repeatedly extending its safe interval can chase successive waves across
         // the whole arena and leave too much distance for the eventual return.
-        if (solution.IsPartialEscape && IsTemporalPhaseSafe(solution, player, snapshot, now))
+        // A temporary pocket is not completion of a timed mechanic goal. Moving
+        // hazards can reopen its passage without changing the snapshot version.
+        if (solution.IsPartialEscape && !GoalDirectedTemporalPlanning && IsTemporalPhaseSafe(solution, player, snapshot, now))
             return true;
 
         var ageSeconds = (now - solution.SolvedAt).TotalSeconds;
@@ -1160,6 +1162,15 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             }
         }
 
+        // The worker may now prefer another refuge (including its old start cell).
+        // If the executing phase still validates, its waypoint/wait schedule owns
+        // movement until arrival; a candidate's hold or cast wait must not stop it.
+        if (keepCurrentRoute)
+        {
+            _phase = DispatchPhase.Moving;
+            return;
+        }
+
         if (solution.UsesTemporalPlanning && solution.ExecutablePath.Count > 0 &&
             solution.ExecutablePath[^1] is { IsWaitPoint: true } wait &&
             (solution.ExecutablePath.Count == 1 || GeometryHelper.DistanceXZ(player.Position, wait.Position) <= MinArrivalTolerance))
@@ -1218,12 +1229,6 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             }
 
             ReleaseControl();
-            return;
-        }
-
-        if (keepCurrentRoute)
-        {
-            _phase = DispatchPhase.Moving;
             return;
         }
 
@@ -1552,7 +1557,8 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             && TryContinueDispatchedRoute(player, snapshot, now))
             return true;
 
-        if (newSolution.SourceSnapshotVersion != _dispatchedSolution.SourceSnapshotVersion &&
+        if (!(newSolution.UsesTemporalPlanning && _dispatchedSolution.UsesTemporalPlanning) &&
+            newSolution.SourceSnapshotVersion != _dispatchedSolution.SourceSnapshotVersion &&
             (newSolution.TargetPosition is not { } target || _dispatchedSolution.TargetPosition is not { } previousTarget ||
              GeometryHelper.DistanceXZ(target, previousTarget) > MinArrivalTolerance))
         {
@@ -1561,9 +1567,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         if (newSolution.UsesTemporalPlanning || _dispatchedSolution.UsesTemporalPlanning)
         {
+            // A new grid cell/refuge is only an alternative. Changing it every
+            // solve resets GreenMove's progress and can send the player backward.
+            // Live safety and active goal priority below still invalidate the route.
             if (newSolution.UsesTemporalPlanning != _dispatchedSolution.UsesTemporalPlanning ||
-                newSolution.TargetPosition is not { } next || _dispatchedSolution.TargetPosition is not { } previous ||
-                GeometryHelper.DistanceXZ(next, previous) > MinArrivalTolerance ||
                 _dispatchedSolution.ExecutablePath.Any(p => p.IsWaitPoint) && IsSolutionPlanOverdue(_dispatchedSolution, player.Position, now))
                 return false;
         }

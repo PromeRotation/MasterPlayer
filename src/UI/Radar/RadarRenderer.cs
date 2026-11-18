@@ -139,6 +139,7 @@ public sealed class RadarRenderer : IDisposable
 
         foreach (var obstacle in snapshot.HardObstacles)
         {
+            if (visibility?.IsNavigationOnly(obstacle.Handle) == true) continue;
             if (!appearance.IsVisible(obstacle.Geometry, false, visibility?.GetVisibility(obstacle.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Obstacle_{obstacle.Handle.Id}";

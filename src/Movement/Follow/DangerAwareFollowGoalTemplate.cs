@@ -23,8 +23,22 @@ internal sealed record DangerAwareFollowGoalTemplate : GeometryTemplate
         var goal = Resolve(position, 0, null);
         var step = OptionalGoalSafety.SampleStep;
         var corner = step / 2;
-        for (var z = -_radius + step / 2; z < _radius; z += step)
-            for (var x = -_radius + step / 2; x < _radius; x += step)
+        var minX = -_radius + step / 2;
+        var minZ = minX;
+        var maxX = _radius;
+        var maxZ = _radius;
+        if (_boundary is { } boundary)
+        {
+            // A large boss's attack circle extends far beyond the arena. Keep the original
+            // sample lattice, but skip cells that cannot be inside the boundary at all.
+            var bounds = boundary.GetBounds();
+            minX += Math.Max(0, MathF.Ceiling((bounds.MinX - position.X - GeometryHelper.DefaultEpsilon - minX) / step)) * step;
+            minZ += Math.Max(0, MathF.Ceiling((bounds.MinZ - position.Z - GeometryHelper.DefaultEpsilon - minZ) / step)) * step;
+            maxX = Math.Min(maxX, bounds.MaxX - position.X + GeometryHelper.DefaultEpsilon);
+            maxZ = Math.Min(maxZ, bounds.MaxZ - position.Z + GeometryHelper.DefaultEpsilon);
+        }
+        for (var z = minZ; z < maxZ; z += step)
+            for (var x = minX; x < maxX; x += step)
             {
                 var p = position + new Vector3(x,0,z);
                 // A usable footprint matters, not its percentage of a large boss's attack circle.

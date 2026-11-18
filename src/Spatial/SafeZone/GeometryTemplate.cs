@@ -121,10 +121,15 @@ public sealed record LocalPolygonTemplate : GeometryTemplate
 /// </summary>
 public sealed record WorldPolygonTemplate : GeometryTemplate
 {
+    private readonly WorldPolygonGeometry geometry;
+
     /// <summary>使用世界坐标点列创建模板，构造时复制一份避免外部修改。</summary>
     public WorldPolygonTemplate(IEnumerable<Vector3> worldPoints)
     {
         WorldPoints = worldPoints.ToArray();
+        // World polygons ignore transforms. Validate their immutable geometry once;
+        // rebuilding a large arena hole in every snapshot repeats quadratic edge checks.
+        geometry = new WorldPolygonGeometry(WorldPoints);
     }
 
     /// <summary>世界坐标点列。</summary>
@@ -135,5 +140,5 @@ public sealed record WorldPolygonTemplate : GeometryTemplate
 
     /// <inheritdoc />
     public override IGeometryShape Resolve(Vector3 position, float rotation, float? lengthOverride)
-        => new WorldPolygonGeometry(WorldPoints);
+        => geometry;
 }

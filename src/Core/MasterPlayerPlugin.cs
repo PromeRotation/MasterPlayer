@@ -164,6 +164,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _scripts?.Update(deltaTime);
         var t3 = System.Diagnostics.Stopwatch.GetTimestamp();
         _follow?.Update();
+        var tFollow = System.Diagnostics.Stopwatch.GetTimestamp();
         _safeZone?.Update(PromeRotation.Plugin.Instance.SpeedMultiplierService.EffectiveMultiplier,
             _scripts?.ReplayModeActive != true);
         var t4 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -176,7 +177,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         {
             _nextPerfLog = DateTime.UtcNow.AddSeconds(1);
             static double Ms(long a, long b) => System.Diagnostics.Stopwatch.GetElapsedTime(a, b).TotalMilliseconds;
-            Svc.Log.Info($"[MP-PERF] 帧 {total:F1}ms host/dodge={Ms(t0, t1):F1} replay={Ms(t1, t2):F1} scripts={Ms(t2, t3):F1} safezone={Ms(t3, t4):F1} radar/aoe={Ms(t4, t5):F1} ver={_safeZone?.Manager.Version}");
+            Svc.Log.Info($"[MP-PERF] 帧 {total:F1}ms host/dodge={Ms(t0, t1):F1} replay={Ms(t1, t2):F1} scripts={Ms(t2, t3):F1} follow={Ms(t3, tFollow):F1} safezone={Ms(tFollow, t4):F1} radar/aoe={Ms(t4, t5):F1} ver={_safeZone?.Manager.Version}");
         }
     }
     private DateTime _nextPerfLog;

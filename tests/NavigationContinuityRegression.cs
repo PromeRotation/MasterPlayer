@@ -17,6 +17,30 @@ internal static class NavigationContinuityRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("Navigation continuity host consumes an intermediate waypoint crossed between frames", () =>
+        {
+            // PT30 recording 09:26:19, t=187.9079: use its 0.747m frame
+            // step with a synthetic midpoint to test a crossed 0.1m waypoint.
+            var before = new Vector3(-292.29266f, 0, -284.24948f);
+            var after = new Vector3(-293.03967f, 0, -284.25037f);
+            var midpoint = (before + after) * .5f;
+            var point = new GreenMovePoint(midpoint, .1f);
+            var method = typeof(GreenMovePoint).Assembly.GetType("PromeRotation.GreenMoveSystem.GreenMoveArrival", true)!
+                .GetMethod("Advance", BindingFlags.Public | BindingFlags.Static)!;
+            int Advance(GreenMovePoint[] route, Vector3 current, Vector3 previous)
+                => (int)method.Invoke(null, [current, previous, route, 0])!;
+            Check(Vector3.Distance(after, midpoint) > point.Tolerance, "Fixture must overshoot the point.");
+            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], after, before) == 1,
+                "Host turned back instead of consuming the crossed intermediate point.");
+            Check(Advance([point], after, before) == 0, "A precise final wait point was skipped after overshoot.");
+            Check(Advance([point with { ArrivalMode = GreenMoveArrivalMode.PassThrough }], after, before) == 1,
+                "Explicit pass-through final point was not consumed.");
+            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], after + Vector3.UnitZ, before + Vector3.UnitZ) == 0,
+                "A segment outside tolerance consumed the waypoint.");
+            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], midpoint - Vector3.UnitX * 2, midpoint + Vector3.UnitX * 2) == 0,
+                "A teleport was mistaken for a normal traversed segment.");
+        });
+
         foreach (var release in new[] { "owner", "expiry", "hold", "reset" })
             run($"Navigation continuity committed jump releases on {release}", () =>
             {
@@ -122,6 +146,37 @@ internal static class NavigationContinuityRegression
                 Bridge(.15, course, start, target);
             });
 
+        run("Navigation continuity temporal refuge changes do not restart a verified running phase", () =>
+        {
+            using var runtime = Runtime(out var move);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            SafeZoneSolution Route(Vector3 target, DateTime at) => new(SolutionStatus.Success, snapshot.Version, at, at, target,
+                [TimedWaypoint.Pass(Vector3.Zero, at), new(target, at.AddSeconds(2), at.AddSeconds(4), true, 1)], null)
+                { UsesTemporalPlanning = true };
+            var first = Route(Vector3.UnitZ * 10, Epoch);
+            Dispatch(runtime, first, Vector3.Zero, snapshot, Epoch);
+            for (var tick = 1; tick <= 10; ++tick)
+            {
+                var now = Epoch.AddSeconds(tick * .1);
+                var unrelated = runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.UnitX * 15, 0), [new(now, null)]);
+                snapshot = runtime.Manager.BuildSnapshot(now);
+                var candidate = Route(new(tick % 2 == 0 ? .5f : -.5f, 0, 10), now);
+                Dispatch(runtime, candidate, Vector3.UnitZ * (tick * .5f), snapshot, now);
+                runtime.Manager.RemoveArea(unrelated);
+            }
+            var hold = Route(Vector3.UnitZ * 5, Epoch.AddSeconds(1));
+            Dispatch(runtime, hold, Vector3.UnitZ * 5, snapshot, Epoch.AddSeconds(1));
+            Check(move.MoveCount == 1 && move.StopCount == 0,
+                $"A still-safe temporal phase was restarted {move.MoveCount} times as alternative refuges changed.");
+            var late = Epoch.AddSeconds(5);
+            Dispatch(runtime, Route(new(.5f, 0, 10), late), Vector3.UnitZ * 5, snapshot, late);
+            Check(move.MoveCount == 2, "An expired wait schedule suppressed a fresh temporal route.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.UnitZ * 8, 0), [new(Epoch, null)]);
+            snapshot = runtime.Manager.BuildSnapshot(late);
+            Dispatch(runtime, null, Vector3.UnitZ * 5, snapshot, late);
+            Check(!move.IsRunning, "Route stability ignored a newly unsafe remaining segment.");
+        });
+
         run("Navigation continuity late candidate starts ahead of current progress", () =>
         {
             using var runtime = Runtime(out var move);
@@ -157,15 +212,22 @@ internal static class NavigationContinuityRegression
             Check(!move.IsRunning && !runtime.Setting.EffectiveEnableAutoMovement, "Hold allowed movement.");
         });
 
-        run("Navigation continuity changed goal redirects even if the old route is safe", () =>
+        foreach (var temporal in new[] { false, true })
+        run($"Navigation continuity changed goal redirects even if the old route is safe temporal={temporal}", () =>
         {
             using var runtime = Runtime(out var move);
             var snapshot = runtime.Manager.BuildSnapshot(Epoch);
-            Dispatch(runtime, Solve(snapshot, Vector3.Zero, Epoch), Vector3.Zero, snapshot, Epoch);
+            SafeZoneSolution Route(SafeZoneSnapshot state, DateTime at)
+            {
+                var solved = Solve(state, Vector3.Zero, at);
+                return new(solved.Status, state.Version, at, at, solved.TargetPosition, solved.ExecutablePath, null)
+                    { UsesTemporalPlanning = temporal };
+            }
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
             runtime.Manager.ClearGoalAreas();
             runtime.Manager.AddGoalArea(new CircleTemplate(.8f), new StaticTransform(new(10, 0, 0), 0), [GoalWindow.Persistent(Epoch, 100)]);
             snapshot = runtime.Manager.BuildSnapshot(Epoch.AddSeconds(.2));
-            Dispatch(runtime, Solve(snapshot, Vector3.Zero, Epoch.AddSeconds(.2)), Vector3.Zero, snapshot, Epoch.AddSeconds(.2));
+            Dispatch(runtime, Route(snapshot, Epoch.AddSeconds(.2)), Vector3.Zero, snapshot, Epoch.AddSeconds(.2));
             Check(move.GetStatus().FinalPoint is { Position.X: > 9 }, "A new mechanism goal left the player following the old goal.");
         });
 
