@@ -3,6 +3,10 @@ using MasterPlayer.Spatial.SafeZone;
 using MasterPlayer.Spatial.SafeZoneReborn;
 using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 using PromeRotation.GreenMoveSystem;
+using ECommons.DalamudServices;
+using MasterPlayer.Settings;
+using MasterPlayer.Spatial.Terrain;
+using Dalamud.Game.ClientState.Conditions;
 
 namespace MasterPlayer.Spatial;
 
@@ -12,6 +16,19 @@ internal sealed record DirectTraversalExecution(IReadOnlyList<Vector3> Path, int
 public sealed class SafeZoneRuntime : IDisposable
 {
     private readonly SafeZoneRebornMovementSystem _movement;
+    private readonly LocalTerrainController terrain;
+    private readonly IGreenMoveSystem hostMovement;
+    private string? lastTerrainError;
+    internal LocalTerrainBoundary? LocalTerrain => terrain.Current;
+    internal LocalTerrainBoundary? TerrainDisplay => terrain.Display;
+    internal float TerrainViewRadius => terrain.ViewRadius;
+    internal string TerrainStatus => terrain.StatusText;
+    internal double TerrainScanMilliseconds => terrain.LastScanMilliseconds;
+    internal TerrainCaptureDiagnostics? TerrainCaptureDiagnostics => terrain.CaptureDiagnostics;
+    internal TerrainSceneCapture? TerrainCapture => terrain.LatestCapture;
+    internal bool TerrainExporting => terrain.Exporting;
+    internal string TerrainExportStatus => terrain.ExportStatus;
+    internal bool ExportTerrainScene(string directory) => terrain.ExportScene(directory);
     private Vector3? _previousPosition;
     private readonly ObservedMoveSpeed _observedSpeed = new();
     private ulong? _previousPlayerId;
@@ -34,6 +51,11 @@ public sealed class SafeZoneRuntime : IDisposable
     public SafeZoneManager Manager { get; }
     public SafeZoneRegistry Registry { get; }
     public ISafeZoneRebornMovementStatus MovementStatus => _movement;
+    internal void SetMovementHandoff(Func<bool, bool>? request)
+    {
+        if (request == null) _movement.Reset();
+        _movement.RequestExclusiveMovement = request;
+    }
     internal Func<DateTime>? ReplayClock { get; set; }
     public DateTime CurrentTime => ReplayClock?.Invoke() ?? DateTime.UtcNow;
     /// <summary>Measured steady run speed (y/s), when one has been observed.</summary>
@@ -167,8 +189,18 @@ public sealed class SafeZoneRuntime : IDisposable
     {
         Manager = new(Setting);
         Registry = new(Manager, () => CurrentTime);
+        terrain = new(Manager, new GameTerrainProbe(new NativeTerrainRaycaster()), new NativeTerrainSceneSource());
+        hostMovement = movement;
         _movement = new(Setting, Manager, externalMovementEnabled, externalHasControl);
+        _movement.CheckTerrainTraversal = ValidateTerrainTraversal;
         _movement.Attach(movement);
+    }
+
+    private bool ValidateTerrainTraversal(Vector3 from, Vector3 to)
+    {
+        if (LocalTerrain == null || terrain.ValidateStep(from, to)) return true;
+        terrain.RejectRoute(PlayerPerspective.LivePlayer?.Position ?? from, MasterPlayerSettings.Instance.TerrainScanRadius, CurrentTime);
+        return false;
     }
 
     internal void Update(float speedMultiplier, bool allowMovement)
@@ -176,6 +208,7 @@ public sealed class SafeZoneRuntime : IDisposable
         if (_disposed) return;
         if (!allowMovement)
         {
+            terrain.Clear();
             _observedSpeed.Reset();
             PlanningSpeed = 0;
             _movement.Update(null, default, CurrentTime, false);
@@ -186,6 +219,23 @@ public sealed class SafeZoneRuntime : IDisposable
         var baseSpeed = Setting.RuntimeBaseSpeed ?? MovementCapability.DefaultBaseSpeed;
         PlayerState? player = null;
         var actor = PlayerPerspective.LivePlayer is { IsDead: false } local ? local : null;
+        if (actor == null || PlayerPerspective.IsReplay || !Setting.EffectiveEnableSafeZone || Manager.HasRegisteredArenaBoundary)
+            terrain.Update(actor?.Position ?? default, 0, false, 20, CurrentTime);
+        else
+        {
+            var settings = MasterPlayerSettings.Instance;
+            terrain.Update(actor.Position, Svc.ClientState.TerritoryType,
+                settings.EnableTerrainCollision,
+                settings.TerrainScanRadius, CurrentTime,
+                Svc.Condition[ConditionFlag.Jumping] || Svc.Condition[ConditionFlag.Jumping61],
+                NativeTerrainRaycaster.CaptureLayoutIdentity());
+            if (LocalTerrain != null && _movement.HasControl && hostMovement.GetStatus() is { IsRunning: true, CurrentPoint: { } point }
+                && !terrain.ValidateStep(actor.Position, point.Position))
+            {
+                _movement.Reset();
+                terrain.RejectRoute(actor.Position, settings.TerrainScanRadius, CurrentTime);
+            }
+        }
         var playerId = actor?.EntityId ?? 0;
         if (_previousPlayerId.HasValue && _previousPlayerId != playerId)
         {
@@ -211,12 +261,23 @@ public sealed class SafeZoneRuntime : IDisposable
         }
         else _previousPosition = null;
         _movement.Update(player, capability, CurrentTime, allowMovement && !PlayerPerspective.IsDutyReplay);
+        if (terrain.LastError != null && terrain.LastError != lastTerrainError)
+            Svc.Log.Warning($"[PromeRadar] 地形查询失败，已暂停无场地移动：{terrain.LastError}");
+        lastTerrainError = terrain.LastError;
     }
 
     public void Clear()
     {
         if (_disposed) return;
+        terrain.Clear();
+        ClearCombatState();
+    }
+
+    internal void ClearCombatState()
+    {
+        if (_disposed) return;
         Manager.ClearAllAreas();
+        Manager.SetFallbackBoundary(terrain.Current);
         ClearMovementRequests();
         _movement.Reset();
         _previousPosition = null;
@@ -226,6 +287,7 @@ public sealed class SafeZoneRuntime : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        terrain.Clear();
         ClearMovementRequests();
         try { _movement.Dispose(); }
         finally { Manager.Dispose(); }

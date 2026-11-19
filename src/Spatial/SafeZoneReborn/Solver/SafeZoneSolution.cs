@@ -65,6 +65,7 @@ public sealed class SafeZoneSolution
     internal bool UsesTemporalPlanning { get; init; }
     internal bool IsPartialEscape { get; init; }
     internal bool IsArenaMarginRecovery { get; init; }
+    internal bool IsArenaReentry { get; init; }
     /// <summary>找不到安全格时退而求其次：走向危险区重叠最少的可达点（11-14 kano：不要原地松手挨打）。</summary>
     internal bool IsLeastDangerFallback { get; init; }
     internal int LeastDangerOverlap { get; init; }
@@ -88,7 +89,7 @@ public sealed class SafeZoneSolution
             EscapeDeadline, EscapeDuration, SettledTargetPosition)
         {
             UsesTemporalPlanning = UsesTemporalPlanning, IsPartialEscape = IsPartialEscape,
-            ExitsInitialPersistentDanger = ExitsInitialPersistentDanger, IsArenaMarginRecovery = IsArenaMarginRecovery,
+            ExitsInitialPersistentDanger = ExitsInitialPersistentDanger, IsArenaMarginRecovery = IsArenaMarginRecovery, IsArenaReentry = IsArenaReentry,
             IsLeastDangerFallback = IsLeastDangerFallback, LeastDangerOverlap = LeastDangerOverlap,
             ReducedDangerStartSafetyTime = ReducedDangerStartSafetyTime, MaxArrivalTolerance = MaxArrivalTolerance,
             ContinuationPath = ContinuationPath, RefinedGridResolution = RefinedGridResolution,

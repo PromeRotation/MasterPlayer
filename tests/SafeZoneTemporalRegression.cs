@@ -625,13 +625,13 @@ internal static class SafeZoneTemporalRegression
 
     private static object CreateMovement(FakeMove move, SafeZoneSetting? legacySetting = null, LegacyStatus? legacyStatus = null)
     {
-        var type = typeof(SafeZoneSolver).Assembly.GetType("MasterPlayer.Spatial.SafeZoneReborn.SafeZoneRebornMovementSystem")!;
-        var movement = RuntimeHelpers.GetUninitializedObject(type);
-        SetField(movement, "_setting", new SafeZoneSetting());
+        var setting = new SafeZoneSetting();
+        var movement = new SafeZoneRebornMovementSystem(
+            setting, new SafeZoneManager(setting),
+            () => legacySetting is { EnableSafeZone: true, EnableAutoMovement: true },
+            () => legacyStatus?.HasControl == true);
         SetField(movement, "_options", Options);
-        SetField(movement, "_greenMove", move);
-        SetField(movement, "_externalMovementEnabled", (Func<bool>)(() => legacySetting is { EnableSafeZone: true, EnableAutoMovement: true }));
-        SetField(movement, "_externalHasControl", (Func<bool>)(() => legacyStatus?.HasControl == true));
+        movement.Attach(move);
         return movement;
     }
 

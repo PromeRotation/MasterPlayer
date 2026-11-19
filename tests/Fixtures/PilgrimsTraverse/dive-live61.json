@@ -1,0 +1,93 @@
+{
+  "source": "61-70层实时ARR快照（2026-11-19，未封口）",
+  "partial": true,
+  "sourceSha256": "ebc119ee606ae8e4c83f99b75f32b6e2d9c5614abed7325b0138f180960a4837",
+  "snapshotSha256": "bdb864eaf55ff2d5635e6d20d1e1c55d456b8370628251f95ffa603ae7e86a3c",
+  "snapshotHeaderLengthRepaired": true,
+  "build": 14251465,
+  "content": 1038,
+  "oid": 18727,
+  "cycles": [
+    {
+      "castAt": 190.964,
+      "castSeconds": 3.700000047683716,
+      "firstAction": 42516,
+      "secondAction": 42517,
+      "firstAt": 194.898,
+      "secondAt": 197.997,
+      "interval": 3.099,
+      "position": [
+        312.12329289692525,
+        -0.3509575036240449,
+        -221.88143739986265
+      ],
+      "castRotation": -3.141592653589793,
+      "firstSourcePosition": [
+        316.60944533455404,
+        0.2594033722438098,
+        -220.99641412985432
+      ],
+      "secondSourcePosition": [
+        312.12329289692525,
+        0.045777065690117524,
+        -221.88143739986265
+      ],
+      "firstTargets": 0,
+      "secondTargets": 0
+    },
+    {
+      "castAt": 483.57,
+      "castSeconds": 3.700000047683716,
+      "firstAction": 42516,
+      "secondAction": 42517,
+      "firstAt": 487.556,
+      "secondAt": 490.735,
+      "interval": 3.179,
+      "position": [
+        -222.15609979400324,
+        -0.07629510948345342,
+        281.42214084077204
+      ],
+      "castRotation": -3.141592653589793,
+      "firstSourcePosition": [
+        -221.57625696192872,
+        0.015259021896667946,
+        286.33554589150845
+      ],
+      "secondSourcePosition": [
+        -222.15609979400324,
+        0.106813153276903,
+        281.42214084077204
+      ],
+      "firstTargets": 0,
+      "secondTargets": 0
+    },
+    {
+      "castAt": 590.732,
+      "castSeconds": 3.700000047683716,
+      "firstAction": 42516,
+      "secondAction": 42517,
+      "firstAt": 594.686,
+      "secondAt": 597.818,
+      "interval": 3.132,
+      "position": [
+        358.2055390249484,
+        -0.07629510948345342,
+        -391.7448691538872
+      ],
+      "castRotation": -3.141592653589793,
+      "firstSourcePosition": [
+        373.1288624399176,
+        0.2899214160372594,
+        -393.9726863508049
+      ],
+      "secondSourcePosition": [
+        358.2055390249484,
+        0.045777065690117524,
+        -391.7448691538872
+      ],
+      "firstTargets": 0,
+      "secondTargets": 0
+    }
+  ]
+}

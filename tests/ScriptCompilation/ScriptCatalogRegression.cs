@@ -13,7 +13,7 @@ using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
-    public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references)
+    public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false)
     {
         var config = Directory.CreateTempSubdirectory("MasterPlayer-ScriptCatalog-");
         var originalInterface = Svc.PluginInterface;
@@ -45,14 +45,21 @@ internal static class ScriptCatalogRegression
             dynamic Find(string id) => Scripts().Single(d => d.Metadata.Id == id);
             void ExpectOverride(string id, string source)
             {
-                Check(Scripts().Length == 9, "An override must replace its built-in entry.");
+                Check(Scripts().Length == 19, "An override must replace its built-in entry.");
                 Check(Find(id).Source.ToString() == source, "The configuration directory must win.");
             }
             void Pass(string name) => Console.WriteLine($"PASS script catalog: {name}");
 
             Refresh();
-            Check(Scripts().Length == 9 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
-                "An empty configuration must discover five boards, three dungeons and Blunderville, excluding examples.");
+            Check(Scripts().Length == 19 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
+                "An empty configuration must discover five boards, three dungeons, Blunderville and ten Pilgrims bosses, excluding examples.");
+            foreach (var (floor, territory) in new[] { (10, 1281u), (20, 1282u), (30, 1283u), (40, 1284u), (50, 1285u),
+                (60, 1286u), (70, 1287u), (80, 1288u), (90, 1289u), (99, 1290u) })
+            {
+                var id = $"promeradar.pt{floor}";
+                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual([territory]), "Pilgrims scripts must use real territory IDs, not CFC IDs.");
+                Check((bool)manager.IsScriptEnabled(id), "Migrated Pilgrims scripts are enabled by default.");
+            }
             foreach (var (id, territory) in new[] { ("sastasha", 1036u), ("tamtara", 1037u), ("copperbell", 1038u) })
                 Check(((uint[])Find("masterplayer.dungeon." + id).Metadata.Territorys).SequenceEqual([territory]), "Dungeon territory identity must match the remade duty.");
             var race = Find("masterplayer.goldsaucer.blunderville");
@@ -94,12 +101,12 @@ internal static class ScriptCatalogRegression
             Check(Find(builtInId).Source.ToString() == "BuiltIn", "A failed external load must leave the built-in available.");
             File.Delete(sourcePath);
             Refresh();
-            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
+            Check(Scripts().Length == 19 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
             Pass("compile failure reports an error; removal restores the built-in");
 
             File.WriteAllText(sourcePath, Source("Independent external script", "external.independent"));
             Refresh();
-            Check(Scripts().Length == 10 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
+            Check(Scripts().Length == 20 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
             File.Delete(sourcePath);
             Pass("unrelated external scripts coexist with built-ins");
 
@@ -141,7 +148,7 @@ internal static class ScriptCatalogRegression
             visualPreview.Set("preview-marker", 2);
             Check((int)settings.ScriptSettings[visualId]["preview-marker"].GetValue<int>() == 1,
                 "Saving a visual replacement must retire its previous settings preview without a full reload.");
-            Check(Scripts().Length == 10 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
+            Check(Scripts().Length == 20 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
@@ -149,10 +156,13 @@ internal static class ScriptCatalogRegression
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
             visualPreview.Set("preview-marker", 3);
             Check(!settings.ScriptSettings.ContainsKey(visualId), "A deleted visual preview must not recreate removed settings.");
-            Check(Scripts().Length == 9 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
+            Check(Scripts().Length == 19 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
+            PilgrimsTentacleRegression.Run(assembly);
+            PilgrimsTrashFacingRegression.Run(assembly);
+            if (scriptsOnly) return;
             IntegrationRegression.Run(assembly);
             SkillSequenceRuntimeRegression.Run(assembly);
         }
@@ -215,6 +225,10 @@ internal static class ScriptCatalogRegression
             ScriptMovementRegression.Run(assembly, manager, (object)runtime);
             Check(moveCalls == 0, "Script holds must not issue GreenMove commands.");
             Console.WriteLine("PASS production local runtime: script registration, cleanup and replay transitions");
+            PilgrimsFollowUpRegression.Run(assembly, (object)runtime);
+            PilgrimsFollowUpRegression.Run(assembly, (object)runtime, "dive");
+            PilgrimsFollowUpRegression.Run(assembly, (object)runtime, "water");
+            PilgrimsTrashCoverageRegression.Run(assembly, (object)runtime);
             ScriptSettingsRegression.Run(assembly, manager);
             CheckReplaySession(assembly, manager, runtime, plugin);
             Check(moveCalls == 0, "Recorded playback must never invoke movement.");
@@ -286,7 +300,8 @@ internal static class ScriptCatalogRegression
             manager.Update(30f);
             void TickRuntime() => ((object)runtime).GetType().GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke((object)runtime, [1f, false]);
             TickRuntime();
-            plugin.GetType().GetMethod("ClearLiveSafeZone", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(plugin, null);
+            foreach (var preserveTerrain in new[] { false, true })
+                plugin.GetType().GetMethod("ClearLiveSafeZone", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(plugin, [preserveTerrain]);
             Check(runtime.CurrentTime == pausedTime && Dangers() == 1 && Previews() == 1, "Paused production replay changed the world or expired its output.");
             Check(runtime.Manager.BuildSnapshot(runtime.CurrentTime).ArenaBoundary != null, "A live lifecycle event cleared the replay arena.");
             settings.TerritoryEnabled[1038u] = false;
@@ -319,6 +334,270 @@ internal static class ScriptCatalogRegression
                 && runtime.GetType().GetProperty("ReplayClock", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue((object)runtime) == null
                 && runtime.Manager.GetType().GetProperty("EntityPoseOverride", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue((object)runtime.Manager) == null,
                 "Stopping replay retained a world override or output.");
+            var previousMargin = (float)settings.DodgeDangerMargin;
+            settings.DodgeDangerMargin = 3f;
+            try
+            {
+                foreach (var (territory, oid, action, radius) in new[] { (1281, 0x460D, 44057, 15f), (1283, 0x4609, 39642, 14f), (1285, 0x4872, 43534, 6f) })
+                {
+                    settings.DodgeDangerMargin = 3f;
+                    File.WriteAllText(file, $$$$"""
+                        {"v":2,"territory":{{{{territory}}}},"startedUtc":"2026-09-21T01:00:00Z","pluginVersion":"pilgrims-test"}
+                        {"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":{{{{territory}}}},"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":{{{{oid}}}},"Hp":1000,"MaxHp":1000,"InCombat":true,"Targetable":true,"Position":{"X":-300,"Y":0,"Z":-300}},{"Id":2,"Kind":1,"Position":{"X":-300,"Y":0,"Z":-300}}]}}
+                        {"t":1,"kind":"CastStart","type":"PromeRotation.LogSystem.LogSystemCastStartEvent","packetFacing":0,"data":{"SourceId":1,"ActionId":{{{{action}}}},"CastTime":4,"Timestamp":"2026-09-21T01:00:01Z","EffectPosition":{"X":-300,"Y":0,"Z":-300}}}
+                        {"t":10,"kind":"WorldFrame","data":{"Territory":{{{{territory}}}},"LocalPlayerId":2,"Removed":[1]}}
+                        """);
+                    Check(controller.Load(file), (string)controller.StatusMessage);
+                    controller.Play(); controller.Update(2f); controller.Pause();
+                    Check(controller.ReplayScriptCount == 1 && Dangers() == 1 && Previews() == 1, "Production Pilgrims replay must register its own exact AOE and preview.");
+                    dynamic danger = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>().Single();
+                    Check((bool)danger.Geometry.Contains(new Vector3(-300 + radius - .1f, 0, -300), 0f)
+                        && !(bool)danger.Geometry.Contains(new Vector3(-300 + radius + .1f, 0, -300), 0f),
+                        "Pilgrims script output must retain the physical radius despite a nonzero DodgeDangerMargin.");
+                    dynamic running = manager.Running[$"promeradar.pt{(territory - 1280) * 10}"];
+                    object script = running.Script;
+                    var hostProperty = script.GetType().GetProperty("Host")!;
+                    var originalHost = hostProperty.GetValue(script)!;
+                    var hostInterface = assembly.GetType("MasterPlayer.Scripting.IScriptHostContext")!;
+                    var liveHost = typeof(CatalogServiceProxy).GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)!
+                        .MakeGenericMethod(hostInterface).Invoke(null, [(Func<string, object?[], object?>)((name, values) =>
+                            name == "get_IsReplay" ? false : hostInterface.GetMethod(name)!.Invoke(originalHost, values))])!;
+                    var runtimeSetting = (object)runtime.Setting;
+                    var allowedProperty = runtimeSetting.GetType().GetProperty("MovementAllowed", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                    var wasAllowed = allowedProperty.GetValue(runtimeSetting);
+                    try
+                    {
+                        hostProperty.SetValue(script, liveHost);
+                        allowedProperty.SetValue(runtimeSetting, true);
+                        foreach (var margin in new[] { .5f, 1f, 0f })
+                        {
+                            settings.DodgeDangerMargin = margin;
+                            script.GetType().BaseType!.GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(script, [(object)runtime.CurrentTime]);
+                            var movement = (object)runtime.MovementStatus;
+                            dynamic options = movement.GetType().GetMethod("CaptureSolveOptions", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(movement, null)!;
+                            Check((float)options.HardSafetyMargin == margin && (float)options.ArenaSafetyMargin == 0f,
+                                "Live Pilgrims planning must apply the configured safety margin exactly once and preserve the arena edge.");
+                        }
+                    }
+                    finally
+                    {
+                        hostProperty.SetValue(script, originalHost);
+                        allowedProperty.SetValue(runtimeSetting, wasAllowed);
+                    }
+                    controller.StopSession();
+                    Check(Dangers() == 0 && Previews() == 0, "Pilgrims script stop must clear all output.");
+                }
+            }
+            finally { settings.DodgeDangerMargin = previousMargin; }
+            Console.WriteLine("PASS production Pilgrims: exact R15/R14/R6, live configured margins 0/0.5/1 applied once, original arena edges, replay previews and cleanup");
+            using (var pt20 = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+                "Fixtures", "PilgrimsTraverse", "pt20-bursts-200454.json"))))
+            {
+                foreach (var cycle in pt20.RootElement.GetProperty("cycles").EnumerateArray())
+                {
+                    var lines = new List<string>
+                    {
+                        """{"v":2,"territory":1282,"startedUtc":"2026-11-19T00:00:00Z","pluginVersion":"pt20-regression"}""",
+                        """{"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":1282,"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":18524,"Hp":1000,"MaxHp":1000,"InCombat":true,"Position":{"X":-300,"Y":0,"Z":-300}},{"Id":2,"Kind":1,"Position":{"X":-286.03,"Y":0,"Z":-296.925}}]}}""",
+                    };
+                    foreach (var ev in cycle.GetProperty("events").EnumerateArray())
+                    {
+                        var time = 14 + ev.GetProperty("t").GetDouble();
+                        var kind = ev.GetProperty("kind").GetString();
+                        var data = new Dictionary<string, object?>
+                        {
+                            ["Timestamp"] = new DateTime(2026, 11, 19, 0, 0, 0, DateTimeKind.Utc).AddSeconds(time),
+                        };
+                        if (kind is "status" or "statusRemove")
+                        {
+                            data["TargetId"] = 1;
+                            data["StatusId"] = 2056;
+                            data["Param"] = ev.GetProperty("param").GetUInt16();
+                            data["Duration"] = 3;
+                        }
+                        else
+                        {
+                            var p = ev.GetProperty("position");
+                            var position = new { X = p[0].GetSingle(), Y = p[1].GetSingle(), Z = p[2].GetSingle() };
+                            data["SourceId"] = ev.GetProperty("source").GetUInt64();
+                            data["ActionId"] = ev.GetProperty("action").GetUInt32();
+                            data["SourcePosition"] = position;
+                            data["EffectPosition"] = kind == "cast" ? position : new { X = 0f, Y = 0f, Z = 0f };
+                            if (kind == "cast") data["CastTime"] = ev.GetProperty("seconds").GetSingle();
+                            else data["GlobalSequence"] = ev.GetProperty("sequence").GetUInt32();
+                        }
+                        var eventName = kind switch { "cast" => "CastStart", "effect" => "ActionEffect", "status" => "StatusAdd", _ => "StatusRemove" };
+                        lines.Add(JsonSerializer.Serialize(new { t = time, kind = eventName,
+                            type = $"PromeRotation.LogSystem.LogSystem{eventName}Event", packetFacing = 0f, data }));
+                    }
+                    File.WriteAllText(file, string.Join('\n', lines));
+                    Check(controller.Load(file), (string)controller.StatusMessage);
+                    controller.Play(); controller.Seek(15.9d); controller.Pause();
+                    Check(Dangers() == 4 && Previews() == 1, "PT20 must retain all four exact navigation circles and preview only the next burst.");
+                    foreach (var ev in cycle.GetProperty("events").EnumerateArray().Where(e => e.GetProperty("kind").GetString() == "effect"))
+                    {
+                        controller.Seek(14 + ev.GetProperty("t").GetDouble() + .001);
+                        var expected = 43459 - ev.GetProperty("action").GetInt32();
+                        Check(Dangers() == expected && Previews() == (expected == 0 ? 0 : 1),
+                            "A self-target effect desynchronized production PT20 previews and unresolved dangers.");
+                        object Bounds(object geometry) => geometry.GetType().GetMethod("GetBounds")!.Invoke(geometry, null)!;
+                        var previewBounds = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!)
+                            .Cast<object>().Select(p => Bounds(p.GetType().GetProperty("Geometry")!.GetValue(p)!)).ToArray();
+                        if (expected > 0)
+                        {
+                            dynamic nextBurst = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
+                                .MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
+                            Check(previewBounds.Single().Equals(Bounds((object)nextBurst.Geometry)), "PT20 preview must match the next navigation circle exactly.");
+                        }
+                    }
+                    controller.StopSession();
+                    Check(Dangers() == 0 && Previews() == 0, "PT20 retained output after stopping replay.");
+                }
+            }
+            Console.WriteLine("PASS production PT20: three recorded sequences retain full navigation and preview only the next exact circle");
+            using (var pt50 = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+                "Fixtures", "PilgrimsTraverse", "pt50-chase-155404.json"))))
+            {
+                foreach (var cycle in pt50.RootElement.GetProperty("cycles").EnumerateArray())
+                {
+                    object Pose(JsonElement p) => new { X = p[0].GetSingle(), Y = p[1].GetSingle(), Z = p[2].GetSingle() };
+                    var lines = new List<string>
+                    {
+                        """{"v":2,"territory":1285,"startedUtc":"2026-11-19T00:00:00Z","pluginVersion":"pt50-regression"}""",
+                        JsonSerializer.Serialize(new { t = 0, kind = "WorldFrame", data = new { Full = true, Territory = 1285, LocalPlayerId = 100,
+                            Actors = new object[] {
+                                new { Id = 1, Oid = 0x4872, Hp = 1000, MaxHp = 1000, InCombat = true, Position = Pose(cycle.GetProperty("initial").GetProperty("boss")) },
+                                new { Id = 100, Kind = 1, Position = Pose(cycle.GetProperty("initial").GetProperty("player")) } } } }),
+                        """{"t":0.5,"kind":"TargetIcon","type":"PromeRotation.LogSystem.LogSystemTargetIconEvent","data":{"TargetId":100,"MarkerId":640}}""",
+                    };
+                    var state = cycle.GetProperty("arenaState").GetUInt32();
+                    if (state != 0)
+                        lines.Add(JsonSerializer.Serialize(new { t = .75, kind = "MapEffect", type = "PromeRotation.LogSystem.LogSystemMapEffectEvent",
+                            data = new { Position = 1, Param1 = (ushort)state, Param2 = (ushort)(state >> 16) } }));
+                    foreach (var ev in cycle.GetProperty("events").EnumerateArray())
+                    {
+                        var time = 1 + ev.GetProperty("t").GetDouble();
+                        var kind = ev.GetProperty("kind").GetString();
+                        if (kind == "frame")
+                        {
+                            var actor = ev.GetProperty("actor").GetInt32();
+                            lines.Add(JsonSerializer.Serialize(new { t = time, kind = "WorldFrame", data = new { Territory = 1285, LocalPlayerId = 100,
+                                Actors = new[] { new { Id = actor, Oid = actor == 1 ? 0x4872 : 0, Kind = actor == 1 ? 2 : 1,
+                                    Hp = 1000, MaxHp = 1000, InCombat = true, Position = Pose(ev.GetProperty("position")) } } } }));
+                            continue;
+                        }
+                        var data = new Dictionary<string, object?>
+                        {
+                            ["SourceId"] = 1, ["ActionId"] = ev.GetProperty("action").GetUInt32(),
+                            ["EffectPosition"] = Pose(ev.GetProperty("position")),
+                            ["SourcePosition"] = Pose(ev.GetProperty("sourcePosition")),
+                        };
+                        if (kind == "cast") { data["CastTime"] = ev.GetProperty("seconds").GetSingle(); data["TargetId"] = 1; }
+                        else
+                        {
+                            data["GlobalSequence"] = ev.GetProperty("sequence").GetUInt32();
+                            data["TargetId"] = ev.GetProperty("target").GetInt32();
+                            data["TargetPosition"] = ev.GetProperty("targetPosition").ValueKind == JsonValueKind.Null ? null : Pose(ev.GetProperty("targetPosition"));
+                        }
+                        var eventName = kind == "cast" ? "CastStart" : "ActionEffect";
+                        lines.Add(JsonSerializer.Serialize(new { t = time, kind = eventName, type = $"PromeRotation.LogSystem.LogSystem{eventName}Event", packetFacing = 0f, data }));
+                    }
+                    File.WriteAllText(file, string.Join('\n', lines));
+                    Check(controller.Load(file), (string)controller.StatusMessage);
+                    controller.Play(); controller.Pause();
+                    var remaining = 4;
+                    foreach (var ev in cycle.GetProperty("events").EnumerateArray().Where(e => e.GetProperty("kind").GetString() == "effect"))
+                    {
+                        controller.Seek(1 + ev.GetProperty("t").GetDouble() + .001);
+                        --remaining;
+                        Check(Dangers() == (remaining == 0 ? 0 : 1), $"PT50 cycle {cycle.GetProperty("castTime")} action {ev.GetProperty("action")}: expected {(remaining == 0 ? 0 : 1)} danger, got {Dangers()}, previews={Previews()}; old first-hit areas must be removed when switching to a preview.");
+                        if (remaining == 0) continue;
+                        dynamic danger = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>().Single();
+                        dynamic bounds = danger.Geometry.GetBounds();
+                        var origin = ev.GetProperty(ev.GetProperty("action").GetInt32() == 43534 ? "sourcePosition" : "position");
+                        Check(Math.Abs((float)bounds.MinX - (origin[0].GetSingle() - 11)) < .001f
+                            && Math.Abs((float)bounds.MaxX - (origin[0].GetSingle() + 11)) < .001f, "PT50 production escape must be centered on the actual previous hit with a raw R11 envelope.");
+                        var circles = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>()
+                            .Select(p => p.GetType().GetProperty("Geometry")!.GetValue(p)!).Where(g => g.GetType().Name == "CircleGeometry").ToArray();
+                        Check(circles.Count(g => Math.Abs((float)((dynamic)g).GetBounds().MaxX - (float)((dynamic)g).GetBounds().MinX - 12) < .001f) == 1,
+                            "PT50 production preview must retain exactly one actual R6 circle.");
+                    }
+                    controller.StopSession();
+                    Check(Dangers() == 0 && Previews() == 0, "PT50 retained chase output after stopping replay.");
+                }
+            }
+            Console.WriteLine("PASS production PT50: three ARR sequences, R6 previews, R11 self-chase navigation, no stale first-hit areas and stop cleanup");
+            using (var pt60 = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+                "Fixtures", "PilgrimsTraverse", "pt60-spin-214526.json"))))
+            {
+                foreach (var cycle in pt60.RootElement.GetProperty("cycles").EnumerateArray())
+                {
+                    object Pose(JsonElement p) => new { X = p[0].GetSingle(), Y = p[1].GetSingle(), Z = p[2].GetSingle() };
+                    var lines = new List<string>
+                    {
+                        """{"v":2,"territory":1286,"startedUtc":"2026-11-19T00:00:00Z","pluginVersion":"pt60-regression"}""",
+                        JsonSerializer.Serialize(new { t = 0, kind = "WorldFrame", data = new { Full = true, Territory = 1286, LocalPlayerId = 100,
+                            Actors = new object[] {
+                                new { Id = 1, Oid = 0x49DE, Hp = 1000, MaxHp = 1000, InCombat = true, Position = Pose(cycle.GetProperty("position")) },
+                                new { Id = 100, Kind = 1, Position = Pose(cycle.GetProperty("initialPlayer")) } } } }),
+                        JsonSerializer.Serialize(new { t = .1, kind = "CastStart", type = "PromeRotation.LogSystem.LogSystemCastStartEvent",
+                            packetFacing = cycle.GetProperty("rotation").GetSingle(), data = new { SourceId = 1, TargetId = 1,
+                                ActionId = cycle.GetProperty("action").GetUInt32(), CastTime = cycle.GetProperty("seconds").GetSingle(),
+                                EffectPosition = Pose(cycle.GetProperty("position")) } }),
+                    };
+                    foreach (var effect in cycle.GetProperty("effects").EnumerateArray())
+                        lines.Add(JsonSerializer.Serialize(new { t = .1 + effect.GetProperty("t").GetDouble(), kind = "ActionEffect",
+                            type = "PromeRotation.LogSystem.LogSystemActionEffectEvent", data = new {
+                                SourceId = effect.GetProperty("source").GetUInt64(), ActionId = 44909,
+                                GlobalSequence = effect.GetProperty("sequence").GetUInt32(), SourceRotation = effect.GetProperty("rotation").GetSingle(),
+                                SourcePosition = Pose(effect.GetProperty("position")) } }));
+                    File.WriteAllText(file, string.Join('\n', lines));
+                    Check(controller.Load(file), (string)controller.StatusMessage);
+                    controller.Play(); controller.Seek(1d); controller.Pause();
+                    Check(Dangers() == 20 && Previews() == 3, "PT60 must publish all 20 navigation pulses but only two cones and the center goal as previews.");
+                    dynamic first = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
+                        .MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
+                    var firstAt = new DateTime(2026, 11, 19, 0, 0, 0, DateTimeKind.Utc).AddSeconds(.1 + cycle.GetProperty("effects")[0].GetProperty("t").GetDouble());
+                    Check(((IEnumerable)first.DangerWindows).Cast<dynamic>().Any(w => (DateTime)w.DangerFrom <= firstAt && (DateTime?)w.DangerUntil >= firstAt),
+                        $"PT60 production timing misses {firstAt:O}; windows={string.Join(';', ((IEnumerable)first.DangerWindows).Cast<object>())}.");
+                    foreach (var pair in cycle.GetProperty("effects").EnumerateArray().GroupBy(e => (e.GetProperty("sequence").GetUInt32() - 1) / 2))
+                    {
+                        controller.Seek(.1 + pair.Max(e => e.GetProperty("t").GetDouble()) + .001);
+                        var remaining = 20 - ((int)pair.Key + 1) * 2;
+                        Check(Dangers() == remaining && Previews() == (remaining == 0 ? 0 : 3), "PT60 production previews retain a resolved or future sweep.");
+                    }
+                    controller.StopSession();
+                    Check(Dangers() == 0 && Previews() == 0, "PT60 retained output after stopping replay.");
+                }
+            }
+            Console.WriteLine("PASS production PT60: both ARR sequences, calibrated first hit, two cone previews, complete navigation and cleanup");
+            File.WriteAllText(file, string.Join('\n', new[]
+            {
+                """{"v":2,"territory":1287,"startedUtc":"2026-11-19T00:00:00Z","pluginVersion":"pt70-halo-regression"}""",
+                """{"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":1287,"LocalPlayerId":100,"Actors":[{"Id":1,"Oid":18508,"Hp":1000,"MaxHp":1000,"InCombat":true,"Position":{"X":-300,"Y":0,"Z":-300}},{"Id":100,"Kind":1,"Position":{"X":-300,"Y":0,"Z":-300}},{"Id":20,"Oid":18509,"Position":{"X":-305,"Y":0,"Z":-300}},{"Id":25,"Oid":18509,"Position":{"X":-295,"Y":0,"Z":-300}}]}}""",
+                """{"t":0.1,"kind":"CastStart","type":"PromeRotation.LogSystem.LogSystemCastStartEvent","packetFacing":0,"data":{"SourceId":1,"ActionId":43411,"CastTime":3,"EffectPosition":{"X":-300,"Y":0,"Z":-300}}}""",
+                """{"t":9,"kind":"CastStart","type":"PromeRotation.LogSystem.LogSystemCastStartEvent","packetFacing":0,"data":{"SourceId":20,"ActionId":43417,"CastTime":2.1,"EffectPosition":{"X":-305,"Y":0,"Z":-300}}}""",
+                """{"t":11.5,"kind":"ActionEffect","type":"PromeRotation.LogSystem.LogSystemActionEffectEvent","data":{"SourceId":20,"ActionId":43417,"GlobalSequence":1}}""",
+                """{"t":11.5,"kind":"ActionEffect","type":"PromeRotation.LogSystem.LogSystemActionEffectEvent","data":{"SourceId":20,"ActionId":43417,"GlobalSequence":1}}""",
+                """{"t":14,"kind":"ActionEffect","type":"PromeRotation.LogSystem.LogSystemActionEffectEvent","data":{"SourceId":25,"ActionId":43417,"GlobalSequence":2}}""",
+            }));
+            Check(controller.Load(file), (string)controller.StatusMessage);
+            controller.Play(); controller.Seek(1d); controller.Pause();
+            foreach (var (at, dangers, centerX) in new[] { (1d, 2, -305f), (9.1, 2, -305f), (11.501, 1, -295f) })
+            {
+                controller.Seek(at);
+                Check(Dangers() == dangers && Previews() == 1, "PT70 must keep every future halo in navigation but preview only the next hit.");
+                var preview = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().Single();
+                dynamic geometry = preview.GetType().GetProperty("Geometry")!.GetValue(preview)!;
+                Check(geometry.GetType().Name == "DonutGeometry" && Math.Abs((float)geometry.GetBounds().MinX - (centerX - 20)) < .001f,
+                    "PT70 preview did not advance to the next sphere with its original outer radius.");
+            }
+            controller.Seek(14.001d);
+            Check(Dangers() == 0 && Previews() == 0, "PT70 retained a resolved halo.");
+            controller.Seek(1d); controller.StopSession();
+            Check(Dangers() == 0 && Previews() == 0, "PT70 retained halo output after stopping replay.");
+            Console.WriteLine("PASS production PT70: next halo preview, complete navigation, cast replacement, duplicate effects, seek and stop cleanup");
+            PilgrimsPreviewReplayRegression.Run(controller, runtime, visibility, visibilityType, file);
             File.WriteAllText(file, "{\"v\":1,\"territory\":1038,\"startedUtc\":\"2026-09-21T01:00:00Z\",\"pluginVersion\":\"old\"}");
             Check(controller.Load(file), "Legacy recording should remain readable.");
             controller.Play();

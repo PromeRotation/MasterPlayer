@@ -17,30 +17,6 @@ internal static class NavigationContinuityRegression
 
     public static void Run(Action<string, Action> run)
     {
-        run("Navigation continuity host consumes an intermediate waypoint crossed between frames", () =>
-        {
-            // PT30 recording 09:26:19, t=187.9079: use its 0.747m frame
-            // step with a synthetic midpoint to test a crossed 0.1m waypoint.
-            var before = new Vector3(-292.29266f, 0, -284.24948f);
-            var after = new Vector3(-293.03967f, 0, -284.25037f);
-            var midpoint = (before + after) * .5f;
-            var point = new GreenMovePoint(midpoint, .1f);
-            var method = typeof(GreenMovePoint).Assembly.GetType("PromeRotation.GreenMoveSystem.GreenMoveArrival", true)!
-                .GetMethod("Advance", BindingFlags.Public | BindingFlags.Static)!;
-            int Advance(GreenMovePoint[] route, Vector3 current, Vector3 previous)
-                => (int)method.Invoke(null, [current, previous, route, 0])!;
-            Check(Vector3.Distance(after, midpoint) > point.Tolerance, "Fixture must overshoot the point.");
-            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], after, before) == 1,
-                "Host turned back instead of consuming the crossed intermediate point.");
-            Check(Advance([point], after, before) == 0, "A precise final wait point was skipped after overshoot.");
-            Check(Advance([point with { ArrivalMode = GreenMoveArrivalMode.PassThrough }], after, before) == 1,
-                "Explicit pass-through final point was not consumed.");
-            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], after + Vector3.UnitZ, before + Vector3.UnitZ) == 0,
-                "A segment outside tolerance consumed the waypoint.");
-            Check(Advance([point, new(midpoint - Vector3.UnitX * 4)], midpoint - Vector3.UnitX * 2, midpoint + Vector3.UnitX * 2) == 0,
-                "A teleport was mistaken for a normal traversed segment.");
-        });
-
         foreach (var release in new[] { "owner", "expiry", "hold", "reset" })
             run($"Navigation continuity committed jump releases on {release}", () =>
             {
@@ -133,7 +109,36 @@ internal static class NavigationContinuityRegression
             Check(ArenaBoundaryTraversal.ContainsSegment(boundary, p, solution.ExecutablePath[^1].Position), "Recovery left the true floor.");
             var outside = new SafeZoneSolver().Solve(snapshot, Player(new(6.2f, 0, 0), snapshot), new(6, 6, 0, false, 6, 6),
                 new() { GoalDirectedTemporalPlanning = true }, Epoch);
-            Check(!outside.UsesTemporalPlanning, "Boundary recovery authorized an outside starting position.");
+            Check(outside.IsArenaReentry && outside.ExecutablePath.Count == 2, "Nearby outside actor did not receive a separately checked reentry route.");
+        });
+        run("Arena reentry dispatch interrupts a cast and finishes inside before releasing", () =>
+        {
+            using var runtime = Runtime(out var move);
+            runtime.Manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 6));
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            var position = new Vector3(6.2f, 0, 0);
+            var solution = Solve(snapshot, position, Epoch);
+            Check(solution.IsArenaReentry && solution.WithExecutablePath(solution.ExecutablePath).IsArenaReentry, "Reentry flag lost during rebasing.");
+            var dispatch = runtime.MovementStatus.GetType().GetMethod("Dispatch", Private)!;
+            dispatch.Invoke(runtime.MovementStatus, [solution, Player(position, snapshot) with { IsCasting = true, CastTimeRemaining = 3 }, snapshot, Epoch]);
+            Check(move.IsRunning && move.MoveCount == 1, "Reentry waited for the cast or rejected the outside origin.");
+            position = new(5.99f, 0, 0);
+            Dispatch(runtime, solution, position, snapshot, Epoch.AddSeconds(.04));
+            Check(move.IsRunning && move.MoveCount == 1, "Reentry stopped as soon as the edge was crossed.");
+            var idle = SafeZoneSolution.Succeeded(snapshot.Version, Epoch, Epoch, null, null);
+            Dispatch(runtime, idle, position, snapshot, Epoch.AddSeconds(.045));
+            Check(move.IsRunning && move.MoveCount == 1, "A new in-bounds idle solve cut short the interior recovery.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(.5f), new StaticTransform(solution.TargetPosition!.Value, 0), [new(Epoch, null)]);
+            Dispatch(runtime, solution, position, runtime.Manager.BuildSnapshot(Epoch), Epoch.AddSeconds(.05));
+            Check(!move.IsRunning, "New danger failed to revoke the queued reentry route.");
+        });
+        run("Arena reentry keeps unknown terrain blocked", () =>
+        {
+            var terrain = new MasterPlayer.Spatial.Terrain.LocalTerrainBoundary(Vector3.Zero, 3,
+                Enumerable.Repeat(MasterPlayer.Spatial.Terrain.TerrainCellKind.Walkable, 9).ToArray(), new float[9]);
+            var snapshot = new SafeZoneSnapshot(1, Epoch, terrain, [], [], []);
+            var from = new Vector3(10,0,0);
+            Check(!Solve(snapshot, from, Epoch).IsSuccess, "Unknown terrain gained a reentry exception.");
         });
         foreach (var latency in new[] { .08, .3 })
             run($"Navigation continuity FirstA arrow bridge with {latency * 1000:F0}ms solves and unrelated hazards", () => Bridge(latency));

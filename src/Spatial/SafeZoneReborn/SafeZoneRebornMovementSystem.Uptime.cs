@@ -33,7 +33,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
     private bool CanHoldSafeRefuge(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
         if (!_setting.RuntimePreferSafeRefuge || GoalDirectedTemporalPlanning || _hasControl && _greenMove is { IsRunning: true }
-            || solution.IsLeastDangerFallback || solution.IsArenaMarginRecovery || solution.ReducedDangerStartSafetyTime.HasValue
+            || solution.IsLeastDangerFallback || solution.IsArenaMarginRecovery || solution.IsArenaReentry || solution.ReducedDangerStartSafetyTime.HasValue
             || snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(now))))
             return false;
 

@@ -14,6 +14,18 @@
     <Compile Include="IntegrationRegression.cs" />
     <Compile Include="SkillSequenceRuntimeRegression.cs" />
     <Compile Include="BmrSourceInventory.cs" />
+    <Compile Include="PilgrimsTentacleRegression.cs" />
+    <Compile Include="PilgrimsTrashFacingRegression.cs" />
+    <Compile Include="PilgrimsFollowUpRegression.cs" />
+    <Compile Include="PilgrimsTrashCoverageRegression.cs" />
+    <None Include="../Fixtures/PilgrimsTraverse/water-live71.json" Link="Fixtures/PilgrimsTraverse/water-live71.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="PilgrimsPreviewReplayRegression.cs" />
+    <None Include="../Fixtures/PilgrimsTraverse/shockwave-183552.json" Link="Fixtures/PilgrimsTraverse/shockwave-183552.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/dive-live61.json" Link="Fixtures/PilgrimsTraverse/dive-live61.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/tentacle-casts.json" Link="Fixtures/PilgrimsTraverse/tentacle-casts.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt20-bursts-200454.json" Link="Fixtures/PilgrimsTraverse/pt20-bursts-200454.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt50-chase-155404.json" Link="Fixtures/PilgrimsTraverse/pt50-chase-155404.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt60-spin-214526.json" Link="Fixtures/PilgrimsTraverse/pt60-spin-214526.json" CopyToOutputDirectory="PreserveNewest" />
     <Reference Include="Microsoft.CodeAnalysis" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.dll" />
     <Reference Include="Microsoft.CodeAnalysis.CSharp" HintPath="$(PromeRotationPath)\Microsoft.CodeAnalysis.CSharp.dll" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />

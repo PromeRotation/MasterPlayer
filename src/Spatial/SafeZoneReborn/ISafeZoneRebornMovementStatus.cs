@@ -15,6 +15,7 @@ public interface ISafeZoneRebornMovementStatus
     SafeZoneSolution? LatestSolution { get; }
 
     bool HasControl { get; }
+    bool MechanicMovementActive { get; }
 
     string PhaseText { get; }
 

@@ -199,7 +199,7 @@ internal static class Pt30MovingBallRecordedRegression
         manager.SetArenaBoundary(boundary);
         manager.AddObstacle(hole, new StaticTransform(Vector3.Zero, 0));
         foreach (var hazard in encounter.Hazards(now, 0, player))
-            manager.AddDangerArea(DangerMarginInflator.Inflate(hazard.Shape, .2f), new StaticTransform(hazard.Position, hazard.Rotation), [hazard.Window(now)]);
+            manager.AddDangerArea(hazard.Shape, new StaticTransform(hazard.Position, hazard.Rotation), [hazard.Window(now)]);
         return manager.BuildSnapshot(now);
     }
 

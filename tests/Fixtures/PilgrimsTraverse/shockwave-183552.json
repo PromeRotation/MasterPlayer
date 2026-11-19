@@ -1,0 +1,81 @@
+{
+  "source": "朝圣交错路 第61～70朝圣路 2026.11.19 18.35.52.dat",
+  "sha256": "3d40527df5de4403c0ae4aadd109acb5f369bd581bf362c697c15690502be19c",
+  "build": 14251465,
+  "content": 1038,
+  "oid": 18723,
+  "cycles": [
+    {
+      "castAt": 771.975,
+      "castSeconds": 4.699999809265137,
+      "firstAction": 42214,
+      "secondAction": 42217,
+      "firstAt": 776.923,
+      "secondAt": 779.556,
+      "interval": 2.633,
+      "position": [
+        -455.9548332951857,
+        6.820782787823305,
+        372.7626459143969
+      ],
+      "castRotation": 0.30790340450152165,
+      "actorRotation": 1.8787237001119648,
+      "firstTargets": 0,
+      "secondTargets": 0
+    },
+    {
+      "castAt": 801.94,
+      "castSeconds": 4.699999809265137,
+      "firstAction": 42216,
+      "secondAction": 42215,
+      "firstAt": 806.94,
+      "secondAt": 809.555,
+      "interval": 2.615,
+      "position": [
+        -394.3083848325323,
+        0.8697642481116645,
+        387.01457236591136
+      ],
+      "castRotation": -0.41528369814676713,
+      "actorRotation": -1.9861039937572094,
+      "firstTargets": 0,
+      "secondTargets": 0
+    },
+    {
+      "castAt": 908.972,
+      "castSeconds": 4.699999809265137,
+      "firstAction": 42216,
+      "secondAction": 42215,
+      "firstAt": 913.905,
+      "secondAt": 916.505,
+      "interval": 2.6,
+      "position": [
+        -207.20225833524069,
+        -0.5951018539711868,
+        405.6000610360875
+      ],
+      "castRotation": 1.7722062838263684,
+      "actorRotation": 0.20138598821592613,
+      "firstTargets": 0,
+      "secondTargets": 0
+    },
+    {
+      "castAt": 980.937,
+      "castSeconds": 4.699999809265137,
+      "firstAction": 42214,
+      "secondAction": 42217,
+      "firstAt": 985.871,
+      "secondAt": 988.47,
+      "interval": 2.599,
+      "position": [
+        -138.1704432745861,
+        5.294880598153668,
+        395.49858854047466
+      ],
+      "castRotation": 2.944377239278838,
+      "actorRotation": -1.7679877722903052,
+      "firstTargets": 0,
+      "secondTargets": 0
+    }
+  ]
+}

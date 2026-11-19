@@ -101,6 +101,10 @@ public sealed class SafeZoneSolver
             return SafeZoneSolution.Failed(SolutionStatus.PlayerOutsideArena, version, solveTime, solvedAt);
         }
 
+        if (snapshot.ArenaBoundary is { } arena && !arena.Contains(player.Position))
+            return TryReenterArena(snapshot, map, player.Position, capability, options, solveTime)
+                ?? SafeZoneSolution.Failed(SolutionStatus.PlayerOutsideArena, version, solveTime, solvedAt);
+
         var playerInDangerNow = IsPlayerInDangerNow(snapshot, player.Position, solveTime);
 
         if (map.PixelMaxGAt(startCol, startRow) < 0 && ArenaMarginRecovery.HasSource(snapshot)
@@ -372,6 +376,33 @@ public sealed class SafeZoneSolver
                     if (window.DangerFrom > now)
                         return true;
         return false;
+    }
+
+    private static SafeZoneSolution? TryReenterArena(SafeZoneSnapshot snapshot, RasterizedMap map, Vector3 player,
+        MovementCapability capability, SolveOptions options, DateTime now)
+    {
+        var (col, row) = map.WorldToCell(player);
+        var cells = (int)MathF.Ceiling(ArenaReentryRecovery.MaximumDistance / map.Resolution);
+        var candidates = new List<Vector3>();
+        for (var z = row - cells; z <= row + cells; ++z)
+            for (var x = col - cells; x <= col + cells; ++x)
+                if (map.InBounds(x, z) && map.PixelMaxGAt(x, z) >= 0)
+                {
+                    var point = map.CellCenter(x, z);
+                    point.Y = player.Y;
+                    if (GeometryHelper.DistanceXZ(player, point) <= ArenaReentryRecovery.MaximumDistance) candidates.Add(point);
+                }
+        var tolerance = MathF.Min(.1f, map.Resolution * .25f);
+        var delay = MathF.Max(0, capability.MovementStartDelay);
+        foreach (var target in candidates.OrderBy(p => GeometryHelper.DistanceXZ(player, p)))
+        {
+            if (!ArenaReentryRecovery.IsSafe(snapshot, player, target, now, capability.CurrentSpeed, options, tolerance, delay)) continue;
+            return new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, target,
+                [TimedWaypoint.Pass(player, now.AddSeconds(delay)),
+                    TimedWaypoint.Pass(target, now.AddSeconds(delay + GeometryHelper.DistanceXZ(player, target) / capability.CurrentSpeed))])
+                { UsesTemporalPlanning = true, IsArenaReentry = true, MaxArrivalTolerance = tolerance };
+        }
+        return null;
     }
 
     private static SafeZoneSolution? TryRecoverArenaMargin(SafeZoneSnapshot snapshot, RasterizedMap map, Vector3 player,

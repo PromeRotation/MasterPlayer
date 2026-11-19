@@ -22,9 +22,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <ProjectReference Include="MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
     <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\PromeRotation.LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="ThirdPartyNotices\DotRecast.LICENSE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UsePromeRotationSdk)' == 'true'">
@@ -94,6 +96,11 @@
     <Copy SourceFiles="$(PromeRotationPath)\PromeRotation.Scripting.dll"
           DestinationFolder="$(OutputPath)"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyTerrainDependencies" AfterTargets="Build">
+    <Copy SourceFiles="@(ReferencePath)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true"
+          Condition="'%(ReferencePath.Filename)' == 'DotRecast.Core' Or '%(ReferencePath.Filename)' == 'DotRecast.Recast'" />
   </Target>
 
 </Project>

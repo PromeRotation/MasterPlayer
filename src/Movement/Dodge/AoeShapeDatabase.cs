@@ -44,6 +44,30 @@ public static class AoeShapeDatabase
         [0xBE8Au] = new(AoeShapeKind.Fan, 60f, MathF.PI / 2f, false, 0.3f) { UseCastRotation = true },
         [0xBE8Bu] = new(AoeShapeKind.Fan, 60f, MathF.PI * 5f / 6f, false, 0.3f) { UseCastRotation = true },
         [0xBE8Cu] = new(AoeShapeKind.Fan, 60f, MathF.PI * 5f / 6f, false, 0.3f) { UseCastRotation = true },
+        // 朝圣31–40：包内施法朝向已包含左右侧偏转，不能跟随普通面朝向或再次加90度。
+        [44690u] = new(AoeShapeKind.Fan, 60f, MathF.PI, false, 0.3f) { UseCastRotation = true },
+        [44691u] = new(AoeShapeKind.Fan, 60f, MathF.PI, false, 0.3f) { UseCastRotation = true },
+        // 61–70层震荡波：R30半场，首击约在包内读条结束后0.3秒生效；另一侧追击由效果事件推进。
+        [42214u] = new(AoeShapeKind.Fan, 30f, MathF.PI, false, 0.3f) { UseCastRotation = true },
+        [42216u] = new(AoeShapeKind.Fan, 30f, MathF.PI, false, 0.3f) { UseCastRotation = true },
+        // 执行贯穿为落点R6圆，首击效果后接同落点R5–10月环，不能跟随跳跃前的来源位置。
+        [42516u] = new(AoeShapeKind.Circle, 6f, 0f, false, 0.3f),
+        // 71–80层双水流：首击锁定自身落点，第二击无读条，由首击效果推进。
+        [42578u] = new(AoeShapeKind.Circle, 10f, 0f, false, 0.3f),
+        [42748u] = new(AoeShapeKind.Donut, 10f, 40f, false, 0.3f),
+        // 道中月环的内圈依据 PTFloorModule；Omen 缺失/缩放不能直接用于推断。
+        [44732u] = new(AoeShapeKind.Donut, 5f, 30f, true, 0f),
+        [44758u] = new(AoeShapeKind.Donut, 5f, 60f, true, 0f),
+        // 可离开范围的道中大圆，不能按通用 R>=30 规则当作全屏伤害丢弃。
+        [42523u] = new(AoeShapeKind.Circle, 45f, 0f, true, 0f),
+        [43133u] = new(AoeShapeKind.Circle, 46f, 0f, true, 0f),
+        [44759u] = new(AoeShapeKind.Fan, 8f, MathF.PI, false, 0.3f) { UseCastRotation = true },
+        // 大地钻击：BMR PTFloorModule 的 R3–30、270°环扇形，不能退化为完整月环。
+        [42091u] = new(AoeShapeKind.Fan, 30f, MathF.PI * 1.5f, false, 0f)
+        {
+            UseCastRotation = true,
+            ExactTemplate = new Mechanics.PilgrimsTraverse.PtDonutSectorTemplate(3, 30, MathF.PI * 1.5f),
+        },
     };
 
     public static bool TryGetShape(uint actionId, out AoeShapeDescriptor? descriptor)
@@ -100,11 +124,15 @@ public static class AoeShapeDatabase
         return length > 0.5f ? RayRectangleTemplate.Symmetric(descriptor.Param1, length) : null;
     }
 
-    internal static bool TryCreateBinding(LogSystemCastStartEvent e, AoeShapeDescriptor descriptor, out TransformBinding binding)
+    internal static bool TryCreateBinding(LogSystemCastStartEvent e, AoeShapeDescriptor descriptor, out TransformBinding binding, uint territory = 0)
     {
         binding = null!;
+        // 朝圣读条的方向由施法包锁定；物体面朝向可能相差90°或在读条期间改变。
+        // 冲锋保留来源→落点方向，读条结束后的动态持续区不经过此绑定。
+        var lockDirection = descriptor.UseCastRotation || (territory is >= 1281 and <= 1290)
+            && (descriptor.Kind is AoeShapeKind.Fan or AoeShapeKind.Rectangle or AoeShapeKind.RayRectangle) && !descriptor.IsCharge;
         var rotation = e.SourceRotation;
-        if (descriptor.UseCastRotation && !CastRotation.TryGet(e, out rotation))
+        if (lockDirection && !CastRotation.TryGet(e, out rotation))
             return false;
 
         if (descriptor.IsCharge)
@@ -118,7 +146,7 @@ public static class AoeShapeDatabase
         }
 
         var sourceId = (uint)e.SourceId;
-        binding = descriptor.FollowCaster && sourceId != 0u && !descriptor.UseCastRotation
+        binding = descriptor.FollowCaster && sourceId != 0u && !lockDirection
             ? new FollowEntityPositionAndRotation(sourceId, Vector2.Zero, MissingEntityPolicy.KeepLastResolved)
             : new StaticTransform(descriptor.UseSourcePosition && e.SourcePosition is { } origin ? origin : e.EffectPosition, rotation);
         return true;

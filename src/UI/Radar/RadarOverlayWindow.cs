@@ -27,7 +27,8 @@ public sealed class RadarOverlayWindow : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var preview = DateTime.UtcNow < PreviewUntilUtc;
         if (_disposed || (!preview && (!settings.EnableRadarOverlay ||
-            (settings.RadarOnlyWithScript && !HasZoneScript()))))
+            (settings.RadarOnlyWithScript && !HasZoneScript()
+                && !(settings.RadarShowTerrain && MasterPlayerPlugin.Instance?.SafeZone.LocalTerrain != null)))))
         {
             return;
         }

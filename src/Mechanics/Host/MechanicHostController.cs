@@ -1,6 +1,7 @@
 using System.Numerics;
 using ECommons.DalamudServices;
 using MasterPlayer.MechanicRuntime;
+using MasterPlayer.Mechanics.PilgrimsTraverse;
 using MasterPlayer.Replay;
 using MasterPlayer.Settings;
 using PromeRotation.Hosting;
@@ -47,7 +48,8 @@ public sealed class MechanicHostController : IDisposable
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
     public bool HasActiveModule => ModulesEnabled && !(_replaySession != null ? IsReplaySuppressed() : IsSuppressed)
         && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null
-        && ActiveSession.BossModules.ActiveModule.PrimaryActor.OID != 0x4609;
+        && !PtBossCatalog.Owns(ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
+            _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
         && MasterPlayerSettings.Instance.IsTerritoryEnabled(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     public IReadOnlyList<MechanicTerritoryEntry> Territories { get; private set; } = [];
@@ -355,6 +357,8 @@ public sealed class MechanicHostController : IDisposable
         {
             if (running.Script is Scripts.PilgrimsTraverse.PilgrimsTraverse30 pt30 && !pt30.EncounterActive)
                 continue;
+            if (running.Script is PilgrimsBossScript { EncounterActive: false })
+                continue;
             if (running.Descriptor.Metadata.Territorys.Length != 0)
                 return true;
         }
@@ -365,8 +369,9 @@ public sealed class MechanicHostController : IDisposable
 
     private bool SleepMpOwnedBoss()
     {
-        if (ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID != 0x4609) return false;
-        // PT30 is implemented by the MP script. Never publish BMR's triangle previews or navigation,
+        if (ActiveSession?.BossModules.ActiveModule is not { } module
+            || !PtBossCatalog.Owns(module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)) return false;
+        // Pilgrims bosses are implemented by MP scripts. Never publish BMR previews or navigation,
         // including the first frame before ScriptManager starts it and when a user disables the script.
         _navBridge?.Sleep();
         _drawBridge?.Sleep();
@@ -418,6 +423,8 @@ public sealed class MechanicHostController : IDisposable
         foreach (var running in scripts.Running.Values)
         {
             if (running.Script is Scripts.PilgrimsTraverse.PilgrimsTraverse30 pt30 && !pt30.EncounterActive)
+                continue;
+            if (running.Script is PilgrimsBossScript { EncounterActive: false })
                 continue;
             var territorys = running.Descriptor.Metadata.Territorys;
             if (territorys.Length != 0 && territorys.Contains(territory))

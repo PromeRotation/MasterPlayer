@@ -11,11 +11,12 @@ internal static class IntegrationRegression
 {
     public static void Run(Assembly assembly)
     {
-        var services = new[] { nameof(Svc.PluginInterface), nameof(Svc.ClientState), nameof(Svc.Objects), nameof(Svc.DtrBar), nameof(Svc.Chat) }
+        var services = new[] { nameof(Svc.PluginInterface), nameof(Svc.ClientState), nameof(Svc.Objects), nameof(Svc.DtrBar), nameof(Svc.Chat), nameof(Svc.Framework) }
             .ToDictionary(name => name, name => typeof(Svc).GetProperty(name)!.GetValue(null));
         var config = Svc.PluginInterface.ConfigDirectory;
         var funcs = new Dictionary<string, Delegate>();
         Action<bool>? setEnabled = null;
+        Action<bool>? setFsdActive = null;
         Action<DtrInteractionEvent>? click = null;
         var dtrText = "";
         var dtrDisposed = 0;
@@ -30,6 +31,22 @@ internal static class IntegrationRegression
             else throw new NotSupportedException(name);
             return null;
         });
+        var positionChannel = CatalogServiceProxy.Create<ICallGateProvider<float, float, float, bool>>((name, args) =>
+        {
+            if (name == "RegisterFunc") funcs["PromeRadar.IsPositionSafe"] = (Delegate)args[0]!;
+            else if (name == "UnregisterFunc") funcs.Remove("PromeRadar.IsPositionSafe");
+            else throw new NotSupportedException(name);
+            return null;
+        });
+        var fsdChannel = CatalogServiceProxy.Create<ICallGateProvider<bool, object>>((name, args) =>
+        {
+            if (name == "RegisterAction") setFsdActive = (Action<bool>)args[0]!;
+            else if (name == "UnregisterAction") setFsdActive = null;
+            else throw new NotSupportedException(name);
+            return null;
+        });
+        var handoffChannel = CatalogServiceProxy.Create<ICallGateSubscriber<bool, bool>>((name, _) =>
+            name == "get_HasFunction" ? false : throw new NotSupportedException(name));
         var stateChannel = CatalogServiceProxy.Create<ICallGateProvider<string, object>>((name, args) =>
         {
             if (name == "SendMessage") snapshots.Add((string)args[0]!);
@@ -55,7 +72,7 @@ internal static class IntegrationRegression
         {
             if (name == "set_OnClick") click = (Action<DtrInteractionEvent>?)args[0];
             else if (name == "set_Text") dtrText = args[0]!.ToString()!;
-            else if (name == "Dispose") dtrDisposed++;
+            else if (name == "Remove") dtrDisposed++;
             else if (name is not ("set_Shown" or "set_Tooltip")) throw new NotSupportedException(name);
             return null;
         });
@@ -69,11 +86,14 @@ internal static class IntegrationRegression
             Set(nameof(Svc.PluginInterface), CatalogServiceProxy.Create<IDalamudPluginInterface>((name, args) => name switch
             {
                 "get_ConfigDirectory" => config,
+                "GetIpcSubscriber" when (string)args[0]! == "NewFolder3.Movement.SetPromeRadarControl" => handoffChannel,
                 "GetIpcProvider" => ((string)args[0]!) switch
                 {
                     "PromeRadar.GetApiVersion" => Query<int>((string)args[0]!),
-                    "PromeRadar.IsReady" or "PromeRadar.GetSmartMovementEnabled" => Query<bool>((string)args[0]!),
+                    "PromeRadar.IsReady" or "PromeRadar.GetSmartMovementEnabled" or "PromeRadar.IsMechanicMovementActive" => Query<bool>((string)args[0]!),
                     "PromeRadar.GetState" => Query<string>((string)args[0]!),
+                    "PromeRadar.IsPositionSafe" => positionChannel,
+                    "PromeRadar.SetFsdSessionActive" => fsdChannel,
                     "PromeRadar.SetSmartMovementEnabled" or "PromeRadar.SmartMovementChanged" => enabledChannel,
                     "PromeRadar.StateChanged" => stateChannel,
                     _ => throw new NotSupportedException((string)args[0]!),
@@ -84,6 +104,7 @@ internal static class IntegrationRegression
             Set(nameof(Svc.Objects), CatalogServiceProxy.Create<IObjectTable>((name, _) => name == "get_LocalPlayer" ? null : throw new NotSupportedException(name)));
             Set(nameof(Svc.DtrBar), CatalogServiceProxy.Create<IDtrBar>((name, _) => name == "Get" ? entry : throw new NotSupportedException(name)));
             Set(nameof(Svc.Chat), CatalogServiceProxy.Create<IChatGui>((name, _) => name == "Print" ? null : throw new NotSupportedException(name)));
+            Set(nameof(Svc.Framework), CatalogServiceProxy.Create<IFramework>((name, _) => name == "get_UpdateDelta" ? TimeSpan.FromMilliseconds(16) : throw new NotSupportedException(name)));
             settings.EnableSmartMovement = true;
             var pluginType = assembly.GetType("MasterPlayer.MasterPlayerPlugin")!;
             var plugin = Activator.CreateInstance(pluginType)!;
@@ -104,7 +125,7 @@ internal static class IntegrationRegression
             command.Invoke(plugin, ["/prpr", " AI   ON "]);
             Check((bool)settings.EnableSmartMovement, "The ai on command did not accept spacing/case variations.");
             var integrationType = assembly.GetType("MasterPlayer.Integration.SmartMovementIntegration")!;
-            integration = (IDisposable)Activator.CreateInstance(integrationType)!;
+            integration = (IDisposable)Activator.CreateInstance(integrationType, [runtime])!;
             var update = integrationType.GetMethod("Update")!;
             var apply = integrationType.GetMethod("ApplyRequests")!;
             Check(!((Func<bool>)funcs["PromeRadar.IsReady"])(), "IPC became ready before its first snapshot.");
@@ -124,7 +145,7 @@ internal static class IntegrationRegression
             apply.Invoke(integration, [plugin]); update.Invoke(integration, [plugin]);
             Check(Enabled() && (bool)settings.EnableSmartMovement && notices.SequenceEqual([true, false, true]), "DTR did not use the same switch and notifications.");
             integration.Dispose(); integration.Dispose(); integration = null;
-            Check(funcs.Count == 0 && setEnabled == null && click == null && dtrDisposed == 1, "IPC/DTR resources leaked across hot reload.");
+            Check(funcs.Count == 0 && setEnabled == null && setFsdActive == null && click == null && dtrDisposed == 1, "IPC/DTR resources leaked across hot reload.");
             using var finalState = JsonDocument.Parse(snapshots.Last());
             Check(!finalState.RootElement.GetProperty("Ready").GetBoolean() && !finalState.RootElement.GetProperty("CanMove").GetBoolean()
                 && finalState.RootElement.GetProperty("SmartMovementEnabled").GetBoolean(), "Unload lost the state schema or changed the user's choice.");

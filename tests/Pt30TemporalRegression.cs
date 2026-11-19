@@ -131,7 +131,7 @@ internal static class Pt30TemporalRegression
             manager.SetArenaBoundary(Pt30Arena.Boundary(player.Position.Y));
             manager.AddObstacle(Pt30Arena.Hole(player.Position.Y), new StaticTransform(Vector3.Zero, 0));
             foreach (var h in hazards)
-                manager.AddDangerArea(DangerMarginInflator.Inflate(h.Shape, .5f), new StaticTransform(h.Position, h.Rotation), [h.Window(now)]);
+                manager.AddDangerArea(h.Shape, new StaticTransform(h.Position, h.Rotation), [h.Window(now)]);
             if (encounter.ReachGoal is { } goal)
                 manager.AddGoalArea(goal.Shape, new StaticTransform(goal.Position, goal.Rotation), [GoalWindow.Persistent(now, 5, PositionPreference.Nearest)]);
             var snapshot = manager.BuildSnapshot(now);

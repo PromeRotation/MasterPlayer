@@ -19,6 +19,17 @@ public sealed class SafeZoneManager : IDisposable
     private readonly Dictionary<uint, IGameObject?> _entityCache = new();
     private readonly List<SafeZoneAreaHandle> _pendingRemovals = new();
     private IGeometryShape? _arenaBoundary;
+    private IGeometryShape? fallbackBoundary;
+    internal bool HasRegisteredArenaBoundary => _arenaBoundary != null;
+    internal bool UsesFallbackBoundary => _arenaBoundary == null && fallbackBoundary != null;
+
+    internal void SetFallbackBoundary(IGeometryShape? boundary)
+    {
+        ThrowIfDisposed();
+        if (ReferenceEquals(fallbackBoundary, boundary)) return;
+        fallbackBoundary = boundary;
+        if (_arenaBoundary == null) ++_version;
+    }
     private ulong _nextHandleId = 1UL;
     private int _version;
     private bool _disposed;
@@ -182,13 +193,14 @@ public sealed class SafeZoneManager : IDisposable
     public void ClearAllAreas()
     {
         ThrowIfDisposed();
-        if (_areas.Count == 0 && _arenaBoundary is null)
+        if (_areas.Count == 0 && _arenaBoundary is null && fallbackBoundary is null)
         {
             return;
         }
 
         _areas.Clear();
         _arenaBoundary = null;
+        fallbackBoundary = null;
         _version++;
     }
 
@@ -297,7 +309,7 @@ public sealed class SafeZoneManager : IDisposable
             return new SafeZoneSnapshot(
                 _version,
                 utcNow,
-                _arenaBoundary,
+                _arenaBoundary ?? fallbackBoundary,
                 Array.Empty<ObstacleSnapshot>(),
                 Array.Empty<DangerAreaSnapshot>(),
                 Array.Empty<GoalAreaSnapshot>());
@@ -347,7 +359,7 @@ public sealed class SafeZoneManager : IDisposable
 
         _entityCache.Clear();
 
-        return new SafeZoneSnapshot(_version, utcNow, _arenaBoundary, obstacles.ToArray(), dangers.ToArray(), goals.ToArray());
+        return new SafeZoneSnapshot(_version, utcNow, _arenaBoundary ?? fallbackBoundary, obstacles.ToArray(), dangers.ToArray(), goals.ToArray());
     }
 
     private static IReadOnlyList<DangerWindow> CopyDangerWindows(IReadOnlyList<DangerWindow> source)
@@ -393,6 +405,7 @@ public sealed class SafeZoneManager : IDisposable
         _entityCache.Clear();
         _pendingRemovals.Clear();
         _arenaBoundary = null;
+        fallbackBoundary = null;
         _disposed = true;
     }
 

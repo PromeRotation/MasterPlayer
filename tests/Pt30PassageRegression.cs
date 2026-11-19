@@ -51,7 +51,7 @@ internal static class Pt30PassageRegression
                     HasMotionEnvelope = danger.GetProperty("HasMotionEnvelope").GetBoolean(),
                     HasExplicitTiming = danger.GetProperty("HasExplicitTiming").GetBoolean(),
                 };
-                manager.AddDangerArea(DangerMarginInflator.Inflate(shape, .5f),
+                manager.AddDangerArea(shape,
                     new StaticTransform(Vector(danger.GetProperty("position")), danger.GetProperty("rotation").GetSingle()), [window]);
             }
             var goal = new FanTemplate(29, 128 * MathF.PI / 180);

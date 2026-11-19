@@ -11,7 +11,7 @@ using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character
 
 namespace MasterPlayer.Dodge;
 
-public sealed class DodgeController : IDisposable
+public sealed partial class DodgeController : IDisposable
 {
     private static readonly TimeSpan PruneInterval = TimeSpan.FromSeconds(0.5);
 
@@ -23,6 +23,7 @@ public sealed class DodgeController : IDisposable
     public DodgeController()
     {
         _startCastSubscription = PromeEventBus.OnStartCast(this, HandleStartCast);
+        _pilgrimsFollowUpSubscription = PromeEventBus.OnLogEvent<LogSystemEvent>(this, HandlePilgrimsFollowUpEvent);
     }
 
     // PromeEventBus 在主线程派发（底层是 Plugin.Instance.LogSystem.Events），回调里直接注册危险区。
@@ -45,6 +46,7 @@ public sealed class DodgeController : IDisposable
             return;
         }
 
+        UpdatePilgrimsFollowUps();
         PruneHandles();
     }
 
@@ -80,7 +82,7 @@ public sealed class DodgeController : IDisposable
 
         template = DangerMarginInflator.Inflate(template, MasterPlayerSettings.Instance.DodgeDangerMargin);
 
-        if (!AoeShapeDatabase.TryCreateBinding(e, descriptor, out var binding))
+        if (!AoeShapeDatabase.TryCreateBinding(e, descriptor, out var binding, Svc.ClientState.TerritoryType))
         {
             Svc.Log.Warning($"[MasterPlayer] 无法读取当前施法朝向，跳过 AOE 预测 (ActionId={e.ActionId}, SourceId={e.SourceId:X})");
             return;
@@ -93,6 +95,7 @@ public sealed class DodgeController : IDisposable
             if (handle.IsValid)
             {
                 _registeredHandles.Add(handle);
+                TrackPilgrimsFollowUpCast(e, handle, binding, Svc.ClientState.TerritoryType);
                 var action = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Action>().GetRowOrDefault(e.ActionId);
                 var actionName = action?.Name.ToString();
                 var label = string.IsNullOrWhiteSpace(actionName) ? $"读条技能 {e.ActionId}" : $"{actionName}（{e.ActionId}）";
@@ -176,6 +179,14 @@ public sealed class DodgeController : IDisposable
             return;
         }
         _disposed = true;
+        try
+        {
+            _pilgrimsFollowUpSubscription.Dispose();
+        }
+        catch (Exception ex)
+        {
+            SafeLogError(ex, "[MasterPlayer] 退订朝圣路后续攻击事件失败");
+        }
 
         try
         {
@@ -208,6 +219,7 @@ public sealed class DodgeController : IDisposable
         }
 
         _registeredHandles.Clear();
+        _pilgrimsFollowUps.Clear();
     }
 
     private static void SafeLogError(Exception ex, string message)

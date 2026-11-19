@@ -10,6 +10,7 @@ using MasterPlayer.Mechanics.Crucible;
 using PromeRotation.Helpers;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.Terrain;
 
 namespace MasterPlayer.Radar;
 
@@ -70,9 +71,10 @@ public sealed class RadarView
         var plugin = PromeRotation.Plugin.Instance;
         var world = MasterPlayerPlugin.Instance?.Replay?.World;
         var player = world == null ? PlayerPerspective.LivePlayer : null;
-        var now = MasterPlayerPlugin.Instance!.SafeZone.CurrentTime;
+        var runtime = MasterPlayerPlugin.Instance!.SafeZone;
+        var now = runtime.CurrentTime;
         var animT = (float)(now.TimeOfDay.TotalSeconds % 60.0);
-        var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
+        var snapshot = runtime.Manager.BuildSnapshot(now);
 
         var rotation = settings.RadarRotateWithCamera ? GetCameraAzimuth() : RadarProjection.NorthUpRotation;
         _screenCenter = screenCenter;
@@ -105,7 +107,9 @@ public sealed class RadarView
             }
 
             _center = position.Value;
-            visibleRadius = (snapshot.ArenaBoundary as ILocalViewBoundary)?.ViewRadius ?? DefaultVisibleRadius;
+            visibleRadius = snapshot.ArenaBoundary is LocalTerrainBoundary
+                ? runtime.TerrainViewRadius
+                : (snapshot.ArenaBoundary as ILocalViewBoundary)?.ViewRadius ?? DefaultVisibleRadius;
             _projection = new(_center, _screenCenter,
                 radiusPx / visibleRadius, rotation);
         }
@@ -116,6 +120,8 @@ public sealed class RadarView
         DrawDisc(canvas, settings);
         DrawRangeRings(canvas, settings, _projection.Scale);
         DrawRimTicks(canvas);
+        if (settings.RadarShowTerrain && snapshot.ArenaBoundary is LocalTerrainBoundary
+            && runtime.TerrainDisplay is { } terrain) DrawTerrain(canvas, terrain);
         if (settings.RadarAoe.ShowAreas)
         {
             DrawAreas(canvas, snapshot, settings, now, animT);
@@ -308,12 +314,29 @@ public sealed class RadarView
         drawList.AddCircleFilled(center, 4f * scale, ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f)));
     }
 
+    private void DrawTerrain(RadarCanvas canvas, LocalTerrainBoundary terrain)
+    {
+        foreach (var (bounds, kind) in terrain.BlockedRuns)
+        {
+            if (!RadarLocalGeometry.Intersects(bounds, _center, _visibleRadius)) continue;
+            _quad[0] = _projection.Project(new(bounds.MinX, terrain.Position.Y, bounds.MinZ));
+            _quad[1] = _projection.Project(new(bounds.MaxX, terrain.Position.Y, bounds.MinZ));
+            _quad[2] = _projection.Project(new(bounds.MaxX, terrain.Position.Y, bounds.MaxZ));
+            _quad[3] = _projection.Project(new(bounds.MinX, terrain.Position.Y, bounds.MaxZ));
+            var color = kind == TerrainCellKind.Wall ? new Vector4(.65f, .72f, .82f, .55f) : new Vector4(1f, .55f, .15f, .55f);
+            canvas.FillPolygon(_quad, ImGui.GetColorU32(color));
+        }
+        foreach (var edge in terrain.GetContours())
+            canvas.StrokeSegment(_projection.Project(edge[0]), _projection.Project(edge[1]), ImGui.GetColorU32(BoundaryColor), 1.2f);
+    }
+
     private void DrawBoundary(RadarCanvas canvas, SafeZoneSnapshot snapshot)
     {
         if (snapshot.ArenaBoundary is not { } boundary)
         {
             return;
         }
+        if (boundary is LocalTerrainBoundary) return;
 
         if (boundary is ILocalViewBoundary)
         {

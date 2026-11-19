@@ -19,6 +19,8 @@
 
 安全区修复只需重新构建并重载 MasterPlayer。外部源码脚本应改用 `MasterPlayer.Spatial.SafeZone`、`MasterPlayer.Spatial.Geometry`，外部 DLL 应重新编译；绘制样式/绑定仍用 `PromeRotation.Spatial.Drawing`，移动仍用 `PromeRotation.GreenMoveSystem`。
 
+无注册场地时，`Terrain/` 在主线程通过 FFCS 复制有效场景碰撞模型，后台使用 Recast 批量建模，`SafeZoneManager` 发布不可变的 fallback 地形边界；近身地形优先，模型资源缓存跨深宫楼层复用。正式场地优先，回放不查询实时地形。未知区域不可通行，路线前方仍通过实时碰撞查询复核，失败时撤销本插件路线并重建；雷达保留墙体和悬崖边缘。建模、余量与雷达显示契约见 [本地地形规格](../../docs/reference/LocalTerrainCollision.spec.md)。
+
 验证入口：`dotnet run --project tests/MasterPlayer.RegressionTests.csproj`。定向生命周期与几何检查可加 `-- --local-safezone`。
 
 2026-10-08：糖豆人静态赛道通过 `IStaticArenaBoundary` 声明不可变的X/Z几何，复用弱引用关联的边界栅格与轮廓空间索引。局部范围、格距/尺寸、边界余量或几何实例改变时重建；普通几何和可变闭包不进入此缓存。动态危险、时间窗、障碍和目标不缓存。A*临时节点使用独占池化数组，租用后完全清零、返回结果只保留独立路点。`-- --navigation-performance` 对实际赛道求解及主线程调度进行离线计时；`-- --filter='Blunderville performance'` 验证缓存失效、动态数据隔离、并行读取、池化隔离与五种赛道的精确边界遍历。

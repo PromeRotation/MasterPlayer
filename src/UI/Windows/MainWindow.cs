@@ -395,7 +395,8 @@ public sealed partial class MainWindow : IDisposable
         changed |= Row("启用雷达悬浮窗", null, settings.EnableRadarOverlay, v => settings.EnableRadarOverlay = v);
         changed |= Md.SwitchRow("显示机制范围", null, ref settings.RadarAoe.ShowAreas);
         changed |= Md.SwitchRow("显示走位路线", null, ref settings.RadarAoe.ShowPath);
-        changed |= Row("仅在有机制的区域显示", null, settings.RadarOnlyWithScript, v => settings.RadarOnlyWithScript = v);
+        changed |= Row("仅在有机制或地形时显示", null, settings.RadarOnlyWithScript, v => settings.RadarOnlyWithScript = v);
+        changed |= Row("显示周边墙体与悬崖", "灰色表示碰撞障碍，橙色表示落差或无支撑地面。", settings.RadarShowTerrain, v => settings.RadarShowTerrain = v);
         changed |= Row("画面随摄像机旋转", null, settings.RadarRotateWithCamera, v => settings.RadarRotateWithCamera = v);
         var centerMode = settings.RadarCenterMode;
         if (Md.ComboRow("中心模式", centerMode == 0 ? "完整显示脚本注册的场地" : "跟随自身 25 码视野", ref centerMode, "场地基准\0玩家摄像机基准\0"))
@@ -542,6 +543,13 @@ public sealed partial class MainWindow : IDisposable
             settings.DodgeDangerMargin = margin;
             changed = true;
         }
+        changed |= Row("检测周边地形", "没有机制场地时读取周边碰撞模型，只在确认可通行的范围内规划；移动前实时复核。", settings.EnableTerrainCollision, v => settings.EnableTerrainCollision = v);
+        var terrainRadius = settings.TerrainScanRadius;
+        if (Md.SliderRow("地形建模半径", "优先构建近身地形，再扩展至完整范围；范围越大，建模所需时间越长。", ref terrainRadius, 8f, 30f, "%.0f 码"))
+        {
+            settings.TerrainScanRadius = terrainRadius;
+            changed = true;
+        }
         Md.EndCard();
 
         if (changed)
@@ -601,6 +609,7 @@ public sealed partial class MainWindow : IDisposable
         Md.EndCard();
 
         DrawSafeZoneStatus(settings);
+        DrawTerrainDiagnostics();
         DrawMechanicModules(settings);
         DrawMechanicHandlers();
     }
@@ -620,9 +629,11 @@ public sealed partial class MainWindow : IDisposable
             Md.ValueRow("阶段", status.PhaseText);
             Md.ValueRow("最新解算方案", status.LatestSolution != null ? "有" : "无");
             Md.ValueRow("当前危险区", snapshot.DangerAreas.Count.ToString());
+            Md.ValueRow("周边地形", MasterPlayerPlugin.Instance!.SafeZone.TerrainStatus);
             Md.ValueRow("运行中脚本", (MasterPlayerPlugin.Instance?.Scripts?.Running.Count ?? 0).ToString());
             if (settings.DebugMode)
             {
+                Md.ValueRow("地形更新本帧耗时", $"{MasterPlayerPlugin.Instance!.SafeZone.TerrainScanMilliseconds:F2} ms");
                 Md.ValueRow("派发次数", $"{status.DispatchCount}（最近 {status.LastDispatchUtc:HH:mm:ss.fff} UTC）");
                 Md.ValueRow("异步解算", $"运行中={status.IsAsyncSolveRunning} 发起={status.AsyncSolveStartedCount} 采纳={status.AsyncSolveAcceptedCount} 取消={status.AsyncSolveCancelledCount} 丢弃={status.AsyncSolveDiscardedCount}");
                 Md.ValueRow($"区域快照 v{snapshot.Version}", $"危险区 {snapshot.DangerAreas.Count} / 目标区 {snapshot.GoalAreas.Count} / 障碍 {snapshot.HardObstacles.Count} / 边界 {(snapshot.ArenaBoundary != null ? "有" : "无")}");

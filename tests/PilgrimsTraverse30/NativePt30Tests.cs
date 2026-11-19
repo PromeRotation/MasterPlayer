@@ -71,15 +71,25 @@ internal static class NativePt30Tests
         Check(e.Hazards(start, 100, center).Count == 0, "ball removed by timeline");
         e.Icon(100, 197, start);
         var player = new Vector3(-283.3f, 0, -300);
-        e.Cast(10, 44918, player, 0, start, start.AddSeconds(3));
-        e.Hazards(start, 100, player);
+        for (var i = 0; i <= 90; ++i)
+        {
+            var waiting = e.Hazards(start.AddSeconds(i * .1), 100, player);
+            Check(e.Goal == null && !waiting.Any(h => h.Name == "Divine Favor"),
+                "icon alone must not start movement or invent a chase circle, even after the estimated first-hit time");
+            Check(e.Remaining == 8, "waiting for the actual circle retains the marked sequence");
+        }
+        var castAt = start.AddSeconds(9);
+        var firstHitAt = castAt.AddSeconds(3.3);
+        e.Cast(10, 44918, player, 0, castAt, firstHitAt);
+        var firstCircle = e.Hazards(castAt, 100, player).Single();
         var goal = e.Goal;
-        Check(goal != null && !hole.Contains(goal.Value), "chase starts without heading dependency");
-        Check(e.Hazards(start.AddSeconds(.1), 100, player).Count == 1 && e.Goal == goal, "stable chase waypoint");
+        Check(goal != null && !hole.Contains(goal.Value) && firstCircle.From == firstHitAt && firstCircle.Position == player,
+            "first circle telegraph starts chase movement with its actual locked position and hit time");
+        Check(e.Hazards(castAt.AddSeconds(.1), 100, player).Count == 1 && e.Goal == goal, "stable chase waypoint");
         var lastHit = player;
         for (uint pulse = 0; pulse < 8; ++pulse)
         {
-            var now = start.AddSeconds(3 + pulse * .6);
+            var now = firstHitAt.AddSeconds(pulse * .6);
             e.Hazards(now, 100, player);
             var delta = e.Goal!.Value - player;
             if (delta.Length() > .01f) player += Vector3.Normalize(delta) * Math.Min(3.6f, delta.Length());
@@ -93,6 +103,28 @@ internal static class NativePt30Tests
         Check(e.Remaining == 0 && e.Goal == null, "eight hits clear chase");
         e.Reset();
         Check(!e.Active && e.CastCount == 0 && e.BallCount == 0, "wipe and stop cleanup");
+        foreach (var velocity in new[] { -.3f, .16f, .3f })
+        {
+            e.Reset();
+            Vector3 Orbit(float angle) => center + new Vector3(MathF.Sin(angle) * 22, 0, MathF.Cos(angle) * 22);
+            var moving = ball with { Position = Orbit(0) };
+            e.Synchronize([boss, moving], start.AddSeconds(-.1));
+            e.Synchronize([boss, moving with { Position = Orbit(velocity * .1f) }], start);
+            var predictions = e.Hazards(start, 100, center);
+            Check(predictions.All(h => h.Shape is Pt30BallSweepTemplate { Radius: < 4.15f }), "R4 sweep adds only its mathematical chord sagitta");
+            for (var step = 0; step <= 1000; ++step)
+            {
+                var seconds = step * .01f;
+                var at = start.AddSeconds(seconds);
+                var position = Orbit(velocity * (.1f + seconds));
+                var active = predictions.Where(h => h.Window(start).IsActiveAt(at)).ToArray();
+                for (var angle = 0; angle < 16; ++angle)
+                {
+                    var edge = position + new Vector3(MathF.Sin(angle * MathF.PI / 8) * 4, 0, MathF.Cos(angle * MathF.PI / 8) * 4);
+                    Check(active.Any(h => h.Shape.Resolve(h.Position, h.Rotation, null).Contains(edge)), "unexpanded sweep must contain the full actual moving R4 circle");
+                }
+            }
+        }
         Console.WriteLine("PASS MP native PT30: four donuts, both cones, arena/hole, 1000-frame bounded ball output, eight chase effects and cleanup.");
     }
 

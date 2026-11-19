@@ -12,7 +12,8 @@ if (args.Length == 3 && args[0] == "--bmr-arenas")
     return;
 }
 
-if (args.Length != 2) throw new ArgumentException("Usage: <MasterPlayer repository> <compiled MasterPlayer.dll>");
+if (args.Length != 2 && !(args.Length == 3 && args[2] == "--scripts-only"))
+    throw new ArgumentException("Usage: <MasterPlayer repository> <compiled MasterPlayer.dll> [--scripts-only]");
 var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
     .Append(Path.GetFullPath(args[1])).Distinct(StringComparer.OrdinalIgnoreCase)
     .Select(p => MetadataReference.CreateFromFile(p)).ToArray();
@@ -29,5 +30,10 @@ foreach (var file in Directory.EnumerateDirectories(Path.Combine(args[0], "Prese
     if (!result.Success) throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
-if (count != 9) throw new InvalidOperationException($"Expected five boards, three dungeons and Blunderville, got {count}.");
-ScriptCatalogRegression.Run(args[1], references);
+if (count != 19) throw new InvalidOperationException($"Expected five boards, three dungeons, Blunderville and ten Pilgrims bosses, got {count}.");
+System.Runtime.Loader.AssemblyLoadContext.Default.Resolving += (context, name) =>
+{
+    var path = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, name.Name + ".dll");
+    return File.Exists(path) ? context.LoadFromAssemblyPath(path) : null;
+};
+ScriptCatalogRegression.Run(args[1], references, args.Length == 3);

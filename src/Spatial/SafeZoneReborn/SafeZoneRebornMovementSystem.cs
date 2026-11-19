@@ -49,6 +49,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private readonly Func<bool> _externalHasControl;
     private readonly SafeZoneSolver _solver = new();
     private readonly SolveOptions _options = CreateMovementOptions();
+    internal Func<Vector3, Vector3, bool>? CheckTerrainTraversal { get; set; }
     private Func<Func<AsyncSolveResult>, CancellationToken, Task<AsyncSolveResult>> _scheduleSolve =
         (solve, token) => Task.Run(solve, token);
 
@@ -448,6 +449,14 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         if (!_hasControl || _directGeneration != _directDispatchedGeneration || _greenMove?.IsRunning != true)
         {
             var queue = BuildGreenMovePoints(solution, snapshot, now);
+            if (!ValidateTerrainPath(player.Position, queue))
+            {
+                _latestSolution = null;
+                _directRejectedGeneration = _directGeneration;
+                _phase = DispatchPhase.Released;
+                ReleaseControl();
+                return true;
+            }
             for (var i = 0; i < queue.Length; ++i)
                 if (_directMotion?.Locked(next + i) == true)
                     queue[i] = queue[i] with { Tolerance = _directMotion.ArrivalTolerance(next + i) };
@@ -777,6 +786,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         ClearJumpRoute();
         CancelPendingSolve();
         ReleaseControl();
+        ReleaseMovementHandoff();
         _latestSolution = null;
         _dispatchedSolution = null;
         _lastUnsafeUtc = DateTime.MinValue;
@@ -801,6 +811,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         // 卸载前若仍在接管，停下 GreenMove，避免残留路线在 GreenMove 释放前继续跑。
         ReleaseControl();
+        ReleaseMovementHandoff();
         _greenMove = null;
         _latestSolution = null;
         _dispatchedSolution = null;
@@ -826,12 +837,30 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         var player = currentPlayer.Value;
 
-        if (allowMovement && ContinueJumpRoute(now)) return;
-
         // 每帧解析一次快照：既供重解，也供 ShouldWaitForCast 读取最新危险区。
         var snapshot = _manager.BuildSnapshot(now);
+        if (_setting.EffectiveEnableAutoMovement && allowMovement && !_externalMovementEnabled() && !_externalHasControl())
+        {
+            bool directRequested = _directTarget is { } target && _directRejectedGeneration != _directGeneration &&
+                GeometryHelper.DistanceXZ(player.Position, target) > .03f;
+            if (!PrepareMovementHandoff(snapshot, player, now, directRequested))
+            {
+                ReleaseControl();
+                return;
+            }
+        }
+        else
+        {
+            ReleaseControl();
+            ReleaseMovementHandoff();
+        }
+        if (allowMovement && ContinueJumpRoute(now)) return;
         CompletePendingSolve(snapshot);
-        if (UpdateDirectTraversal(player, snapshot, now, allowMovement)) return;
+        if (UpdateDirectTraversal(player, snapshot, now, allowMovement))
+        {
+            CompleteMovementHandoff(snapshot, now);
+            return;
+        }
         if (IsPointUnsafeNow(snapshot, player.Position, now))
         {
             _lastUnsafeUtc = now;
@@ -839,7 +868,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         if (!IsSolutionValid(_latestSolution, snapshot, player, now))
         {
-            if (CanSkipSolve(snapshot, player.Position, now))
+            if (CanSkipSolve(snapshot, player.Position, now)
+                && !(_dispatchedSolution is { IsArenaReentry: true } returning
+                    && IsTemporalPhaseSafe(returning, player, snapshot, now)))
             {
                 CancelPendingSolve();
                 _latestSolution = SafeZoneSolution.Succeeded(
@@ -1016,7 +1047,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
     private SolveOptions CaptureSolveOptions() => _options with
     {
-        ArenaSafetyMargin = _setting.RuntimeArenaSafetyMargin ?? _options.ArenaSafetyMargin,
+        // Local terrain cells already test the character footprint. Eroding them
+        // again by a full grid cell would remove ordinary dungeon doorways.
+        ArenaSafetyMargin = _manager.UsesFallbackBoundary ? 0 : _setting.RuntimeArenaSafetyMargin ?? _options.ArenaSafetyMargin,
         HardSafetyMargin = _setting.RuntimeHardSafetyMargin ?? _options.HardSafetyMargin,
         PreferStraightPaths = _setting.RuntimePreferStraightPaths,
         GoalDirectedTemporalPlanning = GoalDirectedTemporalPlanning,
@@ -1106,7 +1139,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         => solution is not null && (solution.SourceSnapshotVersion == snapshot.Version
             || solution.IsSuccess && solution.ExecutablePath.Count >= 2);
 
-    private void Dispatch(SafeZoneSolution? solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
+    private void DispatchCore(SafeZoneSolution? solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
         if (ContinueJumpRoute(now)) return;
         if (_externalMovementEnabled() || _externalHasControl())
@@ -1116,6 +1149,14 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             return;
         }
 
+        if (_hasControl && _greenMove?.IsRunning == true
+            && _dispatchedSolution is { IsArenaReentry: true } returning
+            && GeometryHelper.DistanceXZ(player.Position, returning.ExecutablePath[^1].Position) > returning.MaxArrivalTolerance
+            && IsTemporalPhaseSafe(returning, player, snapshot, now))
+        {
+            _phase = DispatchPhase.Moving;
+            return;
+        }
         if (TryContinueTemporalPhase(player, snapshot, now)) return;
 
         if (solution is null || !solution.IsSuccess)
@@ -1196,12 +1237,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var shouldMove = solution.IsSuccess && solution.ExecutablePath.Count >= 2;
 
         // Waiting is allowed only while the delayed route still meets every damage window.
-        if (shouldMove && !solution.IsArenaMarginRecovery && (!solution.UsesTemporalPlanning || player.CastTimeRemaining <= ShortCastSeconds) && ShouldWaitForCast(solution, player, snapshot, now))
+        if (shouldMove && !solution.IsArenaMarginRecovery && !solution.IsArenaReentry && (!solution.UsesTemporalPlanning || player.CastTimeRemaining <= ShortCastSeconds) && ShouldWaitForCast(solution, player, snapshot, now))
         {
             _phase = DispatchPhase.WaitingForCast;
             shouldMove = false;
         }
-        else if (shouldMove && !solution.IsArenaMarginRecovery &&
+        else if (shouldMove && !solution.IsArenaMarginRecovery && !solution.IsArenaReentry &&
             (CanHoldSafeRefuge(solution, player, snapshot, now) || ShouldWaitForEscape(solution, player, snapshot, now)))
         {
             _phase = DispatchPhase.WaitingForEscape;
@@ -1209,7 +1250,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         }
 
         // 玩家真正无所事事时松手，避免膨胀环里的视觉抖动。
-        if (shouldMove && CanSkipSolve(snapshot, player.Position, now))
+        if (shouldMove && !solution.IsArenaReentry && CanSkipSolve(snapshot, player.Position, now))
         {
             _phase = DispatchPhase.Released;
             shouldMove = false;
@@ -1243,7 +1284,15 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // 只在 Solution 实质变化时重新下发，避免每帧 MoveTo 重置 GreenMove 运行时状态。
         if (!ReferenceEquals(_dispatchedSolution, solution))
         {
-            _greenMove!.MoveTo(BuildGreenMovePoints(solution, snapshot, now));
+            var queue = BuildGreenMovePoints(solution, snapshot, now);
+            if (!ValidateTerrainPath(player.Position, queue))
+            {
+                _latestSolution = null;
+                _phase = DispatchPhase.Released;
+                ReleaseControl();
+                return;
+            }
+            _greenMove!.MoveTo(queue);
             _dispatchedSolution = solution;
             // GreenMove now runs the solver's route; a rejected shortcut must not withdraw it.
             _directDispatchedGeneration = -1;
@@ -1254,6 +1303,24 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         _phase = DispatchPhase.Moving;
         _hasControl = true;
+    }
+
+    private bool ValidateTerrainPath(Vector3 from, IReadOnlyList<GreenMovePoint> points)
+    {
+        if (CheckTerrainTraversal == null) return true;
+        var remaining = 2f;
+        foreach (var point in points)
+        {
+            var delta = point.Position - from;
+            var distance = GeometryHelper.DistanceXZ(from, point.Position);
+            if (distance < .001f) continue;
+            var end = distance > remaining ? from + delta * (remaining / distance) : point.Position;
+            if (!CheckTerrainTraversal(from, end)) return false;
+            remaining -= distance;
+            if (remaining <= 0) break;
+            from = end;
+        }
+        return true;
     }
 
     private bool TryContinueDispatchedRoute(PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
@@ -1329,6 +1396,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     {
         startSafety ??= solution.ReducedDangerStartSafetyTime;
         var path = solution.ExecutablePath;
+        if (solution.IsArenaReentry)
+            return path.Count is > 0 and <= 2 && path.All(p => !p.IsWaitPoint)
+                && ArenaReentryRecovery.IsSafe(snapshot, player.Position, path[^1].Position, now,
+                    player.CurrentSpeed, _options, solution.MaxArrivalTolerance, startDelay);
         if (solution.IsArenaMarginRecovery)
             return path.Count is > 0 and <= 2 && path.All(p => !p.IsWaitPoint)
                 && ArenaMarginRecovery.IsSafe(snapshot, player.Position, path[^1].Position, now,

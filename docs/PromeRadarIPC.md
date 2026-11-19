@@ -11,6 +11,7 @@
 | `PromeRadar.SetFsdSessionActive` | `Action<bool>` | NewFolder3 获取/释放整轮 FSD 会话；获取时启用智能走位和 PT30 内置脚本 |
 | `PromeRadar.SmartMovementChanged` | `Action<bool>` 通知 | 首次初始化及开关变化时发布 |
 | `PromeRadar.GetState` | `Func<string>` | 最近一次主线程采样的 JSON 状态 |
+| `PromeRadar.IsMechanicMovementActive` | `Func<bool>` | 实时机制移动占用，包含等待撤离及安全点等待，不受 JSON 发布节流影响 |
 | `PromeRadar.StateChanged` | `Action<string>` 通知 | 状态变化与卸载时发布 JSON |
 
 设置接口可从任意线程调用，在下一次 Framework 更新执行。调用返回表示请求已入队，使用查询或变更通知确认应用。会话操作先于普通开关操作，普通开关代表用户选择，取消会话对移动开关的恢复权限。会话获取/释放幂等；整轮运行（含普通楼层、Boss、失败重进）保持开启，释放时只恢复本会话临时开启的移动/脚本开关。通知在游戏主线程同步执行，订阅者应快速返回，不抛异常；卸载调用方时退订相同委托。
@@ -43,6 +44,7 @@ JSON 字段：
 | `DangerZoneCount` / `ObstacleCount` / `GoalZoneCount` | int | PT30 脚本活动时报告其输出数，否则报告机制库导航桥数量 |
 | `CanMove` | bool | 当前允许执行智能走位：开关开启、玩家存活、非回放、本地解算和自动移动有效、PR 本体未占用移动 |
 | `HasMovementControl` | bool | 本插件的安全区当前持有移动控制权 |
+| `MechanicMovementActive` | bool | MP 正在独占机制移动；实际未移动的等待阶段仍可为 true |
 | `MovementPhase` | string | 当前调度阶段的中文说明 |
 | `ReplayActive` | bool | 正在回放 |
 | `TerritoryId` | uint | 实时区域 ID |
@@ -59,7 +61,9 @@ JSON 字段：
 
 解算诊断附加字段：`SolveStatus`（成功或明确失败原因）、`SolveTimeUtc`（快照时钟）、`SolutionTemporal/Partial/Fallback`（时间路径/分段逃离/最少危险降级，未解算时为 null）、`PathWaypointCount`、`PlannedWaitUntilUtc`（当前阶段首个等待点的解禁时间）、`EscapeDeadlineUtc`（读条让位的逃离截止）。这些字段与 `HasMovementControl`、`EscapeWaitBlock` 联合检查，可区分正常等待、无路、等待读条和执行器未接管；`SolveStatus=Success` 本身不能证明实际执行或最终无伤。
 
-NewFolder3 入场前通过 `SetFsdSessionActive(true)` 获取会话，任务结束以 `false` 释放；死亡重开属于同一会话。普通楼层在新鲜、同区域的 `HasMovementControl=true` 期间暂停自身路线。PT30 检查同区域、三秒内采样、非回放、`FsdSessionActive/SmartMovementEnabled/CanMove/NavigationActive/Pt30ScriptReady=true` 和 `Pt30ScriptVersion="1.0.0"`，由 MP 自有脚本处理；该 Boss 的 BMR 绘制和导航已停止。用户中途关闭时不每帧重开。调用请求入队不代表已经应用，需查询确认。
+NewFolder3 入场前通过 `SetFsdSessionActive(true)` 获取会话，任务结束以 `false` 释放；死亡重开属于同一会话。移动交接独立于该会话：NewFolder3 注册 `NewFolder3.Movement.SetPromeRadarControl`（`Func<bool, bool>`，仅游戏主线程）。MP 在下发路线前设置实时占用并同步调用 `true`；NewFolder3 先关闭自身输出权限、取消自己的路线、暂停原任务后返回 `true`。交接失败时 MP 不下发路线。等待撤离、后台解算以及逃出后相关危险窗口尚未结束时仍保持占用；远处危险及普通攻击目标不单独延长占用。MP 停止自己的执行器后调用 `false`，FSD 从当前位置重新验证并继续同一个开箱尝试，暂停时间不消耗开箱努力或等待预算。关闭、死亡、切区、回放及卸载撤销占用；重载时通过实时标量重新对齐。FSD 会话要求两端同时更新，不能使用缓存 `HasMovementControl=false` 作为恢复依据。
+
+PT30 检查同区域、三秒内采样、非回放、`FsdSessionActive/SmartMovementEnabled/CanMove/NavigationActive/Pt30ScriptReady=true` 和 `Pt30ScriptVersion="1.0.0"`，由 MP 自有脚本处理；该 Boss 的 BMR 绘制和导航已停止。用户中途关闭时不每帧重开。会话调用请求入队不代表已经应用，需查询确认。
 
 脚本开发：使用 `SafeZone` 注册规划约束、`Move` 执行手动移动、`Hints` 请求面向，均遵守智能走位开关。持有额外原生控制的脚本须覆盖 `OnMovementDisabled()` 立即撤销自身控制，保留机制和绘制状态。此机制不对任意外部脚本代码做沙箱隔离。
 

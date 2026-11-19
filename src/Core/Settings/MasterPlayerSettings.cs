@@ -57,6 +57,9 @@ public sealed class MasterPlayerSettings
     public bool FollowOutOfCombat = false;
 
     public float DodgeDangerMargin = 0.5f;
+    public bool EnableTerrainCollision = true;
+    public float TerrainScanRadius = 20f;
+    public bool RadarShowTerrain = true;
 
     // Retain the previous editor's saved data; current navigation uses FinalRoute.
     public Mechanics.Blunderville.BlundervilleRouteLibrary BlundervilleRoutes = new();

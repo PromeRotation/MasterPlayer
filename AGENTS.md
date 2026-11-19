@@ -7,6 +7,9 @@
 - 产品名称为 **PromeRadar**。保留 `masterplayer` 插件 ID、`MasterPlayer.dll`、命名空间和现有配置/脚本/回放目录，维持 PR 启用状态与外部脚本兼容；窗口显示新名但保留 ImGui ID。
 - `EnableSmartMovement` 是唯一移动总开关，取代 `EnableAutoDodge` / `EnableFollow`。接近目标只向同一规划器注册目标，已移除直线跟随执行分支。关闭时立即撤销脚本移动/朝向、斗兽控制、糖豆人原生控制和 runtime owner 请求；绘制、提示及安全区规划继续。执行层 `SafeZoneSetting.MovementAllowed` 阻断 runtime 请求绕过总开关，回放继续禁止移动。
 - `EnableMechanics` 统一控制脚本、模块及原处理器；移除 `EnableScripts` / `EnableMechanicModules`。`TerritoryEnabled` 按区域默认启用，同时门控实时/回放的脚本与模块；脚本原逐项开关保留。模块禁用或被专属脚本压制后不得继续压制通用 AOE，恢复时重建会话以丢弃旧状态。
+- 无机制场地时默认开启周边地形检测（`EnableTerrainCollision`，半径 `TerrainScanRadius=20`，雷达 `RadarShowTerrain`）。主线程持碰撞场景共享锁复制有效模型，后台用 Recast 批量构建不可变 fallback boundary，生产建模不再逐格发射原生射线；未知/墙体/落差不通行；正式场地优先，ARR/离线回放不采样实时地形。前方地形变化或查询失败时撤销自身旧路线，不回退为无限制平地。地形 footprint 已检查，fallback 场地收缩为 0，AOE 余量不变。先发布近身 8 码，再构建完整半径；模型资源跨深宫楼层复用，场景元数据每 500ms 检查、未变则不重建；实时原生碰撞复核保留；战斗结束保留地形，深宫 director/楼层/布局变化则清图；契约与实机验证限制见 `docs/reference/LocalTerrainCollision.spec.md`。
+- 地形建模保留当前有效 layer 1 几何，不能用通用射线的 0x4000 材质位筛墙门；0x2000000 洞口与低五位 0x11 的禁行面独立扣除，避免 Recast 共面跨度合并重新放行。静态资源缓存可跨层复用；`MemoryData` 程序模型每轮按内容校验，指针和三角面数量相同不代表几何未变。实时射线复核及局部修正是补充，不能代替首次场景建模。
+- 地形雷达绘制读取独立 `TerrainDisplay`，刷新期间保留旧完整图，按 `TerrainScanRadius` 固定比例，完整新图就绪后替换。显示历史不得注册为规划边界或用于碰撞判断；规划 `LocalTerrain` 仍按场景变化失效并保留实时复核。换层、切区、支撑层改变、关闭及正式场地接管时同时清除显示历史。
 - 旧移动开关按 OR 迁移；旧脚本/模块总开关按 OR 迁移。保存新配置不再写旧字段，首次覆盖旧格式前保留 `MasterPlayer.json.before-promeradar.bak`。配置格式字段 `SettingsVersion=1`。
 - `/prpr` 开关面板，`/prpr ai on/off` 控制智能走位；`rec` / `replay` 保留。旧 `/prmp` 兼容。DTR `PromeRadar AI：开/关` 左键切换，同 UI/IPC 共用插件 setter；IPC 请求入队后在 Framework 线程应用，通道与状态字段见 `docs/PromeRadarIPC.md`。
 - 脚本增加 `protected virtual OnMovementDisabled()`；宿主关闭智能走位时先清 Move/Hints 门面，再调用此 hook。脚本额外持有原生控制时必须覆盖并撤销。不得停止其他来源的 GreenMove。
@@ -106,7 +109,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 - `OnFrameworkUpdate(IFramework framework)`：先取 `deltaTime`（秒），由 `SafeZoneActivation.Update` 应用开关，再按 `_mechanicHost` → `_dodge` → `_mechanics` → `_replayRecorder` → `_replayController` → `_scripts` → `_follow` → `_safeZone` → `AoeVisibility` → `_radar` 更新。`_mechanicHost` 在 `_dodge` 之前（机制模块当帧输出供后续组件消费）；回放激活时桥由 ReplayController 经 OnReplayEvent/OnReplayTick 驱动独立回放会话（实时采样不跑）；当前区域有 MP 区域专属脚本运行时桥自身跳过。回放控制器先还原对象帧和事件，并用录制时钟更新回放脚本；普通脚本更新不再重复推进回放。解算在实时脚本与跟随注册区域之后，绘制读取本地结果。`SafeZoneRuntime.Update` 接收 PR 移速倍率和回放移动门控，回放禁止移动但按录制时钟回收限时区域。**EnableScripts 总开关门控在 ScriptManager 内部**。另有 internal 属性 `Recorder` / `Replay` / `ReplayWindow` / `MechanicHost` 供 UI 使用。
 - `DrawConfigUI()`：ImGui 按钮 `"打开 MasterPlayer 设置面板"` 调 `_mainWindow.Toggle()`，旁边提示 `/prmp` 指令。
 - `Dispose()`：退订上述事件（Framework.Update、UiBuilder.Draw 三处）→ `Svc.Commands.RemoveHandler("/prmp")`（独立 try/catch）→ `SafeDispose` 十二个组件，顺序 `_replayWindow` → `_mainWindow` → `_follow` → `_radarOverlay` → `_replayController`（其 Dispose 先停回放会话）→ `_replayRecorder`（其 Dispose 先停录制）→ `_scripts`（其 Dispose 内部先 `StopAll`）→ `_mechanicHost`（退订事件 → capture.Dispose → session.Dispose，逐项 try/catch）→ `_mechanics` → `_dodge` → `_radar` → `_safeZoneActivation` → 安全区事件订阅 → `_safeZone` → `Instance = null`。
-- `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解，这三个实时回调在回放期间跳过，保护录制场景。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
+- `SafeZoneRuntime` 在所有消费者前创建；订阅切区、死亡与战斗结束以清空本地区域并取消旧解；战斗结束保留局部地形，切区和死亡完整清理。这三个实时回调在回放期间跳过，保护录制场景。死亡期间禁止解算与下发，回放期间禁止移动。消费者和开关联动释放后，退订这三个事件并释放运行时，最后才清空 `Instance`。
 - `SafeZoneActivation` 注入本地 `SafeZone.Setting`。雷达悬浮窗、真实世界绘制、智能躲避任一开启时启用其 `EnableSafeZone`；仅智能躲避请求 `EnableAutoMovement`。关闭/卸载仅撤销自己开启的本地开关，手动关闭不每帧覆写，可在诊断页恢复。功能联动不修改 PR 本体安全区。
 
 **Settings.MasterPlayerSettings**（`src\Core\Settings\MasterPlayerSettings.cs`）
@@ -286,6 +289,7 @@ public static class AoeShapeDatabase
 ```
 
 - 静态表查不到时走 **Lumina Action 表推断**，映射如下：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
+- 朝圣路区域 1281–1290 的普通扇形/矩形/直线读条统一锁定原始读条落点及 `CastRotation`，不能跟随普通物体面朝向；缺锁定方向拒绝预测。冲锋继续使用来源→落点方向，圆/月环和读条后动态持续区保留原有绑定。44690/44691 的包内方向已含左右偏转，不能再次加减 90°；42091 大地钻击须用 R3–30、270°环扇形，不能按 CastType 10 推成完整月环。证据与回归见 `docs/reference/PilgrimsTraverseBosses.spec.md`。
 
 **Mechanics.MechanicDispatcher**（`src\Mechanics\MechanicDispatcher.cs`）
 
@@ -676,7 +680,7 @@ public readonly record struct GreenMovePoint(
 
 随实际场地轮廓显示的 2D 俯视小地图，原生 ImGui 窗口（无标题栏、无边框、`NoBackground`），由 `UiBuilder.Draw`（主线程）逐帧驱动，不受 `EnableRadar`（真实世界绘制开关）影响，独立开关 `EnableRadarOverlay`（默认关）。
 
-- **显示门槛**：`RadarOnlyWithScript`（默认开）开启时，仅当存在运行中的**区域专属脚本**（`Territorys` 非空且匹配当前区域；通用脚本不算，未启用/未运行不算）才显示——即「只在有脚本的区域出现」。
+- **显示门槛**：`RadarOnlyWithScript`（默认开）开启时，存在运行中的**区域专属脚本**（`Territorys` 非空且匹配当前区域；通用脚本不算，未启用/未运行不算），或启用 `RadarShowTerrain` 且存在局部地形地图时显示。
 - **中心点两模式**：`RadarCenterMode == 0`（场地基准）且快照存在 `ArenaBoundary` 时优先读取当前斗兽入口与该导航边界对应的 `DisplayBounds` 和固定场心，否则用宿主边界。`RadarArenaLayout` 按镜头旋转后的轮廓最大轴向范围等比缩放到视口，保留4像素边框空间；不会用外接圆缩小长方形、填平异形凹口或给所有地图统一外扩。模式 1（玩家摄像机基准）或无边界时以玩家为中心、固定25码圆形视野。
 - **旋转**：`RadarProjection` 直接调用 PR `GeometryHelper.WorldToLocal(world, center, rotation)`，再乘比例、加屏幕中心。局部 +X 向右、−Y 向前；跟随摄像机时 `rotation = CameraManager.Instance()->GetActiveCamera()->DirH + π`，与 PR 移动相机约定一致；固定北向上和相机不可用时用 `π`。玩家朝向用 PR `PointFromRotationDistanceXZ` 后走相同投影。`GetContours()` 已是世界坐标，不二次平移旋转。
 - **场地裁剪（`src/UI/Radar/RadarCanvas.cs`、`src/UI/Radar/RadarClipRegion.cs`）**：背景和内容按真实轮廓与视口相交；凹多边形由PR三角化后逐片裁剪，线段合并连续区间但不跨越凹口。面积计算先平移到局部原点并忽略退化三角形，避免窗口位置造成精度误差。边框随场地，方向文字置于轮廓外侧，距离参考环仍表示实际距离；悬浮窗和回放按当前字号保留方向文字与阴影的边距。
@@ -699,19 +703,22 @@ public readonly record struct GreenMovePoint(
 - **ReplayWindow**（独立窗口，契约见 §3.1）：时间轴回放页签上内嵌 `RadarView`（回放中实时呈现脚本注册的机制范围）下时间轴（点击 Seek 调 `ReplayController.Seek`）；日志对比页签支持按战斗开始/首次读条对齐与手动偏移，归纳共同/差异技能。
 - 回归：`tests/ReplayRecordingRegression.cs`、`ReplayTimelineRegression.cs`、`ReplayWorldRegression.cs`覆盖数据、事件、时间顺序、快照、时钟、绑定与旧文件边界；`tests/ScriptCompilation/ScriptCatalogRegression.cs`加载实际DLL验证暂停／速度／跳转／区域过期／实时隔离／刷新及退出清理。
 
-### PT30 / NewFolder3 联动
+### 朝圣路 Boss 脚本 / PT30 / NewFolder3 联动
+
+- 10/20/30/40/50/60/70/80/90/99 层 Boss 均由 `Presets/PilgrimsTraverse/Entries/` 的 MP 内置脚本接管，ID 为 `promeradar.pt<层数>`，区域为 1281–1290（不是 CFC 1032–1041）。首次默认启用，保留明确保存的逐脚本关闭设置。新 Boss 状态机在 `Bosses/`，宿主在 `Hosting/`；入口可独立热编译。完整场地、尺寸、时序与验证约定见 [朝圣路 Boss 规格](docs/reference/PilgrimsTraverseBosses.spec.md)。
+- 朝圣路危险区定义与预览全部使用原始尺寸；owner 的硬危险余量实时读取 MP 设置的 `DodgeDangerMargin`，只在解算层应用一次，场地额外余量保持 0。10 层压花 44057 使用真实 Action 表 R15，50 层破坑 43534/43535/43536 使用 R6；保留原形状，不沿用 BMR 缩小的 R14/R5。BMR 对同区域对应 Boss 不再输出绘制/导航，普通楼层继续由 BMR 处理；本区域之外同 OID 不受影响。关闭 MP 脚本不回退到该 Boss 的 BMR 导航。
 
 - `Presets/PilgrimsTraverse/Entries/PilgrimsTraverse30.cs` 是区域 1283 的 MP 内置脚本，ID `promeradar.pt30`、契约版本 `1.0.0`；机制状态在 `Pt30Encounter`。四种 9–14/14–19/19–24/24–29m 光轮、左右 60×30m 矩形接 220° 扇形、静止/移动球、Divine Favor 八连追踪均由 MP 自己输出，不依赖 BMR PT30 组件。场地与真实洞口是从上游导出的不可变 MP 几何数据 `Pt30Arena`，保留内侧平台。
 - 脚本只在 Boss 交战时压制区域机制库，普通楼层保留通用避险。`MechanicHostController.SleepMpOwnedBoss` 同时阻断旧 PT30 模块的绘制/导航发布，包括脚本启动前一帧及禁用时；不回退旧适配器。危险区按施法者/技能或球 ID 差分维护，移动球按二十个 0.5 秒的轨迹胶囊覆盖十秒规划范围，100ms 更新，停止/死亡/切区清理。不能将光轮三角化后逐三角形注册，否则会显著增加绘制成本。导航保留全部危险窗，预览仅显示下一光轮、当前光球及当前连招；未来光球圆不重复绘制，`Pt30PreviewCount` 单独报告实际预览数量。
-- 追踪方向按危险分布选择后锁定，不取人物面向；在环道上维持稳定的前方目标，接近目标才推进。实际效果按 `(source, GlobalSequence)` 去重，八次结束或超时清理；事件和原生读条采样共同识别读条，去重保留首次锁定位置/朝向。当前玩家统一使用脚本入口，ARR/MP 回放只规划和绘制。
+- Divine Favor 的 197 点名只登记待处理对象，不生成追踪圆或绕圈目标；收到首发圆形 AOE 的 44918 预告后才开始追踪移动，不按点名倒计时提前起跑。追踪方向按危险分布选择后锁定，不取人物面向；在环道上维持稳定的前方目标，接近目标才推进。实际效果按 `(source, GlobalSequence)` 去重，八次结束或超时清理；事件和原生读条采样共同识别读条，去重保留首次锁定位置/朝向。当前玩家统一使用脚本入口，ARR/MP 回放只规划和绘制。
 - NewFolder3 调用 `PromeRadar.SetFsdSessionActive(Action<bool>)` 获取/释放整轮运行，MP 在主线程启用智能走位及 PT30 脚本，获取/释放幂等，整轮（含失败重进）保持开，释放时只恢复本次临时开启的开关。普通楼层仅在新鲜 `HasMovementControl` 时让 FSD 暂停路线；PT30 检查 `FsdSessionActive/Pt30ScriptReady/Pt30ScriptVersion`，不再检查旧 BMR 模块名。用户总开关仍有效，不逐帧重开。
 - `GetState` 缓存及通知最多每 100ms 发布；包含构建 MVID、脚本可用/就绪/错误、机制数量、追踪剩余、帧间隔、MP 录制状态。`FrameMilliseconds` 是 Framework 间隔，不等于 MP 自身耗时；自身慢帧查 `[MP-PERF]`。完整契约见 `docs/PromeRadarIPC.md`。
 - 自身目标 Helper 的原生 `CastInfo.TargetLocation` 可能是零；环形、Grip、Reach 必须使用读条包 `EffectPosition` 与锁定朝向，不能让先到的原生零坐标采样覆盖包。仅地面目标追踪首击使用原生落点补采样。静态 `WorldPolygonTemplate` 在构造时校验并缓存几何，`Resolve` 复用实例，避免每帧对洞口多边形重复执行平方复杂度的自交检查。
 - Grip 判定完成后发布 Reach 安全侧的 128° 目标扇区（真实 140° 安全侧内缩），利用两段之间的 7.5 秒提前站位，追踪目标优先；不能在 Grip 矩形仍待判定时强拉安全侧，也不能等 0.7 秒 Reach 读条才跨场移动。效果包后撤销目标。
-- PT30 瞬时判定以读条结束后约 0.3 秒的效果为中心，单独保留提前 0.2 / 尾部 0.15 秒，`DangerWindow.HasExplicitTiming` 禁止再次叠加通用施法缓冲。运动球以轨迹胶囊覆盖真实 4m 球及观测误差，横向只增加 0.15m 观测余量与弦高，不能把沿途位移加到整圆半径。二十个 0.5 秒时片分别带判定时间，标记 `HasMotionEnvelope`，覆盖完整十秒规划范围，防止解算反复等待预测末尾的虚假消失。预览始终只画实际位置的一个 4m 圆，未来轨迹仅参与导航且不三角化；静止球持续阻挡到移动/失活。Reach 预站位请求现有目标时序规划，允许等前一光轮结束后转场，球/追踪期间禁用额外踩点等待，保留读条安全余量判断。只使用 owner 请求，停止时释放。
+- PT30 瞬时判定以读条结束后约 0.3 秒的效果为中心，单独保留提前 0.2 / 尾部 0.15 秒，`DangerWindow.HasExplicitTiming` 禁止再次叠加通用施法缓冲。运动球以轨迹胶囊覆盖真实 4m 球，横向只增加弦高，不额外增加 0.15m 观测余量；用户安全余量仅在解算层应用，不能把沿途位移加到整圆半径。二十个 0.5 秒时片分别带判定时间，标记 `HasMotionEnvelope`，覆盖完整十秒规划范围，防止解算反复等待预测末尾的虚假消失。预览始终只画实际位置的一个 4m 圆，未来轨迹仅参与导航且不三角化；静止球持续阻挡到移动/失活。Reach 预站位请求现有目标时序规划，允许等前一光轮结束后转场，球/追踪期间禁用额外踩点等待，保留读条安全余量判断。只使用 owner 请求，停止时释放。
 - `tests/Pt30TemporalRegression.cs` 校验正反转运动包络、静止球持续危险和光轮间隙；主回归 `--pt30-recording <MP录像路径>` 重建原始快照并调用真实解算器，断言三个原先阻塞点有非降级路线及 Reach 等待上界。此测试保留录制位置，不等于模拟或实战无伤；临近命中的无路探针单独报告。
 - PT30 洞口多边形注册为硬障碍，雷达与真实世界绘制使用场地边界的白色描边。真实世界绘制缓存转换后的多边形，两种视图都省去填充三角化。
-- PT30 注册危险区时已叠加用户 `DodgeDangerMargin`，脚本通过 owner 请求将 `HardSafetyMargin/ArenaSafetyMargin` 设为 0，避免网格再次外扩封死光球与洞口间约 1.7–2.0m 的通道；保持真实球半径、运动包络、用户余量及保守网格相交检测。不要缩小物理判定来换取路径。目标时序规划的 `IsPartialEscape` 仅为临时避难，仍须遵守解的有效期并重解，不能因等待点暂时安全而跳过周期更新；普通避难稳定性不变。原录像夹具及完整路线/等待安全检查见 `tests/Pt30PassageRegression.cs`，证据和边界见 [PT30 规格](docs/reference/PilgrimsTraverse30.spec.md)。
+- PT30 注册与预览保持原始尺寸，脚本通过 owner 请求将 `HardSafetyMargin` 实时设为用户 `DodgeDangerMargin`、`ArenaSafetyMargin` 保持 0，安全余量仅在解算层应用一次；保持真实球半径 4m、圆弧运动包络及保守网格相交检测。不要缩小物理判定来换取路径。目标时序规划的 `IsPartialEscape` 仅为临时避难，仍须遵守解的有效期并重解，不能因等待点暂时安全而跳过周期更新；普通避难稳定性不变。原录像夹具及完整路线/等待安全检查见 `tests/Pt30PassageRegression.cs`，证据和边界见 [PT30 规格](docs/reference/PilgrimsTraverse30.spec.md)。
 - `DangerAwareFollowGoalTemplate.HasSafeArea` 在场地 AABB 内保留原采样网格，避免大命中圈远程目标对场地外逐点扫描；回归同时比较开放和完全阻塞场景。`[MP-PERF]` 将 `follow` 与 `safezone` 分开计时，不能把跟随目标扫描误判为解算器耗时。
 - 回归入口仍为 `tests/PilgrimsTraverse30/MasterPlayer.PilgrimsTraverse30.Tests.csproj`，新增 MP 原生状态测试覆盖全部几何、连续 1000 帧数量上界、效果去重和八次追踪清理，并链接主回归。定向可执行文件接受 `--recording <MP录像路径>`，按实际对象增量和事件顺序重建原生模型，核对已受击位置是否被相应几何识别及追踪是否残留；它保留原录像移动，不模拟躲避成功。离线通过不能代替实机验收；实际通关/受击以 MCP 与录制证据为准。
 

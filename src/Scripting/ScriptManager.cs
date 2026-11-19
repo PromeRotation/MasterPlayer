@@ -460,7 +460,8 @@ public sealed class ScriptManager : IDisposable
     // ── 启停 / 机制开关持久化 ─────────────────────────
 
     public bool IsScriptEnabled(string id)
-        => MasterPlayerSettings.Instance.ScriptEnabled.TryGetValue(id, out var enabled) && enabled;
+        => MasterPlayerSettings.Instance.ScriptEnabled.TryGetValue(id, out var enabled) ? enabled
+            : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id);
 
     public void SetScriptEnabled(string id, bool enabled)
     {

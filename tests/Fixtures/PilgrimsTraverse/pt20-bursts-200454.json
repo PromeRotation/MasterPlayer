@@ -1,0 +1,470 @@
+{
+  "source": "朝圣交错路 第11～20朝圣路 2026.11.19 20.04.54.dat",
+  "sha256": "84b95125553f7ac86fcb2d9bd6e35d1e44d55573c1a11a94bf69b4504d3b0439",
+  "build": 14251465,
+  "note": "Anonymous source IDs; self-target EffectPosition=(0,0,0) confirmed by PR logs for both damaging Burst events. Position is the actual helper center; hitPositions are the last preceding server position, not a simulation.",
+  "cycles": [
+    {
+      "castTime": 1068.04,
+      "events": [
+        {
+          "t": -12.769,
+          "kind": "status",
+          "param": 917
+        },
+        {
+          "t": -9.72,
+          "kind": "statusRemove",
+          "param": 917
+        },
+        {
+          "t": -9.72,
+          "kind": "status",
+          "param": 920
+        },
+        {
+          "t": -6.785,
+          "kind": "statusRemove",
+          "param": 920
+        },
+        {
+          "t": -6.785,
+          "kind": "status",
+          "param": 918
+        },
+        {
+          "t": -3.736,
+          "kind": "statusRemove",
+          "param": 918
+        },
+        {
+          "t": -3.736,
+          "kind": "status",
+          "param": 919
+        },
+        {
+          "t": -0.768,
+          "kind": "statusRemove",
+          "param": 919
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 3.0
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -293.6598764019226,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 1.7000000476837158
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.3852140077821,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 5.599999904632568
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 4.299999713897705
+        },
+        {
+          "t": 1.95,
+          "kind": "effect",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -293.6499938964844,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2556,
+          "targets": 0
+        },
+        {
+          "t": 3.313,
+          "kind": "effect",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2562,
+          "targets": 0
+        },
+        {
+          "t": 4.581,
+          "kind": "effect",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2567,
+          "targets": 0
+        },
+        {
+          "t": 5.896,
+          "kind": "effect",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2571,
+          "targets": 1
+        }
+      ],
+      "hitPositions": [
+        {
+          "hit": 5.896,
+          "action": 43459,
+          "t": 3.617,
+          "position": [
+            -286.0303654535744,
+            -0.015259021896667946,
+            -296.92530708781567
+          ],
+          "stoppedSince": 1.468
+        }
+      ]
+    },
+    {
+      "castTime": 1127.288,
+      "events": [
+        {
+          "t": -12.769,
+          "kind": "status",
+          "param": 919
+        },
+        {
+          "t": -9.736,
+          "kind": "statusRemove",
+          "param": 919
+        },
+        {
+          "t": -9.736,
+          "kind": "status",
+          "param": 918
+        },
+        {
+          "t": -6.752,
+          "kind": "statusRemove",
+          "param": 918
+        },
+        {
+          "t": -6.752,
+          "kind": "status",
+          "param": 920
+        },
+        {
+          "t": -3.77,
+          "kind": "statusRemove",
+          "param": 920
+        },
+        {
+          "t": -3.77,
+          "kind": "status",
+          "param": 917
+        },
+        {
+          "t": -0.718,
+          "kind": "statusRemove",
+          "param": 917
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 3.0
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -293.3852140077821,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 1.7000000476837158
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.6598764019226,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 5.599999904632568
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 4.299999713897705
+        },
+        {
+          "t": 1.95,
+          "kind": "effect",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -293.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2729,
+          "targets": 0
+        },
+        {
+          "t": 3.248,
+          "kind": "effect",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2732,
+          "targets": 0
+        },
+        {
+          "t": 4.598,
+          "kind": "effect",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2736,
+          "targets": 1
+        },
+        {
+          "t": 5.847,
+          "kind": "effect",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.6499938964844,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2739,
+          "targets": 0
+        }
+      ],
+      "hitPositions": [
+        {
+          "hit": 4.598,
+          "action": 43458,
+          "t": 4.214,
+          "position": [
+            -295.6130312046997,
+            -0.015259021896667946,
+            -293.35469596398866
+          ],
+          "stoppedSince": 3.281
+        }
+      ]
+    },
+    {
+      "castTime": 1186.202,
+      "events": [
+        {
+          "t": -12.803,
+          "kind": "status",
+          "param": 918
+        },
+        {
+          "t": -9.803,
+          "kind": "statusRemove",
+          "param": 918
+        },
+        {
+          "t": -9.803,
+          "kind": "status",
+          "param": 919
+        },
+        {
+          "t": -6.769,
+          "kind": "statusRemove",
+          "param": 919
+        },
+        {
+          "t": -6.769,
+          "kind": "status",
+          "param": 920
+        },
+        {
+          "t": -3.736,
+          "kind": "statusRemove",
+          "param": 920
+        },
+        {
+          "t": -3.736,
+          "kind": "status",
+          "param": 917
+        },
+        {
+          "t": -0.768,
+          "kind": "statusRemove",
+          "param": 917
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -293.3852140077821,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 3.0
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 1.7000000476837158
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.6598764019226,
+            -0.015259021896667946,
+            -306.3859006637674
+          ],
+          "seconds": 5.599999904632568
+        },
+        {
+          "t": 0.0,
+          "kind": "cast",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.3859006637674,
+            -0.015259021896667946,
+            -293.3852140077821
+          ],
+          "seconds": 4.299999713897705
+        },
+        {
+          "t": 1.95,
+          "kind": "effect",
+          "source": 11,
+          "action": 43456,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2911,
+          "targets": 0
+        },
+        {
+          "t": 3.249,
+          "kind": "effect",
+          "source": 10,
+          "action": 43457,
+          "position": [
+            -293.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2915,
+          "targets": 0
+        },
+        {
+          "t": 4.581,
+          "kind": "effect",
+          "source": 13,
+          "action": 43458,
+          "position": [
+            -306.364990234375,
+            2.0265579223632812e-06,
+            -293.364990234375
+          ],
+          "sequence": 2917,
+          "targets": 0
+        },
+        {
+          "t": 5.898,
+          "kind": "effect",
+          "source": 12,
+          "action": 43459,
+          "position": [
+            -293.6499938964844,
+            2.0265579223632812e-06,
+            -306.364990234375
+          ],
+          "sequence": 2921,
+          "targets": 0
+        }
+      ],
+      "hitPositions": []
+    }
+  ]
+}

@@ -10,8 +10,8 @@ internal sealed class Pt30Encounter
     public const uint BOSS_OID = 0x4609;
     public const uint BALL_OID = 0x460A;
     public const int BALL_PREDICTION_SLICES = 20;
-    // Script hazards already include DodgeDangerMargin. A second grid dilation
-    // closes the recorded 1.7–2.0m passages between the balls and the floor hole.
+    // Keep the original footprints. Grid dilation would close the narrow passages
+    // between the balls and the floor hole.
     public const float NAVIGATION_GRID_MARGIN = 0;
     public static readonly uint[] Actions = [39642, 39643, 39674, 39743, 40551, 44927, 40552, 40553, 39876, 44917, 44918, 44919];
     public sealed record Actor(ulong Id, uint Oid, Vector3 Position, float Rotation, bool Dead, bool InCombat);
@@ -79,7 +79,8 @@ internal sealed class Pt30Encounter
     {
         if (icon != 197) return;
         markedPlayer = target;
-        chasingPlayer = target;
+        // The icon only marks the target. Start moving when the first circle is telegraphed.
+        chasingPlayer = 0;
         Remaining = 8;
         firstChaseCast = false;
         nextChaseHit = now.AddSeconds(8);
@@ -184,7 +185,7 @@ internal sealed class Pt30Encounter
             {
                 var from = Point(angle + ball.Velocity * (i * slot - timeReserve), radius, ball.Position.Y);
                 var to = Point(angle + ball.Velocity * ((i + 1) * slot + timeReserve), radius, ball.Position.Y);
-                result.Add(new($"ball/{id}/{i}", "Bounds of Indulgence 移动预测", new Pt30BallSweepTemplate(from, to, 4.15f + sagitta), ball.Position, 0,
+                result.Add(new($"ball/{id}/{i}", "Bounds of Indulgence 移动预测", new Pt30BallSweepTemplate(from, to, 4f + sagitta), ball.Position, 0,
                     now.AddSeconds(i * slot - timeReserve), now.AddSeconds((i + 1) * slot + timeReserve))
                     { HasMotionEnvelope = true, BallPreviewPosition = i == 0 ? ball.Position : null });
             }

@@ -5,6 +5,7 @@ using Dalamud.Game.Gui.Dtr;
 using Dalamud.Plugin.Ipc;
 using ECommons.DalamudServices;
 using MasterPlayer.Settings;
+using MasterPlayer.Spatial;
 
 namespace MasterPlayer.Integration;
 
@@ -25,15 +26,21 @@ internal sealed class SmartMovementIntegration : IDisposable
     private bool fsdOwnsSwitch;
     private bool fsdOwnsPt30Script;
     private DateTime nextPublish;
+    private readonly SafeZoneRuntime runtime;
+    private readonly ICallGateSubscriber<bool, bool> movementControl;
+    private DateTime nextHandoffErrorAt;
 
-    public SmartMovementIntegration()
+    public SmartMovementIntegration(SafeZoneRuntime runtime)
     {
+        this.runtime = runtime;
+        movementControl = Svc.PluginInterface.GetIpcSubscriber<bool, bool>("NewFolder3.Movement.SetPromeRadarControl");
         try
         {
             Register("PromeRadar.GetApiVersion", () => 1);
             Register("PromeRadar.IsReady", () => ready);
             Register("PromeRadar.GetSmartMovementEnabled", () => enabledState);
             Register("PromeRadar.GetState", () => state);
+            Register("PromeRadar.IsMechanicMovementActive", () => ready && runtime.MovementStatus.MechanicMovementActive);
             // 位置在接下来 seconds 秒内是否安全（不在将要判定的危险区、硬障碍内，且在场地边界内）；
             // 供 ACR 判断能否用突进贴回 Boss。仅主线程（PR 决策在 Framework.Update 中调用）。
             var positionSafe = Svc.PluginInterface.GetIpcProvider<float, float, float, bool>("PromeRadar.IsPositionSafe");
@@ -56,6 +63,7 @@ internal sealed class SmartMovementIntegration : IDisposable
             {
                 Svc.Log.Warning(ex, "[PromeRadar] DTR 初始化失败");
             }
+            runtime.SetMovementHandoff(RequestMovementControl);
         }
         catch
         {
@@ -65,6 +73,25 @@ internal sealed class SmartMovementIntegration : IDisposable
                 catch (Exception ex) { Svc.Log.Warning(ex, "[PromeRadar] 初始化失败后的 IPC 清理失败"); }
             }
             throw;
+        }
+    }
+
+    private bool RequestMovementControl(bool active)
+    {
+        try
+        {
+            if (movementControl.HasFunction) return movementControl.InvokeFunc(active);
+            if (!fsdActive || !active) return true;
+            throw new InvalidOperationException("NewFolder3 缺少同步移动交接接口；需同时更新两个插件。");
+        }
+        catch (Exception ex)
+        {
+            if (DateTime.UtcNow >= nextHandoffErrorAt)
+            {
+                nextHandoffErrorAt = DateTime.UtcNow.AddSeconds(5);
+                Svc.Log.Error(ex, "[PromeRadar] FSD 移动交接失败，未下发争抢路线");
+            }
+            return false;
         }
     }
 
@@ -167,6 +194,7 @@ internal sealed class SmartMovementIntegration : IDisposable
                 && plugin.SafeZone.Setting.EffectiveEnableAutoMovement
                 && !Spatial.HostMovement.AutomaticMovementEnabled && !Spatial.HostMovement.HasControl,
             HasMovementControl = plugin.SafeZone.MovementStatus.HasControl,
+            MechanicMovementActive = plugin.SafeZone.MovementStatus.MechanicMovementActive,
             MovementPhase = plugin.SafeZone.MovementStatus.PhaseText,
             SolveStatus = solution?.Status.ToString(),
             SolveTimeUtc = solution?.SolveTime,
@@ -215,12 +243,15 @@ internal sealed class SmartMovementIntegration : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        // Stop our executor before telling FSD that it may resume.
+        runtime.SetMovementHandoff(null);
         ready = false;
         var finalState = JsonNode.Parse(state)?.AsObject() ?? new JsonObject();
         finalState["ApiVersion"] = 1;
         finalState["Ready"] = false;
         finalState["CanMove"] = false;
         finalState["HasMovementControl"] = false;
+        finalState["MechanicMovementActive"] = false;
         finalState["MovementPhase"] = "已卸载";
         state = finalState.ToJsonString();
         Notify(() => stateChanged.SendMessage(state));

@@ -5,9 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;TerrainCollision\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -16,6 +17,9 @@
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blunderville\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse30\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\PilgrimsTraverse\pt20-bursts-200454.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\PilgrimsTraverse\pt50-chase-155404.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\PilgrimsTraverse\pt50-overlap-155404.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\src\Core\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\src\Core\PlayerPerspective.cs" Link="PlayerPerspective.cs" />
     <Compile Include="..\src\Core\DutyReplayState.cs" Link="DutyReplayState.cs" />
@@ -55,6 +59,7 @@
     <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\*.cs" Link="PilgrimsTraverse\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\PilgrimsTraverse\Bosses\*.cs" Link="PilgrimsTraverse\Bosses\%(Filename)%(Extension)" />
     <Compile Include="PilgrimsTraverse30\NativePt30Tests.cs" />
     <Compile Include="..\src\Combat\Sequences\*.cs" Exclude="..\src\Combat\Sequences\CombatSkillSequence.cs" Link="Sequences\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Blunderville\**\*.cs" Exclude="..\Presets\Blunderville\BlundervilleScript.cs;..\Presets\Blunderville\BlundervilleNativeControl.cs;..\Presets\Blunderville\Entries\**" Link="Blunderville\%(RecursiveDir)%(Filename)%(Extension)" />

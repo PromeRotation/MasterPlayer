@@ -68,7 +68,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
         _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
         _safeZoneDeath = PromeEventBus.OnPlayerDied(this, () => { if (!PlayerPerspective.IsDutyReplay) ClearLiveSafeZone(); });
-        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, ClearLiveSafeZone);
+        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, () => ClearLiveSafeZone(preserveTerrain: true));
         _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
         _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
         _smartMovementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
@@ -87,7 +87,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _remoteControl = new Integration.RemoteControlClient();
         _skillSequences = new Combat.Sequences.CombatSkillSequence();
         _mainWindow = new Windows.MainWindow();
-        _integration = new Integration.SmartMovementIntegration();
+        _integration = new Integration.SmartMovementIntegration(SafeZone);
 
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
@@ -210,9 +210,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, movementEnabled, settings.OptimizeDodgeTiming);
     }
 
-    private void ClearLiveSafeZone()
+    private void ClearLiveSafeZone(bool preserveTerrain = false)
     {
-        if (_scripts?.ReplayModeActive != true) _safeZone?.Clear();
+        if (_scripts?.ReplayModeActive == true) return;
+        if (preserveTerrain) _safeZone?.ClearCombatState();
+        else _safeZone?.Clear();
     }
 
     public void Dispose()

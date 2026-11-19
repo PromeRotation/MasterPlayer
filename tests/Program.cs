@@ -24,6 +24,7 @@ var passed = 0;
 var shardCounter = 0;
 var failures = new List<string>();
 PlayerPerspectiveRegression.Run(Run);
+FsdMovementHandoffRegression.Run(Run);
 if (args.Contains("--radar-performance"))
 {
     NavigationPerformance.Radar();
@@ -36,6 +37,7 @@ if (args.Contains("--navigation-performance"))
 }
 if (args.Contains("--local-safezone"))
 {
+    TerrainDispatchRegression.Run(Run);
     LocalSafeZoneRegression.Run(Run);
     FollowRegression.Run(Run);
     Console.WriteLine($"PASS: {passed} local safe-zone scenarios");
@@ -48,6 +50,19 @@ if (args.Contains("--upstream-sync"))
     return;
 }
 
+if (args.Contains("--boss-opening"))
+{
+    ArenaReentryRegression.Run(Run);
+    NavigationContinuityRegression.Run(Run);
+    TerrainDispatchRegression.Run(Run);
+    Console.WriteLine($"PASS: {passed} boss-opening and movement scenarios");
+    return;
+}
+ArenaReentryRegression.Run(Run);
+PilgrimsBossRegression.Run(Run);
+Pt20BurstRegression.Run(Run);
+Pt50ChaseRegression.Run(Run);
+Pt50OverlapRegression.Run(Run);
 Run("PT30 native encounter", NativePt30Tests.Run);
 Run("PT30 central hole uses boundary styling", () =>
 {
@@ -445,6 +460,7 @@ MindflayerLiveRegression.Run(Run);
 High2LiveMovementRegression.Run(Run);
 MovingHazardDispatchRegression.Run(Run);
 NavigationContinuityRegression.Run(Run);
+TerrainDispatchRegression.Run(Run);
 Low2LiveRegression.Run(Run);
 Low2MissingMechanicsRegression.Run(Run);
 MindflayerWaterRegression.Run(Run);
