@@ -80,7 +80,7 @@ https://raw.githubusercontent.com/PromeRotation/MasterPlayer/main/masterplayer.j
 </Project>
 ```
 
-所有引用均为 `Private=false`，运行时由 PR 与 Dalamud 提供。PR 本体更新后必须重新编译本插件。
+宿主引用由 PR 与 Dalamud 提供。地形建模的 `DotRecast.Core.dll`、`DotRecast.Recast.dll` 是插件私有依赖，发布 ZIP 必须携带它们及 `ThirdPartyNotices/DotRecast.LICENSE`。发布脚本会从 ZIP 隔离加载实际插件，检查地面生成及墙体阻挡；缺少依赖或建模失败会中止发布。PR 本体更新后必须重新编译本插件。
 
 ### 命令
 

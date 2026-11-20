@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;TerrainCollision\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;TerrainCollision\**;ReleasePackaging\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />

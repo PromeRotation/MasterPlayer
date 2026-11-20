@@ -35,10 +35,10 @@ if ($builtVersion -cne $Version) { throw "Expected plugin version $Version, buil
 
 $package = New-Item -ItemType Directory -Path (Join-Path $output 'MasterPlayer')
 $notices = New-Item -ItemType Directory -Path (Join-Path $package.FullName 'ThirdPartyNotices')
-foreach ($file in 'MasterPlayer.dll', 'MasterPlayer.MechanicRuntime.dll', 'MasterPlayer.deps.json') {
+foreach ($file in 'MasterPlayer.dll', 'MasterPlayer.MechanicRuntime.dll', 'MasterPlayer.deps.json', 'DotRecast.Core.dll', 'DotRecast.Recast.dll') {
     Copy-Item -LiteralPath (Join-Path $build $file) -Destination $package.FullName
 }
-foreach ($file in 'BossModReborn.LICENSE', 'PromeRotation.LICENSE') {
+foreach ($file in 'BossModReborn.LICENSE', 'PromeRotation.LICENSE', 'DotRecast.LICENSE') {
     Copy-Item -LiteralPath (Join-Path $build "ThirdPartyNotices/$file") -Destination $notices.FullName
 }
 
@@ -46,6 +46,8 @@ $tag = "v$Version"
 $zipName = "PromeRadar-$tag.zip"
 $zip = Join-Path $output $zipName
 [IO.Compression.ZipFile]::CreateFromDirectory($package.FullName, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+dotnet run --project (Join-Path $projectRoot 'tests/ReleasePackaging/MasterPlayer.ReleasePackaging.Tests.csproj') -c Release -p:UsePromeRotationSdk=true -- $zip
+if ($LASTEXITCODE) { throw "Release package terrain validation failed with exit code $LASTEXITCODE." }
 $manifest = [ordered]@{
     id = 'masterplayer'
     name = 'PromeRadar'

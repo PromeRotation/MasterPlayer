@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 
 MANIFEST_NAME = "masterplayer.json"
@@ -41,6 +42,14 @@ def verify_assets(directory, zip_name, version, download_url):
         "masterplayer", version, download_url, checksum,
     ):
         raise ValueError("The plugin manifest does not match its Release ZIP.")
+    with zipfile.ZipFile(directory / zip_name) as archive:
+        required = {"MasterPlayer/" + name for name in (
+            "MasterPlayer.dll", "MasterPlayer.MechanicRuntime.dll", "MasterPlayer.deps.json",
+            "DotRecast.Core.dll", "DotRecast.Recast.dll", "ThirdPartyNotices/DotRecast.LICENSE",
+        )}
+        missing = required.difference(archive.namelist())
+        if missing:
+            raise ValueError("The Release ZIP is missing required runtime files: " + ", ".join(sorted(missing)))
     return manifest_bytes
 
 
