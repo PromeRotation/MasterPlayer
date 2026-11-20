@@ -4,15 +4,15 @@
     "name": "PromeRadar",
     "author": "XSZ",
     "description": "雷达悬浮窗 + 真实世界绘制 + 智能走位 + 机制库 + 录制回放",
-    "version": "0.1.0.5",
+    "version": "0.1.0.6",
     "tags": [
       "combat",
       "utility"
     ],
     "apiVersion": 15,
     "referencePromeVersion": "1.5.9.4",
-    "downloadUrl": "https://github.com/PromeRotation/MasterPlayer/releases/download/v0.1.0.5/PromeRadar-v0.1.0.5.zip",
+    "downloadUrl": "https://github.com/PromeRotation/MasterPlayer/releases/download/v0.1.0.6/PromeRadar-v0.1.0.6.zip",
     "sourceRepositoryUrl": "https://github.com/PromeRotation/MasterPlayer",
-    "sha256": "10a52a4360aa91f4c7f248608a25af17e324145eadeb7b29a73a80b445331a36"
+    "sha256": "6e8c7232262f4446075fc2486ee34b9872ab020b426c285a9a945f5d3c6d4bfc"
   }
 ]
