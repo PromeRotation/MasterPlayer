@@ -8,6 +8,7 @@ namespace MasterPlayer.Mechanics.PilgrimsTraverse;
 
 internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
 {
+    private const double BLAZE_INTERVAL_SECONDS = 1.08;
     public override uint[] Actions { get; } = [44063, 44069, 44064, 44070, 44072, 44071, 44065, 44066, 44073, 44067, 44081, 44082, 44083, 44084,
         44085, 44086, 45118, 44087, 45115, 45114, 44092, 44090, 44088, 44093, 44091, 44089, 44270, 44314, 44068, 44061, 44062,
         44074, 44075, 44077, 44076, 44078, 44079, 44080];
@@ -126,7 +127,7 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                     if (effect.ActionId == 44080 && effect.SourceRotation is { } rotation &&
                         MathF.Abs(MathF.IEEERemainder(rotation - MathF.Atan2(line.Step.X, line.Step.Z), MathF.Tau)) > Rad(1)) continue;
                     line.Next = p + line.Step;
-                    line.Hit = now.AddSeconds(1);
+                    line.Hit = now.AddSeconds(BLAZE_INTERVAL_SECONDS);
                     --line.Remaining;
                     ++line.Resolved;
                     if (effect.ActionId == 44080) break;
@@ -235,7 +236,7 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
         foreach (var line in lines)
             for (var i = 0; i < line.Remaining; ++i)
             {
-                var hit = line.Hit.AddSeconds(i);
+                var hit = line.Hit.AddSeconds(i * BLAZE_INTERVAL_SECONDS);
                 if (hit.AddSeconds(.15) < now) continue;
                 result.Add(new($"blaze/{line.Id}/{line.Resolved + i}", "Abyssal Blaze 连续地火", new CircleTemplate(5), line.Next + line.Step * i, 0,
                     hit.AddSeconds(-.2), hit.AddSeconds(.15), line.Owner, NavigationOnly: i >= 2));

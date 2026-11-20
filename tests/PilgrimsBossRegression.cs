@@ -248,7 +248,7 @@ internal static class PilgrimsBossRegression
         Check(blaze.Length == 10 && blaze.All(a => a.Shape is CircleTemplate { Radius: 5 }), "one crystal emits two independent R5 lines, five steps per direction");
         Effect(e, 44079, 2, 7.2, e.Center); Effect(e, 44079, 2, 7.2, e.Center);
         var after = e.Collect(Start.AddSeconds(7.2), 100).Where(a => a.Key.StartsWith("blaze/")).ToArray();
-        Check(after.Length == 8 && after.Min(a => a.From) == Start.AddSeconds(8), "first explosion advances both directions once using observed timing");
+        Check(after.Length == 8 && after.Min(a => a.From) == Start.AddSeconds(8.08), "first explosion advances both directions once using observed timing and the 1.08s interval");
         Check(after.Any(a => a.Position.X == -604) && after.Any(a => a.Position.X == -596), "next exaflares move four meters in both directions");
         e.StartCast(Cast(44082, e.Center, 14) with { Start = Start.AddSeconds(10) });
         Effect(e, 44082, 3, 14, e.Center);
