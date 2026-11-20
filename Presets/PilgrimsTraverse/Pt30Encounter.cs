@@ -34,6 +34,7 @@ internal sealed class Pt30Encounter
     private readonly HashSet<(ulong, uint)> seenEffects = [];
     private ulong markedPlayer;
     private ulong chasingPlayer;
+    private ulong chaseSource;
     private Vector3 lastChaseHit;
     private DateTime nextChaseHit;
     private DateTime chaseExpires;
@@ -65,7 +66,6 @@ internal sealed class Pt30Encounter
                 balls.Add(ball.Id, new(ball.Position, now));
         }
         foreach (var id in balls.Keys.Where(id => !seen.Contains(id)).ToArray()) balls.Remove(id);
-        foreach (var key in casts.Where(p => now > p.Value.Until).Select(p => p.Key).ToArray()) casts.Remove(key);
         if (Remaining > 0 && now > chaseExpires) ClearChase();
     }
 
@@ -81,6 +81,7 @@ internal sealed class Pt30Encounter
         markedPlayer = target;
         // The icon only marks the target. Start moving when the first circle is telegraphed.
         chasingPlayer = 0;
+        chaseSource = 0;
         Remaining = 8;
         firstChaseCast = false;
         nextChaseHit = now.AddSeconds(8);
@@ -109,6 +110,7 @@ internal sealed class Pt30Encounter
         castFinishTimes[key] = finish;
         // ARR: the helper effects resolve ~0.3s after cast end. The caller has
         // already included that delay. Do not add another 0.9s occupation tail.
+        key += $"/{finish.Ticks}";
         casts[key] = new(key, Name(action), shape, location, rotation, finish.AddSeconds(-.2), finish.AddSeconds(.15))
             { HasExplicitTiming = action != 44918 };
         if (action is 40551 or 44927)
@@ -123,6 +125,7 @@ internal sealed class Pt30Encounter
             foreach (var item in casts.Keys.Where(k => k.StartsWith("reach/", StringComparison.Ordinal)).ToArray()) casts.Remove(item);
         if (action == 44918)
         {
+            chaseSource = source;
             chasingPlayer = markedPlayer;
             Remaining = 8;
             lastChaseHit = location;
@@ -135,13 +138,15 @@ internal sealed class Pt30Encounter
     public void Cancel(ulong source)
     {
         foreach (var key in casts.Keys.Where(k => k.StartsWith($"cast/{source}/", StringComparison.Ordinal) || k == $"reach/{source}").ToArray()) casts.Remove(key);
+        if (chaseSource == source) ClearChase();
     }
 
     public void Effect(ulong source, uint sequence, uint action, Vector3? location, DateTime now)
     {
         if (!Actions.Contains(action) || !seenEffects.Add((source, sequence))) return;
         if (seenEffects.Count > 512) seenEffects.Remove(seenEffects.First());
-        casts.Remove($"cast/{source}/{action}");
+        var resolved = casts.Values.Where(h => h.Key.StartsWith($"cast/{source}/{action}/", StringComparison.Ordinal)).MinBy(h => h.From);
+        if (resolved != null) casts.Remove(resolved.Key);
         if (action is 40552 or 40553)
             foreach (var key in casts.Keys.Where(k => k.StartsWith("reach/", StringComparison.Ordinal)).ToArray()) casts.Remove(key);
         if (action is not (44918 or 44919)) return;
@@ -154,13 +159,13 @@ internal sealed class Pt30Encounter
 
     public IReadOnlyList<Hazard> Hazards(DateTime now, ulong playerId, Vector3 player)
     {
-        var result = casts.Values.ToList();
+        var result = casts.Values.Where(h => h.Until >= now).ToList();
         ReachGoal = null;
         // Do not pull into the later safe side while Grip's rectangle is still pending.
         // After Grip resolves there are 7.5 seconds left to preposition for Reach.
-        if (Remaining == 0 && !casts.Values.Any(h => h.Shape is RayRectangleTemplate))
+        if (Remaining == 0 && !result.Any(h => h.Shape is RayRectangleTemplate))
         {
-            var reach = casts.Values.FirstOrDefault(h => h.Key.StartsWith("reach/", StringComparison.Ordinal) || h.Shape is FanTemplate);
+            var reach = result.FirstOrDefault(h => h.Key.StartsWith("reach/", StringComparison.Ordinal) || h.Shape is FanTemplate);
             if (reach != null)
                 ReachGoal = new("reach-goal", "Salvation's Reach 提前站位", new FanTemplate(29, 128 * MathF.PI / 180),
                     BossPosition, reach.Rotation + MathF.PI, now, reach.Until);
@@ -193,7 +198,7 @@ internal sealed class Pt30Encounter
         if (Remaining > 0 && chasingPlayer == playerId)
         {
             if (firstChaseCast)
-                result.RemoveAll(h => h.Key.EndsWith("/44918", StringComparison.Ordinal));
+                result.RemoveAll(h => h.Key.StartsWith($"cast/{chaseSource}/44918/", StringComparison.Ordinal));
             var predicted = lastChaseHit;
             if (!firstChaseCast)
             {
@@ -234,7 +239,7 @@ internal sealed class Pt30Encounter
 
     private void ClearChase()
     {
-        markedPlayer = chasingPlayer = 0;
+        markedPlayer = chasingPlayer = chaseSource = 0;
         Remaining = direction = 0;
         Goal = null;
         firstChaseCast = false;

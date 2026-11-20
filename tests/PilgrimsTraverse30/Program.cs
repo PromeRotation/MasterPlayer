@@ -5,6 +5,7 @@ using BossMod.Components;
 using MasterPlayer.MechanicRuntime;
 
 NativePt30Tests.Run();
+if (args is ["--native-only"]) return;
 if (args is ["--recording", var recordingPath])
 {
     RecordedPt30Tests.Run(recordingPath);

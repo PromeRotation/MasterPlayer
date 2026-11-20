@@ -1,5 +1,31 @@
 var failures = new List<string>();
 var passed = 0;
+if (args.Contains("--effect-identity"))
+{
+    void Run(string name, Action body)
+    {
+        if (!name.Contains("identity", StringComparison.OrdinalIgnoreCase) && !name.Contains("origins")) return;
+        try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+        catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+    }
+    PilgrimsBossRegression.Run(Run);
+    PilgrimsPreviewRegression.Run(Run);
+    Pt60SpinRegression.Run(Run);
+    Console.WriteLine($"{passed} identity scenarios passed; {failures.Count} failed.");
+    Environment.ExitCode = failures.Count == 0 ? 0 : 1;
+    return;
+}
+if (args.Contains("--pt10-leafmash"))
+{
+    Pt10LeafmashRegression.Run((name, body) =>
+    {
+        try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+        catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+    });
+    Console.WriteLine($"{passed} PT10 scenarios passed; {failures.Count} failed.");
+    Environment.ExitCode = failures.Count == 0 ? 0 : 1;
+    return;
+}
 if (args.Contains("--pt99-targeting") || args.Contains("--final-verse"))
 {
     void Run(string name, Action body)
@@ -62,6 +88,11 @@ if (args.Contains("--pt50-overlap"))
     return;
 }
 ArenaReentryRegression.Run((name, body) =>
+{
+    try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+    catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+});
+Pt10LeafmashRegression.Run((name, body) =>
 {
     try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
     catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }

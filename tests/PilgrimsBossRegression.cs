@@ -24,6 +24,7 @@ internal static class PilgrimsBossRegression
         run("Pilgrims bosses temporal solver crosses resolved wave", TemporalSolver);
         run("Pilgrims bosses cancellation wipe and fresh pull", Lifecycle);
         run("Pilgrims bosses interleaved snapshots late effects and preparation", InputOrdering);
+        run("Pilgrims identity overlapping same-source casts survive late effects", CastIdentity);
     }
 
     private static ReplayActorState Actor(ulong id, uint oid, Vector3 position, bool combat = true)
@@ -282,6 +283,21 @@ internal static class PilgrimsBossRegression
             Actor(100, 0, grief.Center, false) with { Kind = 1 }, Actor(101, 0, grief.Center, false) with { Kind = 1, Statuses = [new(4560, 0, 0, Start.AddSeconds(30))] }], Start);
         Check(grief.Preparing && !grief.Active && grief.Collect(Start, 100).Count(a => a.Key.StartsWith("puddle/")) == 10, "prepull displays both sets of exact water contours");
         Check(grief.Hints(Start, 100).Any(h => h.Contains("获取暗色")), "prepull assigns the underrepresented color rather than always choosing light");
+    }
+
+    private static void CastIdentity()
+    {
+        var encounter = new Pt40Encounter(); Begin(encounter);
+        encounter.StartCast(Cast(42131, encounter.Center, 5));
+        encounter.StartCast(Cast(42131, encounter.Center + new Vector3(8, 0, 0), 7));
+        Check(encounter.Collect(Start, 100).Count == 2, "Same-source casts overwrote one another.");
+        Effect(encounter, 42131, 1, 5);
+        var next = encounter.Collect(Start.AddSeconds(5.4), 100).Single();
+        Check(next.Position == encounter.Center + new Vector3(8, 0, 0), "Old effect removed the future cast.");
+        Effect(encounter, 42131, 1, 6);
+        Check(encounter.Collect(Start.AddSeconds(5.4), 100).Count == 1, "Duplicate old effect removed the future cast.");
+        encounter.Cancel(10);
+        Check(!encounter.Collect(Start, 100).Any(), "Cancel left overlapping cast state.");
     }
 
     private static void TemporalSolver()

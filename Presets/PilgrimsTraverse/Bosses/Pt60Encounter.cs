@@ -87,9 +87,10 @@ internal sealed class Pt60Encounter() : PtBossEncounter(60, 0x49DE)
     {
         if (effect.ActionId == 44872) { RemoveGroup("spineshot/"); RemoveGroup("cast/" + Boss?.Id + "/44866"); }
         if (effect.ActionId == 44861) RemoveGroup("march/");
-        if (effect.ActionId == 44909 && effect.SourceRotation is { } rotation)
+        if (effect.ActionId == 44909 && effect.SourceRotation is { } rotation && effect.SourcePosition is { } origin)
         {
-            var sequence = rotations.Where(r => r.Remaining > 0).MinBy(r => MathF.Abs(MathF.IEEERemainder(r.Rotation - rotation, MathF.Tau)));
+            var sequence = rotations.Where(r => r.Remaining > 0 && Vector3.DistanceSquared(r.Origin, origin) < 1)
+                .MinBy(r => MathF.Abs(MathF.IEEERemainder(r.Rotation - rotation, MathF.Tau)));
             if (sequence == null || MathF.Abs(MathF.IEEERemainder(sequence.Rotation - rotation, MathF.Tau)) > .1f) return;
             sequence.Rotation = rotation + sequence.Increment;
             sequence.Next = now.AddSeconds(1.1);

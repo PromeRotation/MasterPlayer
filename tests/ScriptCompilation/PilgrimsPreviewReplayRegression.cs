@@ -5,6 +5,7 @@ internal static class PilgrimsPreviewReplayRegression
 {
     public static void Run(object controllerObject, object runtimeObject, object visibility, Type visibilityType, string file)
     {
+        Pt10ReplayRegression.Run(controllerObject, runtimeObject, visibility, visibilityType, file);
         dynamic controller = controllerObject;
         dynamic runtime = runtimeObject;
         object Pose(float x, float z) => new { X = x, Y = 0f, Z = z };
@@ -41,7 +42,7 @@ internal static class PilgrimsPreviewReplayRegression
                     Effect(.1 + i, 10, 44058, (uint)(i + 1), position);
                     Cast(hit - 2.2, (ulong)(20 + i), 44057, position, 1.9);
                     probes.Add((hit - .1, 4 - i));
-                    Effect(hit, (ulong)(20 + i), 44057, (uint)(10 + i), position);
+                    Effect(hit, (ulong)(20 + i), 44057, (uint)(10 + i), Pose(0, 0));
                     probes.Add((hit + .001, 3 - i));
                 }
             }

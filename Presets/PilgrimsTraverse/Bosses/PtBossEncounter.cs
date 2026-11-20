@@ -62,7 +62,8 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     {
         if (!Actions.Contains(cast.Action) || !float.IsFinite(cast.Position.X) || !float.IsFinite(cast.Position.Z)) return;
         var key = (cast.Source, cast.Action);
-        if (casts.TryGetValue(key, out var hit) && Math.Abs((cast.Hit - hit).TotalSeconds) < 1) return;
+        // Repeated observations can drift slightly; PT80's distinct jumps are only 0.4s apart.
+        if (casts.TryGetValue(key, out var hit) && Math.Abs((cast.Hit - hit).TotalSeconds) < .1) return;
         casts[key] = cast.Hit;
         OnCast(cast);
     }
@@ -75,7 +76,9 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
                 if (effect.GlobalSequence == 0 && effect.TargetIndex > 0) break;
                 if (effect.GlobalSequence != 0 && !effects.Add((effect.SourceId, effect.GlobalSequence, effect.ActionId))) break;
                 if (effects.Count > 1024) effects.Remove(effects.First());
-                areas.Remove(CastKey(effect.SourceId, effect.ActionId));
+                var resolved = areas.Values.Where(a => a.Key.StartsWith("cast/", StringComparison.Ordinal)
+                    && a.Owner == effect.SourceId && a.Action == effect.ActionId).MinBy(a => a.From);
+                if (resolved != null) areas.Remove(resolved.Key);
                 OnEffect(effect, now);
                 break;
             case LogSystemTargetIconEvent icon:
@@ -151,7 +154,7 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     protected void Hit(Cast cast, GeometryTemplate shape, string name, float extra = 0, float rotationOffset = 0)
     {
         if (shape is FanTemplate or RayRectangleTemplate or RectangleTemplate && cast.Rotation == null) return;
-        AddHit(CastKey(cast.Source, cast.Action), name, shape, cast.Position, (cast.Rotation ?? 0) + rotationOffset,
+        AddHit(CastKey(cast.Source, cast.Action) + $"/{cast.Hit.Ticks}", name, shape, cast.Position, (cast.Rotation ?? 0) + rotationOffset,
             cast.Hit.AddSeconds(extra), cast.Source, cast.Action);
     }
 
@@ -164,17 +167,16 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
         foreach (var key in areas.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToArray()) areas.Remove(key);
     }
 
-    protected void ResolveFirst(string prefix, Vector3? position = null)
+    protected void ResolveFirst(string prefix)
     {
-        var candidates = areas.Values.Where(a => a.Key.StartsWith(prefix, StringComparison.Ordinal));
-        var first = position is { } p ? candidates.MinBy(a => Vector3.DistanceSquared(a.Position, p)) : candidates.MinBy(a => a.From);
+        var first = areas.Values.Where(a => a.Key.StartsWith(prefix, StringComparison.Ordinal)).MinBy(a => a.From);
         if (first != null) areas.Remove(first.Key);
     }
 
     protected void Knockback(Cast cast, float distance, Vector3? direction = null)
     {
         var shape = new PtKnockbackTemplate(Boundary, cast.Position, distance, direction);
-        AddHit(CastKey(cast.Source, cast.Action), "击退落点", shape, Center, 0, cast.Hit, cast.Source, cast.Action, true);
+        AddHit(CastKey(cast.Source, cast.Action) + $"/{cast.Hit.Ticks}", "击退落点", shape, Center, 0, cast.Hit, cast.Source, cast.Action, true);
     }
 
     protected bool KnockbackImmune(ulong player, DateTime hit)

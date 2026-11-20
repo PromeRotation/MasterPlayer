@@ -7,6 +7,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../Pt10LeafmashRegression.cs" Link="Pt10LeafmashRegression.cs" />
+    <Compile Include="../Pt10SimulatedMove.cs" Link="Pt10SimulatedMove.cs" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" Link="Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../FinalVerseRegression.cs" Link="FinalVerseRegression.cs" />
     <Compile Include="../Pt99BoundsRegression.cs" Link="Pt99BoundsRegression.cs" />
     <Compile Include="../Pt99DrainRegression.cs" Link="Pt99DrainRegression.cs" />

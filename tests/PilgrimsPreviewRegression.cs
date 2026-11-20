@@ -11,10 +11,12 @@ internal static class PilgrimsPreviewRegression
     public static void Run(Action<string, Action> run)
     {
         run("Pilgrims previews PT10 consecutive jumps retain navigation and advance one circle", Leafmash);
-        run("Pilgrims previews PT20 four bursts retain knockback constraints and advance one circle", Bursts);
-        run("Pilgrims previews PT70 memory swipes advance without hiding independent attacks", Swipes);
-        run("Pilgrims previews PT80 charges defer the final explosion and retain the half-arena attack", Lightning);
+        run("Pilgrims previews PT20 four bursts retain knockback constraints and advance one circle", () => Bursts(Vector3.Zero));
+        run("Pilgrims previews PT70 memory swipes advance without hiding independent attacks", () => Swipes(null));
+        run("Pilgrims previews PT80 charges defer the final explosion and retain the half-arena attack", () => Lightning(null));
         run("Pilgrims previews simultaneous hits remain visible and expired hits do not block advancement", Simultaneous);
+        run("Pilgrims identity PT20 PT70 PT80 ignore absent zero and stale effect positions", EffectPositions);
+        run("Pilgrims identity PT80 source ordering reused helpers and absent casts", LightningIdentity);
     }
 
     private static ReplayActorState Actor(ulong id, uint oid, Vector3 position)
@@ -52,8 +54,8 @@ internal static class PilgrimsPreviewRegression
             var locked = Next(encounter, now, Belongs, 4 - i);
             Check(locked.Position == first.Position && locked.From == first.From, "Actual cast changed sequence timing or duplicated its prediction.");
             now = first.From.AddSeconds(.2);
-            Effect(encounter, (ulong)(20 + i), 44057, (uint)(10 + i), now, first.Position);
-            Effect(encounter, (ulong)(20 + i), 44057, (uint)(10 + i), now, first.Position);
+            Effect(encounter, (ulong)(20 + i), 44057, (uint)(10 + i), now, Vector3.Zero);
+            Effect(encounter, (ulong)(20 + i), 44057, (uint)(10 + i), now, Vector3.Zero);
             Check(encounter.Collect(now, 100).Single(a => a.Action == 44855).NavigationOnly == false, "Independent Hedge Mazing was hidden.");
         }
         Check(!encounter.Collect(now, 100).Any(Belongs), "The fourth jump left a stale preview.");
@@ -61,7 +63,7 @@ internal static class PilgrimsPreviewRegression
         Check(encounter.Collect(now, 100).Count == 0, "Reset retained jump output.");
     }
 
-    private static void Bursts()
+    private static void Bursts(Vector3? effectPosition)
     {
         var encounter = new Pt20Encounter(); Begin(encounter);
         for (ushort i = 0; i < 4; ++i)
@@ -77,13 +79,13 @@ internal static class PilgrimsPreviewRegression
             encounter.StartCast(Cast((ulong)(20 + i), first.Action, first.Position, first.From.AddSeconds(.2)));
             Next(encounter, now, Belongs, 4 - i);
             now = first.From.AddSeconds(.2);
-            Effect(encounter, (ulong)(20 + i), first.Action, (uint)(i + 1), now, Vector3.Zero);
-            Effect(encounter, (ulong)(20 + i), first.Action, (uint)(i + 1), now, Vector3.Zero);
+            Effect(encounter, (ulong)(20 + i), first.Action, (uint)(i + 1), now, effectPosition);
+            Effect(encounter, (ulong)(20 + i), first.Action, (uint)(i + 1), now, effectPosition);
         }
         Check(!encounter.Collect(now, 100).Any(Belongs), "The fourth burst left a stale preview.");
     }
 
-    private static void Swipes()
+    private static void Swipes(Vector3? effectPosition)
     {
         var encounter = new Pt70Encounter(); Begin(encounter);
         for (var i = 0; i < 8; ++i)
@@ -97,13 +99,13 @@ internal static class PilgrimsPreviewRegression
             Check(first.Shape is FanTemplate { Radius: 40 } fan && Math.Abs(fan.AngleRadians - MathF.PI / 2) < .001f, "Swipe physical cone changed.");
             Check(!encounter.Collect(now, 100).Single(a => a.Action == 43429).NavigationOnly, "Independent Mina Swing was hidden.");
             now = first.From.AddSeconds(.2);
-            Effect(encounter, 1, 43434, (uint)(i + 1), now);
-            Effect(encounter, 1, 43434, (uint)(i + 1), now);
+            Effect(encounter, 1, 43434, (uint)(i + 1), now, effectPosition);
+            Effect(encounter, 1, 43434, (uint)(i + 1), now, effectPosition);
         }
         Check(!encounter.Collect(now, 100).Any(Belongs), "The eighth swipe left a stale preview.");
     }
 
-    private static void Lightning()
+    private static void Lightning(Vector3? effectPosition)
     {
         var encounter = new Pt80Encounter();
         var balls = Enumerable.Range(0, 9).Select(i => Actor((ulong)(20 + i), 0x485E, encounter.Center + new Vector3(i - 4, 0, i % 2 * 10 - 5))).OrderByDescending(a => a.Id).ToArray();
@@ -119,15 +121,51 @@ internal static class PilgrimsPreviewRegression
             encounter.StartCast(Cast((ulong)(40 + i), 43795, balls[i + 1].Position, first.From.AddSeconds(.2), balls[i].Position));
             Next(encounter, now, Belongs, 9 - i);
             now = first.From.AddSeconds(.2);
-            Effect(encounter, (ulong)(40 + i), 43795, (uint)(i + 1), now);
-            Effect(encounter, (ulong)(40 + i), 43795, (uint)(i + 1), now);
+            Effect(encounter, (ulong)(40 + i), 43795, (uint)(i + 1), now, effectPosition);
+            Effect(encounter, (ulong)(40 + i), 43795, (uint)(i + 1), now, effectPosition);
         }
         var end = Next(encounter, now, Belongs, 1);
         Check(end.Shape is CircleTemplate { Radius: 30 }, "Final R30 explosion is not revealed after the last charge.");
         encounter.StartCast(Cast(60, 44060, end.Position, end.From.AddSeconds(.2)));
         Next(encounter, now, Belongs, 1);
-        Effect(encounter, 60, 44060, 9, end.From.AddSeconds(.2));
+        Effect(encounter, 60, 44060, 9, end.From.AddSeconds(.2), effectPosition);
         Check(!encounter.Collect(end.From.AddSeconds(.2), 100).Any(Belongs), "Final explosion left stale charge output.");
+    }
+
+    private static void EffectPositions()
+    {
+        foreach (var position in new Vector3?[] { null, Vector3.Zero, new(900, 0, 900) })
+        {
+            Bursts(position);
+            Swipes(position);
+            Lightning(position);
+        }
+    }
+
+    private static void LightningIdentity()
+    {
+        var encounter = new Pt80Encounter();
+        var balls = Enumerable.Range(0, 9).Select(i => Actor((ulong)(20 + i), 0x485E,
+            encounter.Center + new Vector3(i - 4, 0, i % 2 * 10 - 5))).OrderByDescending(a => a.Id).ToArray();
+        Begin(encounter, balls);
+        for (var i = 0; i < 3; ++i)
+            encounter.StartCast(Cast(i < 2 ? 40ul : 41ul, 43795, balls[i + 1].Position, Start.AddSeconds(7.5 + .4 * i), balls[i].Position));
+        var before = encounter.Collect(Start, 100).Where(a => a.Key.StartsWith("lightning/charge/")).OrderBy(a => a.From).ToArray();
+        Check(before.Length == 8 && before[0].Owner == 40 && before[1].Owner == 40 && before[2].Owner == 41,
+            "Reused helper's next cast was suppressed or bound to an old segment.");
+        Effect(encounter, 41, 43795, 1, Start.AddSeconds(8.3), Vector3.Zero);
+        var remaining = encounter.Collect(Start, 100).Where(a => a.Key.StartsWith("lightning/charge/")).ToArray();
+        Check(remaining.Length == 7 && remaining.Any(a => a.Owner == 40) && !remaining.Any(a => a.Owner == 41),
+            "Out-of-order effect consumed a different source's segment.");
+        Effect(encounter, 41, 43795, 2, Start.AddSeconds(8.4), Vector3.Zero);
+        Check(encounter.Collect(Start, 100).Count == 8, "A completed source consumed an unbound future prediction.");
+        Effect(encounter, 40, 43795, 3, Start.AddSeconds(8.4), Vector3.Zero);
+        Effect(encounter, 40, 43795, 4, Start.AddSeconds(8.5), Vector3.Zero);
+        Check(encounter.Collect(Start, 100).Count == 6, "Same-source effects failed to consume their two bound segments.");
+        Effect(encounter, 99, 43795, 5, Start.AddSeconds(8.7), Vector3.Zero);
+        Check(encounter.Collect(Start, 100).Count == 5, "Missing cast observation cannot consume the next unbound prediction.");
+        encounter.Reset();
+        Check(!encounter.Collect(Start, 100).Any(), "Reset retained charge state.");
     }
 
     private static void Simultaneous()

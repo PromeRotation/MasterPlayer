@@ -15,6 +15,7 @@ internal static class Pt60SpinRegression
         run("PT60 recorded first pulse covers the real hit time", FirstHit);
         run("PT60 recorded rotation previews only the next pair and consumes all pulses", Sequence);
         run("PT60 recorded rotation escapes every real pulse with solver latency", Simulate);
+        run("PT60 rotating effects reject other origins and missing poses", OriginIdentity);
     }
 
     private static JsonDocument Fixture() => JsonDocument.Parse(File.ReadAllText(Path.Combine(
@@ -82,6 +83,24 @@ internal static class Pt60SpinRegression
             encounter.Cancel(1);
             Check(!encounter.Collect(Start, 100).Any(), "Cancel retained rotation output.");
         }
+    }
+
+    private static void OriginIdentity()
+    {
+        using var fixture = Fixture();
+        var cycle = fixture.RootElement.GetProperty("cycles")[0];
+        var encounter = Encounter(cycle);
+        var position = Vector(cycle.GetProperty("position"));
+        var rotation = cycle.GetProperty("rotation").GetSingle();
+        uint sequence = 900000;
+        foreach (var origin in new Vector3?[] { null, Vector3.Zero, position + new Vector3(50, 0, 0) })
+        {
+            encounter.Apply(new LogSystemActionEffectEvent { SourceId = 999, ActionId = 44909,
+                GlobalSequence = sequence++, SourcePosition = origin, SourceRotation = rotation }, Start);
+            Check(encounter.Collect(Start, 100).Count(a => !a.Safe) == 20, "Unrelated or absent source origin consumed a rotating pulse.");
+        }
+        Apply(encounter, cycle.GetProperty("effects")[0]);
+        Check(encounter.Collect(Start, 100).Count(a => !a.Safe) == 19, "Valid recorded pulse failed to advance after rejected effects.");
     }
 
     private static void Simulate()

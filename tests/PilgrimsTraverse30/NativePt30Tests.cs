@@ -101,6 +101,24 @@ internal static class NativePt30Tests
             Check(e.Remaining == remaining, "AOE per-target effects deduplicated");
         }
         Check(e.Remaining == 0 && e.Goal == null, "eight hits clear chase");
+        e.Icon(100, 197, start);
+        e.Cast(20, 44918, player, 0, start, start.AddSeconds(3));
+        e.Cancel(99);
+        Check(e.Remaining == 8, "other source cancellation must preserve the chase");
+        e.Cancel(20);
+        Check(e.Remaining == 0 && !e.Hazards(start, 100, player).Any(h => h.Key == "chase") && e.Goal == null,
+            "cancelled first chase cast must clear its goal and sequence");
+        e.Cast(30, 39642, center, 0, start, start.AddSeconds(5));
+        e.Cast(30, 39642, center, 0, start.AddSeconds(2), start.AddSeconds(7));
+        Check(e.CastCount == 2, "same-source halo observations must remain separate");
+        e.Synchronize([boss], start.AddSeconds(5.5));
+        e.Effect(30, 2000, 39642, Vector3.Zero, start.AddSeconds(5.6));
+        Check(e.Hazards(start.AddSeconds(5.6), 100, player).Count == 1,
+            "expired first halo effect must not delete the second cast");
+        e.Effect(30, 2000, 39642, Vector3.Zero, start.AddSeconds(5.7));
+        Check(e.CastCount == 1, "duplicate old halo effect must not consume the next cast");
+        e.Cancel(30);
+        Console.WriteLine("PASS MP native PT30 identity: cancellation clears chase; late same-source effects preserve future casts.");
         e.Reset();
         Check(!e.Active && e.CastCount == 0 && e.BallCount == 0, "wipe and stop cleanup");
         foreach (var velocity in new[] { -.3f, .16f, .3f })

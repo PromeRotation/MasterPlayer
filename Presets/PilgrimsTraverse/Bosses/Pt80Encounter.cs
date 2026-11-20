@@ -9,6 +9,8 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
 {
     public override uint[] Actions { get; } = [43465, 43467, 43468, 43472, 43473, 43476, 43477, 43795, 43478, 44060, 43469, 43471, 43475];
     private readonly HashSet<ulong> knownBalls = [];
+    private readonly HashSet<ulong> chargeSources = [];
+    private int chargeIndex;
     private Cast? waul;
     protected override void OnCast(Cast cast)
     {
@@ -23,8 +25,10 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
                 var delta = cast.Position - origin.Value;
                 delta.Y = 0;
                 if (delta.LengthSquared() < .001f) break;
-                var predicted = areas.Values.Where(a => a.Key.StartsWith("lightning/charge/", StringComparison.Ordinal)).MinBy(a => Vector3.DistanceSquared(a.Position, origin.Value));
-                AddHit(predicted?.Key ?? CastKey(cast.Source, cast.Action), "Stalking Static", RayRectangleTemplate.Symmetric(4, delta.Length()), origin.Value,
+                var predicted = areas.Values.Where(a => a.Key.StartsWith("lightning/charge/", StringComparison.Ordinal)
+                    && a.Owner == 0 && Vector3.DistanceSquared(a.Position, origin.Value) < 1).MinBy(a => a.From);
+                chargeSources.Add(cast.Source);
+                AddHit(predicted?.Key ?? $"lightning/charge/actual/{chargeIndex++}", "Stalking Static", RayRectangleTemplate.Symmetric(4, delta.Length()), origin.Value,
                     MathF.Atan2(delta.X, delta.Z), cast.Hit, cast.Source, cast.Action);
                 break;
             case 44060:
@@ -38,6 +42,7 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
         var balls = actors.Values.Where(a => a.Oid == 0x485E && !a.Dead).OrderByDescending(a => a.Id).ToArray();
         if (balls.Length != 9 || balls.All(b => knownBalls.Contains(b.Id))) return;
         RemoveGroup("lightning/");
+        chargeSources.Clear();
         for (var i = 0; i < 9; ++i) knownBalls.Add(balls[i].Id);
         for (var i = 0; i < 8; ++i)
         {
@@ -50,7 +55,15 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
     }
     protected override void OnEffect(LogSystemActionEffectEvent effect, DateTime now)
     {
-        if (effect.ActionId == 43795) ResolveFirst("lightning/charge/");
+        if (effect.ActionId == 43795)
+        {
+            var resolved = areas.Values.Where(a => a.Key.StartsWith("lightning/charge/", StringComparison.Ordinal)
+                && a.Owner == effect.SourceId && a.Action == effect.ActionId).MinBy(a => a.From);
+            // Keep prediction-only playback working without letting a completed known source consume another segment.
+            if (resolved == null && !chargeSources.Contains(effect.SourceId))
+                resolved = areas.Values.Where(a => a.Key.StartsWith("lightning/charge/", StringComparison.Ordinal) && a.Owner == 0).MinBy(a => a.From);
+            if (resolved != null) areas.Remove(resolved.Key);
+        }
         if (effect.ActionId == 44060) RemoveGroup("lightning/");
         if (effect.ActionId == 43473) waul = null;
     }
@@ -76,5 +89,5 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
         if (waul != null && Status(player, 4518, now) != null) yield return "Shadow of Death：进入半场扇形解除死亡状态";
     }
     public override void Cancel(ulong source) { base.Cancel(source); if (waul?.Source == source) waul = null; }
-    protected override void ResetMechanics() { knownBalls.Clear(); waul = null; }
+    protected override void ResetMechanics() { knownBalls.Clear(); chargeSources.Clear(); chargeIndex = 0; waul = null; }
 }

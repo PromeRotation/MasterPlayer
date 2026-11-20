@@ -19,10 +19,10 @@ internal sealed class Pt10Encounter() : PtBossEncounter(10, 0x460D)
                 break;
             case 44057:
                 // The live Action sheet is R15; BMR's queue used R14.
-                var predicted = areas.Values.Where(a => a.Key.StartsWith("leaf/", StringComparison.Ordinal)).MinBy(a => Vector3.DistanceSquared(a.Position, cast.Position));
-                if (predicted != null)
-                    AddHit(predicted.Key, "压花", new CircleTemplate(15), cast.Position, 0, cast.Hit, cast.Source, cast.Action);
-                else Hit(cast, new CircleTemplate(15), "压花");
+                var predicted = areas.Values.Where(a => a.Key.StartsWith("leaf/", StringComparison.Ordinal)
+                    && a.Owner == 0 && Vector3.DistanceSquared(a.Position, cast.Position) < 1).MinBy(a => a.From);
+                AddHit(predicted?.Key ?? $"leaf/{leafIndex++}", "压花", new CircleTemplate(15),
+                    cast.Position, 0, cast.Hit, cast.Source, cast.Action);
                 break;
             case 44055:
                 spread = true;
@@ -37,7 +37,13 @@ internal sealed class Pt10Encounter() : PtBossEncounter(10, 0x460D)
             var count = areas.Values.Count(a => a.Key.StartsWith("leaf/", StringComparison.Ordinal));
             AddHit($"leaf/{leafIndex++}", "压花连跳", new CircleTemplate(15), position, 0, now.AddSeconds(8.9 - .3 * count));
         }
-        if (effect.ActionId == 44057) ResolveFirst("leaf/", effect.EffectPosition);
+        if (effect.ActionId == 44057)
+        {
+            // Self-target hits have no ground position; reused helpers may already be casting a later jump.
+            var resolved = areas.Values.Where(a => a.Key.StartsWith("leaf/", StringComparison.Ordinal)
+                && a.Owner == effect.SourceId && a.Action == effect.ActionId).MinBy(a => a.From);
+            if (resolved != null) areas.Remove(resolved.Key);
+        }
     }
 
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
