@@ -7,6 +7,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../FinalVerseRegression.cs" Link="FinalVerseRegression.cs" />
+    <Compile Include="../Pt99BoundsRegression.cs" Link="Pt99BoundsRegression.cs" />
+    <Compile Include="../Pt99DrainRegression.cs" Link="Pt99DrainRegression.cs" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-drain-021732.json" Link="Fixtures/PilgrimsTraverse/pt99-drain-021732.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" Link="Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" Link="Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="../Pt99TargetRegression.cs" Link="Pt99TargetRegression.cs" />
     <Compile Include="../ArenaReentryRegression.cs" Link="ArenaReentryRegression.cs" />
     <Compile Include="../PilgrimsBossRegression.cs" Link="PilgrimsBossRegression.cs" />
     <Compile Include="../PilgrimsPreviewRegression.cs" Link="PilgrimsPreviewRegression.cs" />

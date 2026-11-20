@@ -22,4 +22,7 @@ internal sealed record TerrainBuildDiagnostics
     public int CompactSpans { get; init; }
     public int ReachableSpans { get; init; }
     public int WalkableCells { get; init; }
+    public int BuiltTiles { get; init; }
+    public int CachedTiles { get; init; }
+    public int StoredTiles { get; init; }
 }

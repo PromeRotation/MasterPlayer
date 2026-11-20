@@ -228,7 +228,8 @@ public sealed class SafeZoneRuntime : IDisposable
                 settings.EnableTerrainCollision,
                 settings.TerrainScanRadius, CurrentTime,
                 Svc.Condition[ConditionFlag.Jumping] || Svc.Condition[ConditionFlag.Jumping61],
-                NativeTerrainRaycaster.CaptureLayoutIdentity());
+                NativeTerrainRaycaster.CaptureLayoutIdentity(),
+                deferPublication: LocalTerrain is { } boundary && _movement.ShouldRetainTerrain(boundary, actor.Position));
             if (LocalTerrain != null && _movement.HasControl && hostMovement.GetStatus() is { IsRunning: true, CurrentPoint: { } point }
                 && !terrain.ValidateStep(actor.Position, point.Position))
             {

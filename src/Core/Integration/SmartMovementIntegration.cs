@@ -169,6 +169,8 @@ internal sealed class SmartMovementIntegration : IDisposable
         nextPublish = now.AddMilliseconds(100);
         var pt30 = plugin.Scripts?.Running.Values.Select(r => r.Script)
             .OfType<Scripts.PilgrimsTraverse.PilgrimsTraverse30>().FirstOrDefault();
+        var pt99 = plugin.Scripts?.Running.Values.Select(r => r.Script)
+            .OfType<Scripts.PilgrimsTraverse.PilgrimsTraverse99>().FirstOrDefault();
         var solution = plugin.SafeZone.MovementStatus.LatestSolution;
         var nextState = JsonSerializer.Serialize(new
         {
@@ -183,6 +185,8 @@ internal sealed class SmartMovementIntegration : IDisposable
             Pt30ScriptReady = pt30?.NavigationReady == true,
             Pt30ScriptVersion = "1.0.0",
             Pt30State = pt30?.DiagnosticState,
+            Pt99TargetControlActive = pt99?.TargetControlActive == true,
+            Pt99TargetId = pt99?.TargetControlActive == true ? pt99.PreferredTargetId : 0,
             ScriptError = plugin.Scripts?.ErrorMessage,
             Pt30ChaseRemaining = pt30?.ChaseRemaining ?? 0,
             Pt30PreviewCount = pt30?.PreviewCount ?? 0,

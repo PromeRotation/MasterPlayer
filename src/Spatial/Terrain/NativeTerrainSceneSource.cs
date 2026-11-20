@@ -148,7 +148,10 @@ internal sealed unsafe class NativeTerrainSceneSource : ITerrainSceneSource
                     };
                 }
                 if (!Finite(world)) throw new InvalidDataException("场景碰撞体变换无效");
-                instances.Add(new(collider->LayoutObjectId, asset, world, collider->ObjectMaterialValue, mask));
+                instances.Add(new(collider->LayoutObjectId, asset, world, collider->ObjectMaterialValue, mask)
+                {
+                    WorldBounds = (new(bounds.Min.X, bounds.Min.Y, bounds.Min.Z), new(bounds.Max.X, bounds.Max.Y, bounds.Max.Z)),
+                });
             }
             var remaining = cacheOrder.Count;
             while (cacheBytes > CACHE_BYTES && remaining-- > 0)

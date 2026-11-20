@@ -20,6 +20,7 @@
     <None Update="Fixtures\PilgrimsTraverse\pt20-bursts-200454.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt50-chase-155404.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt50-overlap-155404.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\PilgrimsTraverse\pt87-claw-tail-233909.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\src\Core\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\src\Core\PlayerPerspective.cs" Link="PlayerPerspective.cs" />
     <Compile Include="..\src\Core\DutyReplayState.cs" Link="DutyReplayState.cs" />

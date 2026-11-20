@@ -13,11 +13,15 @@ internal static class SceneTerrainTests
         internal TerrainSceneSnapshot Snapshot = snapshot;
         internal bool Available = true;
         internal int Calls;
+        internal Func<Vector3, float, TerrainSceneSnapshot>? Capture;
+        internal Vector3 LastOrigin;
         internal readonly int OwnerThread = Environment.CurrentManagedThreadId;
         public bool TryCapture(Vector3 origin, float radius, out TerrainSceneSnapshot? result)
         {
             Check(Environment.CurrentManagedThreadId == OwnerThread, "Scene extraction escaped the main thread.");
-            ++Calls; result = Available ? Snapshot : null; return Available;
+            ++Calls; LastOrigin = origin;
+            result = Available ? Capture?.Invoke(origin, radius) ?? Snapshot : null;
+            return Available;
         }
     }
 
@@ -182,6 +186,182 @@ internal static class SceneTerrainTests
             Check(model.Current!.Contains(new(4, 0, 0)), "An opened door did not restore its passage.");
             model.Clear();
         });
+        run("moving inside a terrain window does not invalidate it when distant colliders enter the capture radius", () =>
+        {
+            var source = new Source(Floor());
+            var closed = false;
+            source.Capture = (origin, radius) =>
+            {
+                var instances = new List<TerrainSceneSnapshot.Instance>();
+                if (origin.X + radius + 2 >= 23) instances.Add(Box(2, new(.25f, 2, 2), new(23, 2, 0)));
+                if (closed) instances.Add(Box(3, new(.02f, 2, 30), new(1.8f, 2, 0)));
+                return Floor(instances.ToArray());
+            };
+            var model = new SceneTerrainModel(source);
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                var first = model.Current;
+                for (var step = 1; step <= 6; ++step)
+                {
+                    var player = new Vector3(step % 2 == 0 ? -2 : 2, 0, 0);
+                    model.Update(player, 20, epoch.AddSeconds(step));
+                    Check(ReferenceEquals(first, model.Current) && model.Current!.Contains(player),
+                        "Walking changed the capture subset and replaced valid terrain with an unknown map.");
+                }
+                var next = new Vector3(4.5f, 0, 0);
+                Pump(() => model.Update(next, 20, epoch.AddSeconds(7)), () => model.Ready);
+                Check(!ReferenceEquals(first, model.Current) && source.LastOrigin == next,
+                    "Crossing the window threshold did not build around the new anchor.");
+                closed = true;
+                model.Update(next, 20, epoch.AddSeconds(8));
+                Check(model.Current is { WalkableCount: > 0 } && !model.Current.Contains(new(1.8f, 0, 0))
+                    && model.Current.Contains(new(-4, 0, 0)) && model.LatestCapture == null,
+                    "A real door change was not masked locally while preserving unaffected terrain.");
+                Pump(() => model.Update(next, 20, epoch.AddSeconds(8)), () => model.Ready);
+                Check(!model.Current!.Contains(new(0, 0, 0)), "A closed door was ignored after stabilizing capture origins.");
+            }
+            finally { model.Clear(); }
+        });
+        run("escape retains the published terrain and solver version until a full replacement is released at safety", () =>
+        {
+            var source = new Source(Floor());
+            var model = new SceneTerrainModel(source);
+            using var manager = new SafeZoneManager(new() { EnableSafeZone = true });
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                var first = model.Current;
+                var capture = model.LatestCapture;
+                manager.SetFallbackBoundary(first);
+                var version = manager.Version;
+                var next = new Vector3(4.5f, 0, 0);
+                model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true);
+                Pump(() =>
+                {
+                    model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true);
+                    manager.SetFallbackBoundary(model.Current);
+                    Check(ReferenceEquals(first, model.Current) && manager.Version == version,
+                        "A background window refresh changed planning terrain during the escape.");
+                }, () => model.Ready);
+                Check(ReferenceEquals(capture, model.LatestCapture) && ReferenceEquals(first, model.Display),
+                    "Export or radar switched ahead of the active planning terrain.");
+                model.Update(next, 20, epoch.AddSeconds(2), deferPublication: false);
+                Check(!ReferenceEquals(first, model.Current) && model.LatestCapture?.Origin == next
+                    && model.LatestCapture.Radius == 20 && ReferenceEquals(model.Current, model.Display)
+                    && ReferenceEquals(model.Current, model.LatestCapture.Result.Boundary),
+                    "Safety did not atomically publish the full prepared window.");
+            }
+            finally { model.Clear(); }
+        });
+        run("an in-flight near-to-full terrain upgrade also waits for escape completion", () =>
+        {
+            var model = new SceneTerrainModel(new Source(Floor()));
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.LatestCapture?.Radius == 8);
+                var near = model.Current;
+                Pump(() =>
+                {
+                    model.Update(Vector3.UnitX, 20, epoch, deferPublication: true);
+                    Check(ReferenceEquals(near, model.Current), "An already-running full build interrupted a near-map escape.");
+                }, () => model.Ready);
+                Check(model.LatestCapture?.Radius == 8, "Export advanced ahead of the held near map.");
+                model.Update(Vector3.UnitX, 20, epoch.AddSeconds(1));
+                Check(model.LatestCapture?.Radius == 20 && !ReferenceEquals(near, model.Current),
+                    "Completing the escape failed to publish the full terrain upgrade.");
+            }
+            finally { model.Clear(); }
+        });
+        run("a deferred terrain window still audits real geometry changes in the retained window", () =>
+        {
+            var source = new Source(Floor());
+            var closed = false;
+            source.Capture = (origin, radius) => closed && origin.X - radius - 2 <= -19
+                ? Floor(Box(2, new(.02f, 2, 30), new(-19, 2, 0))) : Floor();
+            var model = new SceneTerrainModel(source);
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                var first = model.Current;
+                var next = new Vector3(12, 0, 0);
+                model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true);
+                Pump(() => model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true), () => model.Ready);
+                closed = true;
+                model.Update(next, 20, epoch.AddSeconds(2), deferPublication: true);
+                Check(model.Current is { WalkableCount: > 0 } && !ReferenceEquals(first, model.Current)
+                    && !model.Current.Contains(new(-19, 0, 0)) && model.Current.Contains(next) && model.LatestCapture == null,
+                    "Waiting for escape completion hid a collision change outside the candidate window.");
+            }
+            finally { model.Clear(); }
+        });
+        run("a prepared terrain window is revalidated before publication and never restores a new obstacle", () =>
+        {
+            var source = new Source(Floor());
+            var closed = false;
+            source.Capture = (origin, radius) => closed && origin.X + radius + 2 >= 23
+                ? Floor(Box(2, new(.2f, 2, 30), new(23, 2, 0))) : Floor();
+            var model = new SceneTerrainModel(source);
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                var next = new Vector3(4.5f, 0, 0);
+                model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true);
+                Pump(() => model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true), () => model.Ready);
+                closed = true;
+                model.Update(next, 20, epoch.AddSeconds(2));
+                Check(model.LatestCapture == null && !model.Current!.Contains(new(23, 0, 0))
+                    && model.Current.Contains(next), "A stale prepared map was published after a new obstacle appeared.");
+                Pump(() => model.Update(next, 20, epoch.AddSeconds(2)), () => model.Ready);
+                Check(!model.Current!.Contains(new(23, 0, 0)), "Rebuilding restored the stale candidate passage.");
+            }
+            finally { model.Clear(); }
+        });
+        foreach (var change in new[] { "outside", "layer", "floor" })
+            run($"deferred terrain cannot survive {change} invalidation", () =>
+            {
+                var source = new Source(Floor());
+                var model = new SceneTerrainModel(source);
+                try
+                {
+                    Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                    var next = new Vector3(4.5f, 0, 0);
+                    model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true);
+                    Pump(() => model.Update(next, 20, epoch.AddSeconds(1), deferPublication: true), () => model.Ready);
+                    source.Available = false;
+                    if (change == "floor") model.Clear();
+                    var position = change == "outside" ? new Vector3(25, 0, 0) : new Vector3(4.5f, 2, 0);
+                    model.Update(position, 20, epoch.AddSeconds(2), deferPublication: true);
+                    Check(model.Current is { WalkableCount: 0 } && model.LatestCapture == null,
+                        "A deferred result bypassed terrain invalidation.");
+                    if (change != "outside") Check(model.Display == null, "A different layer/floor retained its previous display.");
+                }
+                finally { model.Clear(); }
+            });
+        run("live collision corrections bypass deferred publication and survive the later map swap", () =>
+        {
+            var source = new Source(Floor());
+            var rays = new AnalyticTerrainRaycaster();
+            using var manager = new SafeZoneManager(new() { EnableSafeZone = true });
+            var controller = new LocalTerrainController(manager, new LiveProbe(rays), source);
+            try
+            {
+                Pump(() => controller.Update(Vector3.Zero, 1, true, 20, epoch), () => controller.StatusText.Contains("已就绪"));
+                var first = controller.Current;
+                var next = new Vector3(4.5f, 0, 0);
+                Pump(() => controller.Update(next, 1, true, 20, epoch.AddSeconds(1), deferPublication: true),
+                    () => controller.StatusText.Contains("安全点"));
+                Check(ReferenceEquals(first, controller.Current), "The controller published a background replacement during escape.");
+                rays.Walls.Add((5.5f, -30, 30, 4));
+                Check(!controller.ValidateStep(next, new(6.5f, 0, 0)), "Deferred publication disabled the forward collision check.");
+                controller.RejectRoute(next, 20, epoch.AddSeconds(1));
+                Check(!controller.Current!.Contains(new(5.5f, 0, 0)), "A live obstruction waited for map publication.");
+                controller.Update(next, 1, true, 20, epoch.AddSeconds(2));
+                Check(!controller.Current!.Contains(new(5.5f, 0, 0)) && controller.LatestCapture?.Origin == next,
+                    "Swapping the prepared map restored a known collision passage.");
+            }
+            finally { controller.Clear(); }
+        });
         run("radar retains complete terrain and fixed scale while planning invalidates and live doors still block", () =>
         {
             var source = new Source(Floor());
@@ -200,12 +380,13 @@ internal static class SceneTerrainTests
             source.Snapshot = Floor(Box(2, new(.02f, 2, 30), new(1.8f, 2, 0)));
             rays.Walls.Add((1.8f, -30, 30, 4));
             controller.Update(Vector3.Zero, 1, true, 20, epoch.AddSeconds(1));
-            Check(ReferenceEquals(oldDisplay, controller.Display) && controller.Current is { WalkableCount: 0 }
+            Check(ReferenceEquals(oldDisplay, controller.Display) && controller.Current is { WalkableCount: > 0 }
+                && controller.Current.Contains(new(-4, 0, 0))
                 && !manager.BuildSnapshot(epoch).ArenaBoundary!.Contains(new(4, 0, 0)),
                 "Retaining radar terrain also retained a stale planning passage.");
             Check(!controller.ValidateStep(Vector3.Zero, new(2, 0, 0)), "The retained display bypassed a live closed door.");
             controller.RejectRoute(Vector3.Zero, 20, epoch.AddSeconds(1));
-            var sawReplacementNear = false;
+            var retainedUnaffectedTerrain = controller.Current!.Contains(new(-4, 0, 0));
             Pump(() =>
             {
                 controller.Update(Vector3.Zero, 1, true, 20, epoch.AddSeconds(1));
@@ -213,10 +394,10 @@ internal static class SceneTerrainTests
                 if (!controller.StatusText.Contains("已就绪"))
                 {
                     Check(ReferenceEquals(oldDisplay, controller.Display), "Radar cleared or shrank before the full replacement was ready.");
-                    sawReplacementNear |= controller.Current is { WalkableCount: > 0 };
+                    retainedUnaffectedTerrain &= controller.Current?.Contains(new(-4, 0, 0)) == true;
                 }
             }, () => controller.StatusText.Contains("已就绪"));
-            Check(sawReplacementNear && ReferenceEquals(controller.Display, controller.Current)
+            Check(retainedUnaffectedTerrain && ReferenceEquals(controller.Display, controller.Current)
                 && !controller.Display!.Contains(new(4, 0, 0)) && oldDisplay.Contains(new(4, 0, 0)),
                 "The full closed-door map failed to atomically replace the immutable old display.");
             source.Available = false;
@@ -407,6 +588,74 @@ internal static class SceneTerrainTests
             controller.RejectRoute(Vector3.Zero, 8, epoch);
             Check(controller.Current is { WalkableCount: 0 } && controller.LastError != null && !controller.Current.BlockedCells().Any(), "An exception was treated as evidence for a physical wall.");
             controller.Clear();
+        });
+        run("returning to an existing floor window reuses tiles and clearing the session rebuilds them", () =>
+        {
+            var model = new SceneTerrainModel(new Source(Floor()));
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                Pump(() => model.Update(new(4.5f, 0, 0), 20, epoch.AddSeconds(1)), () => model.Ready);
+                Pump(() => model.Update(Vector3.Zero, 20, epoch.AddSeconds(2)), () => model.Ready);
+                Check(model.LatestCapture?.Result.Diagnostics is { BuiltTiles: 0, CachedTiles: > 0 },
+                    "The production model rebuilt a previously visited window.");
+                model.Clear();
+                Pump(() => model.Update(Vector3.Zero, 20, epoch.AddSeconds(3)), () => model.Ready);
+                Check(model.LatestCapture?.Result.Diagnostics is { BuiltTiles: > 0, CachedTiles: 9 },
+                    "The new terrain session reused an old floor instead of only its fresh near tiles.");
+            }
+            finally { model.Clear(); }
+        });
+        run("changing support layers clears tile memory before publishing the new floor height", () =>
+        {
+            var source = new Source(Floor(Box(2, new(25, .2f, 25), new(0, 3.8f, 0))));
+            var model = new SceneTerrainModel(source);
+            try
+            {
+                Pump(() => model.Update(Vector3.Zero, 20, epoch), () => model.Ready);
+                Pump(() => model.Update(new(0, 4, 0), 20, epoch.AddSeconds(1)), () => model.Ready);
+                Check(model.LatestCapture?.Result.Diagnostics is { BuiltTiles: > 0, CachedTiles: 9 }
+                    && model.Current!.TryGetFloorPosition(Vector3.Zero, out var upper) && MathF.Abs(upper.Y - 4) < .1f,
+                    "Changing support layers restored cached lower-floor spans.");
+            }
+            finally { model.Clear(); }
+        });
+        foreach (var change in new[] { "territory", "director", "floor", "layout" })
+            run($"production controller clears tile memory on {change} changes at identical coordinates", () =>
+            {
+                using var manager = new SafeZoneManager(new() { EnableSafeZone = true });
+                var controller = new LocalTerrainController(manager, new LiveProbe(new AnalyticTerrainRaycaster()), new Source(Floor()));
+                try
+                {
+                    Pump(() => controller.Update(Vector3.Zero, 1, true, 20, epoch, scene: ((nint)1, 31, 0)),
+                        () => controller.StatusText.Contains("已就绪"));
+                    var territory = change == "territory" ? 2u : 1u;
+                    var identity = (Director: (nint)(change == "director" ? 2 : 1),
+                        Floor: (byte)(change == "floor" ? 32 : 31), Layout: (byte)(change == "layout" ? 1 : 0));
+                    Pump(() => controller.Update(Vector3.Zero, territory, true, 20, epoch.AddSeconds(1), scene: identity),
+                        () => controller.StatusText.Contains("已就绪"));
+                    Check(controller.LatestCapture?.Result.Diagnostics is { BuiltTiles: > 0, CachedTiles: 9 },
+                        "A new territory/floor/layout inherited cached navigation tiles.");
+                }
+                finally { controller.Clear(); }
+            });
+        run("learned live collisions survive leaving a cached room and are rechecked only upon returning", () =>
+        {
+            var corrections = new TerrainCollisionCorrections();
+            var rays = new AnalyticTerrainRaycaster();
+            var probe = new GameTerrainProbe(rays);
+            var map = Build(Floor());
+            corrections.Record(new(new(1, 0, 0), TerrainCellKind.Wall, Vector3.Zero, new(2, 0, 0)), epoch);
+            var calls = rays.Calls;
+            corrections.Refresh(probe, new(40, 0, 0), 20, epoch.AddSeconds(1));
+            Check(corrections.Count == 1 && rays.Calls == calls && !corrections.Apply(map)!.Contains(new(1, 0, 0)),
+                "Leaving the room discarded a known collision or queried unloaded distant terrain.");
+            rays.Walls.Add((1, -10, 10, 3));
+            corrections.Refresh(probe, Vector3.Zero, 20, epoch.AddSeconds(2));
+            Check(corrections.Count == 1 && !corrections.Apply(map)!.Contains(new(1, 0, 0)), "Returning resurrected a known blocked passage.");
+            rays.Walls.Clear();
+            corrections.Refresh(probe, Vector3.Zero, 20, epoch.AddSeconds(3));
+            Check(corrections.Count == 0 && ReferenceEquals(corrections.Apply(map), map), "Confirmed recovery failed to restore the cached room.");
         });
     }
 }

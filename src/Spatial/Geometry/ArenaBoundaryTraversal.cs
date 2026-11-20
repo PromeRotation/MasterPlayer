@@ -66,13 +66,19 @@ internal static class ArenaBoundaryTraversal
     }
 
     public static bool ContainsSegment(IGeometryShape boundary, Vector3 from, Vector3 to)
+        => TraverseSegment(boundary, from, to, false);
+
+    public static bool AllowsInitialExit(IGeometryShape obstacle, Vector3 from, Vector3 to)
+        => TraverseSegment(obstacle, from, to, true);
+
+    private static bool TraverseSegment(IGeometryShape boundary, Vector3 from, Vector3 to, bool allowExit)
     {
-        if (!boundary.Contains(from) || !boundary.Contains(to)) return false;
+        if (!boundary.Contains(from) || !allowExit && !boundary.Contains(to)) return false;
         var start = new Vector2(from.X, from.Z);
         var direction = new Vector2(to.X - from.X, to.Z - from.Z);
         var lengthSquared = direction.LengthSquared();
         if (lengthSquared < 0.00000001f) return true;
-        if (boundary is IStaticArenaBoundary prepared)
+        if (!allowExit && boundary is IStaticArenaBoundary prepared)
             return ContainsIndexedSegment(boundary, prepared.TraversalIndex, from, to, start, direction, lengthSquared);
         var cuts = new List<float> { 0, 1 };
         foreach (var contour in boundary.GetContours())
@@ -96,10 +102,18 @@ internal static class ArenaBoundaryTraversal
                 }
             }
         cuts.Sort();
+        var exited = false;
         for (var i = 1; i < cuts.Count; i++)
-            if (cuts[i] - cuts[i - 1] > 0.000001f
-                && !boundary.Contains(Vector3.Lerp(from, to, (cuts[i] + cuts[i - 1]) * 0.5f))) return false;
-        return true;
+        {
+            if (cuts[i] - cuts[i - 1] <= 0.000001f) continue;
+            if (!boundary.Contains(Vector3.Lerp(from, to, (cuts[i] + cuts[i - 1]) * 0.5f)))
+            {
+                if (!allowExit) return false;
+                exited = true;
+            }
+            else if (exited) return false;
+        }
+        return !exited || !boundary.Contains(to);
     }
 
     private static bool ContainsIndexedSegment(IGeometryShape boundary, ArenaBoundaryIndex index,

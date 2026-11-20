@@ -59,6 +59,39 @@ internal sealed class LocalTerrainBoundary : GeometryShape, ILocalViewBoundary
     internal TerrainCellKind Cell(int x, int z) => x >= 0 && z >= 0 && x < Side && z < Side ? cells[z * Side + x] : TerrainCellKind.Unknown;
     internal float Height(int x, int z) => heights[z * Side + x];
 
+    internal LocalTerrainBoundary WithUnknownRegions(IReadOnlyList<(Vector2 Min, Vector2 Max)>? regions)
+    {
+        var masked = (TerrainCellKind[])cells.Clone();
+        var modified = false;
+        var width = TerrainNavigationTile.WIDTH;
+        var halfCell = SceneTerrainBuilder.CELL_SIZE / 2;
+        var firstX = (int)MathF.Floor((MinX + halfCell) / width);
+        var firstZ = (int)MathF.Floor((MinZ + halfCell) / width);
+        var lastX = (int)MathF.Floor((MinX + Side * CellSize + halfCell - .001f) / width);
+        var lastZ = (int)MathF.Floor((MinZ + Side * CellSize + halfCell - .001f) / width);
+        for (var tz = firstZ; tz <= lastZ; ++tz)
+            for (var tx = firstX; tx <= lastX; ++tx)
+            {
+                var tileX = tx * width - halfCell;
+                var tileZ = tz * width - halfCell;
+                if (regions != null && !regions.Any(r => tileX <= r.Max.X && tileX + width >= r.Min.X
+                    && tileZ <= r.Max.Y && tileZ + width >= r.Min.Y)) continue;
+                var minX = Math.Max(0, (int)MathF.Floor((tileX - MinX) / CellSize));
+                var minZ = Math.Max(0, (int)MathF.Floor((tileZ - MinZ) / CellSize));
+                var maxX = Math.Min(Side, (int)MathF.Ceiling((tileX + width - MinX) / CellSize));
+                var maxZ = Math.Min(Side, (int)MathF.Ceiling((tileZ + width - MinZ) / CellSize));
+                for (var z = minZ; z < maxZ; ++z)
+                    for (var x = minX; x < maxX; ++x)
+                    {
+                        var index = z * Side + x;
+                        if (masked[index] == TerrainCellKind.Unknown) continue;
+                        masked[index] = TerrainCellKind.Unknown;
+                        modified = true;
+                    }
+            }
+        return modified ? new(Position, Side, masked, heights, CellSize) : this;
+    }
+
     internal LocalTerrainBoundary WithObstructions(IEnumerable<TerrainObstruction> obstructions)
     {
         var corrected = (TerrainCellKind[])cells.Clone();

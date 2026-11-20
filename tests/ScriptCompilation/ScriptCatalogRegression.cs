@@ -57,7 +57,8 @@ internal static class ScriptCatalogRegression
                 (60, 1286u), (70, 1287u), (80, 1288u), (90, 1289u), (99, 1290u) })
             {
                 var id = $"promeradar.pt{floor}";
-                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual([territory]), "Pilgrims scripts must use real territory IDs, not CFC IDs.");
+                uint[] expectedTerritories = floor == 99 ? [1290u, 1333u] : [territory];
+                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual(expectedTerritories), "Pilgrims scripts must use real territory IDs, including Final Verse normal for PT99, not CFC IDs.");
                 Check((bool)manager.IsScriptEnabled(id), "Migrated Pilgrims scripts are enabled by default.");
             }
             foreach (var (id, territory) in new[] { ("sastasha", 1036u), ("tamtara", 1037u), ("copperbell", 1038u) })

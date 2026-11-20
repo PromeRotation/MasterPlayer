@@ -28,6 +28,7 @@ public sealed class MechanicHostController : IDisposable
     private string? _lastLoggedError;
     private bool _liveEnabled = true;
     private bool _replayEnabled = true;
+    private DateTime nextPerfLog;
 
     private MechanicSession? ActiveSession => _replaySession ?? _session;
 
@@ -191,19 +192,37 @@ public sealed class MechanicHostController : IDisposable
 
         try
         {
+            var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            var gc0 = GC.CollectionCount(0);
+            var gc1 = GC.CollectionCount(1);
+            var gc2 = GC.CollectionCount(2);
+            var allocated = GC.GetAllocatedBytesForCurrentThread();
             EnsureLiveSession();
             ApplyMaturity(settings.MechanicModuleMinMaturity);
             var now = DateTime.UtcNow;
+            var tReady = System.Diagnostics.Stopwatch.GetTimestamp();
             var frame = LiveWorldSampler.Capture(_waymarks);
+            var tCapture = System.Diagnostics.Stopwatch.GetTimestamp();
             _capture?.Drain(_feed);
+            var tDrain = System.Diagnostics.Stopwatch.GetTimestamp();
             _session.BeginFrame(now);
             _feed.ApplyFrame(frame);
-            _feed.Flush();
+            var eventCount = _feed.Flush();
+            var tFeed = System.Diagnostics.Stopwatch.GetTimestamp();
             _session.Update();
+            var tSession = System.Diagnostics.Stopwatch.GetTimestamp();
             if (SleepMpOwnedBoss()) return;
             _navBridge?.Update();
+            var tNav = System.Diagnostics.Stopwatch.GetTimestamp();
             _drawBridge?.Update();
             UpdateTimeline();
+            var tEnd = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (System.Diagnostics.Stopwatch.GetElapsedTime(t0, tEnd).TotalMilliseconds >= 12 && DateTime.UtcNow >= nextPerfLog)
+            {
+                nextPerfLog = DateTime.UtcNow.AddSeconds(1);
+                static double Ms(long a, long b) => System.Diagnostics.Stopwatch.GetElapsedTime(a, b).TotalMilliseconds;
+                Svc.Log.Info($"[MP-HOST-PERF] init={Ms(t0, tReady):F1} capture={Ms(tReady, tCapture):F1} drain={Ms(tCapture, tDrain):F1} feed={Ms(tDrain, tFeed):F1} session={Ms(tFeed, tSession):F1} nav={Ms(tSession, tNav):F1} draw/timeline={Ms(tNav, tEnd):F1} actors={frame.Actors.Length} events={eventCount} allocated={GC.GetAllocatedBytesForCurrentThread() - allocated} gc={GC.CollectionCount(0) - gc0}/{GC.CollectionCount(1) - gc1}/{GC.CollectionCount(2) - gc2}");
+            }
         }
         catch (Exception ex)
         {

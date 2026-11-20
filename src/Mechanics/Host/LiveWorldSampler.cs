@@ -103,14 +103,14 @@ internal static class LiveWorldSampler
                 var statusCount = statusList.Length;
                 if (statusCount > 0)
                 {
-                    var list = new List<MechanicStatusDto>(statusCount);
+                    List<MechanicStatusDto>? list = null;
                     for (var s = 0; s < statusCount; ++s)
                     {
                         var status = statusList[s];
                         if (status is { StatusId: not 0 })
-                            list.Add(new(s, status.StatusId, status.Param, status.SourceId, status.RemainingTime));
+                            (list ??= new(statusCount)).Add(new(s, status.StatusId, status.Param, status.SourceId, status.RemainingTime));
                     }
-                    statuses = list.ToArray();
+                    statuses = list?.ToArray() ?? [];
                 }
             }
 

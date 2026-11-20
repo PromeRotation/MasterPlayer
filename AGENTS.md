@@ -8,6 +8,8 @@
 - `EnableSmartMovement` 是唯一移动总开关，取代 `EnableAutoDodge` / `EnableFollow`。接近目标只向同一规划器注册目标，已移除直线跟随执行分支。关闭时立即撤销脚本移动/朝向、斗兽控制、糖豆人原生控制和 runtime owner 请求；绘制、提示及安全区规划继续。执行层 `SafeZoneSetting.MovementAllowed` 阻断 runtime 请求绕过总开关，回放继续禁止移动。
 - `EnableMechanics` 统一控制脚本、模块及原处理器；移除 `EnableScripts` / `EnableMechanicModules`。`TerritoryEnabled` 按区域默认启用，同时门控实时/回放的脚本与模块；脚本原逐项开关保留。模块禁用或被专属脚本压制后不得继续压制通用 AOE，恢复时重建会话以丢弃旧状态。
 - 无机制场地时默认开启周边地形检测（`EnableTerrainCollision`，半径 `TerrainScanRadius=20`，雷达 `RadarShowTerrain`）。主线程持碰撞场景共享锁复制有效模型，后台用 Recast 批量构建不可变 fallback boundary，生产建模不再逐格发射原生射线；未知/墙体/落差不通行；正式场地优先，ARR/离线回放不采样实时地形。前方地形变化或查询失败时撤销自身旧路线，不回退为无限制平地。地形 footprint 已检查，fallback 场地收缩为 0，AOE 余量不变。先发布近身 8 码，再构建完整半径；模型资源跨深宫楼层复用，场景元数据每 500ms 检查、未变则不重建；实时原生碰撞复核保留；战斗结束保留地形，深宫 director/楼层/布局变化则清图；契约与实机验证限制见 `docs/reference/LocalTerrainCollision.spec.md`。
+- 通用躲避执行途中，实际剩余路线仍被旧地形图完整覆盖时，移动窗口和近身→完整图的候选延迟到路线结束/安全点后发布，不等整个AOE控制权保留期结束。候选发布前重新核对几何；等待期间继续复查旧窗口和逐帧前方碰撞。真实几何变化、局部碰撞修正、越界、支撑层及深宫换层仍立即按原契约处理，不能因保留旧图而绕过失效、停止或清理。
+- 同层通行图按8m固定块缓存于内存，移动窗口仅补建缺失或几何改变的块；每块含1m建模边带，保留多支撑跨度及原始邻接，拼接后从当前玩家重新提取可达区域，不能合并不同房间的旧可达图。快照额外覆盖完整块和边带；真实变化立即失效新旧几何包围盒涉及的块，其余通路保留。原生碰撞局部修正同层保留，远离时暂停复查，回到附近确认恢复后才移除。切区、深宫director/楼层/布局、支撑层变化及完整清理丢弃通行块；模型资源缓存仍可跨层复用。延迟发布和逐帧碰撞复核继续生效，失效中的局部图不导出为完整场景。
 - 地形建模保留当前有效 layer 1 几何，不能用通用射线的 0x4000 材质位筛墙门；0x2000000 洞口与低五位 0x11 的禁行面独立扣除，避免 Recast 共面跨度合并重新放行。静态资源缓存可跨层复用；`MemoryData` 程序模型每轮按内容校验，指针和三角面数量相同不代表几何未变。实时射线复核及局部修正是补充，不能代替首次场景建模。
 - 地形雷达绘制读取独立 `TerrainDisplay`，刷新期间保留旧完整图，按 `TerrainScanRadius` 固定比例，完整新图就绪后替换。显示历史不得注册为规划边界或用于碰撞判断；规划 `LocalTerrain` 仍按场景变化失效并保留实时复核。换层、切区、支撑层改变、关闭及正式场地接管时同时清除显示历史。
 - 旧移动开关按 OR 迁移；旧脚本/模块总开关按 OR 迁移。保存新配置不再写旧字段，首次覆盖旧格式前保留 `MasterPlayer.json.before-promeradar.bak`。配置格式字段 `SettingsVersion=1`。
@@ -278,6 +280,7 @@ public sealed record AoeShapeDescriptor(
     AoeShapeKind Kind, float Param1, float Param2, bool FollowCaster, float ExtraDelaySeconds)
 {
     public bool UseCastRotation { get; init; }
+    public bool UseActorRotation { get; init; }
     public bool IsCharge { get; init; }   // CastType 8 冲锋：长=施法者→落点距离，锚定施法者朝向落点
 }
 
@@ -289,7 +292,7 @@ public static class AoeShapeDatabase
 ```
 
 - 静态表查不到时走 **Lumina Action 表推断**，映射如下：2=落点/自身圆（不加 hitbox，`TargetArea`=落点型）；3=扇形（半径+hitbox，总开角取 Omen 路径 `fanXXX` 度数，缺省 180°）；4=直线矩形（长+hitbox，`XAxisModifier`=全宽）；5=自身圆（半径+hitbox）；8=冲锋矩形；10=月环（内径取 Omen 路径 `sircle_`/`sicle_`/`circle` 后两位数字，缺省 3）；12=矩形、13=扇形（均不加 hitbox）。跳过：1=单体、6/7、11=十字（无对应模板）、2/5 且 `EffectRange ≥ 30`（全屏）、`VFX.RowId == 25`（视线类）。
-- 朝圣路区域 1281–1290 的普通扇形/矩形/直线读条统一锁定原始读条落点及 `CastRotation`，不能跟随普通物体面朝向；缺锁定方向拒绝预测。冲锋继续使用来源→落点方向，圆/月环和读条后动态持续区保留原有绑定。44690/44691 的包内方向已含左右偏转，不能再次加减 90°；42091 大地钻击须用 R3–30、270°环扇形，不能按 CastType 10 推成完整月环。证据与回归见 `docs/reference/PilgrimsTraverseBosses.spec.md`。
+- 朝圣路区域 1281–1290 的普通扇形/矩形/直线读条统一锁定原始读条落点及 `CastRotation`，不能跟随普通物体面朝向；缺锁定方向拒绝预测。43132 飞踢首击为实测特例：3×8直线跟随来源转向，读条后加0.3秒；43131无读条后摆尾的精确开角尚未确认。冲锋继续使用来源→落点方向，圆/月环和读条后动态持续区保留原有绑定。44690/44691 的包内方向已含左右偏转，不能再次加减 90°；42091 大地钻击须用 R3–30、270°环扇形，不能按 CastType 10 推成完整月环。证据与回归见 `docs/reference/PilgrimsTraverseBosses.spec.md`。
 
 **Mechanics.MechanicDispatcher**（`src\Mechanics\MechanicDispatcher.cs`）
 
@@ -535,6 +538,7 @@ dotnet build MasterPlayer.csproj
 - PR 用 shadow copy + 可收集 `AssemblyLoadContext` 加载子插件，DLL 不锁文件，游戏运行中可直接覆盖构建。
 - 首次加载后若插件管理器列表里没有 MasterPlayer，点「刷新全部」让它重扫 `Plugins\` 目录。
 - **PR 本体升级后必须重新构建本插件**（见第 2 节警告）。
+- **回归测试只跑当前会话涉及到的机制**：使用定向测试项目或筛选参数限定范围，不运行全量回归或无关机制的测试；本文及其他项目文档中的回归入口均遵循此范围约束。
 - 环境验证使用 `dotnet build -p:CI=true` 输出到仓库 `bin\Debug\`，避免验证阶段覆盖已安装插件。宿主 `SafeZoneRebornSetting` / `SafeZoneRebornMovementStatus` 由 `src/Spatial/HostMovement.cs` 缓存反射探测；旧版无该接口时仍检查旧版控制权，新版两者均检查。回归 fixture 仅在宿主提供 Reborn 接口时测试宿主 Reborn 所有权，插件本地 Reborn 测试始终执行。
 
 ## 5. 核心 API 速查
@@ -706,6 +710,7 @@ public readonly record struct GreenMovePoint(
 ### 朝圣路 Boss 脚本 / PT30 / NewFolder3 联动
 
 - 10/20/30/40/50/60/70/80/90/99 层 Boss 均由 `Presets/PilgrimsTraverse/Entries/` 的 MP 内置脚本接管，ID 为 `promeradar.pt<层数>`，区域为 1281–1290（不是 CFC 1032–1041）。首次默认启用，保留明确保存的逐脚本关闭设置。新 Boss 状态机在 `Bosses/`，宿主在 `Hosting/`；入口可独立热编译。完整场地、尺寸、时序与验证约定见 [朝圣路 Boss 规格](docs/reference/PilgrimsTraverseBosses.spec.md)。
+- 「卓异的悲寂歼灭战」普通版为区域 1333、CFC 1065，与 99 层共用 `promeradar.pt99` 入口、机制状态机、自动选敌及既有设置；`PtBossCatalog` 同时压制该区域的重复 BMR 输出。深想战为区域 1311、CFC 1063、不同 Boss OID，不接入此脚本。普通版 ARR 开场夹具与隔离回归使用 `tests/PilgrimsTraverse/MasterPlayer.PilgrimsTraverse.Tests.csproj -- --final-verse`；真实 DLL 区域匹配/选敌检查沿用脚本冒烟 `--pt99-targeting`。
 - 朝圣路危险区定义与预览全部使用原始尺寸；owner 的硬危险余量实时读取 MP 设置的 `DodgeDangerMargin`，只在解算层应用一次，场地额外余量保持 0。10 层压花 44057 使用真实 Action 表 R15，50 层破坑 43534/43535/43536 使用 R6；保留原形状，不沿用 BMR 缩小的 R14/R5。BMR 对同区域对应 Boss 不再输出绘制/导航，普通楼层继续由 BMR 处理；本区域之外同 OID 不受影响。关闭 MP 脚本不回退到该 Boss 的 BMR 导航。
 
 - `Presets/PilgrimsTraverse/Entries/PilgrimsTraverse30.cs` 是区域 1283 的 MP 内置脚本，ID `promeradar.pt30`、契约版本 `1.0.0`；机制状态在 `Pt30Encounter`。四种 9–14/14–19/19–24/24–29m 光轮、左右 60×30m 矩形接 220° 扇形、静止/移动球、Divine Favor 八连追踪均由 MP 自己输出，不依赖 BMR PT30 组件。场地与真实洞口是从上游导出的不可变 MP 几何数据 `Pt30Arena`，保留内侧平台。

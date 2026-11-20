@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="Pt99TargetControlRegression.cs" />
     <Compile Include="ScriptCatalogRegression.cs" />
     <Compile Include="ScriptMovementRegression.cs" />
     <Compile Include="ScriptSettingsRegression.cs" />

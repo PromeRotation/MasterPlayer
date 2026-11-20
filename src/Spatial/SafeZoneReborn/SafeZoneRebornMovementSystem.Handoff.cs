@@ -7,11 +7,13 @@ namespace MasterPlayer.Spatial.SafeZoneReborn;
 internal sealed partial class SafeZoneRebornMovementSystem
 {
     private readonly HashSet<SafeZoneAreaHandle> handoffDangers = [];
+    private bool handoffDenied;
     internal Func<bool, bool>? RequestExclusiveMovement { get; set; }
     public bool MechanicMovementActive { get; private set; }
 
     private bool PrepareMovementHandoff(SafeZoneSnapshot snapshot, PlayerState player, DateTime now, bool routeRequested)
     {
+        handoffDenied = false;
         var horizon = now.AddSeconds(_options.PlanningHorizon);
         var endedBefore = now.AddSeconds(-_options.DangerEndSafetyTime);
         handoffDangers.RemoveWhere(handle => !snapshot.DangerAreas.Any(danger => danger.Handle == handle &&
@@ -30,7 +32,8 @@ internal sealed partial class SafeZoneRebornMovementSystem
         // Set the live flag before synchronously asking FSD to revoke its outputs.
         // A denied handoff never authorizes a GreenMove write; retry on the next update.
         MechanicMovementActive = true;
-        return RequestExclusiveMovement?.Invoke(true) ?? true;
+        handoffDenied = !(RequestExclusiveMovement?.Invoke(true) ?? true);
+        return !handoffDenied;
     }
 
     private static bool HasMechanicGoal(SafeZoneSnapshot snapshot, DateTime now) =>
@@ -38,13 +41,14 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private void CompleteMovementHandoff(SafeZoneSnapshot snapshot, DateTime now)
     {
-        if (!_hasControl && handoffDangers.Count == 0 && !HasMechanicGoal(snapshot, now))
+        if (!handoffDenied && !_hasControl && handoffDangers.Count == 0 && !HasMechanicGoal(snapshot, now))
             ReleaseMovementHandoff();
     }
 
     private void ReleaseMovementHandoff()
     {
         handoffDangers.Clear();
+        handoffDenied = false;
         if (!MechanicMovementActive) return;
         MechanicMovementActive = false;
         RequestExclusiveMovement?.Invoke(false);
@@ -59,7 +63,9 @@ internal sealed partial class SafeZoneRebornMovementSystem
             ReleaseMovementHandoff();
             return;
         }
-        if (!PrepareMovementHandoff(snapshot, player, now, solution is { IsSuccess: true, ExecutablePath.Count: >= 2 }))
+        // A cached candidate can still be idle, delayed or rejected by live terrain.
+        // Reserve danger/goal waits now; acquire an optional route only at its actual write.
+        if (!PrepareMovementHandoff(snapshot, player, now, false))
         {
             ReleaseControl();
             return;

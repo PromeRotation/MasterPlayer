@@ -38,6 +38,8 @@ JSON 字段：
 | `Pt30ScriptAvailable` / `Pt30ScriptReady` | bool | 内置脚本存在 / 正在接管 Boss 且场地输出就绪 |
 | `Pt30ScriptVersion` / `Pt30State` / `Pt30ChaseRemaining` | string / string? / int | PT30 契约版本、机制状态、追踪剩余次数 |
 | `Pt30PreviewCount` | int | 实际注册的 PT30 危险区预览数；未来光球预测只参与导航，勿与 `DangerZoneCount` 混为绘制数量 |
+| `Pt99TargetControlActive` | bool | 99 层 / 卓异的悲寂歼灭战共用脚本已接管选敌：实时交战、当前玩家存活且在场内；不依赖智能走位开关 |
+| `Pt99TargetId` | ulong | 接管期间选定的对象 ID（优先 EntityId），0 为明确停火；未接管时为 0 |
 | `ScriptError` | string? | 脚本框架错误；脚本未启动时不要只检查机制库错误 |
 | `FrameMilliseconds` | double | 本帧 Framework 间隔，供性能实测关联，不等于 MP 自身 CPU 耗时 |
 | `RecordingActive` / `RecordingPath` | bool / string? | MP 自身事件录制状态；与 ARR 分开 |
@@ -64,6 +66,10 @@ JSON 字段：
 NewFolder3 入场前通过 `SetFsdSessionActive(true)` 获取会话，任务结束以 `false` 释放；死亡重开属于同一会话。移动交接独立于该会话：NewFolder3 注册 `NewFolder3.Movement.SetPromeRadarControl`（`Func<bool, bool>`，仅游戏主线程）。MP 在下发路线前设置实时占用并同步调用 `true`；NewFolder3 先关闭自身输出权限、取消自己的路线、暂停原任务后返回 `true`。交接失败时 MP 不下发路线。等待撤离、后台解算以及逃出后相关危险窗口尚未结束时仍保持占用；远处危险及普通攻击目标不单独延长占用。MP 停止自己的执行器后调用 `false`，FSD 从当前位置重新验证并继续同一个开箱尝试，暂停时间不消耗开箱努力或等待预算。关闭、死亡、切区、回放及卸载撤销占用；重载时通过实时标量重新对齐。FSD 会话要求两端同时更新，不能使用缓存 `HasMovementControl=false` 作为恢复依据。
 
 PT30 检查同区域、三秒内采样、非回放、`FsdSessionActive/SmartMovementEnabled/CanMove/NavigationActive/Pt30ScriptReady=true` 和 `Pt30ScriptVersion="1.0.0"`，由 MP 自有脚本处理；该 Boss 的 BMR 绘制和导航已停止。用户中途关闭时不每帧重开。会话调用请求入队不代表已经应用，需查询确认。
+
+PT99 选敌消费者使用更短的 500ms 新鲜度，检查 `Ready/ApiVersion`、区域 1290、非回放及 `Pt99TargetControlActive=true`。`Pt99TargetId=0` 或指定目标死亡、不可选、HP≤1 时必须停火，不得回退通用选敌。NewFolder3 在攻击及导航共用的选敌链首位采用此指令，最多每 100ms 读取一次；没有有效接管指令时才使用原有机制/默认 provider。该契约只选目标，不下发攻击技能；两端须同时更新。
+
+普通「卓异的悲寂歼灭战」区域 1333 复用同一脚本，也发布上述 `Pt99Target*` 字段，字段名为兼容现有消费者保留。MP 自身直接执行选敌；NewFolder3 的深宫 provider 仍只消费区域 1290，不将普通歼灭战当作深宫 Boss 楼层。深想战区域 1311 不由本脚本接管。
 
 脚本开发：使用 `SafeZone` 注册规划约束、`Move` 执行手动移动、`Hints` 请求面向，均遵守智能走位开关。持有额外原生控制的脚本须覆盖 `OnMovementDisabled()` 立即撤销自身控制，保留机制和绘制状态。此机制不对任意外部脚本代码做沙箱隔离。
 

@@ -35,7 +35,7 @@ internal sealed class LocalTerrainController(SafeZoneManager manager, ITerrainPr
     }
 
     internal void Update(Vector3 player, uint currentTerritory, bool enabled, float radius, DateTime now, bool airborne = false,
-        (nint Director, byte Floor, byte Layout) scene = default)
+        (nint Director, byte Floor, byte Layout) scene = default, bool deferPublication = false)
     {
         radius = float.IsFinite(radius) ? Math.Clamp(radius, 8, 30) : 20;
         ViewRadius = radius;
@@ -85,7 +85,7 @@ internal sealed class LocalTerrainController(SafeZoneManager manager, ITerrainPr
             {
                 if (probe.IsAvailable)
                 {
-                    sceneModel.Update(origin, radius, now);
+                    sceneModel.Update(origin, radius, now, deferPublication);
                     corrections.Refresh(probe, origin, radius, now);
                 }
                 else sceneModel.Invalidate(origin, radius);

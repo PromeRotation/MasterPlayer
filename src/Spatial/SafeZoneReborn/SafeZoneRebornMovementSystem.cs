@@ -50,6 +50,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
     private readonly SafeZoneSolver _solver = new();
     private readonly SolveOptions _options = CreateMovementOptions();
     internal Func<Vector3, Vector3, bool>? CheckTerrainTraversal { get; set; }
+
     private Func<Func<AsyncSolveResult>, CancellationToken, Task<AsyncSolveResult>> _scheduleSolve =
         (solve, token) => Task.Run(solve, token);
 
@@ -174,6 +175,26 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
     /// <summary>本系统当前是否正在接管 GreenMove。</summary>
     public bool HasControl => _hasControl;
+
+    internal bool ShouldRetainTerrain(IGeometryShape boundary, Vector3 position)
+    {
+        if (!_hasControl || !_setting.EffectiveEnableAutoMovement || _externalMovementEnabled() || _externalHasControl()
+            || _phase != DispatchPhase.Moving || handoffDangers.Count == 0 || _directTarget != null
+            || _dispatchedSolution is not { IsSuccess: true } route
+            || _greenMove?.GetStatus() is not { IsRunning: true, CurrentPoint: { } current, FinalPoint: { } final } status)
+            return false;
+        var path = route.ExecutablePath;
+        var next = status.CurrentIndex + 1;
+        if (next < 1 || next >= path.Count || status.TotalCount != path.Count - 1
+            || current.Position != path[next].Position || final.Position != path[^1].Position)
+            return false;
+        for (var i = next; i < path.Count; ++i)
+        {
+            if (!ArenaBoundaryTraversal.ContainsSegment(boundary, position, path[i].Position)) return false;
+            position = path[i].Position;
+        }
+        return true;
+    }
 
     private Vector3? _jumpLanding;
     private DateTime _jumpCommittedAt;
@@ -460,6 +481,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             for (var i = 0; i < queue.Length; ++i)
                 if (_directMotion?.Locked(next + i) == true)
                     queue[i] = queue[i] with { Tolerance = _directMotion.ArrivalTolerance(next + i) };
+            if (!PrepareMovementHandoff(snapshot, player, now, true))
+            {
+                ReleaseControl();
+                return true;
+            }
             _greenMove!.MoveTo(queue);
             _directOrigin ??= player.Position;
             _directOffset = next;
@@ -841,9 +867,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var snapshot = _manager.BuildSnapshot(now);
         if (_setting.EffectiveEnableAutoMovement && allowMovement && !_externalMovementEnabled() && !_externalHasControl())
         {
-            bool directRequested = _directTarget is { } target && _directRejectedGeneration != _directGeneration &&
-                GeometryHelper.DistanceXZ(player.Position, target) > .03f;
-            if (!PrepareMovementHandoff(snapshot, player, now, directRequested))
+            if (!PrepareMovementHandoff(snapshot, player, now, false))
             {
                 ReleaseControl();
                 return;
@@ -1222,6 +1246,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                 // 首次接管可能已有跟随路线；用当前位置替换路线后才停止，确保停的是自己拥有的移动。
                 if (!_hasControl)
                 {
+                    if (!PrepareMovementHandoff(snapshot, player, now, true))
+                    {
+                        ReleaseControl();
+                        return;
+                    }
                     _greenMove!.MoveTo(new GreenMovePoint(player.Position, Tolerance: MinArrivalTolerance));
                     _hasControl = true;
                     _dispatchCount++;
@@ -1289,6 +1318,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
             {
                 _latestSolution = null;
                 _phase = DispatchPhase.Released;
+                ReleaseControl();
+                return;
+            }
+            if (!PrepareMovementHandoff(snapshot, player, now, true))
+            {
                 ReleaseControl();
                 return;
             }
@@ -1415,12 +1449,14 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var position = player.Position;
         var time = now.AddSeconds(startDelay);
         if (startDelay > 0 && !IsTemporalSegmentSafe(snapshot, position, position, now, time, startSafety)) return false;
-        // A non-temporal escape may begin inside persistent damage. Permit only
+        // An escape may begin inside persistent damage or an obstacle. Permit only
         // the initial exit from those shapes, never re-entry or an unsafe endpoint.
         HashSet<IGeometryShape>? escaping = null;
         if (!solution.UsesTemporalPlanning || solution.ExitsInitialPersistentDanger)
         {
             escaping = [];
+            foreach (var obstacle in snapshot.HardObstacles)
+                if (obstacle.Geometry.Contains(position)) escaping.Add(obstacle.Geometry);
             foreach (var danger in snapshot.DangerAreas)
                 if (danger.Geometry.Contains(position))
                     foreach (var window in danger.DangerWindows)
@@ -1453,7 +1489,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         foreach (var obstacle in snapshot.HardObstacles)
         {
             if (obstacle.Geometry.Contains(from) || obstacle.Geometry.Contains(to) || obstacle.Geometry.IntersectsSegment(from, to))
-                return false;
+            {
+                if (escaping?.Contains(obstacle.Geometry) != true
+                    || !ArenaBoundaryTraversal.AllowsInitialExit(obstacle.Geometry, from, to)) return false;
+                if (!obstacle.Geometry.Contains(to)) escaping.Remove(obstacle.Geometry);
+            }
         }
         foreach (var danger in snapshot.DangerAreas)
         {
@@ -1601,7 +1641,16 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
 
         if (!newSolution.IsSuccess || newSolution.ExecutablePath.Count < 2)
         {
-            return false;
+            // An idle candidate only proves safety at the worker's sampled instant.
+            // Do not stop an ongoing escape inside a pending hit while its full
+            // remaining route still validates against the current snapshot.
+            // Goal-directed mechanics can deliberately publish an idle hold;
+            // their timed phases are handled by TryContinueTemporalPhase.
+            return newSolution.IsSuccess && !GoalDirectedTemporalPlanning
+                && _dispatchedSolution.TargetPosition is { } destination
+                && ActiveGoalPriorityAt(snapshot, player.Position, now) <= ActiveGoalPriorityAt(snapshot, destination, now)
+                && SafeZoneSolver.HasPendingDangerAtPlayer(snapshot, player.Position, now)
+                && TryContinueDispatchedRoute(player, snapshot, now);
         }
 
         // A worker can decide to remain in its start cell while an earlier

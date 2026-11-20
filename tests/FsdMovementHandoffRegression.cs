@@ -14,6 +14,137 @@ internal static class FsdMovementHandoffRegression
 
     internal static void Run(Action<string, Action> run)
     {
+        run("Terrain publication retains only a running escape fully covered by the old boundary", () =>
+        {
+            using var runtime = Create(out var move);
+            var movement = (SafeZoneRebornMovementSystem)runtime.MovementStatus;
+            var boundary = new CircleGeometry(Vector3.Zero, 25);
+            Check(!movement.ShouldRetainTerrain(boundary, Vector3.Zero), "An idle runtime retained terrain.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch.AddSeconds(2.7), Epoch.AddSeconds(3.3))]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(movement.ShouldRetainTerrain(boundary, Vector3.UnitZ), "A running covered escape failed to retain terrain.");
+            runtime.Setting.EnableAutoMovement = false;
+            Check(!movement.ShouldRetainTerrain(boundary, Vector3.UnitZ), "Disabled movement retained terrain publication.");
+            runtime.Setting.EnableAutoMovement = true;
+            Check(!movement.ShouldRetainTerrain(new CircleGeometry(Vector3.Zero, 4), Vector3.UnitZ),
+                "A route outside the old map prevented terrain replacement.");
+            Check(!movement.ShouldRetainTerrain(boundary, Vector3.UnitX * 26), "A displaced player retained an uncovered map.");
+            move.Stop();
+            Check(movement.MechanicMovementActive && !movement.ShouldRetainTerrain(boundary, Vector3.UnitZ * 6),
+                "Reaching safety waited for the entire AOE ownership lease to end.");
+        });
+        run("Terrain publication does not wait for ordinary optional movement", () =>
+        {
+            using var runtime = Create(out _);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(!((SafeZoneRebornMovementSystem)runtime.MovementStatus).ShouldRetainTerrain(
+                new CircleGeometry(Vector3.Zero, 25), Vector3.Zero), "Ordinary following froze terrain publication.");
+        });
+        run("FSD handoff direct acknowledgement denial retries without writing movement", () =>
+        {
+            using var runtime = Create(out var move);
+            var movement = (SafeZoneRebornMovementSystem)runtime.MovementStatus;
+            var accepted = false;
+            runtime.SetMovementHandoff(_ => accepted);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            movement.SetDirectTraversal(Vector3.UnitZ * 6, Epoch.AddSeconds(1));
+            movement.Update(Player(Vector3.Zero, snapshot), new(6, 6, 0, false, 6, 6), Epoch);
+            Check(move.Moves == 0 && movement.MechanicMovementActive, "A denied direct route wrote input or lost its pending handoff.");
+            accepted = true;
+            movement.Update(Player(Vector3.Zero, snapshot), new(6, 6, 0, false, 6, 6), Epoch.AddSeconds(.02));
+            Check(move.Moves == 1, "An acknowledged direct route failed to retry.");
+        });
+
+        run("FSD handoff validates direct shortcuts before requesting ownership", () =>
+        {
+            foreach (var terrainSafe in new[] { false, true })
+            {
+                using var runtime = Create(out var move);
+                var movement = (SafeZoneRebornMovementSystem)runtime.MovementStatus;
+                var calls = 0;
+                runtime.SetMovementHandoff(active => { if (active) { Check(move.Moves == 0, "Handoff followed the first direct output."); calls++; } return true; });
+                movement.CheckTerrainTraversal = (_, _) => terrainSafe;
+                var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+                movement.SetDirectTraversal(Vector3.UnitZ * 6, Epoch.AddSeconds(1));
+                movement.Update(Player(Vector3.Zero, snapshot), new(6, 6, 0, false, 6, 6), Epoch);
+                Check(terrainSafe ? calls == 1 && move.Moves == 1 : calls == 0 && move.Moves == 0,
+                    "Direct traversal acquired ownership before validation or dispatched without an acknowledgement.");
+            }
+        });
+
+        run("FSD handoff idle at a new mandatory goal stops an optional escape destination", () =>
+        {
+            using var runtime = Create(out var move);
+            runtime.Manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch.AddSeconds(2.7), Epoch.AddSeconds(3.3))]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            runtime.Manager.AddGoalArea(new CircleTemplate(.5f), new StaticTransform(Vector3.UnitZ, 0),
+                [GoalWindow.Persistent(Epoch, 100)]);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch.AddSeconds(.1));
+            Dispatch(runtime, Idle(snapshot, Epoch), Vector3.UnitZ, snapshot, Epoch.AddSeconds(.1));
+            Check(!move.IsRunning, "A completed higher-priority mechanic goal failed to stop optional movement.");
+        });
+
+        run("FSD handoff respects an idle hold from a goal-directed mechanic", () =>
+        {
+            using var runtime = Create(out var move);
+            runtime.Setting.RuntimeGoalDirectedTemporalPlanning = true;
+            runtime.Manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch.AddSeconds(2.7), Epoch.AddSeconds(3.3))]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Dispatch(runtime, Idle(snapshot, Epoch.AddSeconds(.1)), Vector3.UnitZ, snapshot, Epoch.AddSeconds(.1));
+            Check(!move.IsRunning, "Generic escape continuity overrode an explicit mechanic hold.");
+        });
+
+        run("FSD handoff keeps a verified escape moving when a worker publishes a short idle candidate", () =>
+        {
+            using var runtime = Create(out var move);
+            runtime.Manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch.AddSeconds(2.7), Epoch.AddSeconds(3.3))]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(move.Moves == 1 && move.IsRunning, "The pending-hit escape did not start.");
+            for (var frame = 1; frame <= 10; ++frame)
+                Dispatch(runtime, Idle(snapshot, Epoch.AddSeconds(frame * .02)), Vector3.UnitZ, snapshot, Epoch.AddSeconds(frame * .02));
+            Check(move.Moves == 1 && move.IsRunning && !move.Events.Contains("stop-mp"),
+                "An idle worker candidate stopped a verified escape inside the pending AOE.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.UnitZ * 5, 0), [new(Epoch, null)]);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Idle(snapshot, Epoch), Vector3.UnitZ, snapshot, Epoch.AddSeconds(.25));
+            Check(!move.IsRunning, "Continuity kept a route blocked by newly observed damage.");
+        });
+
+        run("FSD handoff ignores obsolete routes after the player is safe", () =>
+        {
+            using var runtime = Create(out var move);
+            runtime.Manager.ClearAllAreas();
+            runtime.Manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 25));
+            var calls = 0;
+            runtime.SetMovementHandoff(_ => { calls++; return true; });
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            var stale = Route(snapshot, Epoch);
+            for (var frame = 0; frame < 20; ++frame)
+                Dispatch(runtime, stale, Vector3.UnitZ * 6, snapshot, Epoch.AddSeconds(frame * .02));
+            Check(calls == 0 && move.Moves == 0 && !runtime.MovementStatus.MechanicMovementActive,
+                $"An obsolete route caused {calls} needless FSD ownership changes.");
+        });
+
+        run("FSD handoff does not cancel FSD for a terrain-rejected optional route", () =>
+        {
+            using var runtime = Create(out var move);
+            var calls = 0;
+            runtime.SetMovementHandoff(_ => { calls++; return true; });
+            ((SafeZoneRebornMovementSystem)runtime.MovementStatus).CheckTerrainTraversal = (_, _) => false;
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(calls == 0 && move.Moves == 0, "A rejected route interrupted FSD before MP had usable output.");
+        });
+
         run("FSD handoff revokes FSD before the first MP route and stops MP before release", () =>
         {
             using var runtime = Create(out var move);

@@ -1,5 +1,21 @@
 var failures = new List<string>();
 var passed = 0;
+if (args.Contains("--pt99-targeting") || args.Contains("--final-verse"))
+{
+    void Run(string name, Action body)
+    {
+        try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+        catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+    }
+    Pt99TargetRegression.Run(Run);
+    if (args.Contains("--final-verse")) FinalVerseRegression.Run(Run);
+    if (args.Contains("--final-verse")) Pt99BoundsRegression.Run(Run);
+    if (args.Contains("--final-verse")) Pt99DrainRegression.Run(Run);
+    PilgrimsBossRegression.Run((name, body) => { if (name.Contains("PT99")) Run(name, body); });
+    Console.WriteLine($"{passed} PT99 scenarios passed; {failures.Count} failed.");
+    Environment.ExitCode = failures.Count == 0 ? 0 : 1;
+    return;
+}
 if (args.Contains("--previews"))
 {
     PilgrimsPreviewRegression.Run((name, body) =>

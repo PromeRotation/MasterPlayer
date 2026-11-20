@@ -1,4 +1,5 @@
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 using MasterPlayer.Replay;
 using MasterPlayer.Scripting;
@@ -25,6 +26,9 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     private bool suspended;
     public bool EncounterActive => encounter.Active;
     public int DangerCount => output.Values.Count(v => !v.Area.Safe && !v.Area.PreviewOnly && !v.Area.Obstacle);
+    public bool TargetControlActive => floor == 99 && !suspended && encounter.Active && !IsReplay
+        && CurrentPlayer is { Dead: false } player && encounter.Boundary.Contains(player.Position);
+    public ulong PreferredTargetId { get; private set; }
 
     protected override void OnStart()
     {
@@ -137,7 +141,34 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
         }
         runtime.RequestAutomaticMovement(this, !IsReplay, hold: encounter.HoldMovement(now, player.Id),
             hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin, arenaSafetyMargin: 0, goalDirectedTemporalPlanning: true);
+        UpdateTarget(now, player.Id);
         ShowHints(now, player.Id);
+    }
+
+    private void UpdateTarget(DateTime now, ulong player)
+    {
+        PreferredTargetId = 0;
+        if (!TargetControlActive || encounter is not Pt99Encounter pt99) return;
+        var current = Svc.Targets.Target;
+        var target = pt99.SelectTarget(now, player, ReplayWorldCapture.Id(current));
+        if (target == null)
+        {
+            if (current != null && Pt99Encounter.IsCombatTarget(current.BaseId)) Svc.Targets.Target = null;
+            return;
+        }
+        if (ReplayWorldCapture.Id(current) == target.Id)
+        {
+            PreferredTargetId = target.Id;
+            return;
+        }
+        var live = Svc.Objects.OfType<IBattleChara>().FirstOrDefault(a => a.Address != 0
+            && ReplayWorldCapture.Id(a) == target.Id && a.BaseId == target.Oid
+            && !a.IsDead && a.IsTargetable && a.CurrentHp > 1);
+        if (live != null)
+        {
+            PreferredTargetId = target.Id;
+            Svc.Targets.Target = live;
+        }
     }
 
     private void ShowHints(DateTime now, ulong player)
@@ -157,6 +188,7 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     }
     private void ClearOutput()
     {
+        PreferredTargetId = 0;
         var runtime = MasterPlayerPlugin.Instance?.SafeZone;
         runtime?.RequestAutomaticMovement(this, false);
         foreach (var key in output.Keys.ToArray()) Remove(key);

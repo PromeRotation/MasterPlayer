@@ -24,6 +24,7 @@ public sealed record AoeShapeDescriptor(AoeShapeKind Kind, float Param1, float P
     public GeometryTemplate? ExactTemplate { get; init; }
     public bool UseCastRotation { get; init; }
     public bool UseSourcePosition { get; init; }
+    public bool UseActorRotation { get; init; }
 
     // CastType 8 冲锋：长度改用读条事件里 施法者→落点 的距离（Param2 仅作兜底），锚定施法者位置、朝向落点。
     public bool IsCharge { get; init; }
@@ -61,6 +62,8 @@ public static class AoeShapeDatabase
         // 可离开范围的道中大圆，不能按通用 R>=30 规则当作全屏伤害丢弃。
         [42523u] = new(AoeShapeKind.Circle, 45f, 0f, true, 0f),
         [43133u] = new(AoeShapeKind.Circle, 46f, 0f, true, 0f),
+        // 87层飞踢首击：ARR中读条后130ms转向，命中遵循转向后的3x8直线；不能冻结旧包方向。
+        [43132u] = new(AoeShapeKind.RayRectangle, 3f, 8f, true, 0.3f) { UseActorRotation = true },
         [44759u] = new(AoeShapeKind.Fan, 8f, MathF.PI, false, 0.3f) { UseCastRotation = true },
         // 大地钻击：BMR PTFloorModule 的 R3–30、270°环扇形，不能退化为完整月环。
         [42091u] = new(AoeShapeKind.Fan, 30f, MathF.PI * 1.5f, false, 0f)
@@ -129,7 +132,7 @@ public static class AoeShapeDatabase
         binding = null!;
         // 朝圣读条的方向由施法包锁定；物体面朝向可能相差90°或在读条期间改变。
         // 冲锋保留来源→落点方向，读条结束后的动态持续区不经过此绑定。
-        var lockDirection = descriptor.UseCastRotation || (territory is >= 1281 and <= 1290)
+        var lockDirection = descriptor.UseCastRotation || !descriptor.UseActorRotation && (territory is >= 1281 and <= 1290)
             && (descriptor.Kind is AoeShapeKind.Fan or AoeShapeKind.Rectangle or AoeShapeKind.RayRectangle) && !descriptor.IsCharge;
         var rotation = e.SourceRotation;
         if (lockDirection && !CastRotation.TryGet(e, out rotation))

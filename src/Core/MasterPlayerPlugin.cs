@@ -153,8 +153,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var deltaTime = (float)framework.UpdateDelta.TotalSeconds;
         var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         _safeZoneActivation?.Update(settings.EnableRadar, settings.EnableRadarOverlay, _smartMovementEnabled, settings.OptimizeDodgeTiming);
+        var tActivation = System.Diagnostics.Stopwatch.GetTimestamp();
         _mechanicHost?.Update();
+        var tHost = System.Diagnostics.Stopwatch.GetTimestamp();
         _dodge?.Update();
+        var tDodge = System.Diagnostics.Stopwatch.GetTimestamp();
         _mechanics?.Update();
         var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
         _replayRecorder?.Update();
@@ -177,7 +180,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         {
             _nextPerfLog = DateTime.UtcNow.AddSeconds(1);
             static double Ms(long a, long b) => System.Diagnostics.Stopwatch.GetElapsedTime(a, b).TotalMilliseconds;
-            Svc.Log.Info($"[MP-PERF] 帧 {total:F1}ms host/dodge={Ms(t0, t1):F1} replay={Ms(t1, t2):F1} scripts={Ms(t2, t3):F1} follow={Ms(t3, tFollow):F1} safezone={Ms(tFollow, t4):F1} radar/aoe={Ms(t4, t5):F1} ver={_safeZone?.Manager.Version}");
+            Svc.Log.Info($"[MP-PERF] 帧 {total:F1}ms host/dodge={Ms(t0, t1):F1} (activation={Ms(t0, tActivation):F1} host={Ms(tActivation, tHost):F1} dodge={Ms(tHost, tDodge):F1} dispatcher={Ms(tDodge, t1):F1}) replay={Ms(t1, t2):F1} scripts={Ms(t2, t3):F1} follow={Ms(t3, tFollow):F1} safezone={Ms(tFollow, t4):F1} radar/aoe={Ms(t4, t5):F1} ver={_safeZone?.Manager.Version}");
         }
     }
     private DateTime _nextPerfLog;

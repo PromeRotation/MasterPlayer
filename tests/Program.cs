@@ -25,6 +25,7 @@ var shardCounter = 0;
 var failures = new List<string>();
 PlayerPerspectiveRegression.Run(Run);
 FsdMovementHandoffRegression.Run(Run);
+Pt87ClawTailRegression.Run(Run);
 if (args.Contains("--radar-performance"))
 {
     NavigationPerformance.Radar();

@@ -31,9 +31,10 @@ internal sealed class TerrainCollisionCorrections
 
     internal void Refresh(ITerrainProbe probe, Vector3 origin, float radius, DateTime now)
     {
-        changed |= entries.RemoveAll(e => Vector2.DistanceSquared(new(e.Obstruction.Position.X, e.Obstruction.Position.Z), new(origin.X, origin.Z))
-            > (radius + 4) * (radius + 4)) > 0;
-        var index = entries.FindIndex(e => e.NextCheck <= now);
+        // A cached room must retain learned collisions when revisited. Only probe nearby, loaded space.
+        var index = entries.FindIndex(e => e.NextCheck <= now
+            && Vector2.DistanceSquared(new(e.Obstruction.Position.X, e.Obstruction.Position.Z), new(origin.X, origin.Z))
+                <= (radius + 4) * (radius + 4));
         if (index < 0) return;
         var entry = entries[index];
         if (probe.CanTraverse(entry.Obstruction.From, entry.Obstruction.To, out var obstruction))

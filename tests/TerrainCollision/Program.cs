@@ -466,4 +466,5 @@ Run("deep-dungeon floor and mirrored layout changes invalidate terrain even at i
 });
 
 SceneTerrainTests.Run(Run, epoch);
+TerrainNavigationCacheTests.Run(Run);
 Environment.ExitCode = failures == 0 ? 0 : 1;

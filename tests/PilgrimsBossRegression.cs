@@ -249,9 +249,10 @@ internal static class PilgrimsBossRegression
         var after = e.Collect(Start.AddSeconds(7.2), 100).Where(a => a.Key.StartsWith("blaze/")).ToArray();
         Check(after.Length == 8 && after.Min(a => a.From) == Start.AddSeconds(8), "first explosion advances both directions once using observed timing");
         Check(after.Any(a => a.Position.X == -604) && after.Any(a => a.Position.X == -596), "next exaflares move four meters in both directions");
-        Effect(e, 44082, 3, 10, e.Center);
-        Check(Math.Abs((e.Collect(Start.AddSeconds(10), 100).Single(a => a.Key == "bounds/end").From - Start).TotalSeconds - 21.5) < .000001,
-            "central R8 uses documented 11.7s actual delay, not BMR's 6s planning shortcut");
+        e.StartCast(Cast(44082, e.Center, 14) with { Start = Start.AddSeconds(10) });
+        Effect(e, 44082, 3, 14, e.Center);
+        Check(Math.Abs((e.Collect(Start.AddSeconds(14), 100).Single(a => a.Key == "bounds/end").From - Start).TotalSeconds - 21.5) < .000001,
+            "central R8 resolves 11.7s after cast start; the pull effect must not restart its timer");
     }
 
     private static void InputOrdering()

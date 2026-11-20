@@ -44,6 +44,11 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                 chainsReleased.Clear();
                 break;
             case 44073 or 44067: Hit(cast, RayRectangleTemplate.Symmetric(15, 30), "Blade of First Light"); break;
+            case 44082:
+                // Both duties resolve the central hit 11.7s from cast start, not from the pull effect.
+                AddHit("bounds/end", "Bounds of Sin 中央爆炸", new CircleTemplate(8), Center, 0,
+                    cast.Start.AddSeconds(11.7), cast.Source, 44084);
+                break;
             case 44083: Hit(cast, new CircleTemplate(3), "Bounds of Sin"); break;
             case 45118:
                 spinelashTarget = 0;
@@ -98,10 +103,17 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
             case 44074 or 44076: blazeDirection = Vector3.UnitX; break;
             case 44075 or 44077: blazeDirection = Vector3.UnitZ; break;
             case 44082:
-                // BMR's +6 was a pathfinding shortcut; its documented actual delay is 11.7s.
-                AddHit("bounds/end", "Bounds of Sin 中央爆炸", new CircleTemplate(8), Center, 0, now.AddSeconds(11.7));
+                if (areas.TryGetValue("bounds/end", out var bounds))
+                    // Aim beyond the R7 ring of R3 circles, rather than stopping
+                    // just outside the central R8 inside a later circle.
+                    areas["bounds/escape"] = new("bounds/escape", "净罪之环：离开中央", new PtShapeTemplate(
+                        new PtCompositeGeometry([Boundary], [new CircleGeometry(Center, 10)])), Center, 0, now, bounds.Until,
+                        bounds.Owner, Safe: true, NavigationOnly: true, Priority: 20);
                 break;
-            case 44084: areas.Remove("bounds/end"); break;
+            case 44084:
+                areas.Remove("bounds/end");
+                areas.Remove("bounds/escape");
+                break;
             case 44088 or 44093 or 44091 or 44089:
                 drains.RemoveAll(c => c.Action == effect.ActionId && c.Source == effect.SourceId);
                 break;
@@ -138,6 +150,25 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     public override bool HoldMovement(DateTime now, ulong player)
         => Status(player, 4562, now) != null || chainAt != default && now >= chainAt.AddSeconds(-.1)
             && now <= chainAt.AddSeconds(2) && !chainsReleased.Contains(player);
+
+    public ReplayActorState? SelectTarget(DateTime now, ulong player, ulong currentTarget)
+    {
+        if (!Active || !actors.TryGetValue(player, out var pc) || pc.Dead || !Boundary.Contains(pc.Position)) return null;
+        var candidates = actors.Values.Where(a => !a.Dead && a.Targetable && a.Hp > 1);
+        var adds = candidates.Where(a => a.Oid == 0x48EC).ToArray();
+        if (adds.Length > 0)
+            return adds.FirstOrDefault(a => a.Id == currentTarget)
+                ?? adds.OrderBy(a => Vector3.DistanceSquared(pc.Position, a.Position)).ThenBy(a => a.Id).First();
+
+        // The desired drain colour can differ from the buff actually acquired.
+        var light = Status(player, 4560, now) != null;
+        var dark = Status(player, 4559, now) != null;
+        if (light == dark) return null;
+        var oid = light ? 0x48EAu : 0x48EBu;
+        return candidates.FirstOrDefault(a => a.Oid == oid);
+    }
+
+    public static bool IsCombatTarget(uint oid) => oid is 0x48EA or 0x48EB or 0x48EC;
 
     private bool? WantedLight(DateTime now, ulong player)
     {
@@ -217,9 +248,16 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
             yield return "开战前选择光水或暗水；队伍两色人数保持均衡";
         if (HoldMovement(now, player) || chainAt > now && (chainAt - now).TotalSeconds < 2) yield return "Chains of Condemnation：停止移动，可以继续攻击";
         if (spinelashTarget == player) yield return "Spinelash：在东西侧窄带引导，避免破窗";
-        if (WantedLight(now, player) is { } light) yield return light ? "获取光色状态；攻击 Eminent Grief" : "获取暗色状态；攻击 Devoured Eater";
-        else if (Status(player, 4559, now) != null) yield return "暗色：攻击 Devoured Eater，优先处理小怪";
-        else if (Status(player, 4560, now) != null) yield return "光色：攻击 Eminent Grief，优先处理小怪";
+        if (WantedLight(now, player) is { } light) yield return light ? "获取光色状态" : "获取暗色状态";
+        if (areas.TryGetValue("bounds/escape", out var bounds) && now <= bounds.Until)
+            yield return "净罪之环：避开环状小圆，离开中央等待爆炸";
+        if (SelectTarget(now, player, 0) is { } target)
+            yield return target.Oid switch
+            {
+                0x48EC => "自动选敌：优先清理小怪",
+                0x48EA => "光色：攻击 Eminent Grief",
+                _ => "暗色：攻击 Devoured Eater"
+            };
     }
     public override void Cancel(ulong source) { base.Cancel(source); drains.RemoveAll(c => c.Source == source); pendingBlazes.RemoveAll(c => c.Source == source); lines.RemoveAll(l => l.Owner == source); }
     protected override void ResetMechanics()
