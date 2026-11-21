@@ -131,8 +131,11 @@ internal sealed class ReplayFeedAdapter
         MechanicCastSnapshot? cast = null;
         if (actor.Cast is { } c)
         {
-            var total = Math.Max(0.05f, (float)(c.FinishAt - c.StartedAt).TotalSeconds);
-            cast = new(c.ActionId, true, c.TargetId, c.Rotation ?? actor.Rotation, c.Location, total, c.Interruptible);
+            // ReplayCast.FinishAt already includes the NPC finish delay; BMR adds it
+            // in ActorCastInfo.NPCRemainingTime, so feed the original cast duration.
+            var total = Math.Max(0.05f, (float)(c.FinishAt - c.StartedAt).TotalSeconds - 0.3f);
+            cast = new(c.ActionId, true, c.TargetId, c.Rotation ?? actor.Rotation, c.Location, total, c.Interruptible,
+                Math.Clamp((float)(now - c.StartedAt).TotalSeconds, 0, total));
         }
         var statuses = new MechanicStatusDto[actor.Statuses.Length];
         for (var i = 0; i < statuses.Length; ++i)

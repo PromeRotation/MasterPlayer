@@ -22,6 +22,7 @@
     <None Update="Fixtures\PilgrimsTraverse\pt50-chase-155404.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt50-overlap-155404.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt87-claw-tail-233909.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\PilgrimsTraverse\pt99-blaze-215425.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\src\Core\Settings\SafeZoneActivation.cs" Link="SafeZoneActivation.cs" />
     <Compile Include="..\src\Core\PlayerPerspective.cs" Link="PlayerPerspective.cs" />
     <Compile Include="..\src\Core\DutyReplayState.cs" Link="DutyReplayState.cs" />
@@ -59,7 +60,7 @@
     <Compile Include="..\src\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
 
     <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\CastrumAbania\CastrumAbaniaScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\*.cs" Link="PilgrimsTraverse\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\Bosses\*.cs" Link="PilgrimsTraverse\Bosses\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PalaceOfTheDead\*.cs" Link="PalaceOfTheDead\%(Filename)%(Extension)" />

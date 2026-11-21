@@ -67,7 +67,10 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     {
         if (suspended) return;
         var now = CurrentTime;
-        if (!encounter.Active) Scan(now);
+        // 两批水晶之间会切换方向；先采集已生成的上一批，避免周期扫描晚到后锁错方向。
+        if (!encounter.Active || floor == 99 && ev is LogSystemActionEffectEvent
+            { ActionId: 44074 or 44075 or 44076 or 44077 })
+            Scan(now);
         if (ev is LogSystemCastStartEvent cast)
         {
             var rotation = CastRotation.TryGet(cast, out var locked) ? locked : (float?)null;

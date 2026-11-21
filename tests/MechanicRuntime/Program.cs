@@ -461,18 +461,25 @@ Scenario("feed cast frames reach module components once per cast", () =>
     using var subStarted = session.World.Actors.CastStarted.Subscribe(_ => ++castStarted);
     using var subFinished = session.World.Actors.CastFinished.Subscribe(_ => ++castFinished);
     session.BeginFrame(start);
-    var cast = new MechanicCastSnapshot(351, true, 0, 0, new(100, 0, 100), 3, false);
+    // First observation can occur midway through a cast (session restart or replay seek).
+    var cast = new MechanicCastSnapshot(351, true, 0, 0, new(100, 0, 100), 3, false, 1.25f);
     feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
     session.Update();
     var module = session.BossModules.ActiveModule!;
     var aoes = module.Components.OfType<SimpleAOEs>().Single();
     Check(castStarted == 1 && castFinished == 0, "Cast frame did not raise exactly one cast start");
     Check(aoes.ActiveAOEs(0, session.World.Party[0]!).Length == 1, "Module component did not see the fed cast");
+    var activation = aoes.ActiveAOEs(0, session.World.Party[0]!)[0].Activation;
+    Check(Math.Abs((activation - start).TotalSeconds - (1.75 + ActorCastInfo.NPCFinishDelay)) < .001,
+        "A late cast observation shifted the component AOE by the elapsed cast time");
     session.BeginFrame(start.AddSeconds(1));
-    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast)));
+    feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper(cast: cast with { ElapsedTime = 2.25f })));
     session.Update();
     Check(castStarted == 1, "A repeated identical cast frame re-fired cast start");
-    Check(session.World.Actors.Find(1)!.CastInfo!.ElapsedTime > 0, "World clock did not advance the fed cast");
+    Check(Math.Abs(session.World.Actors.Find(1)!.CastInfo!.ElapsedTime - 2.25f) < .001f,
+        "World clock did not advance the fed cast");
+    Check(aoes.ActiveAOEs(0, session.World.Party[0]!)[0].Activation == activation,
+        "Repeated observations moved the component AOE activation");
     session.BeginFrame(start.AddSeconds(2));
     feed.ApplyFrame(FeedFrame(1036, 4, 100, FeedPlayer(), FeedChopper()));
     session.Update();

@@ -97,7 +97,8 @@ internal static class LiveWorldSampler
                     ref readonly var castInfo = ref battleNative->CastInfo;
                     cast = new(battle.CastActionId, battle.CastActionType == SpellActionType, castInfo.TargetId,
                         float.IsFinite(battleNative->CastRotation) ? battleNative->CastRotation : 0f,
-                        castInfo.TargetLocation, battle.TotalCastTime, battle.IsCastInterruptible);
+                        castInfo.TargetLocation, battle.TotalCastTime, battle.IsCastInterruptible,
+                        battle.CurrentCastTime);
                 }
                 var statusList = battle.StatusList;
                 var statusCount = statusList.Length;

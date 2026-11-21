@@ -45,14 +45,14 @@ internal static class ScriptCatalogRegression
             dynamic Find(string id) => Scripts().Single(d => d.Metadata.Id == id);
             void ExpectOverride(string id, string source)
             {
-                Check(Scripts().Length == 20, "An override must replace its built-in entry.");
+                Check(Scripts().Length == 21, "An override must replace its built-in entry.");
                 Check(Find(id).Source.ToString() == source, "The configuration directory must win.");
             }
             void Pass(string name) => Console.WriteLine($"PASS script catalog: {name}");
 
             Refresh();
-            Check(Scripts().Length == 20 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
-                "An empty configuration must discover five boards, three dungeons, Blunderville, ten Pilgrims bosses and Palace151-200, excluding examples.");
+            Check(Scripts().Length == 21 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
+                "An empty configuration must discover five boards, four dungeons, Blunderville, ten Pilgrims bosses and Palace151-200, excluding examples.");
             foreach (var (floor, territory) in new[] { (10, 1281u), (20, 1282u), (30, 1283u), (40, 1284u), (50, 1285u),
                 (60, 1286u), (70, 1287u), (80, 1288u), (90, 1289u), (99, 1290u) })
             {
@@ -66,6 +66,10 @@ internal static class ScriptCatalogRegression
             var race = Find("masterplayer.goldsaucer.blunderville");
             Check(((uint[])race.Metadata.Territorys).SequenceEqual([1165u]), "Blunderville must activate in the actual minigame territory.");
             Check(((IEnumerable<string>)race.CreateInstance().GetMechanisms()).Count() == 7, "Expose six obstacle groups and the race controls for the minigame.");
+            var castrum = Find("masterplayer.dungeon.castrum-abania");
+            Check(((uint[])castrum.Metadata.Territorys).SequenceEqual([1145u])
+                && (bool)manager.IsScriptEnabled("masterplayer.dungeon.castrum-abania"),
+                "Castrum Abania must activate in territory 1145 and be enabled by default.");
             Check(Scripts().All(d => d.CreateInstance().GetType().Assembly == assembly), "Factories must use the loaded plugin assembly.");
             Check(!Directory.EnumerateFiles((string)manager.ScriptsDirectory, "*", SearchOption.AllDirectories).Any(),
                 "Discovery must not copy scripts into the configuration directory.");
@@ -102,12 +106,12 @@ internal static class ScriptCatalogRegression
             Check(Find(builtInId).Source.ToString() == "BuiltIn", "A failed external load must leave the built-in available.");
             File.Delete(sourcePath);
             Refresh();
-            Check(Scripts().Length == 20 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
+            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
             Pass("compile failure reports an error; removal restores the built-in");
 
             File.WriteAllText(sourcePath, Source("Independent external script", "external.independent"));
             Refresh();
-            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
+            Check(Scripts().Length == 22 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
             File.Delete(sourcePath);
             Pass("unrelated external scripts coexist with built-ins");
 
@@ -149,7 +153,7 @@ internal static class ScriptCatalogRegression
             visualPreview.Set("preview-marker", 2);
             Check((int)settings.ScriptSettings[visualId]["preview-marker"].GetValue<int>() == 1,
                 "Saving a visual replacement must retire its previous settings preview without a full reload.");
-            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
+            Check(Scripts().Length == 22 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
@@ -157,7 +161,7 @@ internal static class ScriptCatalogRegression
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
             visualPreview.Set("preview-marker", 3);
             Check(!settings.ScriptSettings.ContainsKey(visualId), "A deleted visual preview must not recreate removed settings.");
-            Check(Scripts().Length == 20 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
+            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
@@ -572,6 +576,8 @@ internal static class ScriptCatalogRegression
                 }
             }
             Console.WriteLine("PASS production PT60: both ARR sequences, calibrated first hit, two cone previews, complete navigation and cleanup");
+            Pt99BlazeCaptureRegression.Run(assembly, manager, runtime, controller, file);
+            CastrumAbaniaReplayRegression.Run(assembly, manager, runtime, controller, file);
             File.WriteAllText(file, string.Join('\n', new[]
             {
                 """{"v":2,"territory":1287,"startedUtc":"2026-11-19T00:00:00Z","pluginVersion":"pt70-halo-regression"}""",

@@ -34,7 +34,7 @@ foreach (var file in Directory.EnumerateDirectories(Path.Combine(args[0], "Prese
     if (!result.Success) throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
-if (count != (pt99Only || palaceOnly ? 1 : 20)) throw new InvalidOperationException($"Unexpected built-in script count: {count}.");
+if (count != (pt99Only || palaceOnly ? 1 : 21)) throw new InvalidOperationException($"Unexpected built-in script count: {count}.");
 System.Runtime.Loader.AssemblyLoadContext.Default.Resolving += (context, name) =>
 {
     var path = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[1]))!, name.Name + ".dll");

@@ -2,7 +2,15 @@ using BossMod;
 
 namespace MasterPlayer.MechanicRuntime;
 
-public sealed record MechanicCastSnapshot(uint ActionId, bool IsSpell, ulong TargetId, float Rotation, Vector3 Location, float TotalTime, bool Interruptible);
+public sealed record MechanicCastSnapshot(
+    uint ActionId,
+    bool IsSpell,
+    ulong TargetId,
+    float Rotation,
+    Vector3 Location,
+    float TotalTime,
+    bool Interruptible,
+    float ElapsedTime = 0);
 public sealed record MechanicStatusDto(int Slot, uint Id, ushort Extra, ulong SourceId, float RemainingSeconds);
 public sealed record MechanicActorSnapshot(ulong EntityId, uint OID, int SpawnIndex, uint LayoutID, string Name, uint NameID,
     byte ObjectKind, byte SubKind, uint ClassJobId, int Level, Vector3 Position, float Rotation, float HitboxRadius,
@@ -337,7 +345,7 @@ public sealed class MechanicWorldFeed
             TargetID = Sanitize(cur.TargetId),
             Rotation = cur.Rotation.Radians(),
             Location = cur.Location,
-            ElapsedTime = 0,
+            ElapsedTime = Math.Clamp(cur.ElapsedTime, 0, cur.TotalTime),
             TotalTime = cur.TotalTime,
             Interruptible = cur.Interruptible,
         };

@@ -52,7 +52,8 @@ internal static class MechanicReplayAdapterRegression
             Check(enemy.OID == 0x419B && enemy.EventState == 7 && enemy.ModelState == 3 && enemy.AnimState1 == 1 && enemy.AnimState2 == 2, "enemy fields lost");
             Check(enemy.TetherId == 7 && enemy.TetherTargetId == 100, "tether not mapped from first slot");
             Check(enemy.Cast != null && enemy.Cast.ActionId == 351 && enemy.Cast.Interruptible, "cast lost");
-            Check(Math.Abs(enemy.Cast!.TotalTime - 5f) < 0.01f, "cast total time must derive from finish-start");
+            Check(Math.Abs(enemy.Cast!.TotalTime - 4.7f) < 0.01f, "cast total time must remove the already recorded NPC finish delay");
+            Check(Math.Abs(enemy.Cast.ElapsedTime - 1f) < 0.01f, "cast elapsed time must retain the observed late start");
             Check(Math.Abs(enemy.Cast.Rotation - 1.5f) < 1e-6f, "cast rotation must fall back to actor rotation");
             Check(enemy.Statuses.Length == 2 && Math.Abs(enemy.Statuses[0].RemainingSeconds - 30f) < 0.5f, "status remaining time wrong");
             Check(enemy.Statuses[1].RemainingSeconds >= 100000f, "infinite status must clamp to the feed cap");

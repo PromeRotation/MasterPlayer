@@ -15,6 +15,7 @@
     <Compile Include="../Pt99DrainRegression.cs" Link="Pt99DrainRegression.cs" />
     <Compile Include="../Pt99BlazeRegression.cs" Link="Pt99BlazeRegression.cs" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-150614.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-150614.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-drain-021732.json" Link="Fixtures/PilgrimsTraverse/pt99-drain-021732.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" Link="Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" Link="Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" CopyToOutputDirectory="PreserveNewest" />

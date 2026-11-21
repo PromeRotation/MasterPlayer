@@ -49,6 +49,8 @@
 
 ### 会话生命周期
 
+读条时间契约：实时快照携带 `CurrentCastTime`，首次创建 `ActorCastInfo` 时保留已读时间；同一读条后续快照由世界帧时钟推进，不因已读时间变化重发 `CastStarted`。BMR 的 `NPCRemainingTime` 自行添加 0.3 秒命中延迟，MP 回放的 `ReplayCast.FinishAt` 已含该延迟，适配器须先减去一次。真实运行库回归验证半途观察的剩余时长、组件 AOE 激活时间和不重复派发；转换回归验证回放总时长与已读时间。该修复解决预测时间后移，不能作为所有模块无法执行的统一根因。
+
 - `MechanicHostController`（`src/Mechanics/Host/MechanicHostController.cs`）：插件 Initialize 时在 `_mechanics` 之后构造；`Svc.Framework.Update` 中排在 `_dodge` 之前（模块当帧输出可参加当帧解算）；Dispose 反向对称、逐项 try/catch。
 - 环境初始化：`MechanicRuntimeEnvironment.Initialize(Svc.Data 的 Lumina.GameData, Svc.Log)`，失败（数据校验和等）则禁用桥并在诊断页报错，不影响其他组件。
 - 会话：常驻一个 MechanicSession；切区不退缩重建（OpZoneChange 驱动模块卸载/切换）；停止/Seek（回放）才新建会话。
@@ -61,7 +63,7 @@
 
 - 挂接点：`ReplayController` 构造注入 `MechanicHostController?`（桥在插件 Initialize 顺序中先于回放控制器构造）；StartSession→`EnterReplaySession(录制区域)`、Seek 的 RestartSessionScripts→`RestartReplaySession()`、StopSession→`ExitReplaySession()`；`AdvanceTo` 的 dispatch 回调先 `OnReplayEvent` 再发脚本路由器，update 回调先 `OnReplayTick(World)` 再 `UpdateReplayScripts`（每步先喂桥再更新脚本）。
 - 会话：实时会话与回放会话并存，输出侧（模块计数/时间轴/两座桥）读 ActiveSession 指针；`MechanicNavigationHost`/`MechanicDrawHost` 经 `SwitchSession` 切换（导航桥的 AIHintsBuilder 订阅 WorldState，切换时销毁重建）。回放中导航注册禁用（ReplayModeActive 判定），绘制/时间轴照常；回放区域有运行中的 MP 区域脚本时不激活模块（与实时压制一致）。
-- 适配器取舍：CastStart/Cancel/Interrupt、状态增删、对象增删/瞬移/可选中、击退由帧通道覆盖返回 null；Tether/Icon/Marker/MapEffect/EObj/DirectorUpdate/NpcYell/PlayActionTimeline/TargetVfx 转 MechanicEvent*；ActionEffect 摘要按 GlobalSequence 合并为降级包（RawEffects 空，RotationInt 反量化编码，计 DegradedEffectCount）；Waymark 事件更新适配器 8 槽随帧下发；EventAnimation 变化补发 EObjAnimation 事件；Territory/Weather/Battle/Countdown/ChangeMap 由帧头/时钟覆盖或忽略（无对应 Op）。SpawnIndex 用帧内序号、LayoutID/FateId/Renderflags/ContentId 回放无存填 0；Cast.IsSpell 恒 true（回放不存 ActionType）、TotalTime=FinishAt−StartedAt、Rotation 缺省回退当前朝向；IsAlly 按 Kind/Hostile 推导（Pc 或 BattleNpc 非 Hostile 为盟友）。
+- 适配器取舍：CastStart/Cancel/Interrupt、状态增删、对象增删/瞬移/可选中、击退由帧通道覆盖返回 null；Tether/Icon/Marker/MapEffect/EObj/DirectorUpdate/NpcYell/PlayActionTimeline/TargetVfx 转 MechanicEvent*；ActionEffect 摘要按 GlobalSequence 合并为降级包（RawEffects 空，RotationInt 反量化编码，计 DegradedEffectCount）；Waymark 事件更新适配器 8 槽随帧下发；EventAnimation 变化补发 EObjAnimation 事件；Territory/Weather/Battle/Countdown/ChangeMap 由帧头/时钟覆盖或忽略（无对应 Op）。SpawnIndex 用帧内序号、LayoutID/FateId/Renderflags/ContentId 回放无存填 0；Cast.IsSpell 恒 true（回放不存 ActionType）、TotalTime=max(0.05, FinishAt−StartedAt−0.3s)，ElapsedTime 按当前回放时刻减 StartedAt 限定到 [0, TotalTime]、Rotation 缺省回退当前朝向；IsAlly 按 Kind/Hostile 推导（Pc 或 BattleNpc 非 Hostile 为盟友）。
 - ReplayWindow 时间轴页顶部显示机制预测条（相对当前回放时刻的倒计时文本行，不随横向缩放，空数据不占行；M6 遗留在此落地）。
 
 ## 绘制桥（M4）

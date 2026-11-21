@@ -18,12 +18,18 @@ internal static class Pt99BlazeRegression
         run("PT99 recorded exaflares reanchor both directions with complete effects", () => Replay(true));
         foreach (var latency in new[] { .08, .3 })
             run($"PT99 recorded exaflares actual movement without zero-target effects latency={latency:F2}", () => Simulate(latency));
+        foreach (var complete in new[] { false, true })
+            run($"PT99 Final Verse 215425 all 64 actual exaflares complete-effects={complete}",
+                () => Replay(complete, "pt99-blaze-215425.json", 64));
+        foreach (var latency in new[] { .08, .3 })
+            run($"PT99 Final Verse 215425 actual movement latency={latency:F2}",
+                () => Simulate(latency, "pt99-blaze-215425.json", 64));
     }
 
-    private static void Simulate(double latency)
+    private static void Simulate(double latency, string fixture = "pt99-blaze-150614.json", int expected = 136)
     {
         using var file = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
-            "Fixtures", "PilgrimsTraverse", "pt99-blaze-150614.json")));
+            "Fixtures", "PilgrimsTraverse", fixture)));
         var checks = 0;
         var minimum = float.PositiveInfinity;
         foreach (var round in file.RootElement.GetProperty("rounds").EnumerateArray())
@@ -133,14 +139,14 @@ internal static class Pt99BlazeRegression
                 t += dt;
             }
         }
-        Check(checks == 136, "Movement checks both recorded rounds at every actual effect time");
+        Check(checks == expected, "Movement checks every recorded actual effect time");
         Console.WriteLine($"PT99 blaze latency={latency:F2}: {checks} real effects, minimum physical clearance={minimum:F3}m");
     }
 
-    private static void Replay(bool completeEffects)
+    private static void Replay(bool completeEffects, string fixture = "pt99-blaze-150614.json", int expected = 136)
     {
         using var file = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
-            "Fixtures", "PilgrimsTraverse", "pt99-blaze-150614.json")));
+            "Fixtures", "PilgrimsTraverse", fixture)));
         var checks = 0;
         var recordedHit = false;
         foreach (var round in file.RootElement.GetProperty("rounds").EnumerateArray())
@@ -185,7 +191,7 @@ internal static class Pt99BlazeRegression
                     recordedHit = true;
                     var player = Vector(e.GetProperty("recordedPlayer"));
                     Check(candidates.Any(a => a.Window.IsActiveAt(now) && a.Geometry.Contains(player)),
-                        "The actual 216890-damage stop must still be recognized as R5 danger");
+                        "The recorded hit position must still be recognized as R5 danger");
                 }
                 ++checks;
                 if (completeEffects)
@@ -203,7 +209,7 @@ internal static class Pt99BlazeRegression
             Check(encounter.Collect(Start.AddSeconds(30), 100).Count == 10,
                 "Reset removes exaflares and preserves only puddle previews");
         }
-        Check(checks == 136 && recordedHit, "Both complete ARR rounds and the actual hit must be checked");
+        Check(checks == expected && recordedHit, "All recorded effects and the actual hit must be checked");
     }
 
     private static Vector3 Vector(JsonElement p) => new(p[0].GetSingle(), p[1].GetSingle(), p[2].GetSingle());

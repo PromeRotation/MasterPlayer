@@ -461,7 +461,9 @@ public sealed class ScriptManager : IDisposable
 
     public bool IsScriptEnabled(string id)
         => MasterPlayerSettings.Instance.ScriptEnabled.TryGetValue(id, out var enabled) ? enabled
-            : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id) || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id);
+            : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id)
+                || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id)
+                || Mechanics.Dungeons.CastrumAbaniaCatalog.IsScript(id);
 
     public void SetScriptEnabled(string id, bool enabled)
     {

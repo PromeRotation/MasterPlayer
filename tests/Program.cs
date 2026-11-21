@@ -61,6 +61,7 @@ if (args.Contains("--boss-opening"))
 }
 ArenaReentryRegression.Run(Run);
 PilgrimsBossRegression.Run(Run);
+CastrumAbaniaRegression.Run(Run);
 Pt20BurstRegression.Run(Run);
 Pt50ChaseRegression.Run(Run);
 Pt50OverlapRegression.Run(Run);

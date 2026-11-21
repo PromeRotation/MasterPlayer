@@ -51,6 +51,9 @@ public sealed class MechanicHostController : IDisposable
         && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
         && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null
         && !PtBossCatalog.Owns(ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
+            _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        && !Mechanics.Dungeons.CastrumAbaniaCatalog.Owns(
+            ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
             _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
         && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
@@ -380,6 +383,8 @@ public sealed class MechanicHostController : IDisposable
                 continue;
             if (running.Script is PilgrimsBossScript { EncounterActive: false })
                 continue;
+            if (running.Script is Mechanics.Dungeons.CastrumAbaniaScript { EncounterActive: false })
+                continue;
             if (running.Descriptor.Metadata.Territorys.Length != 0)
                 return true;
         }
@@ -391,8 +396,11 @@ public sealed class MechanicHostController : IDisposable
     private bool SleepMpOwnedBoss()
     {
         if (ActiveSession?.BossModules.ActiveModule is not { } module
-            || !PtBossCatalog.Owns(module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)) return false;
-        // Pilgrims bosses are implemented by MP scripts. Never publish BMR previews or navigation,
+            || (!PtBossCatalog.Owns(module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+                && !Mechanics.Dungeons.CastrumAbaniaCatalog.Owns(
+                    module.PrimaryActor.OID,
+                    _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType))) return false;
+        // Migrated Pilgrims and Castrum Abania bosses are implemented by MP scripts. Never publish BMR previews or navigation,
         // including the first frame before ScriptManager starts it and when a user disables the script.
         _navBridge?.Sleep();
         _drawBridge?.Sleep();
@@ -446,6 +454,8 @@ public sealed class MechanicHostController : IDisposable
             if (running.Script is Scripts.PilgrimsTraverse.PilgrimsTraverse30 pt30 && !pt30.EncounterActive)
                 continue;
             if (running.Script is PilgrimsBossScript { EncounterActive: false })
+                continue;
+            if (running.Script is Mechanics.Dungeons.CastrumAbaniaScript { EncounterActive: false })
                 continue;
             var territorys = running.Descriptor.Metadata.Territorys;
             if (territorys.Length != 0 && territorys.Contains(territory))

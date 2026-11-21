@@ -26,6 +26,10 @@
     <None Include="../Fixtures/PilgrimsTraverse/water-live71.json" Link="Fixtures/PilgrimsTraverse/water-live71.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="PilgrimsPreviewReplayRegression.cs" />
     <Compile Include="Pt10ReplayRegression.cs" />
+    <Compile Include="Pt99BlazeCaptureRegression.cs" />
+    <Compile Include="CastrumAbaniaReplayRegression.cs" />
+    <None Include="../Fixtures/CastrumAbania/abania-224618.json" Link="Fixtures/CastrumAbania/abania-224618.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" Link="Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/shockwave-183552.json" Link="Fixtures/PilgrimsTraverse/shockwave-183552.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/dive-live61.json" Link="Fixtures/PilgrimsTraverse/dive-live61.json" CopyToOutputDirectory="PreserveNewest" />
