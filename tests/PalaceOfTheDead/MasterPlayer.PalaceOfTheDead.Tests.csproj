@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../PilgrimsTraverse/PlayerPerspective.cs" Link="PlayerPerspective.cs" />
+    <Compile Include="../../Presets/PalaceOfTheDead/*.cs" Link="Palace/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Replay/ReplayWorldState.cs" Link="ReplayWorldState.cs" />
+    <Compile Include="../../src/Spatial/GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="../../src/Spatial/Geometry/*.cs" Link="Geometry/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Spatial/SafeZone/*.cs" Link="SafeZone/%(Filename)%(Extension)" />
+    <Compile Include="../../src/Spatial/SafeZoneReborn/Solver/*.cs" Link="Solver/%(Filename)%(Extension)" />
+    <None Include="../Fixtures/PalaceOfTheDead/recordings.json" Link="recordings.json" CopyToOutputDirectory="PreserveNewest" />
+    <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)/PromeRotation.dll" />
+    <Reference Include="ECommons" HintPath="$(PromeRotationPath)/ECommons.dll" />
+    <Reference Include="Dalamud" HintPath="$(DalamudRoot)/Dalamud.dll" />
+    <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)/FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)/InteropGenerator.Runtime.dll" />
+    <Reference Include="Lumina" HintPath="$(DalamudRoot)/Lumina.dll" />
+    <Reference Include="Lumina.Excel" HintPath="$(DalamudRoot)/Lumina.Excel.dll" />
+  </ItemGroup>
+</Project>

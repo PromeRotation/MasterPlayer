@@ -461,7 +461,7 @@ public sealed class ScriptManager : IDisposable
 
     public bool IsScriptEnabled(string id)
         => MasterPlayerSettings.Instance.ScriptEnabled.TryGetValue(id, out var enabled) ? enabled
-            : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id);
+            : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id) || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id);
 
     public void SetScriptEnabled(string id, bool enabled)
     {
@@ -602,7 +602,8 @@ public sealed class ScriptManager : IDisposable
 
     public bool IsGenericDodgeSuppressed(LogSystemCastStartEvent cast)
         => IsGenericDodgeSuppressed(cast.ActionId)
-           || _running.Values.Any(r => r.Script is VisualMechanicScript script && script.SuppressesGenericDodge(cast));
+           || _running.Values.Any(r => r.Script is VisualMechanicScript script && script.SuppressesGenericDodge(cast)
+               || r.Script is Mechanics.PalaceOfTheDead.PalaceScript palace && palace.HandlesCast(cast));
 
     private static Type[] GetAssemblyTypes(Assembly assembly)
     {

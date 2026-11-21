@@ -48,10 +48,12 @@ public sealed class MechanicHostController : IDisposable
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
     public bool HasActiveModule => ModulesEnabled && !(_replaySession != null ? IsReplaySuppressed() : IsSuppressed)
+        && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
         && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null
         && !PtBossCatalog.Owns(ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
             _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
+        && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
         && MasterPlayerSettings.Instance.IsTerritoryEnabled(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     public IReadOnlyList<MechanicTerritoryEntry> Territories { get; private set; } = [];
     public bool NavigationActive => _navBridge?.NavigationActive == true;

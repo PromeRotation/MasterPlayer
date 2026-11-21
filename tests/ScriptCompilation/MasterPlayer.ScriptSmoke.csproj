@@ -9,6 +9,10 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Pt99TargetControlRegression.cs" />
+    <Compile Include="PalaceScriptRegression.cs" />
+    <Compile Include="PalaceRecordedReplay.cs" />
+    <Compile Include="PalaceGameData.cs" />
+    <None Include="../Fixtures/PalaceOfTheDead/recordings.json" Link="palace-recordings.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="ScriptCatalogRegression.cs" />
     <Compile Include="ScriptMovementRegression.cs" />
     <Compile Include="ScriptSettingsRegression.cs" />

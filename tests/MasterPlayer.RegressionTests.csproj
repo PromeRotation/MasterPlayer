@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;TerrainCollision\**;ReleasePackaging\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;PalaceOfTheDead\**;TerrainCollision\**;ReleasePackaging\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
@@ -62,6 +62,7 @@
     <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\*.cs" Link="PilgrimsTraverse\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\Bosses\*.cs" Link="PilgrimsTraverse\Bosses\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\PalaceOfTheDead\*.cs" Link="PalaceOfTheDead\%(Filename)%(Extension)" />
     <Compile Include="PilgrimsTraverse30\NativePt30Tests.cs" />
     <Compile Include="..\src\Combat\Sequences\*.cs" Exclude="..\src\Combat\Sequences\CombatSkillSequence.cs" Link="Sequences\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Blunderville\**\*.cs" Exclude="..\Presets\Blunderville\BlundervilleScript.cs;..\Presets\Blunderville\BlundervilleNativeControl.cs;..\Presets\Blunderville\Entries\**" Link="Blunderville\%(RecursiveDir)%(Filename)%(Extension)" />
