@@ -24,9 +24,18 @@ internal static class Pt99BlazeRegression
         foreach (var latency in new[] { .08, .3 })
             run($"PT99 Final Verse 215425 actual movement latency={latency:F2}",
                 () => Simulate(latency, "pt99-blaze-215425.json", 64));
+        foreach (var complete in new[] { false, true })
+        {
+            run($"PT99 Final Verse 003315 second blaze model complete-effects={complete}",
+                () => Replay(complete, "pt99-blaze-003315.json", 68));
+            foreach (var latency in new[] { .08, .3 })
+                run($"PT99 Final Verse 003315 second blaze handoff latency={latency:F2} complete-effects={complete}",
+                    () => Simulate(latency, "pt99-blaze-003315.json", 68, .2f, complete));
+        }
     }
 
-    private static void Simulate(double latency, string fixture = "pt99-blaze-150614.json", int expected = 136)
+    private static void Simulate(double latency, string fixture = "pt99-blaze-150614.json", int expected = 136,
+        float margin = .5f, bool completeEffects = false)
     {
         using var file = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
             "Fixtures", "PilgrimsTraverse", fixture)));
@@ -34,6 +43,9 @@ internal static class Pt99BlazeRegression
         var minimum = float.PositiveInfinity;
         foreach (var round in file.RootElement.GetProperty("rounds").EnumerateArray())
         {
+            var handoff = round.TryGetProperty("handoff", out var recordedHandoff) ? recordedHandoff.GetDouble() : 0;
+            var recordedMoves = round.TryGetProperty("recordedMoves", out var moves)
+                ? moves.EnumerateArray().ToArray() : [];
             var encounter = new Pt99Encounter();
             var player = Vector(round.GetProperty("player"));
             player.Y = 0;
@@ -54,7 +66,7 @@ internal static class Pt99BlazeRegression
                 encounter.Synchronize(actors, now);
             }
             var setting = new SafeZoneSetting { EnableSafeZone = true, RuntimeGoalDirectedTemporalPlanning = true,
-                RuntimeHardSafetyMargin = .5f, RuntimeArenaSafetyMargin = 0 };
+                RuntimeHardSafetyMargin = margin, RuntimeArenaSafetyMargin = 0 };
             using var manager = new SafeZoneManager(setting);
             manager.SetArenaBoundary(encounter.Boundary);
             var handles = new Dictionary<string, SafeZoneAreaHandle>();
@@ -76,6 +88,12 @@ internal static class Pt99BlazeRegression
             while (t <= 18)
             {
                 var now = Start.AddSeconds(t);
+                var active = t >= handoff;
+                if (!active)
+                {
+                    player = Vector(recordedMoves.Last(p => p.GetProperty("t").GetDouble() <= t).GetProperty("position"));
+                    player.Y = 0;
+                }
                 Check(encounter.Boundary.Contains(player), "Exaflare movement remains in the physical 40x30m arena");
                 while (index < events.Length && events[index].GetProperty("t").GetDouble() <= t + .000001)
                 {
@@ -92,6 +110,14 @@ internal static class Pt99BlazeRegression
                         minimum = Math.Min(minimum, clearance);
                         Check(clearance > 0,
                             $"Exaflare hit at {t:F3}, latency={latency:F2}, player={player}, center={point}\n{string.Join("\n", trace.TakeLast(8))}");
+                        if (handoff > 0)
+                            Check(clearance > margin, $"Recorded handoff must preserve the requested {margin:F2}m danger margin at {t:F3}");
+                        if (completeEffects)
+                            encounter.Apply(new LogSystemActionEffectEvent {
+                                SourceId = e.GetProperty("source").GetUInt64(), ActionId = e.GetProperty("action").GetUInt32(),
+                                GlobalSequence = e.GetProperty("sequence").GetUInt32(), EffectPosition = point,
+                                SourcePosition = Vector(e.GetProperty("sourcePosition")),
+                                SourceRotation = e.GetProperty("rotation").GetSingle(), TargetIndex = -1 }, now);
                     }
                 }
                 if (t >= nextScan - .000001)
@@ -121,12 +147,16 @@ internal static class Pt99BlazeRegression
                 }
                 var snapshot = manager.BuildSnapshot(now);
                 var state = new PlayerState(player, 0, 6, move.IsRunning, false, 0, true, snapshot.Version);
-                dispatch.Invoke(movement, [latest, state, snapshot, now]);
+                if (active) dispatch.Invoke(movement, [latest, state, snapshot, now]);
                 latest = movement.LatestSolution;
-                if (pending == null && t >= nextSolve - .000001)
+                if (active && pending == null && t >= nextSolve - .000001)
                 {
                     pending = solver.Solve(snapshot, state, new(6, 6, .08f, false, 6, 6),
-                        new SolveOptions { HardSafetyMargin = .5f, ArenaSafetyMargin = 0, GoalDirectedTemporalPlanning = true }, now, latest);
+                        new SolveOptions { HardSafetyMargin = margin, ArenaSafetyMargin = 0, GoalDirectedTemporalPlanning = true }, now, latest);
+                    if (handoff > 0 && trace.Count == 0)
+                        Check(pending.IsSuccess && !pending.IsPartialEscape && !pending.IsLeastDangerFallback
+                            && pending.ContinuationPath.Count > 1,
+                            "The recorded handoff must plan a real departure beyond its first refuge, not just a later-dangerous stopping point");
                     trace.Add($"t={t:F2} player={player} phase={movement.Phase} running={move.IsRunning} status={pending.Status} noMove={pending.IsNoMovement} "
                         + string.Join(";", pending.ExecutablePath.Select(p => p.Position)));
                     pendingAt = t + latency;

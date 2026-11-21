@@ -14,7 +14,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
     {
         var goals = snapshot.GoalAreas;
         _temporalContinuation = GoalDirectedTemporalPlanning && solution.ContinuationPath.Count > 1
-            && (_setting.RuntimePreferSafeRefuge && goals.Count == 0 && !solution.IsPartialEscape
+            && (goals.Count == 0 && !solution.IsPartialEscape
                 || goals.Any(g => g.Geometry.Contains(solution.ContinuationPath[^1].Position)
                     && g.GoalWindows.Any(w => w.IsActiveAt(snapshot.CreatedAt)))) ? solution : null;
         _temporalGoals = _temporalContinuation == null ? [] : snapshot.GoalAreas;
@@ -28,7 +28,6 @@ internal sealed partial class SafeZoneRebornMovementSystem
         if (_temporalContinuation is not { } previous) return false;
         if (!_hasControl || !GoalDirectedTemporalPlanning || now < previous.SolveTime
             || now - previous.SolveTime > TimeSpan.FromSeconds(_options.PlanningHorizon)
-            || _temporalGoals.Count == 0 && !_setting.RuntimePreferSafeRefuge
             || !SameTemporalGoals(snapshot.GoalAreas, now))
         { _temporalContinuation = null; return false; }
 
@@ -37,7 +36,12 @@ internal sealed partial class SafeZoneRebornMovementSystem
         {
             if (_greenMove?.IsRunning == true && ReferenceEquals(_dispatchedSolution, previous)
                 && IsTemporalPhaseSafe(previous, player, snapshot, now))
-            { _phase = DispatchPhase.Moving; return previous.SolvedAt != previous.SolveTime; }
+            {
+                _phase = DispatchPhase.Moving;
+                // With no goal to advance, a complete, still-safe timed route
+                // owns its phase. A delayed partial re-plan must not turn back.
+                return _temporalGoals.Count == 0 || previous.SolvedAt != previous.SolveTime;
+            }
             _temporalContinuation = null;
             return false;
         }
@@ -77,6 +81,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
             path[^1].Position, path)
         {
             UsesTemporalPlanning = true, MaxArrivalTolerance = previous.MaxArrivalTolerance,
+            RefinedGridResolution = previous.RefinedGridResolution,
             ContinuationPath = next < remaining.Count ? remaining.Skip(next).ToArray() : [],
         };
         var candidate = Build(phase);

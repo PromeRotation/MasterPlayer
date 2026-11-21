@@ -36,13 +36,29 @@ internal static class Pt30MovingBallRecordedRegression
         {
             var t = sample.GetProperty("t").GetDouble();
             var player = Xz(sample.GetProperty("player"));
-            var setting = new SafeZoneSetting { EnableSafeZone = true, RuntimePreferSafeRefuge = true };
+            var setting = new SafeZoneSetting
+            {
+                EnableSafeZone = true, RuntimePreferSafeRefuge = true,
+                RuntimeHardSafetyMargin = options.HardSafetyMargin, RuntimeArenaSafetyMargin = options.ArenaSafetyMargin,
+            };
             using var manager = new SafeZoneManager(setting);
             var snapshot = RegisterScene(sample, manager, center, boundary, hole, player, now);
             var state = new PlayerState(player, 0, 9, false, false, 0, true, snapshot.Version);
             var solution = new SafeZoneSolver().Solve(snapshot, state, new(9, 9, .08f, false, 9, 9), options, now);
             Check(solution.IsSuccess && !solution.IsLeastDangerFallback, $"ARR {t}s did not find a safe plan: {solution.DescribeOutcome()}");
             var shouldHold = sample.GetProperty("hold").GetBoolean();
+            if (!shouldHold)
+            {
+                var map = RasterizedMap.Build(snapshot, player, options, now, 9);
+                Check(GridRouteSafe(map, solution.ExecutablePath, now, 0), $"ARR {t}s immediate route must satisfy the search grid");
+                Check(!GridRouteSafe(map, solution.ExecutablePath, now, SafeZoneRebornMovementSystem.DepartureReserveSeconds),
+                    $"ARR {t}s delayed route must reproduce the lost grid departure reserve");
+                Check(solution.LatestSafeDepartureTime > now
+                    && solution.LatestSafeDepartureTime <= now.AddSeconds(SafeZoneRebornMovementSystem.DepartureReserveSeconds),
+                    $"ARR {t}s must publish its finite grid departure deadline");
+                Check(solution.WithExecutablePath(solution.ExecutablePath).LatestSafeDepartureTime == solution.LatestSafeDepartureTime,
+                    "rebasing a cached route must preserve its departure deadline");
+            }
             var baselineMoves = Dispatch(preferSafeRefuge: false);
             var moves = Dispatch(preferSafeRefuge: true);
             Check(moves == (shouldHold ? 0 : 1), $"ARR {t}s expected {(shouldHold ? "hold" : "departure")}, dispatched {moves}");
@@ -54,11 +70,69 @@ internal static class Pt30MovingBallRecordedRegression
                 using var movement = new SafeZoneRebornMovementSystem(setting, manager, () => false, () => false);
                 movement.Attach(move);
                 dispatch.Invoke(movement, [solution, state, snapshot, now]);
+                Console.WriteLine($"ARR {t}s refuge={preferSafeRefuge}: {movement.Phase}, dispatches={movement.DispatchCount}, grid departure slack={(solution.LatestSafeDepartureTime - now)?.TotalSeconds:F3}s.");
                 return movement.DispatchCount;
             }
         }
         Check(unnecessaryBaselineMoves > 0, "The fixture must reproduce unnecessary movement without the safe refuge policy.");
         Console.WriteLine($"PT30 ARR moving balls: suppressed {unnecessaryBaselineMoves} unnecessary dispatches and retained the required departure.");
+    }
+
+    public static void RefugeDepartureBoundary()
+    {
+        var now = DateTime.UnixEpoch;
+        var setting = new SafeZoneSetting { EnableSafeZone = true, RuntimePreferSafeRefuge = true };
+        using var manager = new SafeZoneManager(setting);
+        manager.SetArenaBoundary(new CircleTemplate(10).Resolve(Vector3.Zero, 0, null));
+        manager.AddDangerArea(new CircleTemplate(1), new StaticTransform(Vector3.Zero, 0),
+            [new DangerWindow(now.AddSeconds(2), now.AddSeconds(2.2), now)]);
+        var snapshot = manager.BuildSnapshot(now);
+        var state = new PlayerState(Vector3.Zero, 0, 6, false, false, 0, true, snapshot.Version);
+        var dispatch = typeof(SafeZoneRebornMovementSystem).GetMethod("Dispatch", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var move = ScriptServiceProxy.Create<IGreenMoveSystem>((method, _) => method switch
+        {
+            "MoveTo" or "Stop" => null, "GetStatus" => default(GreenMoveStatus), "get_IsRunning" => false,
+            _ => throw new NotSupportedException(method),
+        });
+        var reserve = SafeZoneRebornMovementSystem.DepartureReserveSeconds;
+        foreach (var (deadline, age, expected) in new (double? Deadline, double Age, int Expected)[]
+        {
+            (reserve - .001, 0, 1), (reserve, 0, 1), (reserve + .001, 0, 0),
+            (reserve + .1, .1, 1), (null, 0, 0),
+        })
+        {
+            var solution = new SafeZoneSolution(SolutionStatus.Success, snapshot.Version, now, now, new(3, 0, 0),
+                [TimedWaypoint.Pass(Vector3.Zero, now), TimedWaypoint.Pass(new(3, 0, 0), now.AddSeconds(.5))])
+            {
+                UsesTemporalPlanning = true,
+                LatestSafeDepartureTime = deadline.HasValue ? now.AddSeconds(deadline.Value) : null,
+            };
+            using var movement = new SafeZoneRebornMovementSystem(setting, manager, () => false, () => false);
+            movement.Attach(move);
+            dispatch.Invoke(movement, [solution, state, snapshot, now.AddSeconds(age)]);
+            Check(movement.DispatchCount == expected,
+                $"refuge deadline={deadline}, age={age}: expected {expected} dispatches, got {movement.DispatchCount}");
+        }
+    }
+
+    private static bool GridRouteSafe(RasterizedMap map, IReadOnlyList<TimedWaypoint> path, DateTime now, double delay)
+    {
+        for (var i = 1; i < path.Count; ++i)
+        {
+            var from = path[i - 1];
+            var to = path[i];
+            var duration = (to.PlannedArrivalTime - from.PlannedDepartureTime).TotalSeconds;
+            var steps = Math.Max(1, (int)Math.Ceiling(duration / .001));
+            for (var step = 0; step <= steps; ++step)
+            {
+                var point = Vector3.Lerp(from.Position, to.Position, (float)step / steps);
+                var at = (from.PlannedDepartureTime - now).TotalSeconds + delay + duration * step / steps;
+                var (col, row) = map.WorldToCell(point);
+                if (!map.InBounds(col, row) || map.PixelMaxGAt(col, row) < 0
+                    || map.DangerIntervalsAt(row * map.Columns + col).Any(w => at >= w.From && at <= w.Until)) return false;
+            }
+        }
+        return true;
     }
 
     public static void HaloGripOverlap()

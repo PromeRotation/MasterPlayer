@@ -9,6 +9,52 @@ using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class Pt30PassageRegression
 {
+    public static void GoalCompletionSurvivesLaterPulse()
+    {
+        var now = new DateTime(2026, 11, 18, 0, 0, 0, DateTimeKind.Utc);
+        foreach (var goalRadius in new[] { 3f, .5f })
+        {
+            using var manager = new SafeZoneManager(new SafeZoneSetting { EnableSafeZone = true });
+            manager.SetArenaBoundary(new CircleTemplate(10).Resolve(Vector3.Zero, 0, null));
+            var player = new Vector3(-4, 0, 0);
+            var goalCenter = new Vector3(4, 0, 0);
+            manager.AddGoalArea(new CircleTemplate(goalRadius), new StaticTransform(goalCenter, 0),
+                [GoalWindow.Persistent(now, 5, PositionPreference.Nearest)]);
+            // The broad goal has a permanently safe far side. The small goal
+            // requires waiting for the pulse, then entering it after clearance.
+            manager.AddDangerArea(new CircleTemplate(2), new StaticTransform(new(2.5f, 0, 0), 0),
+                [new DangerWindow(now.AddSeconds(3), now.AddSeconds(4), now)]);
+            var snapshot = manager.BuildSnapshot(now);
+            var options = new SolveOptions { GoalDirectedTemporalPlanning = true, HardSafetyMargin = 0, ArenaSafetyMargin = 0 };
+            var map = RasterizedMap.Build(snapshot, player, options, now, 6);
+            var result = SafeIntervalPathfinder.Search(map, player, 6, now, 0, options, requireGoal: true);
+            Check(result is { BestScore: BossModStyleAStar.Score.SafeMaxPrio, IsPartialEscape: false },
+                $"goal radius {goalRadius} needs a complete safe temporal route");
+            var path = result!.Path;
+            Check(snapshot.GoalAreas.Single().Geometry.Contains(path[^1].Position), "complete route must reach the goal");
+            for (var i = 0; i < path.Count; ++i)
+            {
+                CheckSegment(snapshot, path[i].Position, path[i].Position, path[i].PlannedArrivalTime, path[i].PlannedDepartureTime);
+                if (i > 0)
+                    CheckSegment(snapshot, path[i - 1].Position, path[i].Position, path[i - 1].PlannedDepartureTime, path[i].PlannedArrivalTime);
+            }
+            CheckSegment(snapshot, path[^1].Position, path[^1].Position, path[^1].PlannedArrivalTime, now.AddSeconds(options.PlanningHorizon));
+            if (goalRadius < 1)
+            {
+                Check(path.Any(p => p.IsWaitPoint) && path[^1].PlannedArrivalTime > now.AddSeconds(4.3),
+                    "a goal covered by the later pulse must be entered after its buffered clearance");
+                var transit = SafeIntervalPathfinder.Search(map, player, 6, now, 0,
+                    options with { PreferStraightPaths = true }, requireGoal: true);
+                Check(transit is { BestScore: BossModStyleAStar.Score.SafeMaxPrio }
+                    && transit.Path[^1].PlannedArrivalTime < now.AddSeconds(2.5),
+                    "race waypoint handoff must remain reachable before the pulse; it advances on arrival");
+                var endpoint = transit!.Path[^1];
+                CheckSegment(snapshot, endpoint.Position, endpoint.Position,
+                    endpoint.PlannedArrivalTime, endpoint.PlannedArrivalTime.AddSeconds(.5));
+            }
+        }
+    }
+
     public static void PartialRefugeRefresh()
     {
         var now = new DateTime(2026, 11, 18, 0, 0, 0, DateTimeKind.Utc);
@@ -63,6 +109,7 @@ internal static class Pt30PassageRegression
                 new(6, 6, 0, false, 6, 6), options, now);
             Check(solution.IsSuccess && !solution.IsPartialEscape && !solution.IsLeastDangerFallback, $"recorded {t}s must reach the safe side, not hold a temporary pocket: {solution.Status}");
             var path = solution.ExecutablePath.Concat(solution.ContinuationPath.Skip(1)).ToArray();
+            Console.WriteLine($"PT30 Reach {t}s: {path.Length} waypoints, arrival={(path[^1].PlannedArrivalTime - now).TotalSeconds:F3}s.");
             Check(path.Length >= 2 && snapshot.GoalAreas.Single().Geometry.Contains(path[^1].Position), $"recorded {t}s must end in the Reach goal");
             var reach = sample.GetProperty("hazards").EnumerateArray().First(h => h.GetProperty("shape").GetString() == nameof(FanTemplate));
             for (var i = 0; i < path.Length; ++i)
@@ -86,7 +133,8 @@ internal static class Pt30PassageRegression
             var position = Vector3.Lerp(from, to, (float)i / steps);
             var at = start.AddSeconds(duration * i / steps);
             Check(snapshot.ArenaBoundary!.Contains(position) && !snapshot.HardObstacles.Any(o => o.Geometry.Contains(position)), "passage route must stay on real floor");
-            Check(!snapshot.DangerAreas.Any(d => d.Geometry.Contains(position) && d.DangerWindows.Any(w => w.IsActiveAt(at))), "passage route must retain the inflated danger geometry and timed ball sweeps");
+            var hit = snapshot.DangerAreas.FirstOrDefault(d => d.Geometry.Contains(position) && d.DangerWindows.Any(w => w.IsActiveAt(at)));
+            Check(hit == null, $"passage route must retain the inflated danger geometry and timed ball sweeps: {position}, {at:O}, {hit?.Geometry}, segment={from}->{to}, {start:O}..{end:O}");
         }
     }
 

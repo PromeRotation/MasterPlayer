@@ -4,6 +4,8 @@ if (args.Contains("--pt99-blaze"))
 {
     Pt99BlazeRegression.Run((name, body) =>
     {
+        if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter
+            && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
         try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
         catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
     });

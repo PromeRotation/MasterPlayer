@@ -34,6 +34,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
     {
         if (!_setting.RuntimePreferSafeRefuge || GoalDirectedTemporalPlanning || _hasControl && _greenMove is { IsRunning: true }
             || solution.IsLeastDangerFallback || solution.IsArenaMarginRecovery || solution.IsArenaReentry || solution.ReducedDangerStartSafetyTime.HasValue
+            || solution.LatestSafeDepartureTime is { } deadline && now.AddSeconds(DepartureReserveSeconds) >= deadline
             || snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(now))))
             return false;
 

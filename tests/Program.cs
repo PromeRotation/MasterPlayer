@@ -91,7 +91,9 @@ Run("PT30 follow footprint", Pt30FollowFootprintTests.Run);
 Run("PT30 temporal windows and swept balls", Pt30TemporalRegression.Run);
 Run("PT30 partial refuge refresh", Pt30PassageRegression.PartialRefugeRefresh);
 Run("PT30 recorded Reach passages", Pt30PassageRegression.Run);
+Run("PT30 goal completion survives later pulses", Pt30PassageRegression.GoalCompletionSurvivesLaterPulse);
 Run("PT30 recorded moving balls safe refuge", Pt30MovingBallRecordedRegression.Run);
+Run("PT30 safe refuge departure deadline boundaries", Pt30MovingBallRecordedRegression.RefugeDepartureBoundary);
 Run("PT30 observed run speed", Pt30MovingBallRecordedRegression.ObservedSpeed);
 Run("PT30 recorded Halo and Grip overlap", Pt30MovingBallRecordedRegression.HaloGripOverlap);
 

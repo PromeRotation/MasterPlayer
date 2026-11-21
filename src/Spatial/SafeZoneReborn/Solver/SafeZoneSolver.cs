@@ -34,8 +34,10 @@ public sealed class SafeZoneSolver
         SafeZoneSolution? previousSolution = null)
     {
         options ??= SolveOptionsDefaults.Default;
-        var eligible = options.GridResolution > NarrowGapResolution + .0001f
-            && HasNarrowFanThreat(snapshot, solveTime);
+        var narrowFan = HasNarrowFanThreat(snapshot, solveTime);
+        var temporalThreat = options.GoalDirectedTemporalPlanning && snapshot is not null
+            && snapshot.DangerAreas.Any(d => d.DangerWindows.Any(w => w.DangerUntil > solveTime));
+        var eligible = options.GridResolution > NarrowGapResolution + .0001f && (narrowFan || temporalThreat);
         SafeZoneSolution Refine()
         {
             var fine = SolveCore(snapshot, player, capability,
@@ -46,13 +48,20 @@ public sealed class SafeZoneSolver
         if (eligible && previousSolution is { IsSuccess: true, RefinedGridResolution: <= NarrowGapResolution })
             return Refine();
         var coarse = SolveCore(snapshot, player, capability, options, solveTime, previousSolution);
-        // Only a failed reachability search can justify the additional raster/search.
-        // Core recursion retains emergency timing behavior but never invokes refinement.
-        if (!eligible || !(coarse.IsLeastDangerFallback || coarse.Status is SolutionStatus.NoTemporalPath or SolutionStatus.NoReachableSafeCell))
+        var temporaryTarget = temporalThreat && !coarse.UsesTemporalPlanning && coarse.TargetPosition is { } target
+            && HasPendingDangerAtPlayer(snapshot!, target, solveTime);
+        // A partial refuge has no verified way out. Before committing to it, check
+        // whether cell dilation hid a complete timed route through a narrow gap.
+        if (!eligible || !(temporaryTarget || coarse.IsPartialEscape || coarse.IsLeastDangerFallback
+            || coarse.Status is SolutionStatus.NoTemporalPath or SolutionStatus.NoReachableSafeCell))
             return coarse;
-        // A real (finer-grid) route always beats the least-danger fallback.
         var refined = Refine();
-        return refined.IsSuccess && !refined.IsLeastDangerFallback || !coarse.IsSuccess ? refined : coarse;
+        var refinedTemporaryTarget = temporalThreat && !refined.UsesTemporalPlanning
+            && refined.TargetPosition is { } refinedTarget && HasPendingDangerAtPlayer(snapshot!, refinedTarget, solveTime);
+        if (refined.IsSuccess && !refined.IsLeastDangerFallback
+            && (narrowFan || !refined.IsPartialEscape && !refinedTemporaryTarget))
+            return refined;
+        return coarse.IsSuccess ? coarse : refined;
     }
 
     private SafeZoneSolution SolveCore(
@@ -197,6 +206,7 @@ public sealed class SafeZoneSolver
                 phase.Count >= 2 ? phase[^1].Position : null, phase, BuildDebug(options, temporal, map))
                 {
                     UsesTemporalPlanning = true, IsPartialEscape = temporal.IsPartialEscape,
+                    LatestSafeDepartureTime = DepartureDeadline(map, phase, solveTime),
                     ExitsInitialPersistentDanger = map.RequiresEscapeAt(startRow * map.Columns + startCol),
                     MaxArrivalTolerance = map.RequiresEscapeAt(startRow * map.Columns + startCol) ? map.Resolution * .45f : float.PositiveInfinity,
                     ContinuationPath = options.GoalDirectedTemporalPlanning && phase.Count > 0 && phase[^1].IsWaitPoint
@@ -233,7 +243,7 @@ public sealed class SafeZoneSolver
             ? result.Path
             : PostProcess(result.Path, capability.CurrentSpeed, options, out appliedSmoothing);
         var executable = processed.Count >= 2 ? processed : result.Path;
-        if (!ReferenceEquals(executable, result.Path) && !IsProcessedPathSafe(map, executable, solveTime))
+        if (!ReferenceEquals(executable, result.Path) && !IsProcessedPathSafe(map, executable, solveTime, out _))
         {
             executable = result.Path;
             appliedSmoothing = false;
@@ -249,7 +259,7 @@ public sealed class SafeZoneSolver
             var arrival = start.PlannedDepartureTime.AddSeconds(
                 GeometryHelper.DistanceXZ(start.Position, end.Position) / MathF.Max(.1f, capability.CurrentSpeed));
             TimedWaypoint[] direct = [start, TimedWaypoint.Pass(end.Position, arrival, end.SpeedMultiplier)];
-            if (IsProcessedPathSafe(map, direct, solveTime))
+            if (IsProcessedPathSafe(map, direct, solveTime, out _))
             {
                 executable = direct;
                 appliedSmoothing = false;
@@ -294,6 +304,7 @@ public sealed class SafeZoneSolver
             escapeDuration)
         {
             MaxArrivalTolerance = playerInDangerNow ? map.Resolution * 0.45f : float.PositiveInfinity,
+            LatestSafeDepartureTime = DepartureDeadline(map, executable, solveTime),
         };
     }
 
@@ -459,8 +470,16 @@ public sealed class SafeZoneSolver
         return null;
     }
 
-    private static bool IsProcessedPathSafe(RasterizedMap map, IReadOnlyList<TimedWaypoint> path, DateTime now)
+    private static DateTime? DepartureDeadline(RasterizedMap map, IReadOnlyList<TimedWaypoint> path, DateTime now)
     {
+        if (!IsProcessedPathSafe(map, path, now, out var leeway)) return now;
+        return float.IsPositiveInfinity(leeway) ? null : now.AddSeconds(leeway);
+    }
+
+    private static bool IsProcessedPathSafe(RasterizedMap map, IReadOnlyList<TimedWaypoint> path, DateTime now, out float startLeeway)
+    {
+        startLeeway = 0;
+        var leeway = float.PositiveInfinity;
         var previousCell = -1;
         var previousTime = 0f;
         for (var i = 1; i < path.Count; ++i)
@@ -498,12 +517,16 @@ public sealed class SafeZoneSolver
                 (float)(waypoint.PlannedArrivalTime - now).TotalSeconds,
                 (float)(waypoint.PlannedDepartureTime - now).TotalSeconds)) return false;
         }
+        startLeeway = leeway;
         return true;
 
         bool CellSafe(int cell, float from, float until)
         {
             foreach (var danger in map.DangerIntervalsAt(cell))
+            {
                 if (until >= danger.From && from <= danger.Until) return false;
+                if (danger.From > until) leeway = MathF.Min(leeway, danger.From - until);
+            }
             return true;
         }
     }
@@ -524,7 +547,7 @@ public sealed class SafeZoneSolver
                     candidate[i] = current with { PlannedArrivalTime = arrival,
                         PlannedDepartureTime = current.IsWaitPoint ? current.PlannedDepartureTime : arrival };
                 }
-                if (!IsProcessedPathSafe(map, candidate, now)) continue;
+                if (!IsProcessedPathSafe(map, candidate, now, out _)) continue;
                 path = candidate;
                 break;
             }

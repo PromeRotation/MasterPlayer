@@ -76,6 +76,8 @@ public sealed class SafeZoneSolution
     // The actual damage window and all spatial/end margins remain unchanged.
     internal float? ReducedDangerStartSafetyTime { get; set; }
     internal float? RefinedGridResolution { get; set; }
+    /// <summary>当前阶段按原计划整体延后时的网格安全截止时刻；闭区间危险要求严格早于此时出发。</summary>
+    internal DateTime? LatestSafeDepartureTime { get; init; }
 
     internal SafeZoneSolution WithReducedDangerStartSafetyTime(float safety)
     {
@@ -93,6 +95,7 @@ public sealed class SafeZoneSolution
             IsLeastDangerFallback = IsLeastDangerFallback, LeastDangerOverlap = LeastDangerOverlap,
             ReducedDangerStartSafetyTime = ReducedDangerStartSafetyTime, MaxArrivalTolerance = MaxArrivalTolerance,
             ContinuationPath = ContinuationPath, RefinedGridResolution = RefinedGridResolution,
+            LatestSafeDepartureTime = LatestSafeDepartureTime,
         };
 
     /// <summary>逃离时的到达容差上限，保证停止位置仍位于搜索验证过的终点格内。</summary>

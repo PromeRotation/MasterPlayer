@@ -60,6 +60,53 @@ internal static class NavigationTemporalContinuationRegression
                 Check(move.Count == 2 && move.IsRunning, "A safe resumed route was resent or stopped on the next frame.");
             });
 
+        foreach (var change in new[] { "none", "partial re-plan", "danger", "obstacle", "floor", "new goal", "owner", "host" })
+            run($"Navigation continuation without goals revalidates a complete refuge exit: {change}", () =>
+            {
+                var move = new Move();
+                var host = false;
+                var owner = new object();
+                using var runtime = new SafeZoneRuntime(move, () => host, () => host) { ReplayClock = () => Epoch };
+                runtime.RequestAutomaticMovement(owner, true, goalDirectedTemporalPlanning: true);
+                runtime.Manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 20));
+                var wait = new TimedWaypoint(Vector3.Zero, Epoch, Epoch.AddSeconds(1), true, 1);
+                var solution = new SafeZoneSolution(SolutionStatus.Success, runtime.Manager.Version, Epoch, Epoch, null, [wait])
+                {
+                    UsesTemporalPlanning = true,
+                    ContinuationPath = [wait, TimedWaypoint.Pass(Vector3.UnitZ * 5, Epoch.AddSeconds(2))],
+                    RefinedGridResolution = .25f,
+                };
+                Dispatch(runtime, solution, Epoch);
+                Check(!move.IsRunning && runtime.MovementStatus.HasControl, "A complete refuge route must hold until departure.");
+                switch (change)
+                {
+                    case "danger": runtime.Registry.AddPersistentDanger(new CircleTemplate(1), new StaticTransform(Vector3.UnitZ * 3, 0)); break;
+                    case "obstacle": runtime.Registry.AddObstacle(new CircleTemplate(1), new StaticTransform(Vector3.UnitZ * 3, 0)); break;
+                    case "floor": runtime.Manager.SetArenaBoundary(new CircleGeometry(Vector3.Zero, 2)); break;
+                    case "new goal": runtime.Registry.AddPersistentSafeArea(new CircleTemplate(1), new StaticTransform(-Vector3.UnitZ * 5, 0)); break;
+                    case "owner": runtime.RequestAutomaticMovement(owner, false); break;
+                    case "host": host = true; break;
+                }
+                Dispatch(runtime, null, Epoch.AddSeconds(1.02));
+                if (change is not ("none" or "partial re-plan"))
+                {
+                    Check(!move.IsRunning && move.Count == 1, "A refuge suffix survived changed safety or ownership.");
+                    return;
+                }
+                Check(move.IsRunning && move.Points[^1].Position == Vector3.UnitZ * 5 && move.Count == 2,
+                    "A complete route without goals lost its verified refuge exit.");
+                Check(runtime.MovementStatus.LatestSolution?.RefinedGridResolution == .25f,
+                    "Resuming the suffix discarded the grid used to verify its narrow passage.");
+                var replacement = change == "partial re-plan"
+                    ? new SafeZoneSolution(SolutionStatus.Success, runtime.Manager.Version, Epoch, Epoch, -Vector3.UnitZ,
+                        [TimedWaypoint.Pass(Vector3.Zero, Epoch), TimedWaypoint.Pass(-Vector3.UnitZ, Epoch.AddSeconds(.2))])
+                        { UsesTemporalPlanning = true, IsPartialEscape = true }
+                    : null;
+                Dispatch(runtime, replacement, Epoch.AddSeconds(1.04));
+                Check(move.IsRunning && move.Count == 2 && move.Points[^1].Position == Vector3.UnitZ * 5,
+                    "A delayed partial re-plan stopped or reversed the still-safe complete phase.");
+            });
+
         run("Navigation continuation is opt-in for race goals", () =>
         {
             var move = new Move(); using var runtime = new SafeZoneRuntime(move, () => false, () => false);

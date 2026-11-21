@@ -90,10 +90,12 @@ internal static class SafeIntervalPathfinder
                 safestPartial = index;
                 safestUntil = currentInterval.Until;
             }
-            if (!map.RequiresEscapeAt(current.State.Cell) && (requireGoal
-                ? currentInterval.Until >= current.Arrival + .5f
-                    && map.PixelPriorityAt(current.State.Cell % map.Columns, current.State.Cell / map.Columns) >= map.MaxGoalPriority
-                : currentInterval.Until >= horizon))
+            // Combat goals are standing destinations, so their safe interval must
+            // cover the horizon. Straight race routes advance their waypoint on
+            // arrival and retain the existing short handoff interval instead.
+            var requiredSafeUntil = requireGoal && options.PreferStraightPaths ? current.Arrival + .5f : horizon;
+            if (!map.RequiresEscapeAt(current.State.Cell) && currentInterval.Until >= requiredSafeUntil
+                && (!requireGoal || map.PixelPriorityAt(current.State.Cell % map.Columns, current.State.Cell / map.Columns) >= map.MaxGoalPriority))
             {
                 var path = BuildPath(map, nodes, index, player, now);
                 return new BossModStyleAStar.Result(path, path[^1].Position, requireGoal ? BossModStyleAStar.Score.SafeMaxPrio : BossModStyleAStar.Score.Safe,
