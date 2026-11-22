@@ -1479,7 +1479,11 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                 return false;
             return IsTemporalSegmentSafe(snapshot, position, position, time, end.PlannedDepartureTime, startSafety);
         }
-        return IsTemporalSegmentSafe(snapshot, position, position, time, time, startSafety);
+        // A shortcut can arrive before the safe interval used by the worker.
+        // Standing there must remain safe until the original arrival, otherwise
+        // removing a detour turns a timed escape into an early hit.
+        var holdUntil = solution.UsesTemporalPlanning && end.PlannedArrivalTime > time ? end.PlannedArrivalTime : time;
+        return IsTemporalSegmentSafe(snapshot, position, position, time, holdUntil, startSafety);
     }
 
     private bool IsTemporalSegmentSafe(SafeZoneSnapshot snapshot, Vector3 from, Vector3 to, DateTime start, DateTime end, float? startSafety = null, HashSet<IGeometryShape>? escaping = null, float? endSafety = null)
@@ -1789,6 +1793,19 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // A short correction (e.g. back inside the eroded arena after a knockback) must not already count as
         // arrived: GreenMove would stop at once and each re-plan restarts it (B26 replay: 14s frozen 0.4y from it).
         tolerance = MathF.Min(tolerance, MathF.Max(MinArrivalTolerance, GeometryHelper.DistanceXZ(path[0].Position, destination) * 0.5f));
+        foreach (var danger in snapshot.DangerAreas)
+        {
+            if (danger.Geometry is not CircleGeometry circle
+                || !danger.DangerWindows.Any(w => w.DangerUntil is null
+                    || w.DangerUntil.Value > now.AddSeconds(-_options.DangerEndSafetyTime)))
+                continue;
+            var clearance = GeometryHelper.DistanceXZ(circle.Position, destination) - circle.Radius;
+            // A safe endpoint does not make its arrival disk safe. Ordinary escape
+            // and least-danger routes may end closer to a circle than 0.5y (or even
+            // 0.1y). Let GreenMove finish outside the hit instead of stopping in it.
+            if (clearance > 0f)
+                tolerance = MathF.Min(tolerance, clearance * .9f);
+        }
         foreach (var goal in snapshot.GoalAreas)
         {
             if (goal.Geometry is not CircleGeometry circle)

@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
+using MasterPlayer.Follow;
 using MasterPlayer.Mechanics.PilgrimsTraverse;
 using MasterPlayer.Replay;
 using MasterPlayer.Spatial.SafeZone;
@@ -12,6 +13,48 @@ using PromeRotation.LogSystem;
 internal static class Pt99BoundsRegression
 {
     private static readonly DateTime Start = new(2026, 11, 20, 0, 0, 0, DateTimeKind.Utc);
+
+    public static void RunLive(Action<string, Action> run)
+    {
+        using var fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
+            "Fixtures", "PilgrimsTraverse", "pt99-bounds-143046.json")));
+        run("PT99 Bounds arrival disk stays outside a pending circle", PreciseArrival);
+        foreach (var latency in new[] { .08, .3 })
+            foreach (var follow in new[] { false, true })
+                // A 300ms worker is covered from bind release. The late recorded
+                // prefix uses the measured live-scale latency: forcing a route for
+                // another 300ms after dispatch has stopped cannot verify recovery.
+                foreach (var handoff in latency < .1 ? new[] { 0d, fixture.RootElement.GetProperty("handoff").GetDouble() } : new[] { 0d })
+                run($"PT99 Bounds 143046 margin=.2 follow={follow} handoff={handoff:F3} latency={latency:F2}", () =>
+                    Simulate(fixture.RootElement, fixture.RootElement.GetProperty("bindRelease").GetDouble()
+                        - fixture.RootElement.GetProperty("events").EnumerateArray().Single(e =>
+                            e.GetProperty("kind").GetString() == "effect" && e.GetProperty("action").GetUInt32() == 44082)
+                        .GetProperty("t").GetDouble(), latency, .2f, follow, true, handoff));
+    }
+
+    private static void PreciseArrival()
+    {
+        var setting = new SafeZoneSetting { EnableSafeZone = true, RuntimeGoalDirectedTemporalPlanning = true, RuntimeHardSafetyMargin = .2f };
+        using var manager = new SafeZoneManager(setting);
+        var center = new Vector3(-593.95743f, 0, -303.5172f);
+        manager.AddDangerArea(new CircleTemplate(3), new StaticTransform(center, 0),
+            [new(Start.AddSeconds(8.801), Start.AddSeconds(9.151))]);
+        var from = new Vector3(-593.19446f, 0, -305.1652f);
+        using var movement = new SafeZoneRebornMovementSystem(setting, manager, () => false, () => false);
+        var build = typeof(SafeZoneRebornMovementSystem).GetMethod("BuildGreenMovePoints", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        foreach (var to in new[] { new Vector3(-592.19446f, 0, -306.1652f), new Vector3(-592.8893f, 0, -306.40933f) })
+        {
+            var route = SafeZoneSolution.Succeeded(manager.Version, Start, Start, to,
+                [TimedWaypoint.Pass(from, Start), TimedWaypoint.Pass(to, Start.AddSeconds(1))]);
+            Check(!route.UsesTemporalPlanning, "Exercise the ordinary escape branch of a goal-directed solve");
+            var points = (GreenMovePoint[])build.Invoke(movement, [route, manager.BuildSnapshot(Start), Start])!;
+            Check(Distance(to, center) - points[^1].Tolerance > 3,
+                $"Arrival tolerance {points[^1].Tolerance:F3} permits stopping inside the recorded R3 circle");
+            var expired = Start.AddSeconds(10);
+            var restored = (GreenMovePoint[])build.Invoke(movement, [route, manager.BuildSnapshot(expired), expired])!;
+            Check(restored[^1].Tolerance == .5f, "Expired circles must not permanently force precise arrival");
+        }
+    }
 
     public static void Run(Action<string, Action> run)
     {
@@ -72,26 +115,38 @@ internal static class Pt99BoundsRegression
         Check(!encounter.Collect(Start, 100).Any(a => a.Key.StartsWith("bounds/")), "Cancel removes danger and escape goal owned by this caster");
     }
 
-    private static void Simulate(JsonElement sequence, double bindSeconds, double latency)
+    private static void Simulate(JsonElement sequence, double bindSeconds, double latency, float margin = .5f, bool followTarget = false, bool fullPipeline = false, double handoff = 0)
     {
         var events = sequence.GetProperty("events").EnumerateArray().ToArray();
         var releaseAt = events.Single(e => e.GetProperty("action").GetUInt32() == 44082
             && e.GetProperty("kind").GetString() == "effect").GetProperty("t").GetDouble() + bindSeconds;
         var encounter = new Pt99Encounter();
         var player = encounter.Center;
-        var setting = new SafeZoneSetting { EnableSafeZone = true, RuntimeGoalDirectedTemporalPlanning = true };
+        var setting = new SafeZoneSetting { EnableSafeZone = true, EnableAutoMovement = true, RuntimeGoalDirectedTemporalPlanning = true,
+            RuntimeHardSafetyMargin = margin, RuntimeArenaSafetyMargin = 0 };
         using var manager = new SafeZoneManager(setting);
         manager.SetArenaBoundary(encounter.Boundary);
         // A competing stationary preference must yield to the central hit and may
         // resume afterwards. This is a solver boundary case, not a recorded goal.
-        manager.AddGoalArea(new CircleTemplate(12), new StaticTransform(encounter.Center, 0),
-            [GoalWindow.Persistent(Start, 1, PositionPreference.Nearest)]);
+        if (!followTarget && !sequence.TryGetProperty("moves", out _))
+            manager.AddGoalArea(new CircleTemplate(12), new StaticTransform(encounter.Center, 0),
+                [GoalWindow.Persistent(Start, 1, PositionPreference.Nearest)]);
+        var followHandle = default(SafeZoneAreaHandle);
+        var followActive = false;
         var handles = new Dictionary<string, SafeZoneAreaHandle>();
         var solver = new SafeZoneSolver();
-        var options = new SolveOptions { HardSafetyMargin = .5f, ArenaSafetyMargin = 0, GoalDirectedTemporalPlanning = true };
+        var options = new SolveOptions { HardSafetyMargin = margin, ArenaSafetyMargin = 0, GoalDirectedTemporalPlanning = true };
         var move = new SimulatedMove();
         using var movement = new SafeZoneRebornMovementSystem(setting, manager, () => false, () => false);
         movement.Attach(move);
+        var clock = new SolveClock(latency);
+        if (fullPipeline)
+        {
+            var scheduler = typeof(SafeZoneRebornMovementSystem).GetField("_scheduleSolve", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            var resultType = scheduler.FieldType.GenericTypeArguments[0].GenericTypeArguments[0];
+            var method = typeof(SolveClock).GetMethod(nameof(SolveClock.Schedule))!.MakeGenericMethod(resultType);
+            scheduler.SetValue(movement, Delegate.CreateDelegate(scheduler.FieldType, clock, method));
+        }
         var dispatch = typeof(SafeZoneRebornMovementSystem).GetMethod("Dispatch", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var latestField = typeof(SafeZoneRebornMovementSystem).GetField("_latestSolution", BindingFlags.NonPublic | BindingFlags.Instance)!;
         SafeZoneSolution? latest = null;
@@ -102,11 +157,29 @@ internal static class Pt99BoundsRegression
         var smallHits = 0;
         var centralHits = 0;
         var plans = new List<string>();
-        for (var tick = 0; tick <= 610; ++tick)
+        var times = new SortedSet<double>(Enumerable.Range(0, 611).Select(t => t * .02));
+        times.UnionWith(events.Select(e => e.GetProperty("t").GetDouble()));
+        times.Add(releaseAt);
+        if (handoff > 0)
         {
-            var t = tick * .02;
+            times.Add(handoff);
+            times.UnionWith(sequence.GetProperty("moves").EnumerateArray().Select(p => p.GetProperty("t").GetDouble()));
+        }
+        var previousTime = 0d;
+        foreach (var t in times)
+        {
             var now = Start.AddSeconds(t);
-            player = t < releaseAt ? encounter.Center : move.Advance(player, .02f);
+            var previousPosition = player;
+            player = t < releaseAt ? encounter.Center : move.Advance(player, (float)(t - previousTime));
+            previousTime = t;
+            if (handoff > 0 && t >= releaseAt && t <= handoff)
+            {
+                var recorded = sequence.GetProperty("moves").EnumerateArray().LastOrDefault(p => p.GetProperty("t").GetDouble() <= t);
+                if (recorded.ValueKind != JsonValueKind.Undefined)
+                    player = Point(recorded.GetProperty("position"));
+                if (Distance(previousPosition, player) > .001f)
+                    move.ObserveMotion();
+            }
             encounter.Synchronize([
                 new ReplayActorState { Id = 1, Oid = 0x48EA, Position = new(-600, 0, -330), InCombat = true, Hp = 1000, MaxHp = 1000 },
                 new ReplayActorState { Id = 2, Oid = 0x48EB, Position = new(-600, 0, -315), InCombat = true, Hp = 1000, MaxHp = 1000 },
@@ -120,14 +193,14 @@ internal static class Pt99BoundsRegression
                 {
                     var center = action == 44084 ? encounter.Center : Point(ev.GetProperty("position"));
                     var radius = action == 44084 ? 8 : 3;
-                    Check(Distance(player, center) > radius, $"Hit by {action} at {t:F3}s: player={player}, radius={radius}\n{string.Join("\n", plans.TakeLast(8))}");
+                    Check(Distance(player, center) > radius, $"Hit by {action} at {t:F3}s: player={player}, radius={radius}\n{string.Join("\n", plans.TakeLast(12))}");
                     if (action == 44084) ++centralHits;
                     else ++smallHits;
                 }
                 Apply(encounter, ev);
             }
             Check(encounter.Boundary.Contains(player), $"Left the arena at {t:F3}s");
-            if (t < releaseAt) continue;
+            if (t < releaseAt && !fullPipeline) continue;
             var wanted = encounter.Collect(now, 100).Where(a => !a.PreviewOnly).ToArray();
             var keys = wanted.Select(a => a.Key).ToHashSet();
             foreach (var key in handles.Keys.Where(k => !keys.Contains(k)).ToArray())
@@ -149,10 +222,41 @@ internal static class Pt99BoundsRegression
                 pending = null;
             }
             var snapshot = manager.BuildSnapshot(now);
+            // FollowController yields its optional goal while a mechanic goal is active.
+            if (followTarget && wanted.Any(a => a.Safe && a.Priority >= 0))
+            {
+                if (followHandle.IsValid) manager.RemoveArea(followHandle);
+                followHandle = default;
+                followActive = false;
+                snapshot = manager.BuildSnapshot(now);
+            }
+            else if (followTarget)
+            {
+                var target = sequence.GetProperty("followTarget");
+                var position = Point(target.GetProperty("position"));
+                var template = new DangerAwareFollowGoalTemplate(target.GetProperty("radius").GetSingle(),
+                    snapshot.DangerAreas.Where(a => a.DangerWindows.Any(w =>
+                        OptionalGoalSafety.MasksFollowGoal(w.DangerFrom, w.DangerUntil, now, a.Geometry)))
+                        .Select(a => a.Geometry).Concat(snapshot.HardObstacles.Select(a => a.Geometry)), snapshot.ArenaBoundary);
+                var enabled = template.HasSafeArea(position);
+                GoalWindow[] windows = enabled ? [new(now, null, -1, PositionPreference.Nearest)] : [];
+                if (!followHandle.IsValid)
+                    followHandle = manager.AddGoalArea(template, new StaticTransform(position, 0), windows);
+                else
+                    manager.UpdateArea(followHandle, template: template, goalWindows: windows, incrementVersion: enabled != followActive);
+                followActive = enabled;
+                snapshot = manager.BuildSnapshot(now);
+            }
             var state = new PlayerState(player, 0, 6, move.IsRunning, false, 0, true, snapshot.Version);
-            dispatch.Invoke(movement, [latest, state, snapshot, now]);
+            if (fullPipeline)
+            {
+                clock.Advance(t);
+                movement.Update(state, new(6, 6, .08f, false, 6, 6), now);
+                plans.Add($"t={t:F3} pos={player} phase={movement.Phase} target={movement.LatestSolution?.TargetPosition} running={move.IsRunning}");
+            }
+            else dispatch.Invoke(movement, [latest, state, snapshot, now]);
             latest = movement.LatestSolution;
-            if (pending == null && t >= nextSolve - .00001)
+            if (!fullPipeline && pending == null && t >= nextSolve - .00001)
             {
                 pending = solver.Solve(snapshot, state, new(6, 6, .08f, false, 6, 6), options, now, latest);
                 plans.Add($"t={t:F2} {pending.Status} noMove={pending.IsNoMovement} temporal={pending.UsesTemporalPlanning} "
@@ -162,6 +266,30 @@ internal static class Pt99BoundsRegression
             }
         }
         Check(smallHits == 12 && centralHits == 1, "Exercise every recorded circle and the central explosion");
+    }
+
+    private sealed class SolveClock(double latency)
+    {
+        private readonly List<(double At, Action Publish)> pending = [];
+        private double now;
+
+        public Task<T> Schedule<T>(Func<T> solve, CancellationToken token)
+        {
+            var result = solve();
+            var promise = new TaskCompletionSource<T>();
+            pending.Add((now + latency, () => promise.SetResult(result)));
+            return promise.Task;
+        }
+
+        public void Advance(double time)
+        {
+            now = time;
+            foreach (var task in pending.Where(p => p.At <= time).ToArray())
+            {
+                task.Publish();
+                pending.Remove(task);
+            }
+        }
     }
 
     private static void Apply(Pt99Encounter encounter, JsonElement ev)
@@ -184,6 +312,9 @@ internal static class Pt99BoundsRegression
         private double elapsed;
         private double ready;
         public bool IsRunning => index < points.Count;
+        // The recorded prefix supplies actual motion even when it differs from
+        // this simulated route. It has already consumed movement startup.
+        public void ObserveMotion() => ready = Math.Min(ready, elapsed);
         public GreenMoveStatus GetStatus() => new(IsRunning, IsRunning ? points[index] : null,
             points.Count > 0 ? points[^1] : null, index, points.Count, points.Count - index);
         public void MoveTo(GreenMovePoint point) => MoveTo([point]);

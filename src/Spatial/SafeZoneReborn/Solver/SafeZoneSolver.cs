@@ -151,6 +151,16 @@ public sealed class SafeZoneSolver
         // A race must cross periodic obstacles to reach its waypoint. A safe
         // pocket before a hammer is only a staging point, not a completed goal.
         var timedGoal = options.GoalDirectedTemporalPlanning && map.MaxGoalPriority > 0 && result.BestScore < BossModStyleAStar.Score.SafeMaxPrio;
+        if (timedGoal && map.HasFiniteDanger
+            && snapshot.GoalAreas.All(g => g.GoalWindows.All(w => w.Priority < 0)))
+        {
+            // A timed escape must not require returning to optional attack range.
+            // Solve safety with the same floor/dangers, then let follow resume
+            // once a standing destination is available without a timed detour.
+            var escapeSnapshot = new SafeZoneSnapshot(snapshot.Version, snapshot.CreatedAt, snapshot.ArenaBoundary,
+                snapshot.HardObstacles, snapshot.DangerAreas, []);
+            return SolveCore(escapeSnapshot, player, capability, options, solveTime, previousSolution);
+        }
         if ((result.BestScore < BossModStyleAStar.Score.Safe || timedGoal) && map.HasFiniteDanger &&
             SafeIntervalPathfinder.Search(map, player.Position, capability.CurrentSpeed, solveTime,
                 capability.MovementStartDelay, options, timedGoal) is { } temporal)

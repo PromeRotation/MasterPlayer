@@ -1,5 +1,18 @@
 var failures = new List<string>();
 var passed = 0;
+if (args.Contains("--pt99-bounds-live"))
+{
+    Pt99BoundsRegression.RunLive((name, body) =>
+    {
+        if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter
+            && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
+        try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+        catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+    });
+    Console.WriteLine($"{passed} PT99 live bounds scenarios passed; {failures.Count} failed.");
+    Environment.ExitCode = failures.Count == 0 ? 0 : 1;
+    return;
+}
 if (args.Contains("--pt99-blaze"))
 {
     Pt99BlazeRegression.Run((name, body) =>
@@ -49,6 +62,7 @@ if (args.Contains("--pt99-targeting") || args.Contains("--final-verse"))
     Pt99TargetRegression.Run(Run);
     if (args.Contains("--final-verse")) FinalVerseRegression.Run(Run);
     if (args.Contains("--final-verse")) Pt99BoundsRegression.Run(Run);
+    if (args.Contains("--final-verse")) Pt99BoundsRegression.RunLive(Run);
     if (args.Contains("--final-verse")) Pt99DrainRegression.Run(Run);
     if (args.Contains("--final-verse")) Pt99BlazeRegression.Run(Run);
     PilgrimsBossRegression.Run((name, body) => { if (name.Contains("PT99")) Run(name, body); });
@@ -142,6 +156,11 @@ Pt50OverlapRegression.Run((name, body) =>
     catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
 });
 Pt99BlazeRegression.Run((name, body) =>
+{
+    try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
+    catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }
+});
+Pt99BoundsRegression.RunLive((name, body) =>
 {
     try { body(); Console.WriteLine($"PASS {name}"); ++passed; }
     catch (Exception ex) { failures.Add(name); Console.WriteLine($"FAIL {name}: {ex}"); }

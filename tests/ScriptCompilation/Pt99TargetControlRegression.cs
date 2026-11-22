@@ -125,6 +125,7 @@ internal static class Pt99TargetControlRegression
             SetService(nameof(Svc.Targets), originalTargets);
             SetService(nameof(Svc.Objects), originalObjects);
         }
+        Pt99BlazeRefugeHostRegression.Run(assembly);
     }
 
     private static void SetService(string name, object? value)

@@ -12,12 +12,14 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private void RememberTemporalContinuation(SafeZoneSolution solution, SafeZoneSnapshot snapshot)
     {
-        var goals = snapshot.GoalAreas;
+        // Negative-priority attack/follow goals are optional. Their per-frame
+        // masks and activation times must not discard a verified escape suffix.
+        var goals = snapshot.GoalAreas.Where(g => g.GoalWindows.Any(w => w.Priority >= 0)).ToArray();
         _temporalContinuation = GoalDirectedTemporalPlanning && solution.ContinuationPath.Count > 1
-            && (goals.Count == 0 && !solution.IsPartialEscape
+            && (goals.Length == 0 && !solution.IsPartialEscape
                 || goals.Any(g => g.Geometry.Contains(solution.ContinuationPath[^1].Position)
                     && g.GoalWindows.Any(w => w.IsActiveAt(snapshot.CreatedAt)))) ? solution : null;
-        _temporalGoals = _temporalContinuation == null ? [] : snapshot.GoalAreas;
+        _temporalGoals = _temporalContinuation == null ? [] : goals;
     }
 
     // The worker already searched beyond the wait. Resume that suffix on the
@@ -38,7 +40,7 @@ internal sealed partial class SafeZoneRebornMovementSystem
                 && IsTemporalPhaseSafe(previous, player, snapshot, now))
             {
                 _phase = DispatchPhase.Moving;
-                // With no goal to advance, a complete, still-safe timed route
+                // With no mechanic goal to advance, a complete, still-safe timed route
                 // owns its phase. A delayed partial re-plan must not turn back.
                 return _temporalGoals.Count == 0 || previous.SolvedAt != previous.SolveTime;
             }
@@ -109,16 +111,18 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private bool SameTemporalGoals(IReadOnlyList<GoalAreaSnapshot> goals, DateTime now)
     {
-        if (goals.Count != _temporalGoals.Count) return false;
-        for (var i = 0; i < goals.Count; ++i)
+        var index = 0;
+        foreach (var a in goals)
         {
-            var a = goals[i]; var b = _temporalGoals[i];
+            if (!a.GoalWindows.Any(w => w.Priority >= 0)) continue;
+            if (index >= _temporalGoals.Count) return false;
+            var b = _temporalGoals[index++];
             if (a.Handle != b.Handle || !a.GoalWindows.SequenceEqual(b.GoalWindows)
                 || !a.GoalWindows.Any(w => w.IsActiveAt(now))) return false;
             if (ReferenceEquals(a.Geometry, b.Geometry)) continue;
             if (a.Geometry is not CircleGeometry ac || b.Geometry is not CircleGeometry bc
                 || ac.Position != bc.Position || ac.Radius != bc.Radius) return false;
         }
-        return true;
+        return index == _temporalGoals.Count;
     }
 }

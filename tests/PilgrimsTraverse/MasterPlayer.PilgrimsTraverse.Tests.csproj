@@ -12,11 +12,13 @@
     <None Include="../Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" Link="Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../FinalVerseRegression.cs" Link="FinalVerseRegression.cs" />
     <Compile Include="../Pt99BoundsRegression.cs" Link="Pt99BoundsRegression.cs" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-bounds-143046.json" Link="Fixtures/PilgrimsTraverse/pt99-bounds-143046.json" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Pt99DrainRegression.cs" Link="Pt99DrainRegression.cs" />
     <Compile Include="../Pt99BlazeRegression.cs" Link="Pt99BlazeRegression.cs" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-150614.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-150614.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-003315.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-003315.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-133056.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-133056.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-drain-021732.json" Link="Fixtures/PilgrimsTraverse/pt99-drain-021732.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" Link="Fixtures/PilgrimsTraverse/pt99-bounds-015418.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" Link="Fixtures/PilgrimsTraverse/final-verse-normal-013910.json" CopyToOutputDirectory="PreserveNewest" />
@@ -40,6 +42,9 @@
     <Compile Include="../../src/Spatial/SafeZoneReborn/*.cs" Link="Movement/%(Filename)%(Extension)" />
     <Compile Include="../../src/Spatial/DirectTraversal*.cs" Link="Movement/%(Filename)%(Extension)" />
     <Compile Include="../../src/Replay/ReplayWorldState.cs" Link="ReplayWorldState.cs" />
+    <Compile Include="../../src/Movement/Follow/DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
+    <Compile Include="../../src/Movement/Follow/OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
+    <Compile Include="../../Presets/Crucible/Core/CrucibleCoreGeometry.cs" Link="CrucibleCoreGeometry.cs" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)/PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationPath)/ECommons.dll" />
     <Reference Include="Dalamud" HintPath="$(DalamudRoot)/Dalamud.dll" />

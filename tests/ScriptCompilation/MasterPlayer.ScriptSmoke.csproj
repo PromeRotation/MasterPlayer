@@ -9,6 +9,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Pt99TargetControlRegression.cs" />
+    <Compile Include="Pt99BlazeRefugeHostRegression.cs" />
     <Compile Include="PalaceScriptRegression.cs" />
     <Compile Include="PalaceRecordedReplay.cs" />
     <Compile Include="PalaceGameData.cs" />

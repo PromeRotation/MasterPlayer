@@ -107,7 +107,7 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
             boundary = wantedBoundary;
             manager.SetArenaBoundary(boundary);
         }
-        var wanted = encounter.Collect(now, player.Id);
+        var wanted = encounter.Collect(now, player.Id, MasterPlayerSettings.Instance.DodgeDangerMargin);
         var keys = wanted.Select(a => a.Key).ToHashSet();
         foreach (var key in output.Keys.Where(k => !keys.Contains(k)).ToArray()) Remove(key);
         foreach (var area in wanted)
@@ -143,7 +143,8 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
             else Draw.Remove(area.Key);
         }
         runtime.RequestAutomaticMovement(this, !IsReplay, hold: encounter.HoldMovement(now, player.Id),
-            hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin, arenaSafetyMargin: 0, goalDirectedTemporalPlanning: true);
+            hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin, arenaSafetyMargin: 0, goalDirectedTemporalPlanning: true,
+            preferSafeRefuge: encounter is Pt99Encounter pt99 && pt99.IsBlazeActive(now));
         UpdateTarget(now, player.Id);
         ShowHints(now, player.Id);
     }

@@ -128,7 +128,7 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     protected virtual void OnMap(uint index, uint state, DateTime now) { }
     protected virtual void AddPersonalAreas(List<Area> result, DateTime now, ulong player) { }
 
-    public IReadOnlyList<Area> Collect(DateTime now, ulong player)
+    public virtual IReadOnlyList<Area> Collect(DateTime now, ulong player, float safetyMargin = .5f)
     {
         // Expired sequence entries remain until their effect consumes them. A late
         // effect must never accidentally consume the following predicted hit.

@@ -18,6 +18,11 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     private readonly List<BlazeLine> lines = [];
     private readonly List<Cast> pendingBlazes = [];
     private readonly List<Cast> drains = [];
+    private readonly HashSet<Vector3> blazeFootprint = [];
+    private DateTime blazeRefugeFrom;
+    private DateTime blazeRefugeUntil;
+    private GeometryTemplate? blazeRefuge;
+    private float blazeRefugeMargin;
     public override bool Preparing => !Active && Boss is { Dead: false } && actors.Values.Any(a => a.Oid == 0x48EB && !a.Dead);
     private Vector3 blazeDirection = Vector3.UnitX;
     private int lineIndex;
@@ -84,17 +89,63 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
         if (crystals.Count == 0) return false;
         var candidate = crystals.MinBy(p => Vector3.DistanceSquared(p.Value.Position, cast.Position));
         if (candidate.Key == 0 || Vector3.DistanceSquared(candidate.Value.Position, cast.Position) > 1) return false;
+        if (!IsBlazeActive(cast.Start))
+        {
+            ClearBlazeRefuge();
+            blazeRefugeFrom = cast.Start;
+        }
+        // Use all observed crystals, including those whose helper cast has not
+        // arrived yet. Keep the entire footprint until the round ends.
+        foreach (var crystal in crystals.Values)
+            foreach (var (step, count) in BlazeBranches(crystal.Position, crystal.Direction))
+            {
+                for (var i = 0; i < count; ++i)
+                    if (blazeFootprint.Add(crystal.Position + step * (4 * i))) blazeRefuge = null;
+                var until = cast.Hit.AddSeconds((count - 1) * BLAZE_INTERVAL_SECONDS + .15);
+                if (until > blazeRefugeUntil) blazeRefugeUntil = until;
+            }
         var (position, direction) = candidate.Value;
+        foreach (var (step, count) in BlazeBranches(position, direction))
+            lines.Add(new(lineIndex++, cast.Source, position, step * 4, cast.Hit, count));
+        crystals.Remove(candidate.Key);
+        return true;
+    }
+
+    private IEnumerable<(Vector3 Step, int Count)> BlazeBranches(Vector3 position, Vector3 direction)
+    {
         for (var side = -1; side <= 1; side += 2)
         {
             var step = direction * side;
             var offset = position - Center;
             var range = MathF.Abs(step.X) > .5f ? (18.1f - MathF.Sign(step.X) * offset.X) : (14.1f - MathF.Sign(step.Z) * offset.Z);
             var count = Math.Max(1, (int)range / 4 + 1);
-            lines.Add(new(lineIndex++, cast.Source, position, step * 4, cast.Hit, count));
+            yield return (step, count);
         }
-        crystals.Remove(candidate.Key);
-        return true;
+    }
+
+    public bool IsBlazeActive(DateTime now) => blazeFootprint.Count > 0 && now <= blazeRefugeUntil;
+
+    public override IReadOnlyList<Area> Collect(DateTime now, ulong player, float safetyMargin = .5f)
+    {
+        var result = base.Collect(now, player, safetyMargin);
+        if (!IsBlazeActive(now)) return result;
+        var margin = float.IsFinite(safetyMargin) ? Math.Clamp(safetyMargin, 0, 2) : .5f;
+        if (blazeRefuge == null || margin != blazeRefugeMargin)
+        {
+            blazeRefugeMargin = margin;
+            blazeRefuge = new PtShapeTemplate(new PtCompositeGeometry([Boundary],
+                blazeFootprint.Select(p => (IGeometryShape)new CircleGeometry(p, 5 + margin)).ToArray()));
+        }
+        // Colour acquisition (10) and bait/escape mechanics (15/20) still win.
+        return [.. result, new Area("blaze-refuge", "整轮地火安全区", blazeRefuge, Center, 0,
+            blazeRefugeFrom, blazeRefugeUntil, Safe: true, NavigationOnly: true, Priority: 5)];
+    }
+
+    private void ClearBlazeRefuge()
+    {
+        blazeFootprint.Clear();
+        blazeRefuge = null;
+        blazeRefugeFrom = blazeRefugeUntil = default;
     }
 
     protected override void OnEffect(LogSystemActionEffectEvent effect, DateTime now)
@@ -130,6 +181,10 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                     line.Hit = now.AddSeconds(BLAZE_INTERVAL_SECONDS);
                     --line.Remaining;
                     ++line.Resolved;
+                    var until = line.Remaining > 0
+                        ? line.Hit.AddSeconds((line.Remaining - 1) * BLAZE_INTERVAL_SECONDS + .15)
+                        : now.AddSeconds(.15);
+                    if (until > blazeRefugeUntil) blazeRefugeUntil = until;
                     if (effect.ActionId == 44080) break;
                 }
                 lines.RemoveAll(l => l.Remaining == 0);
@@ -260,10 +315,19 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                 _ => "暗色：攻击 Devoured Eater"
             };
     }
-    public override void Cancel(ulong source) { base.Cancel(source); drains.RemoveAll(c => c.Source == source); pendingBlazes.RemoveAll(c => c.Source == source); lines.RemoveAll(l => l.Owner == source); }
+    public override void Cancel(ulong source)
+    {
+        base.Cancel(source);
+        drains.RemoveAll(c => c.Source == source);
+        pendingBlazes.RemoveAll(c => c.Source == source);
+        lines.RemoveAll(l => l.Owner == source);
+        if (!lines.Any(l => l.Hit >= blazeRefugeFrom) && !pendingBlazes.Any(c => c.Start >= blazeRefugeFrom))
+            ClearBlazeRefuge();
+    }
     protected override void ResetMechanics()
     {
         pillars.Clear(); crystals.Clear(); seenCrystals.Clear(); lines.Clear(); pendingBlazes.Clear(); drains.Clear(); chainsReleased.Clear();
+        ClearBlazeRefuge();
         lineIndex = 0; spinelashTarget = 0; spinelashHit = chainAt = fireBaitUntil = default; blazeDirection = Vector3.UnitX;
     }
     private sealed class BlazeLine(int id, ulong owner, Vector3 next, Vector3 step, DateTime hit, int remaining)
