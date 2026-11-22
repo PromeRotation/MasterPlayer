@@ -62,49 +62,68 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     {
         Instance = this;
 
-        var settings = MasterPlayerSettings.Instance;
-        AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility, () => SafeZone.CurrentTime);
-        _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
-            () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
-        _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
-        _safeZoneDeath = PromeEventBus.OnPlayerDied(this, () => { if (!PlayerPerspective.IsDutyReplay) ClearLiveSafeZone(); });
-        _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, () => ClearLiveSafeZone(preserveTerrain: true));
-        _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
-        _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
-        _smartMovementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
+        if (!Svc.ClientState.IsPvP)
+            InitializeRuntime();
 
-        _radar = new Radar.RadarRenderer();
-        _dodge = new Dodge.DodgeController();
-        _mechanics = new Mechanics.MechanicDispatcher(this);
-        _mechanicHost = new MechanicHost.MechanicHostController();
-        _scripts = new Scripting.ScriptManager();
-        _scripts.RefreshCatalog();
-        _replayRecorder = new Replay.ReplayRecorder();
-        _replayController = new Replay.ReplayController(_scripts, _replayRecorder, _mechanicHost);
-        _replayWindow = new Windows.ReplayWindow();
-        _radarOverlay = new Radar.RadarOverlayWindow();
-        _follow = new Follow.FollowController();
-        _remoteControl = new Integration.RemoteControlClient();
-        _skillSequences = new Combat.Sequences.CombatSkillSequence();
-        _mainWindow = new Windows.MainWindow();
-        _integration = new Integration.SmartMovementIntegration(SafeZone);
-
+        Svc.ClientState.EnterPvP += OnEnterPvP;
         Svc.Framework.Update += OnFrameworkUpdate;
-        Svc.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
-        Svc.PluginInterface.UiBuilder.Draw += _radarOverlay.Draw;
-        Svc.PluginInterface.UiBuilder.Draw += _replayWindow.Draw;
+        Svc.PluginInterface.UiBuilder.Draw += Draw;
         Svc.Commands.AddHandler(PanelCommand, new CommandInfo(OnPanelCommand)
         {
             HelpMessage = "打开/关闭 PromeRadar；/prpr ai on/off 开关智能走位；/prpr rec 开停录制；/prpr replay 开关回放窗口",
         });
         Svc.Commands.AddHandler(LegacyPanelCommand, new CommandInfo(OnPanelCommand) { HelpMessage = "PromeRadar 旧指令；请使用 /prpr" });
-        _integration.Update(this);
 
         Svc.Log.Info($"[MasterPlayer] Initialized build={typeof(MasterPlayerPlugin).Module.ModuleVersionId:D}");
     }
 
+    private void InitializeRuntime()
+    {
+        try
+        {
+            var settings = MasterPlayerSettings.Instance;
+            AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility, () => SafeZone.CurrentTime);
+            _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
+                () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
+            _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
+            _safeZoneDeath = PromeEventBus.OnPlayerDied(this, () => { if (!PlayerPerspective.IsDutyReplay) ClearLiveSafeZone(); });
+            _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, () => ClearLiveSafeZone(preserveTerrain: true));
+            _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
+            _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
+            _smartMovementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
+
+            _radar = new Radar.RadarRenderer();
+            _dodge = new Dodge.DodgeController();
+            _mechanics = new Mechanics.MechanicDispatcher(this);
+            _mechanicHost = new MechanicHost.MechanicHostController();
+            _scripts = new Scripting.ScriptManager();
+            _scripts.RefreshCatalog();
+            _replayRecorder = new Replay.ReplayRecorder();
+            _replayController = new Replay.ReplayController(_scripts, _replayRecorder, _mechanicHost);
+            _replayWindow = new Windows.ReplayWindow();
+            _radarOverlay = new Radar.RadarOverlayWindow();
+            _follow = new Follow.FollowController();
+            _remoteControl = new Integration.RemoteControlClient();
+            _skillSequences = new Combat.Sequences.CombatSkillSequence();
+            _mainWindow = new Windows.MainWindow();
+            _integration = new Integration.SmartMovementIntegration(SafeZone);
+
+            _integration.Update(this);
+        }
+        catch
+        {
+            DisposeRuntime();
+            throw;
+        }
+    }
+
     public void DrawConfigUI()
     {
+        if (Svc.ClientState.IsPvP)
+        {
+            ImGui.TextDisabled("PvP 区域内 PromeRadar 所有功能已暂停，离开后自动恢复。");
+            return;
+        }
         if (ImGui.Button("打开 PromeRadar 设置面板"))
             _mainWindow?.Toggle();
         ImGui.SameLine();
@@ -113,6 +132,13 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void OnPanelCommand(string command, string args)
     {
+        if (_disposed)
+            return;
+        if (Svc.ClientState.IsPvP)
+        {
+            Svc.Chat.Print("[PromeRadar] PvP 区域内所有功能已暂停，离开后自动恢复。");
+            return;
+        }
         var arg = args.Trim();
         var parts = arg.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 0 && parts[0].Equals("ai", StringComparison.OrdinalIgnoreCase))
@@ -145,8 +171,41 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         _mainWindow?.Toggle();
     }
 
+    private void Draw()
+    {
+        if (_disposed || Svc.ClientState.IsPvP || _safeZone == null)
+            return;
+        _mainWindow?.Draw();
+        _radarOverlay?.Draw();
+        _replayWindow?.Draw();
+    }
+
+    private void OnEnterPvP()
+    {
+        if (_disposed || _safeZone == null)
+            return;
+
+        // 事件订阅、原生 hook 和宿主绘制不会随 Update 停止，统一释放运行组件。
+        // 保留配置及插件入口，离开 PvP 后由下一次 Framework 更新重建。
+        DisposeRuntime();
+        Svc.Log.Info("[PromeRadar] 进入 PvP 区域，所有功能已暂停。");
+    }
+
     private void OnFrameworkUpdate(IFramework framework)
     {
+        if (_disposed)
+            return;
+        if (Svc.ClientState.IsPvP)
+        {
+            OnEnterPvP();
+            return;
+        }
+        if (_safeZone == null)
+        {
+            InitializeRuntime();
+            Svc.Log.Info("[PromeRadar] 已离开 PvP 区域，按原设置恢复功能。");
+        }
+
         _integration?.ApplyRequests(this);
         var settings = MasterPlayerSettings.Instance;
         ApplyMovementPolicy(settings);
@@ -187,7 +246,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     public void SetSmartMovementEnabled(bool enabled)
     {
-        if (_disposed) return;
+        if (_disposed || Svc.ClientState.IsPvP) return;
         var settings = MasterPlayerSettings.Instance;
         if (settings.EnableSmartMovement == enabled && _smartMovementEnabled == enabled) return;
         settings.EnableSmartMovement = enabled;
@@ -197,7 +256,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
 
     private void ApplyMovementPolicy(MasterPlayerSettings settings)
     {
-        var movementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
+        var movementEnabled = settings.EnableSmartMovement && !Svc.ClientState.IsPvP && !PlayerPerspective.IsReplay;
         if (_smartMovementEnabled == movementEnabled) return;
         _smartMovementEnabled = movementEnabled;
         if (!_smartMovementEnabled)
@@ -226,13 +285,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             return;
         _disposed = true;
 
+        Svc.ClientState.EnterPvP -= OnEnterPvP;
         Svc.Framework.Update -= OnFrameworkUpdate;
-        if (_mainWindow != null)
-            Svc.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        if (_radarOverlay != null)
-            Svc.PluginInterface.UiBuilder.Draw -= _radarOverlay.Draw;
-        if (_replayWindow != null)
-            Svc.PluginInterface.UiBuilder.Draw -= _replayWindow.Draw;
+        Svc.PluginInterface.UiBuilder.Draw -= Draw;
 
         foreach (var panelCommand in new[] { PanelCommand, LegacyPanelCommand })
         {
@@ -245,6 +300,18 @@ public sealed class MasterPlayerPlugin : IPromePlugin
                 Svc.Log.Warning(ex, $"[PromeRadar] 移除聊天指令 {panelCommand} 失败");
             }
         }
+
+        DisposeRuntime();
+
+        Instance = null;
+        Svc.Log.Info("[MasterPlayer] Disposed");
+    }
+
+    private void DisposeRuntime()
+    {
+        _smartMovementEnabled = false;
+        if (_safeZone != null)
+            _safeZone.Setting.MovementAllowed = false;
 
         SafeDispose(ref _skillSequences);
         SafeDispose(ref _remoteControl);
@@ -266,9 +333,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _safeZoneBattleEnd);
         SafeDispose(ref _safeZone);
         AoeVisibility = null;
-
-        Instance = null;
-        Svc.Log.Info("[MasterPlayer] Disposed");
+        _nextPerfLog = default;
     }
 
     private static void SafeDispose<T>(ref T? disposable) where T : class, IDisposable

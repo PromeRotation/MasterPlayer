@@ -4,6 +4,8 @@
 
 ## 当前设置与控制契约
 
+- `Svc.ClientState.IsPvP` 为全插件区域门控（包含狼狱停船厂）。进入 PvP 释放全部运行组件、事件订阅、原生 hook、绘制及控制请求，停止录制和回放；PvP 内不初始化运行组件，不接受功能指令。离开后由 Framework 更新按原设置重建，不改写用户功能开关。
+
 - 产品名称为 **PromeRadar**；插件 ID `masterplayer`、`MasterPlayer.dll`、命名空间、配置/脚本/回放目录及 ImGui ID 沿用原标识，保持已有配置和外部脚本兼容。
 - `EnableSmartMovement` 是唯一移动总开关。接近目标和跟随只向同一规划器注册目标；关闭时撤销本插件的移动、朝向、原生控制和 runtime owner 请求，绘制、提示与规划继续。执行层通过 `SafeZoneSetting.MovementAllowed` 门控移动。
 - `EnableMechanics` 统一控制脚本、模块及处理器；`TerritoryEnabled` 默认按区域启用，同时作用于实时和回放，脚本逐项开关保留。模块停用或被专属脚本压制时释放通用 AOE 压制，恢复时重建会话。

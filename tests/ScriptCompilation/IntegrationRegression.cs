@@ -100,7 +100,13 @@ internal static class IntegrationRegression
                 },
                 _ => throw new NotSupportedException(name),
             }));
-            Set(nameof(Svc.ClientState), CatalogServiceProxy.Create<IClientState>((name, _) => name == "get_TerritoryType" ? 1036u : throw new NotSupportedException(name)));
+            var inPvp = false;
+            Set(nameof(Svc.ClientState), CatalogServiceProxy.Create<IClientState>((name, _) => name switch
+            {
+                "get_TerritoryType" => 1036u,
+                "get_IsPvP" => inPvp,
+                _ => throw new NotSupportedException(name),
+            }));
             Set(nameof(Svc.Objects), CatalogServiceProxy.Create<IObjectTable>((name, _) => name == "get_LocalPlayer" ? null : throw new NotSupportedException(name)));
             Set(nameof(Svc.DtrBar), CatalogServiceProxy.Create<IDtrBar>((name, _) => name == "Get" ? entry : throw new NotSupportedException(name)));
             Set(nameof(Svc.Chat), CatalogServiceProxy.Create<IChatGui>((name, _) => name == "Print" ? null : throw new NotSupportedException(name)));
@@ -124,6 +130,32 @@ internal static class IntegrationRegression
             Check(!(bool)settings.EnableSmartMovement, "Invalid AI arguments changed the movement switch.");
             command.Invoke(plugin, ["/prpr", " AI   ON "]);
             Check((bool)settings.EnableSmartMovement, "The ai on command did not accept spacing/case variations.");
+            inPvp = true;
+            command.Invoke(plugin, ["/prpr", "ai off"]);
+            pluginType.GetMethod("SetSmartMovementEnabled")!.Invoke(plugin, [false]);
+            Check((bool)settings.EnableSmartMovement, "PvP commands or API calls overwrote the user's movement preference.");
+            var frame = pluginType.GetMethod("OnFrameworkUpdate", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            frame.Invoke(plugin, [Svc.Framework]);
+            frame.Invoke(plugin, [Svc.Framework]);
+            Check(pluginType.GetField("_safeZone", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(plugin) == null
+                && pluginType.GetField("_safeZoneActivation", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(plugin) == null,
+                "PvP did not release the runtime or recreated it on a later frame.");
+            Check((bool)settings.EnableSmartMovement && !(bool)setting.GetType().GetProperty("EnableAutoMovement")!.GetValue(setting)!,
+                "PvP cleanup changed the saved switch or retained automatic movement.");
+            pluginType.GetMethod("Draw", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(plugin, null);
+            inPvp = false;
+            activation.Dispose();
+            runtime.Dispose();
+            runtime = (IDisposable)Activator.CreateInstance(assembly.GetType("MasterPlayer.Spatial.SafeZoneRuntime")!, BindingFlags.Instance | BindingFlags.NonPublic,
+                null, [movement, (Func<bool>)(() => false), (Func<bool>)(() => false)], null)!;
+            setting = runtime.GetType().GetProperty("Setting")!.GetValue(runtime)!;
+            activation = (IDisposable)Activator.CreateInstance(assembly.GetType("MasterPlayer.Settings.SafeZoneActivation")!, [setting, null])!;
+            pluginType.GetField("_safeZone", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plugin, runtime);
+            pluginType.GetField("_safeZoneActivation", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plugin, activation);
+            pluginType.GetMethod("ApplyMovementPolicy", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(plugin, [(object)settings]);
+            Check((bool)setting.GetType().GetProperty("EnableAutoMovement")!.GetValue(setting)!,
+                "Leaving PvP did not restore movement from the unchanged setting.");
+            Console.WriteLine("PASS production PvP gate: blocked commands/API, repeated frames, runtime cleanup and original movement preference");
             var integrationType = assembly.GetType("MasterPlayer.Integration.SmartMovementIntegration")!;
             integration = (IDisposable)Activator.CreateInstance(integrationType, [runtime])!;
             var update = integrationType.GetMethod("Update")!;
@@ -144,6 +176,12 @@ internal static class IntegrationRegression
             click!(new DtrInteractionEvent { ClickType = MouseClickType.Left });
             apply.Invoke(integration, [plugin]); update.Invoke(integration, [plugin]);
             Check(Enabled() && (bool)settings.EnableSmartMovement && notices.SequenceEqual([true, false, true]), "DTR did not use the same switch and notifications.");
+            pluginType.GetField("_integration", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plugin, integration);
+            setEnabled!(false);
+            inPvp = true;
+            frame.Invoke(plugin, [Svc.Framework]);
+            frame.Invoke(plugin, [Svc.Framework]);
+            Check((bool)settings.EnableSmartMovement, "Entering PvP applied a queued IPC request instead of preserving the user's preference.");
             integration.Dispose(); integration.Dispose(); integration = null;
             Check(funcs.Count == 0 && setEnabled == null && setFsdActive == null && click == null && dtrDisposed == 1, "IPC/DTR resources leaked across hot reload.");
             using var finalState = JsonDocument.Parse(snapshots.Last());
