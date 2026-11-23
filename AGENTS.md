@@ -162,7 +162,7 @@ public interface IPromePlugin : IDisposable
 | `GreenMoveSystem` | `IGreenMoveSystem` | 移动执行。`IsRunning`、`GetStatus()`、**`MoveTo(GreenMovePoint)` / `MoveTo(IReadOnlyList<GreenMovePoint>)`（替换当前路线，last-write-wins）**、`Append(...)`（追加到路线尾）、`Stop()`、`ClearQueue()`（清空后续点保留当前点）、`SkipCurrent()` |
 | `DrawManager` | `DrawManager` | 世界绘制注册入口（主线程）。`Add(...)` / `AddBound(...)`（跟随实体）/ `AddTether(...)` 多重重载 → 返回 `DrawHandle`；`Remove(DrawHandle)` / `Remove(string id)`；**`RemoveByRegex(string pattern)` → int**；`Clear()` |
 
-表中 `GreenMoveSystem` 和 `DrawManager` 仍属于 `PromeRotation.Plugin.Instance`。世界绘制通过 `HostDrawingGeometry` 转换本地几何；雷达和安全区直接使用本地几何。
+表中 `GreenMoveSystem` 属于 `PromeRotation.Plugin.Instance`；插件世界绘制使用 `MasterPlayerPlugin.Instance.WorldDrawing.Manager` 持有的独立 PR `DrawManager`，不向宿主全局注册表提交。世界绘制通过 `HostDrawingGeometry` 转换本地几何；雷达和安全区直接使用本地几何。显示设置提供 ImGui / DirectX 11 切换，独立分发、遮挡与宿主签名验证见 [世界绘制规格](docs/reference/WorldDrawing.spec.md)。
 
 配套几何类型（`MasterPlayer.Spatial.SafeZone`，`GeometryTemplate.cs` / `TransformBinding.cs`）：
 
@@ -347,7 +347,7 @@ python tools/arr/arr_decode.py "<录像>.dat" --out "analysis/<任务目录>/"
 1. **主线程**：SafeZone 注册/快照和 DrawManager 操作在 Framework 或 UiBuilder 主线程执行；事件选择及裸事件入队方式见 §5.3。
 2. **Dispose / 热重载**：幂等释放事件、绘制及自身控制，清理各环节独立处理异常。脚本状态放实例字段，`OnStop` 收尾；刷新实例不等于重置程序集静态状态。
 3. **移动指令**：GreenMove `MoveTo` 替换整条路线，只在路线变化时提交；`Stop` / `ClearQueue` / `SkipCurrent` 仅操作自身仍持有的路线。脚本直接移动还须让位于本地自动移动；宿主让位由 `HostMovement` 适配，规则见 §5.2。回位也经规划器，回放执行门控见 §5.6.2。
-4. **绘制 ID**：世界绘制使用 `MasterPlayer_` 前缀；卸载通过 `DrawManager.RemoveByRegex("^MasterPlayer_")` 清理，脚本使用独立 GUID 前缀。
+4. **绘制 ID**：世界绘制使用 `MasterPlayer_` 前缀；脚本按独立 GUID 前缀清理，卸载释放插件自己的 DrawManager 和 DX 资源，不清理 PR 全局绘制。
 5. **设置与区域**：持久化统一走 `MasterPlayerSettings`（§3.1），区域使用 Territory ID，与 CFC 分开。
 6. **脚本输出**：使用宿主上下文和门面，owner 管理事件/区域/绘制/控制；机制状态与视角、执行权限分别处理（§5.6）。
 7. **解算行为**：持续危险和覆盖起点的硬障碍立即逃离，各区域退出后不重入；其他障碍与场地边界仍阻挡。错峰判定允许等待后转场，只提交首次等待前的路线并周期重解，无出口返回 `NoReachableSafeCell`。精确小目标、容差和有效期按真实解算器定向验证。

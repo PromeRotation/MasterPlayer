@@ -66,7 +66,7 @@ public sealed class ExampleMechanicHandler : IMechanicHandler
 
         try
         {
-            PromeRotation.Plugin.Instance.DrawManager.RemoveByRegex(DrawCleanupPattern);
+            MasterPlayerPlugin.Instance!.WorldDrawing.Manager.RemoveByRegex(DrawCleanupPattern);
         }
         catch
         {
@@ -99,12 +99,12 @@ public sealed class ExampleMechanicHandler : IMechanicHandler
             return;
 
         var entityId = (uint)ev.TargetId;
-        PromeRotation.Plugin.Instance.DrawManager.AddBound(
+        MasterPlayerPlugin.Instance!.WorldDrawing.Manager.AddBound(
             $"{DrawIdPrefix}TargetIcon_{entityId:X8}",
             Radar.HostDrawingGeometry.Convert(new CircleGeometry(Vector3.Zero, 1.5f)),
             DrawBinding.Follow(entityId),
             DrawStyle.Danger,
-            durationMs: 3000f);
+            durationMs: 3000f, rendererType: RendererType.DirectX);
 
         // 机制移动示例（演示用，保持注释）：自己被点名时让 GreenMove 向 +X 方向走 3 米
         // var me = PlayerPerspective.LivePlayer;

@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;PalaceOfTheDead\**;TerrainCollision\**;ReleasePackaging\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;PalaceOfTheDead\**;TerrainCollision\**;ReleasePackaging\**;WorldDrawing\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Presets\Hunts\*.cs" Exclude="..\Presets\Hunts\SimpleHuntScript.cs" Link="Hunts\%(Filename)%(Extension)" />
@@ -31,6 +31,7 @@
     <Compile Include="..\src\Replay\ReplayWorldCapture.cs" Link="Replay\ReplayWorldCapture.cs" />
     <Compile Include="..\src\Core\Settings\AoeViewSettings.cs" Link="AoeViewSettings.cs" />
     <Compile Include="..\src\Core\Settings\MasterPlayerSettings.cs" Link="MasterPlayerSettings.cs" />
+    <Compile Include="..\src\Core\Settings\WorldDrawingMode.cs" Link="WorldDrawingMode.cs" />
     <Compile Include="..\src\Movement\Follow\FollowController.cs" Link="FollowController.cs" />
     <Compile Include="..\src\Movement\Follow\DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
     <Compile Include="..\src\Movement\Follow\OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />

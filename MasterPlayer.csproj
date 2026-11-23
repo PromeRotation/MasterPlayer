@@ -23,18 +23,25 @@
 
   <ItemGroup>
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
+    <EmbeddedResource Include="src\UI\WorldDrawing\DrawPlus.hlsl" LogicalName="MasterPlayer.Drawing.DrawPlus.hlsl" />
     <ProjectReference Include="MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
     <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\PromeRotation.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\DotRecast.LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="ThirdPartyNotices\PromeDrawPlus.NOTICE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UsePromeRotationSdk)' == 'true'">
     <PackageReference Include="PromeRotation.SDK.CNGL" Version="[$(PromeRotationSdkVersion)]" GeneratePathProperty="true" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" ExcludeAssets="runtime;analyzers" />
+    <PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.6" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UsePromeRotationSdk)' != 'true'">
+    <Reference Include="TerraFX.Interop.Windows">
+      <HintPath>$(DalamudRoot)\TerraFX.Interop.Windows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Dalamud">
       <HintPath>$(DalamudRoot)\Dalamud.dll</HintPath>
       <Private>false</Private>

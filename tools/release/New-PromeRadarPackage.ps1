@@ -38,7 +38,7 @@ $notices = New-Item -ItemType Directory -Path (Join-Path $package.FullName 'Thir
 foreach ($file in 'MasterPlayer.dll', 'MasterPlayer.MechanicRuntime.dll', 'MasterPlayer.deps.json', 'DotRecast.Core.dll', 'DotRecast.Recast.dll') {
     Copy-Item -LiteralPath (Join-Path $build $file) -Destination $package.FullName
 }
-foreach ($file in 'BossModReborn.LICENSE', 'PromeRotation.LICENSE', 'DotRecast.LICENSE') {
+foreach ($file in 'BossModReborn.LICENSE', 'PromeRotation.LICENSE', 'DotRecast.LICENSE', 'PromeDrawPlus.NOTICE') {
     Copy-Item -LiteralPath (Join-Path $build "ThirdPartyNotices/$file") -Destination $notices.FullName
 }
 

@@ -8,6 +8,22 @@ internal static partial class FollowRegression
 {
     private static void RunSmartMovementSettings(Action<string, Action> run)
     {
+        run("World drawing settings preserve legacy defaults and DX choices", () =>
+        {
+            using var scope = new FollowScope();
+            var old = MasterPlayerSettings.FromJson("{}");
+            Check(old.WorldDrawingMode == WorldDrawingMode.ImGui, "Old configurations must retain ImGui rendering.");
+            var selected = MasterPlayerSettings.FromJson("""{"WorldDrawingMode":1,"DxSceneOcclusion":false,"DxUiMask":true,"DxOccludedAlpha":0.4,"DxHeightOffset":0.02}""");
+            var saved = JsonSerializer.Serialize(selected, new JsonSerializerOptions { IncludeFields = true });
+            var restored = MasterPlayerSettings.FromJson(saved);
+            Check(restored.WorldDrawingMode == WorldDrawingMode.DirectX && !restored.DxSceneOcclusion && restored.DxUiMask,
+                "DX mode or independent occlusion choices were lost.");
+            Check(restored.DxOccludedAlpha == 0.4f && restored.DxHeightOffset == 0.02f, "DX appearance values were lost.");
+            var invalid = MasterPlayerSettings.FromJson("""{"WorldDrawingMode":99,"DxOccludedAlpha":3,"DxHeightOffset":-1}""");
+            Check(invalid.WorldDrawingMode == WorldDrawingMode.ImGui && invalid.DxOccludedAlpha == 1 && invalid.DxHeightOffset == 0,
+                "Invalid configuration must not produce an invalid renderer selection or shader parameters.");
+        });
+
         foreach (var dodge in new[] { false, true })
             foreach (var follow in new[] { false, true })
                 run($"Smart movement migrates legacy switches: dodge={dodge}, follow={follow}", () =>

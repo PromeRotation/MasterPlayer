@@ -11,7 +11,7 @@ using MasterPlayer.Spatial.SafeZone;
 namespace MasterPlayer.Radar;
 
 /// <summary>
-/// 雷达绘制：每帧在主线程把 SafeZone 快照与当前解算路径提交到 PR 的 DrawManager。
+/// 雷达绘制：每帧在主线程把 SafeZone 快照与当前解算路径提交到插件的独立 DrawManager。
 /// 生命周期策略：确定性 id 原位覆盖（DrawManager.Add 同 id 即 upsert）+ 帧末差集移除消失元素，
 /// 并给每个元素挂 500ms 自过期兜底；不采用每帧 RemoveByRegex 全量重建（省一次正则构造与字典全扫）。
 /// </summary>
@@ -50,19 +50,19 @@ public sealed class RadarRenderer : IDisposable
 
         try
         {
-            var plugin = PromeRotation.Plugin.Instance;
+            var draw = MasterPlayerPlugin.Instance!.WorldDrawing.Manager;
             if (!MasterPlayerSettings.Instance.EnableRadar)
             {
                 if (_drawnIds.Count > 0)
                 {
-                    plugin.DrawManager.RemoveByRegex(RemovePattern);
+                    draw.RemoveByRegex(RemovePattern);
                     _drawnIds.Clear();
                 }
 
                 return;
             }
 
-            RenderFrame(plugin);
+            RenderFrame(draw);
         }
         catch (Exception ex)
         {
@@ -85,7 +85,7 @@ public sealed class RadarRenderer : IDisposable
         _disposed = true;
         try
         {
-            PromeRotation.Plugin.Instance.DrawManager.RemoveByRegex(RemovePattern);
+            MasterPlayerPlugin.Instance!.WorldDrawing.Manager.RemoveByRegex(RemovePattern);
         }
         catch (Exception ex)
         {
@@ -102,20 +102,19 @@ public sealed class RadarRenderer : IDisposable
         _frameIds.Clear();
     }
 
-    private void RenderFrame(PromeRotation.Plugin plugin)
+    private void RenderFrame(DrawManager draw)
     {
         var now = MasterPlayerPlugin.Instance!.SafeZone.CurrentTime;
         var snapshot = MasterPlayerPlugin.Instance!.SafeZone.Manager.BuildSnapshot(now);
         var appearance = MasterPlayerSettings.Instance.WorldAoe;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
-        var draw = plugin.DrawManager;
         var frameIds = _frameIds;
         frameIds.Clear();
 
         if (appearance.ShowAreas)
-            DrawAreas(plugin, snapshot, appearance, visibility, now, frameIds);
+            DrawAreas(draw, snapshot, appearance, visibility, now, frameIds);
         if (appearance.ShowPath)
-            DrawPath(plugin, frameIds);
+            DrawPath(draw, frameIds);
 
         foreach (var stale in _drawnIds)
         {
@@ -128,14 +127,13 @@ public sealed class RadarRenderer : IDisposable
         (_drawnIds, _frameIds) = (frameIds, _drawnIds);
     }
 
-    private static void DrawAreas(PromeRotation.Plugin plugin, SafeZoneSnapshot snapshot, AoeViewSettings appearance,
+    private static void DrawAreas(DrawManager draw, SafeZoneSnapshot snapshot, AoeViewSettings appearance,
         AoeVisibilityRegistry? visibility, DateTime now, HashSet<string> frameIds)
     {
-        var draw = plugin.DrawManager;
         if (snapshot.ArenaBoundary is { } boundary && boundary is not ILocalViewBoundary)
         {
             var id = IdPrefix + "Boundary";
-            draw.Add(id, HostDrawingGeometry.Convert(boundary), BoundaryStyle, durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(boundary), BoundaryStyle, durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
             frameIds.Add(id);
         }
 
@@ -147,9 +145,9 @@ public sealed class RadarRenderer : IDisposable
             if (!drawAsBoundary && !appearance.IsVisible(obstacle.Geometry, false)) continue;
             var id = $"{IdPrefix}Obstacle_{obstacle.Handle.Id}";
             if (drawAsBoundary)
-                draw.Add(id, TerrainDrawingGeometries.GetValue(obstacle.Geometry, HostDrawingGeometry.Convert), BoundaryStyle, durationMs: SelfExpireMs);
+                draw.Add(id, TerrainDrawingGeometries.GetValue(obstacle.Geometry, HostDrawingGeometry.Convert), BoundaryStyle, durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
             else
-                draw.Add(id, HostDrawingGeometry.Convert(obstacle.Geometry), appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+                draw.Add(id, HostDrawingGeometry.Convert(obstacle.Geometry), appearance.GetDangerStyle(), durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
             frameIds.Add(id);
         }
 
@@ -159,7 +157,7 @@ public sealed class RadarRenderer : IDisposable
             if (!appearance.IsVisible(goal.Geometry, true, visibility?.GetVisibility(goal.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Goal_{goal.Handle.Id}";
-            draw.Add(id, HostDrawingGeometry.Convert(goal.Geometry), appearance.GetSafeStyle(), durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(goal.Geometry), appearance.GetSafeStyle(), durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
             frameIds.Add(id);
         }
 
@@ -169,7 +167,7 @@ public sealed class RadarRenderer : IDisposable
             if (!appearance.IsVisible(danger.Geometry, false, visibility?.GetVisibility(danger.Handle).World ?? true))
                 continue;
             var id = $"{IdPrefix}Danger_{danger.Handle.Id}";
-            draw.Add(id, HostDrawingGeometry.Convert(danger.Geometry), appearance.GetDangerStyle(danger, now), durationMs: SelfExpireMs);
+            draw.Add(id, HostDrawingGeometry.Convert(danger.Geometry), appearance.GetDangerStyle(danger, now), durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
             frameIds.Add(id);
         }
 
@@ -179,7 +177,7 @@ public sealed class RadarRenderer : IDisposable
                 if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.World))
                     continue;
                 var id = IdPrefix + "Preview_" + preview.Id;
-                draw.Add(id, HostDrawingGeometry.Convert(preview.Geometry), preview.Style(appearance), durationMs: SelfExpireMs);
+                draw.Add(id, HostDrawingGeometry.Convert(preview.Geometry), preview.Style(appearance), durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
                 frameIds.Add(id);
             }
 
@@ -188,13 +186,13 @@ public sealed class RadarRenderer : IDisposable
             {
                 if (!line.Visibility.World || !(line.Safe ? appearance.ShowSafe : appearance.ShowDanger)) continue;
                 var id = IdPrefix + "Preview_" + line.Id;
-                draw.AddTether(id, line.Start, line.End, line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs);
+                draw.AddTether(id, line.Start, line.End, line.Safe ? appearance.GetSafeStyle() : appearance.GetDangerStyle(), durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
                 frameIds.Add(id);
             }
     }
 
     // Route = mitered ribbon + arrow heads flowing to the destination + a pulsing destination marker.
-    private void DrawPath(PromeRotation.Plugin plugin, HashSet<string> frameIds)
+    private void DrawPath(DrawManager draw, HashSet<string> frameIds)
     {
         var path = MasterPlayerPlugin.Instance!.SafeZone.MovementStatus.LatestSolution?.ExecutablePath;
         if (path is null || path.Count == 0)
@@ -214,7 +212,6 @@ public sealed class RadarRenderer : IDisposable
             return;
         }
 
-        var draw = plugin.DrawManager;
         for (var i = 0; i < _pathQuads.Count; i++)
         {
             var quad = _pathQuads[i];
@@ -254,7 +251,7 @@ public sealed class RadarRenderer : IDisposable
     private static void AddPathShape(PromeRotation.Spatial.Drawing.DrawManager draw, HashSet<string> frameIds,
         string id, IGeometryShape shape, DrawStyle style)
     {
-        draw.Add(id, HostDrawingGeometry.Convert(shape), style, durationMs: SelfExpireMs);
+        draw.Add(id, HostDrawingGeometry.Convert(shape), style, durationMs: SelfExpireMs, rendererType: RendererType.DirectX);
         frameIds.Add(id);
     }
 

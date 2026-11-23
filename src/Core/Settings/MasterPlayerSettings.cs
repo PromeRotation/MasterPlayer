@@ -45,6 +45,11 @@ public sealed class MasterPlayerSettings
     public bool ShowModuleTimeline = true;          // 悬浮窗下方显示机制模块预测时间轴
 
     public AoeViewSettings WorldAoe = new();
+    public WorldDrawingMode WorldDrawingMode = WorldDrawingMode.ImGui;
+    public bool DxSceneOcclusion = true;
+    public bool DxUiMask = true;
+    public float DxOccludedAlpha = 0f;
+    public float DxHeightOffset = 0f;
     public AoeViewSettings RadarAoe = AoeViewSettings.CreateRadarDefaults();
     public Dictionary<string, AoeVisibility> AoeVisibility = new();
 
@@ -105,6 +110,10 @@ public sealed class MasterPlayerSettings
     internal static MasterPlayerSettings FromJson(string json)
     {
         var settings = JsonSerializer.Deserialize<MasterPlayerSettings>(json, JsonOptions) ?? new();
+        if (!Enum.IsDefined(settings.WorldDrawingMode))
+            settings.WorldDrawingMode = WorldDrawingMode.ImGui;
+        settings.DxOccludedAlpha = Math.Clamp(settings.DxOccludedAlpha, 0f, 1f);
+        settings.DxHeightOffset = Math.Clamp(settings.DxHeightOffset, 0f, 0.05f);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         bool ReadLegacy(string key, bool fallback = false)

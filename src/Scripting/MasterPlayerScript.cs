@@ -21,7 +21,7 @@ public abstract class MasterPlayerScript
     /// <summary>移动门面（包装 PR GreenMoveSystem，内置让位/接管纪律）。</summary>
     public ScriptMoveApi Move => Host.Move;
 
-    /// <summary>绘制门面（包装 PR DrawManager，id 自动加脚本前缀，停止时自动清理）。</summary>
+    /// <summary>绘制门面（使用插件的独立 DrawManager，id 自动加脚本前缀，停止时自动清理）。</summary>
     public ScriptDrawApi Draw => Host.Draw;
 
     /// <summary>机制提示门面（朝向引导等 AIHints 式能力出口，回放期间宿主控制为空操作）。</summary>

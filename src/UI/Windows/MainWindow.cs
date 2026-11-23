@@ -341,9 +341,32 @@ public sealed partial class MainWindow : IDisposable
         }
         if (_displayPage == 1)
         {
+            Md.BeginCard("world_renderer", Md.CardKind.Outlined);
+            Md.SectionLabel("绘制模式");
+            var previousMode = settings.WorldDrawingMode;
+            var selectedMode = Md.Segmented("##world_renderer_mode", ["ImGui", "DirectX 11"], (int)previousMode, Md.Em * 15);
+            if (selectedMode != (int)previousMode)
+            {
+                MasterPlayerPlugin.Instance?.WorldDrawing.SetMode((WorldDrawingMode)selectedMode);
+                settings.Save();
+            }
+            var rendererChanged = false;
+            if (settings.WorldDrawingMode == WorldDrawingMode.DirectX)
+            {
+                rendererChanged |= ImGui.Checkbox("场景／角色遮挡", ref settings.DxSceneOcclusion);
+                rendererChanged |= ImGui.Checkbox("游戏 UI 遮挡", ref settings.DxUiMask);
+                ImGui.BeginDisabled(!settings.DxSceneOcclusion);
+                rendererChanged |= ImGui.SliderFloat("被遮挡部分透明度", ref settings.DxOccludedAlpha, 0f, 1f, "%.2f");
+                ImGui.EndDisabled();
+                rendererChanged |= ImGui.SliderFloat("绘制高度偏移", ref settings.DxHeightOffset, 0f, 0.05f, "%.3f");
+                Md.MutedText(MasterPlayerPlugin.Instance?.WorldDrawing.Status ?? "等待初始化");
+                if (settings.DxUiMask)
+                    Md.MutedText(MasterPlayerPlugin.Instance?.WorldDrawing.UiMaskStatus ?? "等待游戏画面");
+            }
+            Md.EndCard();
             Md.BeginCard("world_layers", Md.CardKind.Outlined);
             Md.SectionLabel("图层");
-            var worldChanged = WorldLayerRows(settings);
+            var worldChanged = WorldLayerRows(settings) || rendererChanged;
             Md.EndCard();
             worldChanged |= DrawAoeAppearance("world", settings.WorldAoe);
             if (worldChanged) settings.Save();

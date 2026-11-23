@@ -20,6 +20,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private const string PanelCommand = "/prpr";
     private const string LegacyPanelCommand = "/prmp";
     private Radar.RadarRenderer? _radar;
+    private Drawing.WorldDrawing? worldDrawing;
+    internal Drawing.WorldDrawing WorldDrawing => worldDrawing ?? throw new InvalidOperationException("世界绘制尚未初始化。");
     private Dodge.DodgeController? _dodge;
     private Mechanics.MechanicDispatcher? _mechanics;
     private MechanicHost.MechanicHostController? _mechanicHost;
@@ -106,6 +108,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             _safeZoneActivation.Update(settings.EnableRadar, settings.EnableRadarOverlay, settings.EnableSmartMovement, settings.OptimizeDodgeTiming);
             _smartMovementEnabled = settings.EnableSmartMovement && !PlayerPerspective.IsReplay;
 
+            worldDrawing = new Drawing.WorldDrawing(settings);
             _radar = new Radar.RadarRenderer();
             _dodge = new Dodge.DodgeController();
             _mechanics = new Mechanics.MechanicDispatcher(this);
@@ -348,6 +351,7 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _mechanics);
         SafeDispose(ref _dodge);
         SafeDispose(ref _radar);
+        SafeDispose(ref worldDrawing);
         SafeDispose(ref _safeZoneActivation);
         SafeDispose(ref _safeZoneTerritory);
         SafeDispose(ref _safeZoneDeath);

@@ -1,0 +1,15 @@
+PromeDrawPlus DirectX 11 rendering implementation
+
+Original plugin author: Miruku
+Plugin metadata version: 0.1.0
+Source artifact: locally supplied PromeDrawPlus.dll
+SHA-256: de35aa36a94ec35923096074556c0f0fac5116a490777ba0cb47e7d8cd158e76
+Decompiled using ILSpy / ICSharpCode.Decompiler 11.0.0.9375 on 2026-11-23.
+
+The rendering code and embedded DrawPlus.hlsl under src/UI/WorldDrawing
+were adapted from that artifact at the user's request. Demo scenes, image
+resources and experimental surface-patch capture are excluded. PromeRadar
+uses its own drawing registry and dispatcher.
+
+This notice records provenance; it does not grant or relicense rights in
+the original artifact.
