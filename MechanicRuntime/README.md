@@ -4,7 +4,7 @@
 
 源码版本：`f6914f3e85145b5c0390d2e53376b4ffd957cca6`。`Upstream/` 包含运行库 C# 源码（命名空间 `BossMod`）与 `Pathfinding/ObstacleMaps/` 资源，不包含：插件入口 `Framework/Plugin.cs`、`Modules/Dawntrail/Foray/Crucible/`、构建产物，以及 2026-09-27 移除的寻路引擎与 AI/移动执行控制（`Pathfinding/` 的 Map/ThetaStar/NavigationDecision/MapVisualizer、`AI/`（仅保留 AIConfig）、`Framework/` 的 ActionManagerEx/MovementOverride/IPCProvider/DTRProvider/MultiboxManager/WorldStateGameSync、`BossModule/AIHintsVisualizer.cs`、`Debug/`、`Autorotation/MiscAI/`、`Autorotation/UIRotationWindow.cs` 及 3 个模块侧 AIRotationModule 子类——MP 使用自有 SafeZoneReborn 解算与 PR GreenMove 移动，这些文件无构造者；排除清单以 `tests/MechanicRuntime/SourceIntegrity.cs` 为准）。障碍位图加载器（ObstacleMapDatabase/ObstacleMapManager）与 417 个位图资源保留，供后续 MP 场地障碍接入。保留支持类型是为了闭合模块、配置和动作定义的依赖；保留某类不等于启用对应控制器。
 
-所有 C# 文件为 UTF-8 无 BOM。除 BOM／换行表示以外，已知语义改动集中在 [SourceChanges.json](SourceChanges.json) 的 25 个文件；源完整性测试对照基线源码目录，检查文件集合、全部资源字节及未登记文件的源码，并核对每个适配文件修改前后的 SHA-256。哈希以去除 BOM、统一 LF 后的 UTF-8 源码计算，适配文件中额外改动也会被拒绝。第三方许可见 [BossModReborn.LICENSE](../ThirdPartyNotices/BossModReborn.LICENSE)，内置第三方源码保留原版权头。
+所有 C# 文件为 UTF-8 无 BOM。除 BOM／换行表示以外，已知语义改动集中在 [SourceChanges.json](SourceChanges.json) 的 28 个文件；源完整性测试对照基线源码目录，检查文件集合、全部资源字节及未登记文件的源码，并核对每个适配文件修改前后的 SHA-256。哈希以去除 BOM、统一 LF 后的 UTF-8 源码计算，适配文件中额外改动也会被拒绝。第三方许可见 [BossModReborn.LICENSE](../ThirdPartyNotices/BossModReborn.LICENSE)，内置第三方源码保留原版权头。
 
 初始化顺序：真实 `Lumina.GameData` 与日志 → `MechanicRuntimeEnvironment.Initialize` → `MechanicSession`。配置只初始化一次，避免已缓存配置的模块持有旧实例。环境不拥有游戏数据的生命周期；不同数据实例不能在同一已初始化程序集内替换。
 

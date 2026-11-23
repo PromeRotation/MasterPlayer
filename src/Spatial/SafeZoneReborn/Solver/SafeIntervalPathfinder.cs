@@ -85,7 +85,7 @@ internal static class SafeIntervalPathfinder
             // A conservative hit tail can temporarily prevent planning the entire
             // sequence. Still leave the current hazard for a strictly longer safe
             // interval; effect packets and the next solve can open the continuation.
-            if (safestPartial < 0 && current.Parent >= 0 && !map.RequiresEscapeAt(current.State.Cell) && currentInterval.Until > safestUntil + TimeEpsilon)
+            if ((safestPartial < 0 || options.PreferSafeRefuge) && current.Parent >= 0 && !map.RequiresEscapeAt(current.State.Cell) && currentInterval.Until > safestUntil + TimeEpsilon)
             {
                 safestPartial = index;
                 safestUntil = currentInterval.Until;

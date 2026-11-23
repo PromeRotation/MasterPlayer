@@ -88,6 +88,7 @@ public sealed class MechanicNavigationHost : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var replay = PlayerPerspective.IsReplay;
         NavigationActive = settings.EnableSmartMovement && !replay;
+        MasterPlayerPlugin.Instance!.SafeZone.RequestAutomaticMovement(this, NavigationActive && _hints.PreferSafeRefuge, preferSafeRefuge: true);
 
         var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
         var manager = MasterPlayerPlugin.Instance!.SafeZone.Manager;
@@ -129,6 +130,7 @@ public sealed class MechanicNavigationHost : IDisposable
             dangers.Add(new($"{key}/{source:X16}/{activation.Ticks}/{i}", prims, delay, persistent,
                 MechanicHintsConvert.SignatureOf(sd) + "|" + activation.Ticks) { IsGoal = isGoal });
         }
+        dangers.AddRange(MechanicNavAreaDiffer.TimedRequests(_hints, y, sampleCenter, sampleRadius));
         SampledZoneCount = sampled;
         SkippedZoneCount = skipped;
 
@@ -280,6 +282,7 @@ public sealed class MechanicNavigationHost : IDisposable
 
     private void ClearRegistrations()
     {
+        MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
         if (_differ.ZoneCount != 0 || _differ.GoalCount != 0 || _differ.ObstacleCount != 0 || _boundaryApplied)
         {
             var registry = MasterPlayerPlugin.Instance?.SafeZone.Registry;
