@@ -136,6 +136,9 @@ internal static class Orthos30Regression
         run("EO30 new ARR BLM centre start 300ms",()=>Simulate(.3,new(-300,0,-300),"eo30-203928.json"));
         run("EO30 new ARR BLM west start 300ms",()=>Simulate(.3,new(-316,0,-300),"eo30-203928.json"));
         run("EO30 new ARR BLM east start 300ms",()=>Simulate(.3,new(-284,0,-300),"eo30-203928.json"));
+        run("EO30 November24 recording closed loop 300ms",()=>Simulate(.3,file:"eo30-030529.json"));
+        run("EO30 November24 recording closed loop 100ms",()=>Simulate(.1,file:"eo30-030529.json"));
+        run("EO30 November24 recorded danger corner 300ms",()=>Simulate(.3,new(-282.277f,0,-281.3f),"eo30-030529.json"));
     }
     private static void Apply(Fight f, RecordedEvent e)
     {
@@ -272,7 +275,7 @@ internal static class Orthos30Regression
             // its final 200ms interrupts it; slidecasts still complete.
             if(castRemaining<=0 && !pair.Item2.IsRunning)castRemaining=2.8f;
             var player = new PlayerState(position, 0, 6, pair.Item2.IsRunning, castRemaining>0, castRemaining, true, snapshot.Version);
-            if (pending == null && snapshot.DangerAreas.Count > 0)
+            if (pending == null && (snapshot.DangerAreas.Count > 0 || snapshot.GoalAreas.Count > 0))
             {
                 var options = (SolveOptions)movement.GetType().GetMethod("CaptureSolveOptions", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(movement, null)!;
                 pending = new SafeZoneSolver().Solve(snapshot, player, new(6, 6, 0, false, 6, 6), options, now, latest);
@@ -301,11 +304,12 @@ internal static class Orthos30Regression
         Console.WriteLine($"  movement: {bursts.Count} bursts; {bursts.Count(b=>b.Distance<1.5f)} short steps (<1.5y); distance={bursts.Sum(b=>b.Distance):F1}y");
         foreach(var cast in casts.Where(c=>c.Action==31847))
             Console.WriteLine($"  chase {cast.T:F2}: {bursts.Count(b=>b.Start>=cast.T&&b.Start<cast.T+14)} starts; {bursts.Where(b=>b.Start>=cast.T&&b.Start<cast.T+14).Sum(b=>b.Distance):F1}y");
+        Check(hits == events.Count(e=>e.Kind=="effect") && collisions == 0 && headHits==0, "Recording still takes avoidable hits.");
         if(file=="eo30-203928.json" && initial==null && workerDelay==.3)
             Check(completed>=78 && interrupted<=30 && bursts.Count(b=>b.Distance<1.5f)<=10,
                 "New ARR regressed the measured casting/microstep improvement.");
-        Check(completed>= (file=="eo30-134415.json"?70:65) && longestStand>=8,"Safe windows did not permit enough full BLM casts.");
-        Check(hits == events.Count(e=>e.Kind=="effect") && collisions == 0 && headHits==0, "Recording still takes avoidable hits.");
+        Check(completed>= (file=="eo30-030529.json"?55:file=="eo30-134415.json"?70:65) && longestStand>=8,"Safe windows did not permit enough full BLM casts.");
+
     }
     private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
     private sealed class Fight : IDisposable

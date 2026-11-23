@@ -146,6 +146,19 @@ class CreatureOfDarkness(BossModule module) : Components.GenericAOEs(module)
 {
     private readonly List<AOEInstance> _aoes = [];
     private readonly Dictionary<ulong, (WPos Origin, Angle Rotation, DateTime Start)> _tracks = [];
+    private DateTime _gridUntil;
+    private int _chaseHits;
+    private DateTime _recoverUntil;
+    public override void OnCastStarted(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID == (uint)AID.DarkMegaflareVisual) _gridUntil=WorldState.FutureTime(26);
+        if (spell.Action.ID == (uint)AID.WheiMornFirst) { _chaseHits=0; _recoverUntil=default; }
+    }
+    public override void OnEventCast(Actor caster, ActorCastEvent spell)
+    {
+        if ((spell.Action.ID is (uint)AID.WheiMornFirst or (uint)AID.WheiMornRest) && ++_chaseHits==5)
+            _recoverUntil=WorldState.FutureTime(10);
+    }
     public override void Update()
     {
         foreach (var head in Module.Enemies((uint)OID.DarkWanderer))
@@ -172,15 +185,23 @@ class CreatureOfDarkness(BossModule module) : Components.GenericAOEs(module)
     public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
     {
         hints.PreferSafeRefuge = true;
+        if (WorldState.CurrentTime < _recoverUntil) hints.AddForbiddenZone(new SDInvertedCircle(Module.Center,8));
+        // A wide temporal envelope seals the random grid's narrow exits. Use
+        // finer sweeps during that sequence; retain the existing chase behavior.
+        var grid = WorldState.CurrentTime < _gridUntil;
+        var step = grid ? .15 : .5;
+        var lead = grid ? .15 : .8;
+        var tail = grid ? .25 : .9;
+        var length = (float)(3*step);
         foreach (var (id, track) in _tracks)
         {
-            for (var i = 0; i < 30; ++i)
+            for (var i = 0; i < (grid ? 100 : 30); ++i)
             {
-                var activation = track.Start.AddSeconds(i * 0.5 - 0.8);
-                var expiry = track.Start.AddSeconds((i + 1) * 0.5 + 0.9);
+                var activation = track.Start.AddSeconds(i * step - lead);
+                var expiry = track.Start.AddSeconds((i + 1) * step + tail);
                 if (expiry < WorldState.CurrentTime) continue;
-                var origin = track.Origin + (1.5f * i) * track.Rotation.ToDirection();
-                hints.TimedForbiddenZones.Add((new SDCapsule(origin, track.Rotation, 1.5f, 2.5f), activation, expiry, id, false));
+                var origin = track.Origin + (length * i) * track.Rotation.ToDirection();
+                hints.TimedForbiddenZones.Add((new SDCapsule(origin, track.Rotation, length, 2.5f), activation, expiry, id, false));
             }
         }
     }
