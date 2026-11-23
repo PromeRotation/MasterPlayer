@@ -463,7 +463,9 @@ public sealed class ScriptManager : IDisposable
         => MasterPlayerSettings.Instance.ScriptEnabled.TryGetValue(id, out var enabled) ? enabled
             : Mechanics.PilgrimsTraverse.PtBossCatalog.IsScript(id)
                 || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id)
-                || Mechanics.Dungeons.CastrumAbaniaCatalog.IsScript(id);
+                || Mechanics.Dungeons.CastrumAbaniaCatalog.IsScript(id)
+                 || Mechanics.Dungeons.ArrDungeonCatalog.IsScript(id)
+                 || id == Mechanics.Hunts.SimpleHuntCatalog.SCRIPT_ID;
 
     public void SetScriptEnabled(string id, bool enabled)
     {
@@ -605,7 +607,9 @@ public sealed class ScriptManager : IDisposable
     public bool IsGenericDodgeSuppressed(LogSystemCastStartEvent cast)
         => IsGenericDodgeSuppressed(cast.ActionId)
            || _running.Values.Any(r => r.Script is VisualMechanicScript script && script.SuppressesGenericDodge(cast)
-               || r.Script is Mechanics.PalaceOfTheDead.PalaceScript palace && palace.HandlesCast(cast));
+                || r.Script is Mechanics.PalaceOfTheDead.PalaceScript palace && palace.HandlesCast(cast)
+                || r.Script is Mechanics.Hunts.SimpleHuntScript hunt && hunt.HandlesCast(cast)
+                 || r.Script is Mechanics.Dungeons.DungeonScript dungeon && dungeon.HandlesCast(cast));
 
     private static Type[] GetAssemblyTypes(Assembly assembly)
     {

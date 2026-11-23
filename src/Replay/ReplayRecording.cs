@@ -51,7 +51,12 @@ public sealed class ReplayRecordingWriter : IDisposable
         var line = new ReplayEventLine
         {
             T = Math.Round(t, 4),
-            Kind = ev.Kind.ToString(),
+            Kind = ev switch
+            {
+                LegacyMapEffectEvent => "LegacyMapEffect",
+                ReplaySystemLogEvent => "SystemLog",
+                _ => ev.Kind.ToString(),
+            },
             Type = ev.GetType().FullName!,
             Data = JsonSerializer.SerializeToElement(ev, ev.GetType(), ReplayJson.Options),
             PacketFacing = ev is LogSystemCastStartEvent cast && CastRotation.TryGetPacket(cast, out var facing) ? facing : null,
@@ -141,6 +146,11 @@ public static class ReplayRecordingReader
                     || frame.Party.Any(p => p == null)
                     || frame.Actors.Select(a => a.Id).Distinct().Count() != frame.Actors.Length)
                     throw new InvalidDataException("对象快照包含空值或重复对象。");
+                if (frame.DeepDungeon is { } dungeon
+                    && (dungeon.Rooms == null || dungeon.Rooms.Length != 25 || dungeon.PartyRooms == null
+                        || dungeon.PartyRooms.Values.Any(room => room is < 0 or >= 25)
+                        || dungeon.Items is { Length: not 16 }))
+                    throw new InvalidDataException("深层迷宫快照包含无效地图或房间号。");
                 frames.Add(new(parsed.T, frame, sequence));
                 continue;
             }
@@ -155,6 +165,10 @@ public static class ReplayRecordingReader
             {
                 if (parsed.Data.Deserialize(type, ReplayJson.Options) is LogSystemEvent ev)
                 {
+                    // 旧录像可能没有事件时钟；record 的默认值是加载时的系统时间。
+                    // 仅缺失字段时按录制行时间补齐，保留已有事件时间中的派发延迟。
+                    if (!parsed.Data.TryGetProperty(nameof(LogSystemEvent.Timestamp), out _))
+                        ev = ev with { Timestamp = header.StartedUtc.ToUniversalTime().AddSeconds(parsed.T) };
                     if (ev is LogSystemCastStartEvent cast) ev = cast with { Raw = new ReplayCastData(parsed.PacketFacing) };
                     events.Add(new ReplayEventEntry(parsed.T, ev, sequence));
                 }
@@ -181,7 +195,10 @@ public static class ReplayRecordingReader
         {
             if (!TypeCache.TryGetValue(fullName, out var type))
             {
-                type = typeof(LogSystemEvent).Assembly.GetType(fullName);
+                if (fullName == typeof(LegacyMapEffectEvent).FullName) type = typeof(LegacyMapEffectEvent);
+                else if (fullName == typeof(ReplaySystemLogEvent).FullName) type = typeof(ReplaySystemLogEvent);
+                else if (fullName == typeof(NativeActionEffectEvent).FullName) type = typeof(NativeActionEffectEvent);
+                else type = typeof(LogSystemEvent).Assembly.GetType(fullName);
                 if (type == null || !typeof(LogSystemEvent).IsAssignableFrom(type))
                     type = null;
                 TypeCache[fullName] = type;

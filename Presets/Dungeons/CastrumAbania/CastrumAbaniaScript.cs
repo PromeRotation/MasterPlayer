@@ -17,6 +17,8 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
     private IGeometryShape? boundary;
     private DateTime nextScan;
     private bool suspended;
+    private long replayVersion;
+    private readonly CastrumCannonControl cannonControl = new();
 
     public bool EncounterActive => encounter.Active;
 
@@ -37,17 +39,21 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
 
     protected override void OnUpdate(float deltaTime)
     {
-        if (CurrentTime < nextScan) return;
+        if (CurrentTime < nextScan && (ReplayWorld == null || ReplayWorld.Version == replayVersion)) return;
         Scan(CurrentTime);
         Render(CurrentTime);
     }
 
     protected override void OnMovementDisabled()
-        => MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
+    {
+        cannonControl.Clear();
+        MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
+    }
 
     protected override void OnCurrentPlayerChanged(ulong previous, ulong current)
     {
         ClearOutput();
+        cannonControl.Clear();
         messages.Clear();
         nextScan = default;
     }
@@ -63,6 +69,7 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
     {
         if (suspended) return;
         var now = CurrentTime;
+        var eventTime = ev.Timestamp.ToUniversalTime();
         switch (ev)
         {
             case LogSystemCastStartEvent cast:
@@ -73,7 +80,7 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
                 if (actor != null)
                 {
                     encounter.StartCast(cast.SourceId, actor.Oid, cast.ActionId, cast.EffectPosition, rotation,
-                        now, now.AddSeconds(cast.CastTime + .3f), cast.TargetId, cast.SourcePosition ?? actor.Position);
+                        eventTime, eventTime.AddSeconds(cast.CastTime + .3f), cast.TargetId, cast.SourcePosition ?? actor.Position);
                     if (rotation == null && encounter.IsHandledCast(actor.Oid, cast.ActionId)
                         && CastrumAbaniaEncounter.IsDirectional(cast.ActionId))
                         LogError($"白山堡技能 {cast.ActionId} 缺少锁定朝向。");
@@ -82,13 +89,13 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
             }
             case LogSystemActionEffectEvent effect:
             {
-                encounter.Apply(effect, now);
+                encounter.Apply(effect, eventTime);
                 break;
             }
             case LogSystemTargetIconEvent icon:
             {
                 if (!encounter.Active) Scan(now);
-                encounter.Icon(icon, now);
+                encounter.Icon(icon, eventTime);
                 break;
             }
             case LogSystemStatusAddEvent status:
@@ -98,7 +105,7 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
             }
             case LogSystemTetherEvent tether:
             {
-                encounter.Tether(tether, now);
+                encounter.Tether(tether, eventTime);
                 break;
             }
             case LogSystemTetherCancelEvent cancel:
@@ -127,12 +134,15 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
             ? world.Actors.Values.ToArray()
             : Svc.Objects.Where(o => o.Address != 0 && ReplayWorldCapture.Id(o) is not (0 or 0xE0000000))
                 .Select(o => ReplayWorldCapture.CaptureActor(o, now)).ToArray();
+        replayVersion = ReplayWorld?.Version ?? 0;
         if (suspended)
         {
             if (observations.Any(a => CastrumAbaniaCatalog.IsBoss(a.Oid) && a.InCombat && !a.Dead)) return;
             suspended = false;
         }
-        encounter.Synchronize(observations, now);
+        var party = (ReplayWorld?.Party ?? ReplayWorldCapture.CaptureParty()).Select(p => p.EntityId).ToHashSet();
+        party.Add(CurrentPlayerId);
+        encounter.Synchronize(observations, now, party);
     }
 
     private void Render(DateTime now)
@@ -190,11 +200,19 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
                     incrementVersion: false);
             }
             output[area.Key] = (handle, area);
-            if (!area.NavigationOnly) Draw.AddAoePreview(area.Key, area.Geometry, area.Safe, false, .5f);
+            if (!area.NavigationOnly) Draw.AddAoePreview(area.Key, area.Geometry, area.Safe, area.OutlineOnly,
+                Math.Clamp(1 - (float)(area.From - now).TotalSeconds / 6, 0, 1));
             else Draw.Remove(area.Key);
         }
 
         var wantedLines = new HashSet<string>();
+        foreach (var landing in wanted.Where(a => a.Key.StartsWith("knockback-landing/", StringComparison.Ordinal)))
+        {
+            var id = landing.Key + "/line";
+            wantedLines.Add(id);
+            Draw.AddTether(id, player.Position, landing.Position, landing.Safe
+                ? PromeRotation.Spatial.Drawing.DrawStyle.Safe : PromeRotation.Spatial.Drawing.DrawStyle.Danger, durationMs: 500);
+        }
         foreach (var (source, tether) in encounter.ClawTethers.Where(_ => IsMechanismEnabled("连线与点名")))
         {
             if (!encounter.Actors.TryGetValue(source, out var start)
@@ -211,6 +229,10 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
         runtime.RequestAutomaticMovement(this, !IsReplay,
             hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin,
             arenaSafetyMargin: 0, goalDirectedTemporalPlanning: true);
+        Hints.SetActionRestrictions(forbiddenTargets: encounter.ForbiddenTargets);
+        Hints.SetTarget(encounter.PriorityTarget(player.TargetId, player.Position));
+        cannonControl.Update(encounter, player, !IsReplay && MasterPlayerSettings.Instance.EnableSmartMovement
+            && runtime.Setting.MovementAllowed, now, CastrumCannonControl.Interact, CastrumCannonControl.Pulse);
 
         foreach (var hint in encounter.Hints(now, player.Id))
         {
@@ -240,6 +262,9 @@ public abstract class CastrumAbaniaScript : MasterPlayerScript
 
     private void ClearOutput()
     {
+        cannonControl.Clear();
+        Hints.ClearActionRestrictions();
+        Hints.SetTarget(0);
         MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
         foreach (var key in output.Keys.ToArray())
             Remove(key);

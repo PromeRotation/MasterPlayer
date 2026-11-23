@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Text.Json;
+using System.Numerics;
 
 internal static class PilgrimsPreviewReplayRegression
 {
@@ -86,23 +87,104 @@ internal static class PilgrimsPreviewReplayRegression
                 controller.Seek(probe.Time);
                 var dangers = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>().ToArray();
                 var previews = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().ToArray();
-                Check(dangers.Length == probe.Count && previews.Length == (probe.Count == 0 ? 0 : 1),
-                    $"PT{floor} at {probe.Time}: expected {probe.Count} navigation areas and one next-hit preview; got {dangers.Length}/{previews.Length}.");
+                var previewCount = floor switch { 10 => Math.Min(probe.Count, 3), 70 => Math.Min(probe.Count, 2), _ => probe.Count };
+                Check(dangers.Length == probe.Count && previews.Length == previewCount,
+                    $"PT{floor} at {probe.Time}: expected {probe.Count} navigation areas and {previewCount} previews; got {dangers.Length}/{previews.Length}.");
                 if (probe.Count == 0) continue;
-                dynamic next = dangers.MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
-                dynamic preview = previews[0].GetType().GetProperty("Geometry")!.GetValue(previews[0])!;
-                Check(preview.GetType() == next.Geometry.GetType() && preview.GetBounds().Equals(next.Geometry.GetBounds()),
-                    $"PT{floor} preview geometry differs from the next navigation area.");
+                var expectedShapes = dangers.OrderBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))
+                    .Take(previewCount).Select(a => (Type: ((object)a.Geometry).GetType(), Bounds: (object)a.Geometry.GetBounds())).ToList();
+                foreach (var entry in previews)
+                {
+                    dynamic preview = entry.GetType().GetProperty("Geometry")!.GetValue(entry)!;
+                    Check(expectedShapes.Remove((((object)preview).GetType(), (object)preview.GetBounds())),
+                        $"PT{floor} preview geometry differs from the visible navigation windows.");
+                }
+                Check(expectedShapes.Count == 0, $"PT{floor} omitted a visible sequence shape.");
                 if (floor == 80)
-                    Check(preview.GetType().Name == (probe.Count == 1 ? "CircleGeometry" : "RayRectangleGeometry"), "PT80 final circle appeared before the last charge resolved.");
+                    Check(previews.Count(p => p.GetType().GetProperty("Geometry")!.GetValue(p)!.GetType().Name == "CircleGeometry") == 1,
+                        "PT80 failed to keep its terminal circle visible with the remaining charges.");
             }
             controller.Seek(probes[0].Time);
             controller.StopSession();
             Check(((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Count() == 0
                 && ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().Count() == 0,
                 $"PT{floor} retained output after seeking backward and stopping.");
-            Console.WriteLine($"PASS production PT{floor} previews: complete sequence navigation, next-hit geometry, duplicate effects, cast replacement, seek and cleanup");
+            Console.WriteLine($"PASS production PT{floor} previews: complete sequence navigation and source preview counts, exact geometry, duplicate effects, cast replacement, seek and cleanup");
         }
+        Knockbacks(controllerObject, runtimeObject, visibility, visibilityType, file);
+    }
+
+    private static void Knockbacks(object controllerObject, object runtimeObject, object visibility, Type visibilityType, string file)
+    {
+        dynamic controller = controllerObject;
+        dynamic runtime = runtimeObject;
+        foreach (var (floor, oid, action, distance) in new (int, uint, uint, float)[]
+        {
+            (20, 0x485C, 43455, 10), (40, 0x460B, 42128, 21), (50, 0x4872, 43538, 20),
+            (70, 0x484C, 43431, 7), (90, 0x48F5, 44266, 30),
+        })
+        {
+            var x = floor == 40 ? -600f : -300f;
+            object Pose(float px, float pz) => new { X = px, Y = 0f, Z = pz };
+            var territory = 1280 + floor / 10;
+            var events = new List<(double Time, string Line)>();
+            void Event(double time, string kind, object data) => events.Add((time, JsonSerializer.Serialize(new
+            {
+                t = time, kind, type = $"PromeRotation.LogSystem.LogSystem{kind}Event", packetFacing = 0f, data,
+            })));
+            Event(.4, "CastStart", new { SourceId = 1, ActionId = action, CastTime = 3f,
+                Timestamp = new DateTime(2026, 11, 19, 0, 0, 0, DateTimeKind.Utc).AddSeconds(.1),
+                EffectPosition = Pose(x, -300), SourcePosition = Pose(x, -300) });
+            if (floor == 40)
+                Event(.2, "CastStart", new { SourceId = 2, ActionId = action, CastTime = 4f,
+                    EffectPosition = Pose(x + 10, -300), SourcePosition = Pose(x + 10, -300) });
+            Event(1, "StatusAdd", new { TargetId = 100, StatusId = 2663, Duration = 10f });
+            Event(2, "StatusRemove", new { TargetId = 100, StatusId = 2663 });
+            Event(2.5, "CancelCast", new { SourceId = 1, ActionId = action });
+            if (floor == 40) Event(2.6, "CancelCast", new { SourceId = 2, ActionId = action });
+            var header = JsonSerializer.Serialize(new { v = 2, territory, startedUtc = "2026-11-19T00:00:00Z", pluginVersion = "native-knockbacks" });
+            var initial = JsonSerializer.Serialize(new { t = 0, kind = "WorldFrame", data = new
+            {
+                Full = true, Territory = territory, LocalPlayerId = 100, Actors = new object[]
+                {
+                    new { Id = 1, Oid = oid, Hp = 1000, MaxHp = 1000, InCombat = true, Position = Pose(x, -300) },
+                    new { Id = 100, Kind = 1, Position = Pose(x, -298), Rotation = 1f },
+                },
+            } });
+            var end = JsonSerializer.Serialize(new { t = 3, kind = "WorldFrame", data = new { Territory = territory, LocalPlayerId = 100 } });
+            File.WriteAllLines(file, new[] { header, initial }.Concat(events.OrderBy(e => e.Time).Select(e => e.Line)).Append(end));
+            object[] Lines() => ((IEnumerable)visibilityType.GetMethod("GetLines")!.Invoke(visibility, null)!).Cast<object>()
+                .Where(l => ((string)l.GetType().GetProperty("Id")!.GetValue(l)!).Contains("knockback/")).ToArray();
+            int Markers() => ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>()
+                .Count(p => ((string)p.GetType().GetProperty("Id")!.GetValue(p)!).Contains("knockback/"));
+            Check(controller.Load(file), (string)controller.StatusMessage);
+            controller.Play(); controller.Pause(); controller.Seek(.5d);
+            var count = floor == 40 ? 2 : 1;
+            var lines = Lines();
+            Check(lines.Length == count && Markers() == count, $"PT{floor} omitted native projection lines or landing actor markers.");
+            var hitClock = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
+                .SelectMany(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>()).Min(w => (DateTime)w.DangerFrom);
+            Check(Math.Abs(((DateTime)hitClock - new DateTime(2026, 11, 19, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds - 3.2) < .000001,
+                $"PT{floor} dispatch latency shifted the knockback activation clock.");
+            var first = lines[0];
+            var start = (Vector3)first.GetType().GetProperty("Start")!.GetValue(first)!;
+            var landing = (Vector3)first.GetType().GetProperty("End")!.GetValue(first)!;
+            Check(Vector3.Distance(start, new(x, 0, -298)) < .001f && Math.Abs(Vector3.Distance(start, landing) - distance) < .001f,
+                $"PT{floor} projection lost its player origin or knockback distance.");
+            if (floor == 40)
+                Check((Vector3)lines[1].GetType().GetProperty("Start")!.GetValue(lines[1])! == landing,
+                    "PT40 projected the second knockback from the original player position.");
+            controller.Seek(1.5d);
+            Check(Lines().Length == 0 && Markers() == 0, $"PT{floor} retained knockback projections while immune.");
+            controller.Seek(2.1d);
+            Check(Lines().Length == count && Markers() == count, $"PT{floor} failed to restore projections after immunity ended.");
+            controller.Seek(2.7d);
+            Check(Lines().Length == 0 && Markers() == 0, $"PT{floor} retained cancelled projection output.");
+            controller.Seek(.5d);
+            controller.StopSession();
+            Check(Lines().Length == 0 && Markers() == 0, $"PT{floor} retained projections after reverse Seek and stop.");
+        }
+        Console.WriteLine("PASS production PT20/40/50/70/90: native projected movement and landing markers, sequential knockbacks, immunity, cancel, reverse Seek and cleanup");
     }
 
     private static void Check(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }

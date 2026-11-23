@@ -17,8 +17,8 @@ internal sealed class CastrumBaitGeometry(CastrumBaitTemplate template) : Geomet
             var delta = member - template.Origin;
             delta.Y = 0;
             var along = Vector3.Dot(delta, direction);
-            return along >= 0 && along <= 20 + epsilon
-                && (delta - along * direction).Length() <= 3 + epsilon;
+            return along >= 0 && along <= template.Length + epsilon
+                && (delta - along * direction).Length() <= template.HalfWidth + epsilon;
         });
     }
 

@@ -1,4 +1,5 @@
 using System.Numerics;
+using MasterPlayer.Replay;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 using PromeRotation.LogSystem;
@@ -9,6 +10,10 @@ internal sealed class Pt40Encounter() : PtBossEncounter(40, 0x460B)
 {
     public override uint[] Actions { get; } = [42124, 42126, 42123, 42125, 42129, 45121, 45169, 45122, 45170, 42128, 42131, 44047, 43289, 43290];
     private readonly Dictionary<ulong, Cast> knockbacks = [];
+    protected override int TargetPriority(ReplayActorState actor)
+        => actor.Oid == 0x460C ? 1 : base.TargetPriority(actor);
+    public override IReadOnlyList<ulong> ForbiddenDotTargets
+        => Active ? actors.Values.Where(a => a.Oid == 0x460C && !a.Dead && a.Targetable).Select(a => a.Id).ToArray() : [];
     protected override void OnCast(Cast cast)
     {
         switch (cast.Action)
@@ -37,6 +42,9 @@ internal sealed class Pt40Encounter() : PtBossEncounter(40, 0x460B)
     }
     protected override void OnEffect(LogSystemActionEffectEvent effect, DateTime now)
     { if (effect.ActionId == 42128) knockbacks.Remove(effect.SourceId); }
+    public override IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player)
+        => knockbacks.Values.Where(c => c.Hit.AddSeconds(.3) >= now && !KnockbackImmune(player, c.Hit))
+            .OrderBy(c => c.Hit).Select(c => new PtKnockbackTemplate(Boundary, c.Position, 21));
     public override void Cancel(ulong source) { base.Cancel(source); knockbacks.Remove(source); }
     protected override void ResetMechanics() => knockbacks.Clear();
     public override IEnumerable<string> Hints(DateTime now, ulong player)

@@ -62,7 +62,7 @@ internal sealed class Pt70Encounter() : PtBossEncounter(70, 0x484C)
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
     {
         PreviewNextWave(result, a => a.Name == "Brutal Halo");
-        PreviewNextWave(result, a => a.Key.StartsWith("swipe/", StringComparison.Ordinal));
+        PreviewNextWave(result, a => a.Key.StartsWith("swipe/", StringComparison.Ordinal), 2);
         if (groan is not { } cast || now > cast.Hit.AddSeconds(.3) || KnockbackImmune(player, cast.Hit)) return;
         var halos = result.Where(a => a.Name == "Brutal Halo" && Math.Abs((a.From.AddSeconds(.2) - cast.Hit).TotalSeconds) < 1)
             .Select(a => a.Geometry).ToArray();
@@ -72,5 +72,10 @@ internal sealed class Pt70Encounter() : PtBossEncounter(70, 0x484C)
             result.Add(new("groan/goal", "击退靠近中心", new CircleTemplate(2.5f), cast.Position, 0, now, cast.Hit, Safe: true));
     }
     public override void Cancel(ulong source) { base.Cancel(source); if (groan?.Source == source) groan = null; }
+    public override IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player)
+    {
+        if (groan is { } cast && now <= cast.Hit.AddSeconds(.3) && !KnockbackImmune(player, cast.Hit))
+            yield return new(Boundary, cast.Position, 7);
+    }
     protected override void ResetMechanics() { haloHit = default; spheres.Clear(); swipeIndex = 0; groan = null; }
 }

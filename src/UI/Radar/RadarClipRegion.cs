@@ -9,13 +9,16 @@ internal sealed class RadarClipRegion
     private const float Epsilon = 0.0001f;
     private readonly IReadOnlyList<Vector2>[] _pieces;
     public IReadOnlyList<Vector2> Outline { get; }
+    public IReadOnlyList<IReadOnlyList<Vector2>> Outlines { get; }
 
-    public RadarClipRegion(IReadOnlyList<Vector2> outline, Vector2 center, float halfSize)
+    public RadarClipRegion(IReadOnlyList<Vector2> outline, Vector2 center, float halfSize,
+        IReadOnlyList<IReadOnlyList<Vector2>>? outlines = null, IReadOnlyList<IReadOnlyList<Vector2>>? fillPolygons = null)
     {
         Outline = outline.ToArray();
+        Outlines = outlines ?? [Outline];
         Vector2[] viewport = [center + new Vector2(-halfSize, -halfSize), center + new Vector2(halfSize, -halfSize),
             center + new Vector2(halfSize, halfSize), center + new Vector2(-halfSize, halfSize)];
-        _pieces = ConvexParts(Outline).Select(p => ClipConvex(p, viewport))
+        _pieces = (fillPolygons ?? [Outline]).SelectMany(ConvexParts).Select(p => ClipConvex(p, viewport))
             .Where(p => p.Count >= 3 && MathF.Abs(SignedArea(p)) > Epsilon).ToArray();
     }
 
@@ -53,7 +56,7 @@ internal sealed class RadarClipRegion
             for (var i = 0; i < piece.Count && from <= to; ++i)
             {
                 var a = piece[i]; var edge = piece[(i + 1) % piece.Count] - a;
-                var v0 = winding * Cross(edge, start - a); var v1 = winding * Cross(edge, end - a);
+                var v0 = EdgeValue(edge, start - a, winding); var v1 = EdgeValue(edge, end - a, winding);
                 if (v0 < -Epsilon && v1 < -Epsilon) { from = 1; to = 0; break; }
                 if (v0 < 0 && v1 >= 0) from = Math.Max(from, v0 / (v0 - v1));
                 else if (v1 < 0 && v0 >= 0) to = Math.Min(to, v0 / (v0 - v1));
@@ -71,7 +74,7 @@ internal sealed class RadarClipRegion
         }
     }
 
-    private static IEnumerable<IReadOnlyList<Vector2>> ConvexParts(IReadOnlyList<Vector2> polygon)
+    internal static IEnumerable<IReadOnlyList<Vector2>> ConvexParts(IReadOnlyList<Vector2> polygon)
     {
         if (polygon.Count < 3) yield break;
         var winding = MathF.Sign(SignedArea(polygon));
@@ -98,7 +101,7 @@ internal sealed class RadarClipRegion
             for (var i = 0; i < source.Count; ++i)
             {
                 var current = source[i]; var next = source[(i + 1) % source.Count];
-                var v0 = winding * Cross(delta, current - a); var v1 = winding * Cross(delta, next - a);
+                var v0 = EdgeValue(delta, current - a, winding); var v1 = EdgeValue(delta, next - a, winding);
                 if ((v0 >= 0) != (v1 >= 0)) target.Add(Vector2.Lerp(current, next, v0 / (v0 - v1)));
                 if (v1 >= 0) target.Add(next);
             }
@@ -113,8 +116,15 @@ internal sealed class RadarClipRegion
         if (MathF.Abs(area) <= Epsilon) return false;
         var winding = MathF.Sign(area);
         for (var i = 0; i < polygon.Count; ++i)
-            if (winding * Cross(polygon[(i + 1) % polygon.Count] - polygon[i], point - polygon[i]) < -Epsilon) return false;
+            if (EdgeValue(polygon[(i + 1) % polygon.Count] - polygon[i], point - polygon[i], winding) < 0) return false;
         return true;
+    }
+    private static float EdgeValue(Vector2 edge, Vector2 offset, float winding)
+    {
+        var value = winding * ((double)edge.X * offset.Y - (double)edge.Y * offset.X);
+        // Pixel distance, rather than triangle area: projection rounding must not
+        // open cracks along shared edges or cut away a boundary that lies on them.
+        return Math.Abs(value) <= .001 * Math.Max(1, edge.Length()) ? 0 : (float)value;
     }
     private static float Cross(Vector2 a, Vector2 b) => a.X * b.Y - a.Y * b.X;
     private static float SignedArea(IReadOnlyList<Vector2> polygon)

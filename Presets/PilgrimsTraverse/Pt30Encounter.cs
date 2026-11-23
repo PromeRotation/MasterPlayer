@@ -20,6 +20,7 @@ internal sealed class Pt30Encounter
         public bool HasMotionEnvelope { get; init; }
         public bool HasExplicitTiming { get; init; }
         public Vector3? BallPreviewPosition { get; init; }
+        public IGeometryShape? BallPreviewGeometry { get; init; }
         public DangerWindow Window(DateTime now) => new(From, Until == DateTime.MaxValue ? null : Until, now)
         {
             HasMotionEnvelope = HasMotionEnvelope,
@@ -32,6 +33,7 @@ internal sealed class Pt30Encounter
     private readonly HashSet<ulong> activeBalls = [];
     private readonly HashSet<ulong> inactiveBalls = [];
     private readonly HashSet<(ulong, uint)> seenEffects = [];
+    private readonly Dictionary<ulong, Actor> observedActors = [];
     private ulong markedPlayer;
     private ulong chasingPlayer;
     private ulong chaseSource;
@@ -45,6 +47,8 @@ internal sealed class Pt30Encounter
     public Vector3 BossPosition { get; private set; } = new(-300, 0, -300);
     public Vector3? Goal { get; private set; }
     public Hazard? ReachGoal { get; private set; }
+    public (Vector3 Start, Vector3 End)? ChaseLine => Remaining > 0
+        && observedActors.GetValueOrDefault(chasingPlayer) is { Dead: false } target ? (lastChaseHit, target.Position) : null;
     public int CastCount => casts.Count;
     public int BallCount => balls.Count;
     public string Status => $"casts={casts.Count}, balls={balls.Count}, chase={Remaining}, direction={direction}, goal={Goal}, reachGoal={ReachGoal?.Rotation}";
@@ -52,6 +56,8 @@ internal sealed class Pt30Encounter
     public void Synchronize(IEnumerable<Actor> actors, DateTime now)
     {
         var list = actors.ToArray();
+        observedActors.Clear();
+        foreach (var actor in list) observedActors[actor.Id] = actor;
         var boss = list.FirstOrDefault(a => a.Oid == BOSS_OID && !a.Dead);
         Active = boss?.InCombat == true;
         if (boss == null || !Active) { Reset(); return; }
@@ -64,9 +70,13 @@ internal sealed class Pt30Encounter
                 motion.Observe(ball.Position, now);
             else
                 balls.Add(ball.Id, new(ball.Position, now));
+            balls[ball.Id].Rotation = ball.Rotation;
         }
         foreach (var id in balls.Keys.Where(id => !seen.Contains(id)).ToArray()) balls.Remove(id);
         if (Remaining > 0 && now > chaseExpires) ClearChase();
+        // 首击仍按已锁定的位置结算；之后死亡或消失的目标不再产生追踪圈。
+        if (Remaining is > 0 and < 8 && (!observedActors.TryGetValue(chasingPlayer, out var target) || target.Dead))
+            ClearChase();
     }
 
     public void Timeline(ulong actor, ushort timeline)
@@ -141,9 +151,10 @@ internal sealed class Pt30Encounter
         if (chaseSource == source) ClearChase();
     }
 
-    public void Effect(ulong source, uint sequence, uint action, Vector3? location, DateTime now)
+    public void Effect(ulong source, uint sequence, uint action, Vector3? location, DateTime now, int targetIndex = 0)
     {
-        if (!Actions.Contains(action) || !seenEffects.Add((source, sequence))) return;
+        if (!Actions.Contains(action) || sequence == 0 && targetIndex > 0
+            || sequence != 0 && !seenEffects.Add((source, sequence))) return;
         if (seenEffects.Count > 512) seenEffects.Remove(seenEffects.First());
         var resolved = casts.Values.Where(h => h.Key.StartsWith($"cast/{source}/{action}/", StringComparison.Ordinal)).MinBy(h => h.From);
         if (resolved != null) casts.Remove(resolved.Key);
@@ -192,27 +203,37 @@ internal sealed class Pt30Encounter
                 var to = Point(angle + ball.Velocity * ((i + 1) * slot + timeReserve), radius, ball.Position.Y);
                 result.Add(new($"ball/{id}/{i}", "Bounds of Indulgence 移动预测", new Pt30BallSweepTemplate(from, to, 4f + sagitta), ball.Position, 0,
                     now.AddSeconds(i * slot - timeReserve), now.AddSeconds((i + 1) * slot + timeReserve))
-                    { HasMotionEnvelope = true, BallPreviewPosition = i == 0 ? ball.Position : null });
+                    { HasMotionEnvelope = true, BallPreviewPosition = i == 0 ? ball.Position : null,
+                        BallPreviewGeometry = i == 0 ? BallArcPreview(ball.Position, ball.Rotation) : null });
             }
         }
-        if (Remaining > 0 && chasingPlayer == playerId)
+        if (Remaining > 0 && chasingPlayer != 0)
         {
             if (firstChaseCast)
                 result.RemoveAll(h => h.Key.StartsWith($"cast/{chaseSource}/44918/", StringComparison.Ordinal));
             var predicted = lastChaseHit;
             if (!firstChaseCast)
             {
-                var delta = player - lastChaseHit;
+                var targetPosition = lastChaseHit;
+                if (chasingPlayer == playerId)
+                    targetPosition = player;
+                else if (observedActors.GetValueOrDefault(chasingPlayer) is { Dead: false } target)
+                    targetPosition = target.Position;
+                var delta = targetPosition - lastChaseHit;
                 delta.Y = 0;
                 if (delta.LengthSquared() > .001f) predicted += Vector3.Normalize(delta) * Math.Min(3.5f, delta.Length());
             }
             if (firstChaseCast || nextChaseHit < now.AddSeconds(2))
                 result.Add(new("chase", "Divine Favor", new CircleTemplate(4), predicted, 0, nextChaseHit, nextChaseHit.AddSeconds(.4)));
-            if (direction == 0)
-                direction = DirectionCost(1, player, result, now) <= DirectionCost(-1, player, result, now) ? 1 : -1;
-            // Keep a waypoint stable until reached: replanning latency must not move the goal away every frame.
-            if (Goal is not { } goal || Vector3.DistanceSquared(player, goal) < 9)
-                Goal = Point(Angle(player) + direction * 25 * MathF.PI / 180, 16.7f, player.Y);
+            if (chasingPlayer == playerId)
+            {
+                if (direction == 0)
+                    direction = DirectionCost(1, player, result, now) <= DirectionCost(-1, player, result, now) ? 1 : -1;
+                // Keep a waypoint stable until reached: replanning latency must not move the goal away every frame.
+                if (Goal is not { } goal || Vector3.DistanceSquared(player, goal) < 9)
+                    Goal = Point(Angle(player) + direction * 25 * MathF.PI / 180, 16.7f, player.Y);
+            }
+            else Goal = null;
         }
         else Goal = null;
         return result;
@@ -234,6 +255,7 @@ internal sealed class Pt30Encounter
         Active = false;
         ReachGoal = null;
         casts.Clear(); castFinishTimes.Clear(); balls.Clear(); activeBalls.Clear(); inactiveBalls.Clear(); seenEffects.Clear();
+        observedActors.Clear();
         ClearChase();
     }
 
@@ -256,6 +278,29 @@ internal sealed class Pt30Encounter
     private static float Radius(Vector3 p) => new Vector2(p.X + 300, p.Z + 300).Length();
     private static Vector3 Point(float angle, float radius, float y) => new(-300 + MathF.Sin(angle) * radius, y, -300 + MathF.Cos(angle) * radius);
 
+    // Display the source's thirty-degree arc capsule; navigation keeps its timed short sweeps.
+    internal static IGeometryShape BallArcPreview(Vector3 position, float rotation)
+    {
+        var radius = Radius(position);
+        if (radius <= 4) return new CircleGeometry(position, 4);
+        var radial = position - new Vector3(-300, position.Y, -300);
+        var right = new Vector3(-MathF.Cos(rotation), 0, MathF.Sin(rotation));
+        var sign = Vector3.Dot(right, radial) < 0 ? -1 : 1;
+        var start = Angle(position);
+        var sweep = sign * MathF.PI / 6;
+        var end = start + sweep;
+        var endpoint = Point(end, radius, position.Y);
+        var points = new List<Vector3>();
+        const int arcSegments = 24, capSegments = 24;
+        for (var i = 0; i <= arcSegments; ++i) points.Add(Point(start + sweep * i / arcSegments, radius + 4, position.Y));
+        for (var i = 1; i <= capSegments; ++i)
+            points.Add(GeometryHelper.PointFromRotationDistanceXZ(endpoint, end + sign * MathF.PI * i / capSegments, 4));
+        for (var i = arcSegments - 1; i >= 0; --i) points.Add(Point(start + sweep * i / arcSegments, radius - 4, position.Y));
+        for (var i = 1; i < capSegments; ++i)
+            points.Add(GeometryHelper.PointFromRotationDistanceXZ(position, start + sign * MathF.PI + sign * MathF.PI * i / capSegments, 4));
+        return new WorldPolygonGeometry(points);
+    }
+
     private sealed class BallMotion(Vector3 position, DateTime at)
     {
         private const double SAMPLE_WINDOW_SECONDS = .8;
@@ -265,6 +310,7 @@ internal sealed class Pt30Encounter
 
         public Vector3 Position { get; private set; } = position;
         public float Velocity { get; private set; }
+        public float Rotation { get; set; }
 
         public void Observe(Vector3 position, DateTime now)
         {

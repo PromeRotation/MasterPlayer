@@ -19,6 +19,7 @@ internal static class CastrumAbaniaRegression
         run("Castrum Abania personal spread stack towers and raidwides", PersonalMechanics);
         run("Castrum Abania self cast origins and missing facing", CastOrigins);
         run("Castrum Abania knockback landing avoids wave and cutter", Knockbacks);
+        CastrumAbaniaParityRegression.Run(run);
     }
 
     private static ReplayActorState Actor(ulong id, uint oid, Vector3 position, bool combat = false)
@@ -237,15 +238,15 @@ internal static class CastrumAbaniaRegression
             "Other perspectives must avoid the marked player's circle.");
         e.Cancel(10, 33461);
         e.StartCast(10, helper.Oid, 33462, Vector3.Zero, null, Start.AddSeconds(6), Start.AddSeconds(11), 100);
-        Check(e.Collect(Start.AddSeconds(6), 101).Single(a => a.Action == 33462) is { Safe: true, Position: var p }
+        Check(e.Collect(Start.AddSeconds(6), 101).Single(a => a.Action == 33462 && a.PreviewOnly) is { Safe: true, Position: var p }
             && p == left, "Stack goals must use the live marked player.");
         e.Cancel(10, 33462);
         e.StartCast(10, helper.Oid, 33464, Vector3.Zero, null, Start, Start.AddSeconds(5), 0, left);
         e.StartCast(11, helper.Oid, 33464, Vector3.Zero, null, Start, Start.AddSeconds(5), 0, right);
-        var a = e.Collect(Start, 100).Single(t => t.Action == 33464 && !t.PreviewOnly);
-        var b = e.Collect(Start, 101).Single(t => t.Action == 33464 && !t.PreviewOnly);
-        Check(a.Owner != b.Owner && a.Position == left && b.Position == right,
-            "Two perspectives must receive different nearby towers.");
+        var a = e.Collect(Start, 100).Single(t => t.Key == "tower/enter");
+        var b = e.Collect(Start, 101).Single(t => t.Key == "tower/enter");
+        Check(!a.Geometry.Contains(left) && a.Geometry.Contains(right) && !b.Geometry.Contains(right) && b.Geometry.Contains(left),
+            "Each perspective must enter its own or an empty tower and avoid occupied towers.");
     }
 
     private static void CastOrigins()

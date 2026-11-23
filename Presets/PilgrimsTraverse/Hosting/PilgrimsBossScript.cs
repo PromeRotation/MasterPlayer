@@ -21,14 +21,17 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     };
     private readonly Dictionary<string, (SafeZoneAreaHandle Handle, PtBossEncounter.Area Area)> output = [];
     private readonly Dictionary<string, DateTime> messages = [];
+    private readonly HashSet<string> drawingLines = [];
+    private readonly HashSet<string> knockbackMarkers = [];
     private IGeometryShape? boundary;
     private DateTime nextScan;
     private bool suspended;
     public bool EncounterActive => encounter.Active;
     public int DangerCount => output.Values.Count(v => !v.Area.Safe && !v.Area.PreviewOnly && !v.Area.Obstacle);
-    public bool TargetControlActive => floor == 99 && !suspended && encounter.Active && !IsReplay
+    public bool TargetControlActive => floor is 10 or 40 or 99 && !suspended && encounter.Active && !IsReplay && ReplayWorld == null
         && CurrentPlayer is { Dead: false } player && encounter.Boundary.Contains(player.Position);
     public ulong PreferredTargetId { get; private set; }
+    public string? PredictedDamageText { get; private set; }
 
     protected override void OnStart()
     {
@@ -67,6 +70,7 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     {
         if (suspended) return;
         var now = CurrentTime;
+        var eventTime = ev.Timestamp.ToUniversalTime();
         // 两批水晶之间会切换方向；先采集已生成的上一批，避免周期扫描晚到后锁错方向。
         if (!encounter.Active || floor == 99 && ev is LogSystemActionEffectEvent
             { ActionId: 44074 or 44075 or 44076 or 44077 })
@@ -74,12 +78,12 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
         if (ev is LogSystemCastStartEvent cast)
         {
             var rotation = CastRotation.TryGet(cast, out var locked) ? locked : (float?)null;
-            encounter.StartCast(new(cast.SourceId, cast.ActionId, cast.EffectPosition, rotation, now,
-                now.AddSeconds(cast.CastTime + .3), cast.TargetId, cast.SourcePosition));
+            encounter.StartCast(new(cast.SourceId, cast.ActionId, cast.EffectPosition, rotation, eventTime,
+                eventTime.AddSeconds(cast.CastTime + .3), cast.TargetId, cast.SourcePosition));
             if (rotation == null && encounter.Actions.Contains(cast.ActionId))
                 LogError($"PT{floor} 技能 {cast.ActionId} 缺少锁定朝向；有方向的 AOE 不使用普通朝向代替。");
         }
-        else encounter.Apply(ev, now);
+        else encounter.Apply(ev, eventTime);
         Render(now);
     }
 
@@ -139,25 +143,57 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
             }
             output[area.Key] = (handle, area);
             if (!area.NavigationOnly)
-                Draw.AddAoePreview(area.Key, area.Geometry, area.Safe, area.Obstacle, .5f);
+                Draw.AddAoePreview(area.Key, area.Geometry, area.Safe, area.Obstacle || area.OutlineOnly, .5f, color: area.Color);
             else Draw.Remove(area.Key);
+        }
+        var lines = encounter.DrawingLines(now).ToList();
+        var markerKeys = new HashSet<string>();
+        var from = player.Position;
+        var index = 0;
+        foreach (var source in encounter.KnockbackSources(now, player.Id))
+        {
+            var to = source.Landing(from);
+            if (Vector3.DistanceSquared(from, to) < .000001f) continue;
+            var key = $"knockback/{index++}";
+            lines.Add((key + "/line", from, to));
+            markerKeys.Add(key + "/actor");
+            using var group = SafeZone.BeginDrawingGroup("击退投影");
+            var marker = new LocalPolygonTemplate([new(0, -.7f), new(.433f, .35f), new(-.433f, .35f)]);
+            Draw.AddAoePreview(key + "/actor", marker.Resolve(to, player.Rotation, null), false, false, 1,
+                unclipped: true, color: new Vector4(1, 1, 0, 1));
+            from = to;
+        }
+        foreach (var key in knockbackMarkers.Except(markerKeys).ToArray()) Draw.Remove(key);
+        knockbackMarkers.Clear();
+        knockbackMarkers.UnionWith(markerKeys);
+        foreach (var key in drawingLines.Except(lines.Select(l => l.Key)).ToArray()) Draw.Remove(key);
+        drawingLines.Clear();
+        foreach (var line in lines)
+        {
+            using var group = SafeZone.BeginDrawingGroup("追踪引导线");
+            Draw.AddLinePreview(line.Key, line.Start, line.End, false);
+            drawingLines.Add(line.Key);
         }
         runtime.RequestAutomaticMovement(this, !IsReplay, hold: encounter.HoldMovement(now, player.Id),
             hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin, arenaSafetyMargin: 0, goalDirectedTemporalPlanning: true,
             preferSafeRefuge: encounter is Pt99Encounter pt99 && pt99.IsBlazeActive(now));
         UpdateTarget(now, player.Id);
+        PredictedDamageText = encounter is Pt10Encounter pt10 ? pt10.PredictedDamageText : null;
         ShowHints(now, player.Id);
     }
 
     private void UpdateTarget(DateTime now, ulong player)
     {
         PreferredTargetId = 0;
-        if (!TargetControlActive || encounter is not Pt99Encounter pt99) return;
+        if (!TargetControlActive) return;
         var current = Svc.Targets.Target;
-        var target = pt99.SelectTarget(now, player, ReplayWorldCapture.Id(current));
+        var target = encounter.SelectTarget(now, player, ReplayWorldCapture.Id(current));
         if (target == null)
         {
-            if (current != null && Pt99Encounter.IsCombatTarget(current.BaseId)) Svc.Targets.Target = null;
+            if (current != null && (current.BaseId == encounter.BossOid
+                || floor == 99 && Pt99Encounter.IsCombatTarget(current.BaseId)
+                || floor == 10 && current.BaseId == 0x460E
+                || floor == 40 && current.BaseId == 0x460C)) Svc.Targets.Target = null;
             return;
         }
         if (ReplayWorldCapture.Id(current) == target.Id)
@@ -192,7 +228,13 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     }
     private void ClearOutput()
     {
+        foreach (var key in drawingLines) Draw.Remove(key);
+        drawingLines.Clear();
+        foreach (var key in knockbackMarkers) Draw.Remove(key);
+        knockbackMarkers.Clear();
         PreferredTargetId = 0;
+        PredictedDamageText = null;
+        Hints.ClearActionRestrictions();
         var runtime = MasterPlayerPlugin.Instance?.SafeZone;
         runtime?.RequestAutomaticMovement(this, false);
         foreach (var key in output.Keys.ToArray()) Remove(key);

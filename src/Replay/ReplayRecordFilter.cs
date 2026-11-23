@@ -18,6 +18,7 @@ public static class ReplayRecordFilter
             LogSystemCancelCastEvent e => !isPlayerOwnedSource(e.SourceId),
             LogSystemInterruptCastEvent e => !isPlayerOwnedSource(e.SourceId),
             LogSystemActionEffectEvent e => !isPlayerOwnedSource(e.SourceId),
+            Scripting.NativeActionEffectEvent e => !isPlayerOwnedSource(e.SourceId),
             LogSystemStatusAddEvent e => !isPlayerOwnedSource(e.SourceId),
             LogSystemStatusRemoveEvent e => !isPlayerOwnedSource(e.SourceId),
             _ => true,

@@ -69,7 +69,6 @@ internal sealed class Pt80Encounter() : PtBossEncounter(80, 0x485D)
     }
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
     {
-        PreviewNextWave(result, a => a.Key.StartsWith("lightning/", StringComparison.Ordinal) || a.Action is 43795 or 44060);
         if (waul is not { Rotation: { } rotation } cast || now > cast.Hit.AddSeconds(.3)) return;
         var doomed = Status(player, 4518, cast.Hit) != null;
         // A doomed player must take the same original half-arena cone.

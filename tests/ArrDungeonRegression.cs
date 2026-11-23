@@ -10,6 +10,43 @@ internal static class ArrDungeonRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        HalataliRegression.Run(run);
+        ArrDungeonAdvancedRegression.Run(run);
+        BrayfloxRegression.Run(run);
+        QarnRegression.Run(run);
+        CuttersCryRegression.Run(run);
+        StoneVigilRegression.Run(run);
+        DzemaelRegression.Run(run);
+        AurumValeRegression.Run(run);
+        CastrumMeridianumRegression.Run(run);
+        PraetoriumRegression.Run(run);
+        WanderersPalaceRegression.Run(run);
+        AmdaporRegression.Run(run);
+        PharosSiriusRegression.Run(run);
+        SnowcloakRegression.Run(run);
+        SastashaHardRegression.Run(run);
+        KeeperRegression.Run(run);
+        SohmAlRegression.Run(run);
+        AeryRegression.Run(run);
+        VaultRegression.Run(run);
+        GubalRegression.Run(run);
+        ResearchFacilityRegression.Run(run);
+        FractalRegression.Run(run);
+        ArboretumRegression.Run(run);
+        AntitowerRegression.Run(run);
+        SohrKhaiRegression.Run(run);
+        XelphatolRegression.Run(run);
+        BaelsarRegression.Run(run);
+        SirensongRegression.Run(run);
+        ShisuiRegression.Run(run);
+        BardamRegression.Run(run);
+        DomaRegression.Run(run);
+        AlaMhigoRegression.Run(run);
+        SkallaRegression.Run(run);
+        BurnRegression.Run(run);
+        GhimlytRegression.Run(run);
+        HolminsterRegression.Run(run);
+        DohnMhegRegression.Run(run);
         (uint Territory, uint Boss, uint Caster, uint Action, float Radius, float Angle, float Inner)[] aoes = [
             (1036, 0x19B, 0x19B, 351, 6.15f, 0, 0), (1036, 0x1A1, 0x1A1, 556, 8, 90, 0),
             (1037, 0x237, 0x237, 912, 7, 90, 0), (1037, 0x4C, 0x4C, 987, 9.95f, 0, 0),
@@ -24,7 +61,7 @@ internal static class ArrDungeonRegression
                 var source = caster == boss ? 1UL : f.Spawn(caster);
                 var location = f.Player + new Vector3(2, 0, 1);
                 f.Cast(source, action, location, MathF.PI / 2, 5);
-                var draw = f.Draw.Previews.Single().Value.Geometry;
+                var draw = f.AoePreviews.Single().Value.Geometry;
                 Check(Vector3.Distance(draw.Position, location) < 0.001f, "AOE must use packet location, not caster origin.");
                 Check(draw.Contains(location + new Vector3(radius - 0.01f, 0, 0)), "Point just inside the BMR radius was lost.");
                 Check(!draw.Contains(location + new Vector3(radius + 0.01f, 0, 0)), "Display radius was inflated or hitbox counted twice.");
@@ -51,7 +88,7 @@ internal static class ArrDungeonRegression
                 Check(ArrDungeonCatalog.ClaimedActions(f.Engine.Definitions).Contains(action), "Generic dodge would duplicate this cast.");
                 f.Actors[source] = f.Actors[source] with { Position = location + new Vector3(15, 0, 15) };
                 f.Scan();
-                Check(f.Draw.Previews.Single().Value.Geometry.Position == location, "Moving caster moved the locked AOE.");
+                Check(f.AoePreviews.Single().Value.Geometry.Position == location, "Moving caster moved the locked AOE.");
             });
 
         foreach (var (boss, action, hint) in new[] { (0x387Cu, 28545u, "死刑"), (0x387Cu, 28547u, "单体伤害"), (0x3870u, 28461u, "死刑"), (0x38C9u, 28764u, "死刑") })
@@ -60,7 +97,7 @@ internal static class ArrDungeonRegression
                 using var f = new Fight(1038, boss);
                 f.Cast(1, action, f.Player, null);
                 Check(f.Engine.Hints(f.Player).Contains(hint), "BMR cast hint was dropped.");
-                Check(f.Snapshot.DangerAreas.Count == 0 && f.Draw.Previews.Count == 0, "Tankbuster was fabricated as an AOE.");
+                Check(f.Snapshot.DangerAreas.Count == 0 && f.AoePreviews.Count == 0, "Tankbuster was fabricated as an AOE.");
                 f.Engine.Finish(1, action); f.Render();
                 Check(!f.Engine.Hints(f.Player).Contains(hint), "Cancelled single target hint leaked.");
             });
@@ -69,7 +106,7 @@ internal static class ArrDungeonRegression
         {
             using var f = new Fight(1038, 0x3870);
             f.Cast(1, 28463, f.Player);
-            Check(f.Engine.Casts.Count == 0 && f.Draw.Previews.Count == 0, "Divide visual was mistaken for Burst.");
+            Check(f.Engine.Casts.Count == 0 && f.AoePreviews.Count == 0, "Divide visual was mistaken for Burst.");
             using var k = new Fight(1038, 0x387C);
             k.Cast(1, 28543, k.Player);
             Check(k.Engine.Casts.Count == 0, "Jump visual was mistaken for helper AOE.");
@@ -92,9 +129,9 @@ internal static class ArrDungeonRegression
             using var f = new Fight(1037, 0x237);
             f.Cast(1, 912, f.Player, null);
             f.Scan();
-            Check(f.Errors.Count == 1 && f.Engine.Casts.Count == 0 && f.Draw.Previews.Count == 0, "Unknown rotation produced a false cone or repeated errors.");
+            Check(f.Errors.Count == 1 && f.Engine.Casts.Count == 0 && f.AoePreviews.Count == 0, "Unknown rotation produced a false cone or repeated errors.");
             f.Cast(1, 912, f.Player, 0);
-            Check(f.Draw.Previews.Count == 1, "A later valid packet did not restore the cast.");
+            Check(f.AoePreviews.Count == 1, "A later valid packet did not restore the cast.");
         });
         run("ARR dungeons packet corrects scanned cone without shifting deadline", () =>
         {
@@ -103,7 +140,7 @@ internal static class ArrDungeonRegression
             var end = f.Engine.Casts[1].FinishAt;
             f.Engine.StartCast(1, new(28763, f.Player, MathF.PI, f.Now, end.AddSeconds(0.2)), f.Now);
             f.Render();
-            Check(f.Engine.Casts[1].FinishAt == end && f.Draw.Previews.Single().Value.Geometry.Contains(f.Player - Vector3.UnitZ * 10), "Cast rotation correction failed.");
+            Check(f.Engine.Casts[1].FinishAt == end && f.AoePreviews.Single().Value.Geometry.Contains(f.Player - Vector3.UnitZ * 10), "Cast rotation correction failed.");
         });
         run("ARR dungeons cancellation is action scoped and stale scan cannot resurrect it", () =>
         {
@@ -112,12 +149,12 @@ internal static class ArrDungeonRegression
             f.Engine.Finish(1, 28461); f.Render();
             Check(f.Engine.Casts.Count == 1, "Unrelated interrupt removed current cast.");
             f.Engine.Finish(1, 28462); f.Scan();
-            Check(f.Draw.Previews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "Stale native cast revived cancellation.");
+            Check(f.AoePreviews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "Stale native cast revived cancellation.");
             f.Actors[1] = f.Actors[1] with { Cast = null }; f.Scan();
             f.Engine.StartCast(1, new(28462, f.Player, 0, f.Now, f.Now.AddSeconds(4.3)), f.Now);
             Check(f.Engine.Casts.Count == 0, "Late duplicate revived cancelled cast after native state cleared.");
             f.Now = f.Now.AddSeconds(5); f.Cast(1, 28462, f.Player);
-            Check(f.Draw.Previews.Count == 1, "Cancellation latch blocked a later distinct cast.");
+            Check(f.AoePreviews.Count == 1, "Cancellation latch blocked a later distinct cast.");
         });
         run("ARR dungeons effects deduplicate targets and normal finish removes once", () =>
         {
@@ -126,7 +163,7 @@ internal static class ArrDungeonRegression
             for (var i = 0; i < 8; ++i) f.Engine.Effect(1, 351, 123, f.Now);
             Check(f.Engine.Casts.Count == 1 && f.Engine.Casts[1].EffectSeen, "Effects duplicated or prematurely removed SimpleAOEs.");
             f.Now = f.Now.AddSeconds(4.3); f.Actors[1] = f.Actors[1] with { Cast = null }; f.Scan();
-            Check(f.Engine.Casts.Count == 0 && f.Draw.Previews.Count == 0, "Finished cast leaked.");
+            Check(f.Engine.Casts.Count == 0 && f.AoePreviews.Count == 0, "Finished cast leaked.");
         });
         foreach (var delay in new[] { 0.05, 0.5 })
             run($"ARR dungeons same-action recast {delay:F2}s after cancellation is distinct", () =>
@@ -137,7 +174,7 @@ internal static class ArrDungeonRegression
                 f.Engine.Finish(1, 28462); f.Scan();
                 Check(f.Engine.Casts.Count == 0, "Native scan resurrected the cancelled cast.");
                 f.Now = f.Now.AddSeconds(delay); f.Cast(1, 28462, f.Player + Vector3.UnitX);
-                Check(f.Engine.Casts.Count == 1 && f.Draw.Previews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX,
+                Check(f.Engine.Casts.Count == 1 && f.AoePreviews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX,
                     "Cancellation suppressed a distinct quick recast.");
             });
         run("ARR dungeons PR cast timestamp compensates dispatch delay and converts local time", () =>
@@ -150,7 +187,7 @@ internal static class ArrDungeonRegression
             var cast = f.Engine.Casts[1];
             Check(cast.StartedAt == started && Math.Abs((cast.FinishAt - started).TotalSeconds - 4.3) < 0.001,
                 "PR event dispatch delay or local timezone shifted the deadline.");
-            Check(f.Draw.Previews.Single().Value.Geometry.Contains(location + Vector3.UnitX * 10), "Adapter lost injected locked cast rotation.");
+            Check(f.AoePreviews.Single().Value.Geometry.Contains(location + Vector3.UnitX * 10), "Adapter lost injected locked cast rotation.");
             f.Now = started.AddSeconds(4.1);
             for (var i = 0; i < 8; ++i)
                 f.Event(new LogSystemActionEffectEvent { SourceId = 1, ActionId = 28763, GlobalSequence = 42, TargetIndex = i, Timestamp = started.AddSeconds(4) });
@@ -169,18 +206,18 @@ internal static class ArrDungeonRegression
                     ? new LogSystemInterruptCastEvent { SourceId = 1, ActionId = 28462, Timestamp = started.AddSeconds(0.1) }
                     : new LogSystemCancelCastEvent { SourceId = 1, ActionId = 28462, Timestamp = started.AddSeconds(0.1) };
                 f.Event(cancelled);
-                Check(f.Draw.Previews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "PR cancellation left owned output.");
+                Check(f.AoePreviews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "PR cancellation left owned output.");
                 f.Event(packet);
                 Check(f.Engine.Casts.Count == 0, "Duplicate start revived the cancelled cast.");
                 f.Event(packet with { Timestamp = started.AddSeconds(0.15), EffectPosition = f.Player + Vector3.UnitX });
                 Check(f.Engine.Casts.Count == 1, "Dispatch-time cancellation blocked the next real cast.");
                 f.Event(packet);
-                Check(f.Draw.Previews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX, "Late old packet overwrote the next cast location.");
+                Check(f.AoePreviews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX, "Late old packet overwrote the next cast location.");
                 f.Event(cancelled);
                 Check(f.Engine.Casts.Count == 1, "Late cancellation removed a newer same-action cast.");
                 f.Actors[1] = f.Actors[1] with { Cast = stale }; f.Scan();
                 Check(f.Engine.Casts[1].StartedAt == started.AddSeconds(0.15)
-                    && f.Draw.Previews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX, "Stale native scan replaced a newer packet.");
+                    && f.AoePreviews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX, "Stale native scan replaced a newer packet.");
             });
         foreach (var cleanup in new[] { "normal scan", "effect scan", "timeout" })
             run($"ARR dungeons {cleanup} does not reject a delayed next same-action packet", () =>
@@ -198,7 +235,7 @@ internal static class ArrDungeonRegression
                 var nextStarted = started.AddSeconds(cleanup == "timeout" ? 6.4 : cleanup == "effect scan" ? 4.05 : 4.4);
                 f.Now = nextStarted.AddSeconds(0.2);
                 f.Event(new LogSystemCastStartEvent { SourceId = 1, ActionId = 28462, CastTime = 4, Timestamp = nextStarted, EffectPosition = f.Player + Vector3.UnitX });
-                Check(f.Engine.Casts.Count == 1 && f.Engine.Casts[1].StartedAt == nextStarted && f.Draw.Previews.Count == 1,
+                Check(f.Engine.Casts.Count == 1 && f.Engine.Casts[1].StartedAt == nextStarted && f.AoePreviews.Count == 1,
                     "Cleanup processing time suppressed the next real same-action cast.");
             });
         run("ARR dungeons stale scan cannot overwrite a shorter same-action recast", () =>
@@ -212,7 +249,7 @@ internal static class ArrDungeonRegression
             f.Event(new LogSystemCastStartEvent { SourceId = 1, ActionId = 28462, CastTime = 1, Timestamp = f.Now, EffectPosition = f.Player + Vector3.UnitX });
             f.Scan();
             Check(f.Engine.Casts[1].StartedAt == started.AddSeconds(0.15) && f.Engine.Casts[1].FinishAt < started.AddSeconds(2)
-                && f.Draw.Previews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX,
+                && f.AoePreviews.Single().Value.Geometry.Position == f.Player + Vector3.UnitX,
                 "Cancelled native cast with a different duration overwrote the new packet.");
         });
         run("ARR dungeons PR adapter rescans new helpers and removal clears only the source", () =>
@@ -221,11 +258,11 @@ internal static class ArrDungeonRegression
             f.Cast(1, 28546, f.Player);
             f.Actors[10] = new(10, 0x233C, f.Player);
             f.Event(new LogSystemCastStartEvent { SourceId = 10, ActionId = 28544, CastTime = 5, Timestamp = f.Now, EffectPosition = f.Player });
-            Check(f.Engine.Casts.Count == 2 && f.Draw.Previews.Count == 2, "New helper packet was lost before the next scheduled scan.");
+            Check(f.Engine.Casts.Count == 2 && f.AoePreviews.Count == 2, "New helper packet was lost before the next scheduled scan.");
             f.Event(new LogSystemObjectRemoveEvent { SourceId = 10, Timestamp = f.Now });
-            Check(f.Engine.Casts.Count == 1 && f.Engine.Casts.ContainsKey(1) && f.Draw.Previews.Count == 1, "Helper removal affected another caster.");
+            Check(f.Engine.Casts.Count == 1 && f.Engine.Casts.ContainsKey(1) && f.AoePreviews.Count == 1, "Helper removal affected another caster.");
             f.Event(new LogSystemObjectRemoveEvent { SourceId = 1, Timestamp = f.Now });
-            Check(f.Engine.Active == null && f.Snapshot.ArenaBoundary == null && f.Draw.Previews.Count == 0, "Primary removal leaked encounter state.");
+            Check(f.Engine.Active == null && f.Snapshot.ArenaBoundary == null && f.AoePreviews.Count == 0, "Primary removal leaked encounter state.");
         });
         run("ARR dungeons replacing a cast rejects stale scans even when actions change quickly", () =>
         {
@@ -234,26 +271,26 @@ internal static class ArrDungeonRegression
             var previous = f.Actors[1].Cast;
             f.Now = f.Now.AddSeconds(0.1);
             f.Event(new LogSystemCastStartEvent { SourceId = 1, ActionId = 28461, CastTime = 4, Timestamp = f.Now, EffectPosition = f.Player });
-            Check(f.Engine.Casts[1].Rule.Action == 28461 && f.Draw.Previews.Count == 0 && f.Snapshot.DangerAreas.Count == 0,
+            Check(f.Engine.Casts[1].Rule.Action == 28461 && f.AoePreviews.Count == 0 && f.Snapshot.DangerAreas.Count == 0,
                 "Tankbuster replacement left the previous spatial danger.");
             f.Actors[1] = f.Actors[1] with { Cast = previous }; f.Scan();
-            Check(f.Engine.Casts[1].Rule.Action == 28461 && f.Draw.Previews.Count == 0, "Stale native action replaced the newer packet.");
+            Check(f.Engine.Casts[1].Rule.Action == 28461 && f.AoePreviews.Count == 0, "Stale native action replaced the newer packet.");
         });
         run("ARR dungeons PR EAnim uses high word and discovers newly visible ripples", () =>
         {
             using var f = new Fight(1036, 0x1A1);
             f.Actors[10] = new(10, 0x1E8615, f.Player);
             f.Event(new LogSystemEObjAnimationEvent { SourceId = 10, Param1 = 4, Param2 = 0, Timestamp = f.Now });
-            Check(f.Draw.Previews.Count == 1 && f.Engine.ActiveRipples.Single().Id == 10, "EAnim high word or object rescan lost the ripple.");
+            Check(f.AoePreviews.Count == 1 && f.Engine.ActiveRipples.Single().Id == 10, "EAnim high word or object rescan lost the ripple.");
             f.Event(new LogSystemEObjAnimationEvent { SourceId = 10, Param1 = 0, Param2 = 4, Timestamp = f.Now });
-            Check(f.Draw.Previews.Count == 0, "EAnim low word was mistaken for the spawn bit.");
+            Check(f.AoePreviews.Count == 0, "EAnim low word was mistaken for the spawn bit.");
         });
         run("ARR dungeons PR invalid durations fail visibly without registering danger", () =>
         {
             using var f = new Fight(1038, 0x3870);
             foreach (var duration in new[] { float.NaN, float.PositiveInfinity, -1f, 3601f })
                 f.Event(new LogSystemCastStartEvent { SourceId = 1, ActionId = 28462, CastTime = duration, Timestamp = f.Now, EffectPosition = f.Player });
-            Check(f.Errors.Count == 4 && f.Engine.Casts.Count == 0 && f.Draw.Previews.Count == 0, "Invalid PR duration created a hazard or silently failed.");
+            Check(f.Errors.Count == 4 && f.Engine.Casts.Count == 0 && f.AoePreviews.Count == 0, "Invalid PR duration created a hazard or silently failed.");
         });
         run("ARR dungeons timeout and stale late packet cannot recreate expired preview", () =>
         {
@@ -262,7 +299,7 @@ internal static class ArrDungeonRegression
             var observation = f.Actors[1].Cast!;
             f.Now = f.Now.AddSeconds(7); f.Engine.Tick(f.Now); f.Render();
             f.Engine.StartCast(1, observation, f.Now); f.Render();
-            Check(f.Draw.Previews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "Expired packet recreated a hazard.");
+            Check(f.AoePreviews.Count == 0 && f.Snapshot.DangerAreas.Count == 0, "Expired packet recreated a hazard.");
         });
         foreach (var mode in new[] { "dead", "destroyed", "out of combat", "disabled", "player absent" })
             run($"ARR dungeons lifecycle: {mode} clears owned state", () =>
@@ -274,7 +311,7 @@ internal static class ArrDungeonRegression
                 if (mode == "out of combat") f.Actors[1] = f.Actors[1] with { InCombat = false };
                 f.Engine.Synchronize(f.Actors.Values, mode == "player absent" ? null : f.Player, f.Now, _ => mode != "disabled");
                 f.Render();
-                Check(f.Engine.Active == null && f.Draw.Previews.Count == 0 && f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.ArenaBoundary == null, "Lifecycle left an owned resource.");
+                Check(f.Engine.Active == null && f.AoePreviews.Count == 0 && f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.ArenaBoundary == null, "Lifecycle left an owned resource.");
             });
         run("ARR dungeons inactive or untargetable boss cannot lock dungeon traversal", () =>
         {
@@ -302,14 +339,14 @@ internal static class ArrDungeonRegression
             using var f = new Fight(1036, 0x1A1);
             var ripple = f.Spawn(0x1E8615);
             f.Engine.Animation(ripple, 0x00040004); f.Render();
-            var preview = f.Draw.Previews.Single().Value;
+            var preview = f.AoePreviews.Single().Value;
             var shape = (RectangleGeometry)preview.Geometry;
             Check(preview.OutlineOnly && shape.Width == 4 && shape.Length == 6 && shape.Position == f.Actors[ripple].Position, "Ripple rectangle differs from BMR.");
             Check(f.Engine.Hints(f.Player).Contains("小怪即将出现") && f.Snapshot.DangerAreas.Count == 0 && f.Snapshot.GoalAreas.Count == 0, "Ripple became navigation or lost hint.");
             f.Output.Apply(f.Engine, f.Now, false);
-            Check(f.Draw.Previews.Count == 0, "Ripple toggle failed.");
+            Check(f.AoePreviews.Count == 0, "Ripple toggle failed.");
             f.Engine.Animation(ripple, 0x00080008); f.Render();
-            Check(f.Draw.Previews.Count == 0, "Spawned ripple did not clear.");
+            Check(f.AoePreviews.Count == 0, "Spawned ripple did not clear.");
             f.Engine.Animation(ripple, 0x00040000); f.Actors.Remove(ripple); f.Scan();
             Check(!f.Engine.ActiveRipples.Any(), "Removed ripple leaked.");
         });
@@ -395,6 +432,8 @@ internal static class ArrDungeonRegression
         public readonly DungeonEncounter Engine;
         public readonly ScriptSafeZoneApi Safe = new() { DangerMarginForTest = 0.5f };
         public readonly ScriptDrawApi Draw = new();
+        public IReadOnlyDictionary<string, MasterPlayer.Radar.AoePreview> AoePreviews
+            => Draw.Previews.Where(p => !p.Key.StartsWith("early-arr/enemy/", StringComparison.Ordinal)).ToDictionary();
         public readonly DungeonOutput Output;
         public readonly DungeonEventAdapter Events;
         public float? PacketRotation;

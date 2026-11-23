@@ -36,9 +36,9 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
     { if (value) _navigationOnly.Add(handle); else _navigationOnly.Remove(handle); }
     public void Remove(SafeZoneAreaHandle handle) { _areaSources.Remove(handle); _navigationOnly.Remove(handle); }
 
-    public void AddPreview(string id, IGeometryShape geometry, bool safe, float durationMs, string key, string name, bool outlineOnly = false, float progress = 1f)
+    public void AddPreview(string id, IGeometryShape geometry, bool safe, float durationMs, string key, string name, bool outlineOnly = false, float progress = 1f, bool unclipped = false, Vector4? color = null)
         => _previews[id] = new AoePreview(id, geometry, safe, GetRule(key, name),
-            durationMs > 0f ? Now.AddMilliseconds(durationMs) : DateTime.MaxValue, outlineOnly, progress);
+            durationMs > 0f ? Now.AddMilliseconds(durationMs) : DateTime.MaxValue, outlineOnly, progress, unclipped, color);
 
     public void AddLine(string id, Vector3 start, Vector3 end, bool safe, string key, string name)
         => _lines[id] = new(id, start, end, safe, GetRule(key, name));
@@ -83,11 +83,13 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
     }
 }
 
-internal sealed record AoePreview(string Id, IGeometryShape Geometry, bool Safe, AoeVisibility Visibility, DateTime ExpiresUtc, bool OutlineOnly = false, float Progress = 1f)
+internal sealed record AoePreview(string Id, IGeometryShape Geometry, bool Safe, AoeVisibility Visibility, DateTime ExpiresUtc, bool OutlineOnly = false, float Progress = 1f, bool Unclipped = false, Vector4? Color = null)
 {
     public DrawStyle Style(AoeViewSettings settings)
     {
         var style = Safe ? settings.GetSafeStyle() : settings.GetDangerStyle(Progress);
+        if (Color is { } color)
+            style = new DrawStyle(color, color);
         return OutlineOnly ? style with { FillColor = Vector4.Zero } : style;
     }
 }

@@ -36,7 +36,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         _safeZone = new ScriptSafeZoneApi(metadata.Id, metadata.Name);
         _move = new ScriptMoveApi(Log);
         _draw = new ScriptDrawApi($"MasterPlayer_Script_{SanitizeId(metadata.Id)}_", _safeZone);
-        _hints = new ScriptHintsApi(() => IsReplay);
+        _hints = new ScriptHintsApi(() => IsReplay, _move);
     }
 
     public ScriptSafeZoneApi SafeZone => _safeZone;
@@ -196,6 +196,9 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
             return;
         _disposed = true;
 
+        TryCleanup("退订旧式地图事件", () => LegacyMapEffectEvents.UnsubscribeAll(this));
+        TryCleanup("退订原生效果包", () => NativeActionEffectEvents.UnsubscribeAll(this));
+        TryCleanup("退订系统日志参数", () => SystemLogParameterEvents.UnsubscribeAll(this));
         TryCleanup("退订事件", () =>
         {
             PromeOwnerRegistry.MarkClosing(_ownerId);
@@ -206,7 +209,7 @@ internal sealed class MasterPlayerScriptContext : IScriptHostContext, IDisposabl
         TryCleanup("清理安全区", () => _safeZone.Cleanup());
         TryCleanup("停止移动", () => _move.Cleanup());
         TryCleanup("清理绘制", () => _draw.Cleanup());
-        TryCleanup("撤销朝向", () => _hints.Cleanup());
+        TryCleanup("撤销机制控制", () => _hints.Cleanup());
     }
 
     private void TryCleanup(string what, Action action)

@@ -13,7 +13,7 @@ internal sealed class PalaceEncounter
     private readonly Dictionary<ulong, ReplayActorState> actors = [];
     private readonly Dictionary<ulong, PalaceCast> casts = [];
     private readonly Dictionary<string, PalaceArea> pending = [];
-    private readonly Dictionary<ulong, DateTime> bombs = [];
+    private readonly Dictionary<ulong, (DateTime Hit, Vector3 Position)> bombs = [];
     private readonly Dictionary<ulong, DateTime> spikes = [];
     private readonly Dictionary<ulong, DateTime> statusChanges = [];
     private readonly HashSet<ulong> observedSpikes = [];
@@ -40,7 +40,7 @@ internal sealed class PalaceEncounter
         foreach (var id in actors.Keys.Except(incoming.Keys).ToArray()) RemoveActor(id);
         foreach (var (id, actor) in incoming)
         {
-            if (!actors.ContainsKey(id) && actor.Oid == 0x18F3) bombs[id] = now.AddSeconds(10);
+            if (!actors.ContainsKey(id) && actor.Oid == 0x18F3) bombs[id] = (now.AddSeconds(10), actor.Position);
             actors[id] = actor;
             if (actor.Dead) Cancel(id);
             if (actor.Statuses.Any(s => s.Id is 197 or 198 && s.ExpiresAt > now))
@@ -59,7 +59,7 @@ internal sealed class PalaceEncounter
         foreach (var key in casts.Where(p => p.Value.Hit.AddSeconds(.5) < now).Select(p => p.Key).ToArray()) casts.Remove(key);
         foreach (var key in pending.Where(p => p.Value.Until < now).Select(p => p.Key).ToArray()) pending.Remove(key);
         foreach (var key in spikes.Where(p => p.Value < now).Select(p => p.Key).ToArray()) spikes.Remove(key);
-        foreach (var key in bombs.Where(p => p.Value.AddSeconds(2) < now).Select(p => p.Key).ToArray()) bombs.Remove(key);
+        foreach (var key in bombs.Where(p => p.Value.Hit.AddSeconds(2) < now).Select(p => p.Key).ToArray()) bombs.Remove(key);
     }
 
     internal void StartCast(PalaceCast cast)
@@ -91,8 +91,13 @@ internal sealed class PalaceEncounter
                 }
                 if (effect.ActionId == 7172)
                 {
-                    resolvedBombs.Add(effect.SourceId);
-                    bombs.Remove(effect.SourceId);
+                    resolvedBombs.UnionWith(bombs.Keys);
+                    bombs.Clear();
+                    foreach (var id in casts.Where(p => p.Value.Action == 7172).Select(p => p.Key).ToArray())
+                    {
+                        resolvedBombs.Add(id);
+                        casts.Remove(id);
+                    }
                 }
                 if (effect.ActionId is 7162 or 7163 or 7165) rotationStep = (rotationStep + 1) % 10;
                 if (effect.ActionId == 7166) rotationStep = 11;
@@ -147,13 +152,15 @@ internal sealed class PalaceEncounter
     internal IReadOnlyList<PalaceArea> Collect(DateTime now, ulong playerId)
     {
         var result = new List<PalaceArea>();
-        foreach (var actor in actors.Values.Where(a => !a.Dead && a.EventState != 7))
+        foreach (var actor in actors.Values)
         {
+            if (actor.OpenedTreasure) continue;
+            if (actor.Oid is >= 0x1EA08E and <= 0x1EA092 or 0x1EA9A0 or 0x1EB864 or 0x1EBEDB)
+                result.Add(new($"trap/{actor.Id}", "已揭示陷阱", new CircleTemplate(2), actor.Position, 0, now, DateTime.MaxValue, actor.Id));
+            if (actor.Dead || actor.EventState == 7) continue;
             var radius = actor.Oid switch { 0x1E858E => 9, 0x1E9998 => 8, 0x18F0 => 10, _ => 0 };
             if (radius > 0) result.Add(new($"object/{actor.Id}", "持续地面", new CircleTemplate(radius), actor.Position,
                 0, now, DateTime.MaxValue, actor.Id));
-            if (actor.Oid is >= 0x1EA08E and <= 0x1EA092)
-                result.Add(new($"trap/{actor.Id}", "已揭示陷阱", new CircleTemplate(2), actor.Position, 0, now, DateTime.MaxValue, actor.Id));
         }
         foreach (var area in pending.Values.Where(a => a.Until >= now))
         {
@@ -161,10 +168,11 @@ internal sealed class PalaceEncounter
                 && Vector3.DistanceSquared(a.Position, area.Position) < 4)) continue;
             result.Add(area);
         }
-        foreach (var (id, hit) in bombs)
+        foreach (var (id, prediction) in bombs)
         {
             if (!actors.TryGetValue(id, out var actor) || actor.Dead || resolvedBombs.Contains(id) || casts.ContainsKey(id)) continue;
-            result.Add(new($"bomb/{id}", "冰碎预告", new CircleTemplate(6.6f), actor.Position, 0,
+            var hit = prediction.Hit;
+            result.Add(new($"bomb/{id}", "冰碎预告", new CircleTemplate(6.6f), prediction.Position, 0,
                 hit.AddSeconds(-.2), hit.AddSeconds(.5), id, 7172, Telegraph: hit.AddSeconds(-10)));
         }
         foreach (var cast in casts.Values.Where(c => c.Hit.AddSeconds(.2) >= now))
@@ -187,18 +195,34 @@ internal sealed class PalaceEncounter
                 var delta = target.Position - source.Position;
                 delta.Y = 0;
                 var length = delta.Length();
-                if (length > .1f && cast.Target != playerId)
-                    result.Add(Hit(cast, RayRectangleTemplate.Symmetric(6, length), source.Position, MathF.Atan2(delta.X, delta.Z)));
+                if (length > .1f)
+                    result.Add(Hit(cast, RayRectangleTemplate.Symmetric(6, length), source.Position, MathF.Atan2(delta.X, delta.Z))
+                        with { PreviewOnly = cast.Target == playerId, OutlineOnly = cast.Target == playerId });
+                if (cast.Target == playerId)
+                    foreach (var ally in actors.Values.Where(a => a.Kind == 1 && !a.Dead && a.Id != playerId))
+                    {
+                        var offset = ally.Position - source.Position;
+                        offset.Y = 0;
+                        var distance = offset.Length();
+                        var halfAngle = distance >= 3 ? MathF.Asin(3 / distance) : MathF.PI;
+                        result.Add(new($"charge-bait/{cast.Source}/{ally.Id}", "冲锋远离队友", new FanTemplate(100, halfAngle * 2),
+                            source.Position, MathF.Atan2(offset.X, offset.Z), cast.Hit.AddSeconds(-.2), cast.Hit.AddSeconds(.2),
+                            cast.Source, cast.Action, NavigationOnly: true));
+                    }
                 if (cast.Target == playerId && !player.Statuses.Any(s => s.Id is 160 or 1209 or 1096 or 1512 && s.ExpiresAt > cast.Hit))
                 {
-                    var dangers = result.Where(a => !a.Safe && !a.PreviewOnly
+                    var dangers = result.Where(a => !a.Safe && !a.PreviewOnly && !a.NavigationOnly
                         && a.Until >= cast.Hit).Select(a => a.Geometry).ToArray();
                     result.Add(Hit(cast, new PalaceLandingTemplate(cast.SourcePosition, dangers), PalaceArena.Center, 0)
                         with { Key = $"landing/{cast.Source}", NavigationOnly = true });
                 }
             }
-            if (boss.Oid == 0x181E && boss.TargetId == playerId)
-                AddPullGoal(result, boss, player, now);
+            if (boss.Oid == 0x181E && BossInWater(boss))
+            {
+                result.Add(new($"puddle-boss/{boss.Id}", "泡水首领轮廓", new CircleTemplate(boss.HitboxRadius), boss.Position,
+                    0, now, now.AddSeconds(.5), boss.Id, PreviewOnly: true, OutlineOnly: true));
+                if (boss.TargetId == playerId) AddPullGoal(result, boss, now);
+            }
         }
         return result;
     }
@@ -224,21 +248,54 @@ internal sealed class PalaceEncounter
             }
     }
 
-    private void AddPullGoal(List<PalaceArea> result, ReplayActorState boss, ReplayActorState player, DateTime now)
+    private bool BossInWater(ReplayActorState boss)
+        => actors.Values.Any(a => a.Oid == 0x1E9998 && a.EventState != 7
+            && Vector3.DistanceSquared(a.Position, boss.Position) <= MathF.Pow(8 + boss.HitboxRadius, 2));
+
+    private void AddPullGoal(List<PalaceArea> result, ReplayActorState boss, DateTime now)
     {
         var puddles = actors.Values.Where(a => a.Oid == 0x1E9998 && a.EventState != 7).ToArray();
         if (!puddles.Any(p => Vector3.Distance(p.Position, boss.Position) < 8 + boss.HitboxRadius)) return;
         var radius = 8 + 2 * boss.HitboxRadius + 3;
-        var candidates = PalaceArena.Boundary.GetContours()[0].Select(p => Vector3.Lerp(PalaceArena.Center, p, .96f))
-            .Where(p => puddles.All(z => Vector3.Distance(p, z.Position) > radius))
-            .OrderBy(p => Vector3.DistanceSquared(p, player.Position)).ToArray();
-        if (candidates.Length != 0)
-            result.Add(new("pull/170", "把 Boss 拉出水圈", new CircleTemplate(.5f), candidates[0], 0, now, now.AddSeconds(.5), Safe: true));
+        result.Add(new("pull/170", "把 Boss 拉出水圈", new PalacePullTemplate(puddles.Select(p => p.Position).ToArray(), radius),
+            PalaceArena.Center, 0, now, now.AddSeconds(.5), Safe: true, NavigationOnly: true));
     }
 
     internal float? Facing(DateTime now, ulong playerId)
     {
         if (!actors.TryGetValue(playerId, out var player)) return null;
+        var directions = ActiveGazes(now, player).Select(gaze => gaze.Direction).ToArray();
+        if (directions.Length == 0) return null;
+        // 安全区可能只剩很窄的一段；枚举所有禁向边界之间的中点，避免固定角度余量跨过它。
+        const float halfAngle = MathF.PI / 4 + .01f;
+        var boundaries = directions.SelectMany(d => new[] { d - halfAngle, d + halfAngle })
+            .Select(a => (a % MathF.Tau + MathF.Tau) % MathF.Tau).Order().ToArray();
+        var candidates = new List<float> { player.Rotation };
+        for (var i = 0; i < boundaries.Length; ++i)
+        {
+            var end = i + 1 < boundaries.Length ? boundaries[i + 1] : boundaries[0] + MathF.Tau;
+            candidates.Add((boundaries[i] + end) * .5f);
+        }
+        foreach (var candidate in candidates)
+            if (directions.All(d => MathF.Abs(MathF.Atan2(MathF.Sin(candidate - d), MathF.Cos(candidate - d))) > halfAngle))
+                return candidate;
+        return null;
+    }
+
+    internal (bool BlockCasts, bool CancelCast) CastRestrictions(DateTime now, ulong playerId, bool avoidGaze)
+    {
+        if (!actors.TryGetValue(playerId, out var player)) return default;
+        var gazes = avoidGaze ? ActiveGazes(now, player).ToArray() : [];
+        var mustTurn = gazes.Any(gaze => gaze.Hit <= now.AddSeconds(.5)
+            && MathF.Abs(MathF.Atan2(MathF.Sin(player.Rotation - gaze.Direction),
+                MathF.Cos(player.Rotation - gaze.Direction))) <= MathF.PI / 4 + .01f);
+        var cancel = player.Cast is { EffectSeen: false } cast
+            && (mustTurn || ForbiddenTargets(now).Contains(cast.TargetId));
+        return (gazes.Length > 0, cancel);
+    }
+
+    private IEnumerable<(float Direction, DateTime Hit)> ActiveGazes(DateTime now, ReplayActorState player)
+    {
         foreach (var cast in casts.Values.OrderBy(c => c.Hit))
         {
             if (!PalaceCatalog.IsGaze(cast.Action) || cast.Hit < now || cast.Hit > now.AddSeconds(.75)) continue;
@@ -246,20 +303,22 @@ internal sealed class PalaceEncounter
                 : new CircleTemplate(cast.Action == 6351 ? 100 : 30);
             if (cast.Action == 6356 && cast.Rotation == null) continue;
             if (shape.Resolve(cast.SourcePosition, cast.Rotation ?? 0, null).Contains(player.Position))
-                return MathF.Atan2(player.Position.X - cast.SourcePosition.X, player.Position.Z - cast.SourcePosition.Z);
+                yield return (MathF.Atan2(cast.SourcePosition.X - player.Position.X, cast.SourcePosition.Z - player.Position.Z), cast.Hit);
         }
-        return null;
     }
 
     internal IReadOnlyList<ulong> ForbiddenTargets(DateTime now)
     {
-        var forbidden = spikes.Where(p => p.Value > now).Select(p => p.Key).ToHashSet();
+        var forbidden = new HashSet<ulong>();
         if (ManualBurstHold && Boss is { } boss) forbidden.Add(boss.Id);
         if (Boss is { Oid: 0x1820 } godfather)
             foreach (var bomb in actors.Values.Where(a => a.Oid == 0x18F2 && !a.Dead && Vector3.Distance(a.Position, godfather.Position) <= 7.2f))
                 forbidden.Add(bomb.Id);
         return forbidden.ToArray();
     }
+
+    internal IReadOnlyList<ulong> ForbiddenAutoAttackTargets(DateTime now)
+        => spikes.Where(p => p.Value > now).Select(p => p.Key).ToArray();
 
     internal ulong PreferredTarget(ulong playerId, DateTime now)
     {
@@ -279,6 +338,7 @@ internal sealed class PalaceEncounter
             if (cast.Action == 7166) yield return "黄道陨石：80% 最大生命伤害，准备恢复并尽快击杀";
         }
         if (ManualBurstHold) yield return "Boss 血量 15%–15.8%：自动攻击暂停，手动准备爆发";
+        if (Boss is { Oid: 0x181E } waterBoss && BossInWater(waterBoss)) yield return "把 Boss 拉出水圈";
         if (Boss is { Oid: 0x181F })
         {
             yield return $"180层阶段：{Phase}";

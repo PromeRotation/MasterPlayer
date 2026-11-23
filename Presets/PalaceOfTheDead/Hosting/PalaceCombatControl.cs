@@ -1,6 +1,7 @@
 using System.Reflection;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using MasterPlayer.Replay;
 
 namespace MasterPlayer.Mechanics.PalaceOfTheDead;
 
@@ -15,9 +16,11 @@ internal sealed class PalaceCombatControl
     private bool resolved;
     private bool warned;
 
-    internal void Apply(ulong target, ulong[] forbidden, float? heading, bool hold)
+    internal void Apply(ulong target, ulong[] forbidden, float? heading, bool hold, bool blockCasts = false, bool cancelCast = false,
+        IReadOnlyList<ulong>? forbiddenAutoAttackTargets = null)
     {
         StopForbiddenAutoAttacks(forbidden);
+        if (forbiddenAutoAttackTargets != null) StopForbiddenAutoAttacks(forbiddenAutoAttackTargets);
         Resolve();
         if (update == null)
         {
@@ -29,7 +32,7 @@ internal sealed class PalaceCombatControl
             return;
         }
         // Requests expire after 500ms in PR; refresh even when their value is unchanged.
-        update(owner, target, 0, forbidden, heading, hold, false, false);
+        update(owner, target, 0, forbidden, heading, hold, blockCasts, cancelCast);
     }
 
     internal void Clear()
@@ -37,9 +40,9 @@ internal sealed class PalaceCombatControl
         if (resolved) clear?.Invoke(owner);
     }
 
-    private static unsafe void StopForbiddenAutoAttacks(ulong[] forbidden)
+    private static unsafe void StopForbiddenAutoAttacks(IReadOnlyList<ulong> forbidden)
     {
-        if (Svc.Targets.Target is not { } target || !forbidden.Contains(target.EntityId)) return;
+        if (Svc.Targets.Target is not { } target || !forbidden.Contains(ReplayWorldCapture.Id(target))) return;
         var ui = UIState.Instance();
         if (ui != null && ui->WeaponState.AutoAttackState.Get()) ui->WeaponState.AutoAttackState.Set(false);
     }

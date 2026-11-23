@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 
 namespace MasterPlayer.Spatial.SafeZone;
 
@@ -13,6 +14,11 @@ public readonly record struct GoalWindow(
     int Priority,
     PositionPreference Preference)
 {
+    /// <summary>机制明确安全区可让危险外扩余量让位；攻击范围等可选偏好必须关闭。</summary>
+    public bool OverrideDangerMargin { get; init; } = true;
+    /// <summary>Center 偏好的评分锚点；目标几何和危险余量保持不变。</summary>
+    public Vector3? PreferredPosition { get; init; }
+
     /// <summary>创建一个永久目标窗口（无结束时间）。</summary>
     public static GoalWindow Persistent(DateTime goalFrom, int priority = 0, PositionPreference preference = PositionPreference.Center)
         => new(goalFrom, null, priority, preference);

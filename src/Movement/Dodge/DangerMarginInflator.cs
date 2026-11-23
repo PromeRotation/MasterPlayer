@@ -18,7 +18,15 @@ public static class DangerMarginInflator
 
         return template switch
         {
+            Mechanics.Hunts.HuntStackJoinTemplate join => join with { Radius = MathF.Max(0, join.Radius - margin) },
+            Mechanics.Dungeons.DungeonCapsuleTemplate capsule => capsule with { Radius = capsule.Radius + margin },
+            Mechanics.Dungeons.DungeonCrossTemplate cross => cross with { Length = cross.Length + margin, HalfWidth = cross.HalfWidth + margin },
             Mechanics.PilgrimsTraverse.Pt30BallSweepTemplate sweep => sweep with { Radius = sweep.Radius + margin },
+            Mechanics.PilgrimsTraverse.PtDonutSectorTemplate sector => sector with
+            {
+                Inner = MathF.Max(0, sector.Inner - margin),
+                Outer = sector.Outer + margin,
+            },
             Mechanics.Crucible.ResolvedGeometryTemplate snapshot => snapshot.Inflate(margin),
             RotationOffsetTemplate rotated => rotated with { Inner = Inflate(rotated.Inner, margin) },
             CircleTemplate circle => new CircleTemplate(circle.Radius + margin),

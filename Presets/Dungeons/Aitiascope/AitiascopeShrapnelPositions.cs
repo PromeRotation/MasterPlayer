@@ -1,0 +1,88 @@
+// Coordinates copied from D052Rhitahtyn.Shrapnel; radius is the source implementation R6.
+using System.Numerics;
+
+namespace MasterPlayer.Mechanics.Dungeons;
+
+internal static class AitiascopeShrapnelPositions
+{
+    internal static readonly Vector2[] SWNE = [
+        new(-6.027f, 153.979f),
+        new(7.98f, 160.998f),
+        new(20.981f, 126.97f),
+        new(7.98f, 146.99f),
+        new(27.97f, 140.978f),
+        new(20.981f, 140.978f),
+        new(27.97f, 133.99f),
+        new(13.992f, 140.978f),
+        new(20.981f, 133.99f),
+        new(0.992f, 146.99f),
+        new(0.992f, 153.979f),
+        new(-6.027f, 160.998f),
+        new(13.992f, 126.97f),
+        new(13.992f, 133.99f),
+        new(0.992f, 160.998f),
+        new(-6.027f, 146.99f),
+        new(7.98f, 153.979f),
+        new(27.97f, 126.97f),
+    ];
+    internal static readonly Vector2[] NWSE = [
+        new(20.981f, 160.998f),
+        new(13.992f, 153.979f),
+        new(-6.027f, 140.978f),
+        new(13.992f, 160.998f),
+        new(-6.027f, 126.97f),
+        new(7.98f, 126.97f),
+        new(0.992f, 133.99f),
+        new(7.98f, 133.99f),
+        new(-6.027f, 133.99f),
+        new(27.97f, 153.979f),
+        new(13.992f, 146.99f),
+        new(20.981f, 146.99f),
+        new(0.992f, 126.97f),
+        new(0.992f, 140.978f),
+        new(27.97f, 160.998f),
+        new(27.97f, 146.99f),
+        new(20.981f, 153.979f),
+        new(7.98f, 140.978f),
+    ];
+    internal static readonly Vector2[] W = [
+        new(-6.027f, 160.998f),
+        new(0.992f, 153.979f),
+        new(7.98f, 133.99f),
+        new(-6.027f, 146.99f),
+        new(-6.027f, 140.978f),
+        new(0.992f, 133.99f),
+        new(-6.027f, 133.99f),
+        new(7.98f, 126.97f),
+        new(0.992f, 140.978f),
+        new(7.98f, 153.979f),
+        new(-6.027f, 153.979f),
+        new(0.992f, 146.99f),
+        new(0.992f, 126.97f),
+        new(-6.027f, 126.97f),
+        new(0.992f, 160.998f),
+        new(7.98f, 160.998f),
+        new(7.98f, 146.99f),
+        new(7.98f, 140.978f),
+    ];
+    internal static readonly Vector2[] E = [
+        new(13.992f, 160.998f),
+        new(20.981f, 146.99f),
+        new(20.981f, 140.978f),
+        new(27.97f, 146.99f),
+        new(27.97f, 140.978f),
+        new(20.981f, 133.99f),
+        new(13.992f, 126.97f),
+        new(27.97f, 126.97f),
+        new(27.97f, 133.99f),
+        new(13.992f, 146.99f),
+        new(27.97f, 153.979f),
+        new(20.981f, 153.979f),
+        new(20.981f, 126.97f),
+        new(13.992f, 133.99f),
+        new(13.992f, 153.979f),
+        new(27.97f, 160.998f),
+        new(20.981f, 160.998f),
+        new(13.992f, 140.978f),
+    ];
+}

@@ -11,25 +11,29 @@ internal sealed class RadarCanvas
     public Vector2 Center { get; }
     public float Radius { get; }
 
-    public RadarCanvas(ImDrawListPtr drawList, Vector2 center, float radius, IReadOnlyList<Vector2>? outline = null)
+    public RadarCanvas(ImDrawListPtr drawList, Vector2 center, float radius, IReadOnlyList<Vector2>? outline = null,
+        IReadOnlyList<IReadOnlyList<Vector2>>? outlines = null, IReadOnlyList<IReadOnlyList<Vector2>>? fillPolygons = null)
     {
         _drawList = drawList; Center = center; Radius = radius;
-        _clip = new(outline ?? RadarClipRegion.Circle(center, radius), center, radius);
+        _clip = new(outline ?? RadarClipRegion.Circle(center, radius), center, radius, outlines, fillPolygons);
     }
 
     public bool Contains(Vector2 point) => _clip.Contains(point);
     public Vector2 RimPoint(Vector2 direction)
         => _clip.ClipSegment(Center, Center + direction * Radius * 2).LastOrDefault((Start: Center, End: Center)).End;
     public void FillBackground(uint color) => FillPolygon(_clip.Outline, color);
-    public void StrokeRim(uint color, float thickness) => StrokeContour(_clip.Outline, color, thickness);
+    public void StrokeRim(uint color, float thickness)
+    {
+        foreach (var outline in _clip.Outlines) StrokeContour(outline, color, thickness);
+    }
 
-    public void FillPolygon(IReadOnlyList<Vector2> polygon, uint color)
+    public void FillPolygon(IReadOnlyList<Vector2> polygon, uint color, bool unclipped = false)
     {
         var flags = _drawList.Flags;
         _drawList.Flags &= ~ImDrawListFlags.AntiAliasedFill;
         try
         {
-            foreach (var part in _clip.ClipPolygon(polygon))
+            foreach (var part in unclipped ? RadarClipRegion.ConvexParts(polygon) : _clip.ClipPolygon(polygon))
                 for (var i = 1; i + 1 < part.Count; ++i)
                     _drawList.AddTriangleFilled(part[0], part[i], part[i + 1], color);
         }
@@ -43,6 +47,11 @@ internal sealed class RadarCanvas
     public void StrokeContour(IReadOnlyList<Vector2> contour, uint color, float thickness)
     {
         for (var i = 0; i < contour.Count; ++i) StrokeSegment(contour[i], contour[(i + 1) % contour.Count], color, thickness);
+    }
+    public void StrokeUnclippedContour(IReadOnlyList<Vector2> contour, uint color, float thickness)
+    {
+        for (var i = 0; i < contour.Count; ++i)
+            _drawList.AddLine(contour[i], contour[(i + 1) % contour.Count], color, thickness);
     }
     public void StrokeContourGlow(IReadOnlyList<Vector2> contour, Vector4 color, float thickness)
     {

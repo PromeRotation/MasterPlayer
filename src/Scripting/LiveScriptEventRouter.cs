@@ -1,6 +1,7 @@
 using System.Reflection;
 using PromeRotation.Hosting;
 using PromeRotation.LogSystem;
+using MasterPlayer.Replay;
 
 namespace MasterPlayer.Scripting;
 
@@ -15,6 +16,8 @@ internal sealed class LiveScriptEventRouter : IScriptEventRouter
     private static readonly MethodInfo GenericOnLogEvent = typeof(PromeEventBus)
         .GetMethods(BindingFlags.Public | BindingFlags.Static)
         .Single(m => m.Name == nameof(PromeEventBus.OnLogEvent) && m.IsGenericMethodDefinition);
+    private static readonly MethodInfo OrderedHandler = typeof(LiveScriptEventRouter)
+        .GetMethod(nameof(OrderNativeEffects), BindingFlags.Static | BindingFlags.NonPublic)!;
 
     private static readonly Dictionary<Type, Func<object, Delegate, IDisposable>> TypedSubscriptions = new()
     {
@@ -50,12 +53,36 @@ internal sealed class LiveScriptEventRouter : IScriptEventRouter
         if (logEventType == null)
             return PromeEventBus.Subscribe(owner, eventName, handler);
 
+        if (logEventType == typeof(LegacyMapEffectEvent))
+            return LegacyMapEffectEvents.Subscribe(owner, (Action<LegacyMapEffectEvent>)handler);
+        if (logEventType == typeof(ReplaySystemLogEvent))
+            return SystemLogParameterEvents.Subscribe(owner, (Action<ReplaySystemLogEvent>)handler);
+        if (logEventType == typeof(NativeActionEffectEvent))
+            return NativeActionEffectEvents.Subscribe(owner, (Action<NativeActionEffectEvent>)handler);
+        if (logEventType == typeof(LogSystemEvent))
+        {
+            var all = (Action<LogSystemEvent>)handler;
+            return NativeActionEffectEvents.Subscribe(owner, e => all(e),
+                SystemLogParameterEvents.Subscribe(owner, e => all(e),
+                    LegacyMapEffectEvents.Subscribe(owner, e => all(e),
+                        PromeEventBus.OnLogEvent(owner, OrderNativeEffects<LogSystemEvent>(handler)))));
+        }
+
+        handler = (Delegate)OrderedHandler.MakeGenericMethod(logEventType).Invoke(null, [handler])!;
         if (TypedSubscriptions.TryGetValue(logEventType, out var subscribe))
             return subscribe(owner, handler);
 
         // 无专门入口的 LogSystem 子类型（如 Waymark/TimelineExecution 的泛型订阅）：走泛型 OnLogEvent<TEvent>。
         return (IDisposable)GenericOnLogEvent.MakeGenericMethod(logEventType).Invoke(null, [owner, handler])!;
     }
+
+    private static Action<TEvent> OrderNativeEffects<TEvent>(Delegate handler) where TEvent : LogSystemEvent
+        => ev =>
+        {
+            // PR drains its own event queue first; publish earlier native packets before this PR event.
+            MasterPlayerPlugin.Instance?.DrainNativeActionEffects(ev.Timestamp);
+            ((Action<TEvent>)handler)(ev);
+        };
 
     public void Dispose()
     {

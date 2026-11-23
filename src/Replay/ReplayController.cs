@@ -137,6 +137,7 @@ public sealed class ReplayController : IDisposable
         Playing = false;
         Clock = 0;
         _playback = null;
+        MasterPlayerPlugin.Instance!.SetLegacyMapReplayMode(false);
         _scripts.ExitReplayMode();
         StatusMessage = "已停止回放。";
     }
@@ -179,6 +180,7 @@ public sealed class ReplayController : IDisposable
             return false;
         }
 
+        MasterPlayerPlugin.Instance!.SetLegacyMapReplayMode(true);
         _scripts.StopAll();
         _scripts.EnterReplayMode();
         _playback = new(_recording);

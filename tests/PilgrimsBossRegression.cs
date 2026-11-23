@@ -153,7 +153,7 @@ internal static class PilgrimsBossRegression
         Check(e.Collect(Start, 100).Count(a => a.Key.StartsWith("march/")) == 8, "eight casters and MapEffect produce the final tile hazards before the short casts");
         Effect(e, 44861, 1, 16.2);
         e.StartCast(Cast(44868, e.Center, 5.3, 1));
-        var rotating = e.Collect(Start, 100).Where(a => a.Key.StartsWith("rotate/") && !a.Safe).ToArray();
+        var rotating = e.Collect(Start, 100).Where(a => a.Key.StartsWith("rotate/") && a.Shape is FanTemplate).ToArray();
         Check(rotating.Length == 20 && Math.Abs((rotating.Min(a => a.From) - Start).TotalSeconds - 5.2) < .000001,
             $"two opposite ten-hit sequences cover cast finish+0.4s with a 0.2s lead (count={rotating.Length}, first={rotating.Min(a => a.From):O})");
         Effect(e, 44909, 2, 5.6, e.Center, 30, 0);

@@ -81,6 +81,8 @@ public sealed class RadarView
         _hovered = hovered;
         float visibleRadius;
         IReadOnlyList<Vector2>? arenaOutline = null;
+        IReadOnlyList<IReadOnlyList<Vector2>>? arenaOutlines = null;
+        IReadOnlyList<IReadOnlyList<Vector2>>? arenaFillPolygons = null;
         if (settings.RadarCenterMode == 0 && snapshot.ArenaBoundary is { } boundary && boundary is not ILocalViewBoundary)
         {
             var display = boundary;
@@ -93,9 +95,14 @@ public sealed class RadarView
                         _center = arena.Center;
                         break;
                     }
-            var layout = RadarArenaLayout.Create(display, _center, _screenCenter, radiusPx, rotation);
+            var outsidePreviews = MasterPlayerPlugin.Instance?.AoeVisibility?.GetPreviews(now)
+                .Where(p => p.Unclipped && p.Visibility.Radar && settings.RadarAoe.IsVisible(p.Geometry, p.Safe, true))
+                .Select(p => p.Geometry);
+            var layout = RadarArenaLayout.Create(display, _center, _screenCenter, radiusPx, rotation, outsidePreviews);
             _projection = layout.Projection;
             arenaOutline = layout.Outline.Count >= 3 ? layout.Outline : null;
+            arenaOutlines = layout.Outlines;
+            arenaFillPolygons = layout.FillPolygons;
             visibleRadius = layout.WorldRadius;
         }
         else
@@ -116,7 +123,7 @@ public sealed class RadarView
 
         _visibleRadius = visibleRadius;
 
-        var canvas = new RadarCanvas(drawList, _screenCenter, radiusPx, arenaOutline);
+        var canvas = new RadarCanvas(drawList, _screenCenter, radiusPx, arenaOutline, arenaOutlines, arenaFillPolygons);
         DrawDisc(canvas, settings);
         DrawRangeRings(canvas, settings, _projection.Scale);
         DrawRimTicks(canvas);
@@ -245,7 +252,12 @@ public sealed class RadarView
                 if (!appearance.IsVisible(preview.Geometry, preview.Safe, preview.Visibility.Radar))
                     continue;
                 var style = preview.Style(appearance);
-                FillGeometry(canvas, preview.Geometry, style.FillColor!.Value, style.StrokeColor!.Value, 1f);
+                if (preview.Unclipped && preview.OutlineOnly)
+                    foreach (var contour in preview.Geometry.GetContours())
+                        canvas.StrokeUnclippedContour(contour.Select(_projection.Project).ToArray(),
+                            ImGui.GetColorU32(style.StrokeColor!.Value), style.StrokeThickness);
+                else
+                    FillGeometry(canvas, preview.Geometry, style.FillColor!.Value, style.StrokeColor!.Value, 1f, preview.Unclipped);
             }
 
         if (visibility != null)
@@ -356,7 +368,7 @@ public sealed class RadarView
         }
     }
 
-    private void FillGeometry(RadarCanvas canvas, IGeometryShape geometry, Vector4 fill, Vector4 stroke, float pulse)
+    private void FillGeometry(RadarCanvas canvas, IGeometryShape geometry, Vector4 fill, Vector4 stroke, float pulse, bool unclipped = false)
     {
         if (!RadarLocalGeometry.Intersects(geometry.GetBounds(), _center, _visibleRadius)) return;
         var contours = geometry.GetContours();
@@ -366,7 +378,15 @@ public sealed class RadarView
         }
 
         var fillColor = ImGui.GetColorU32(fill);
-        if (geometry is DonutGeometry && contours.Count >= 2 &&
+        if (geometry is PolygonRegionGeometry region)
+        {
+            foreach (var triangle in region.FillPolygons)
+            {
+                ProjectInto(triangle, _projectedA);
+                canvas.FillPolygon(_projectedA, fillColor, unclipped);
+            }
+        }
+        else if (geometry is DonutGeometry && contours.Count >= 2 &&
             contours[0].Count == contours[1].Count && contours[0].Count >= 3)
         {
             ProjectInto(contours[0], _projectedA);
@@ -378,7 +398,7 @@ public sealed class RadarView
                 _quad[1] = _projectedA[next];
                 _quad[2] = _projectedB[next];
                 _quad[3] = _projectedB[i];
-                canvas.FillPolygon(_quad, fillColor);
+                canvas.FillPolygon(_quad, fillColor, unclipped);
             }
         }
         else
@@ -386,7 +406,7 @@ public sealed class RadarView
             foreach (var contour in contours)
             {
                 ProjectInto(contour, _projectedA);
-                canvas.FillPolygon(_projectedA, fillColor);
+                canvas.FillPolygon(_projectedA, fillColor, unclipped);
             }
         }
 
@@ -402,7 +422,8 @@ public sealed class RadarView
         foreach (var contour in contours)
         {
             ProjectInto(contour, _projectedA);
-            canvas.StrokeContourGlow(_projectedA, stroke, thickness);
+            if (unclipped) canvas.StrokeUnclippedContour(_projectedA, ImGui.GetColorU32(stroke), thickness);
+            else canvas.StrokeContourGlow(_projectedA, stroke, thickness);
         }
     }
 

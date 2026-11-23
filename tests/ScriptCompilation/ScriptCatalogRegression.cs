@@ -13,7 +13,7 @@ using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
-    public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false)
+    public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false, bool dungeonsOnly = false)
     {
         var config = Directory.CreateTempSubdirectory("MasterPlayer-ScriptCatalog-");
         var originalInterface = Svc.PluginInterface;
@@ -45,14 +45,14 @@ internal static class ScriptCatalogRegression
             dynamic Find(string id) => Scripts().Single(d => d.Metadata.Id == id);
             void ExpectOverride(string id, string source)
             {
-                Check(Scripts().Length == 21, "An override must replace its built-in entry.");
+                Check(Scripts().Length == 145, "An override must replace its built-in entry.");
                 Check(Find(id).Source.ToString() == source, "The configuration directory must win.");
             }
             void Pass(string name) => Console.WriteLine($"PASS script catalog: {name}");
 
             Refresh();
-            Check(Scripts().Length == 21 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
-                "An empty configuration must discover five boards, four dungeons, Blunderville, ten Pilgrims bosses and Palace151-200, excluding examples.");
+            Check(Scripts().Length == 145 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
+                "An empty configuration must discover all built-in scripts, excluding examples.");
             foreach (var (floor, territory) in new[] { (10, 1281u), (20, 1282u), (30, 1283u), (40, 1284u), (50, 1285u),
                 (60, 1286u), (70, 1287u), (80, 1288u), (90, 1289u), (99, 1290u) })
             {
@@ -71,6 +71,23 @@ internal static class ScriptCatalogRegression
                 && (bool)manager.IsScriptEnabled("masterplayer.dungeon.castrum-abania"),
                 "Castrum Abania must activate in territory 1145 and be enabled by default.");
             Check(Scripts().All(d => d.CreateInstance().GetType().Assembly == assembly), "Factories must use the loaded plugin assembly.");
+            ReplayPartyCaptureRegression.Run(assembly);
+            NativeActionEffectRegression.Run(assembly, config.FullName);
+            foreach (var (id, territory) in new[] { ("halatali", 1245u), ("totorak", 1039u), ("haukke", 1040u), ("brayflox", 1041u),
+                ("qarn", 1267u), ("cutters-cry", 1303u), ("stone-vigil", 1042u), ("dzemael", 1330u), ("aurum-vale", 1331u),
+                ("castrum-meridianum", 1043u), ("praetorium", 1044u), ("wanderers-palace", 159u), ("amdapor-keep", 167u),
+                ("pharos-sirius", 160u), ("snowcloak", 1062u), ("sastasha-hard", 387u), ("keeper-of-the-lake", 1063u),
+                ("sohm-al", 1064u), ("aery", 1065u), ("vault", 1066u), ("gubal-library", 1109u), ("research-facility", 1110u),
+                ("fractal-continuum", 430u), ("arboretum", 511u), ("antitower", 1111u), ("sohr-khai", 1112u), ("xelphatol", 1113u),
+                ("baelsars-wall", 1114u), ("sirensong-sea", 1142u), ("shisui", 1367u), ("bardam", 1143u), ("doma-castle", 1144u),
+                ("ala-mhigo", 1146u), ("skalla", 1172u), ("burn", 1173u), ("ghimlyt", 1174u), ("holminster", 837u), ("dohn-mheg", 821u), ("qitana", 823u), ("malikah", 836u), ("mt-gulg", 822u), ("amaurot", 838u), ("twinning", 840u), ("anyder", 841u), ("cosmos", 884u) })
+                Check(((uint[])Find("masterplayer.dungeon." + id).Metadata.Territorys).SequenceEqual([territory])
+                    && (bool)manager.IsScriptEnabled("masterplayer.dungeon." + id), "Migrated native dungeon discovery/default enable failed: " + id);
+            if (dungeonsOnly)
+            {
+                CheckLocalSafeZone(assembly, (object)manager, true);
+                return;
+            }
             Check(!Directory.EnumerateFiles((string)manager.ScriptsDirectory, "*", SearchOption.AllDirectories).Any(),
                 "Discovery must not copy scripts into the configuration directory.");
             var baseline = Scripts()[0];
@@ -106,12 +123,12 @@ internal static class ScriptCatalogRegression
             Check(Find(builtInId).Source.ToString() == "BuiltIn", "A failed external load must leave the built-in available.");
             File.Delete(sourcePath);
             Refresh();
-            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
+            Check(Scripts().Length == 145 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
             Pass("compile failure reports an error; removal restores the built-in");
 
             File.WriteAllText(sourcePath, Source("Independent external script", "external.independent"));
             Refresh();
-            Check(Scripts().Length == 22 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
+            Check(Scripts().Length == 146 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
             File.Delete(sourcePath);
             Pass("unrelated external scripts coexist with built-ins");
 
@@ -153,7 +170,7 @@ internal static class ScriptCatalogRegression
             visualPreview.Set("preview-marker", 2);
             Check((int)settings.ScriptSettings[visualId]["preview-marker"].GetValue<int>() == 1,
                 "Saving a visual replacement must retire its previous settings preview without a full reload.");
-            Check(Scripts().Length == 22 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
+            Check(Scripts().Length == 146 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
@@ -161,7 +178,7 @@ internal static class ScriptCatalogRegression
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
             visualPreview.Set("preview-marker", 3);
             Check(!settings.ScriptSettings.ContainsKey(visualId), "A deleted visual preview must not recreate removed settings.");
-            Check(Scripts().Length == 21 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
+            Check(Scripts().Length == 145 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
@@ -185,7 +202,7 @@ internal static class ScriptCatalogRegression
         public sealed class OverrideScript : MasterPlayerScript { }
         """;
 
-    private static void CheckLocalSafeZone(Assembly assembly, object manager)
+    private static void CheckLocalSafeZone(Assembly assembly, object manager, bool dungeonsOnly = false)
     {
         var pluginType = assembly.GetType("MasterPlayer.MasterPlayerPlugin")!;
         var instance = pluginType.GetProperty("Instance")!;
@@ -207,6 +224,12 @@ internal static class ScriptCatalogRegression
             pluginType.GetField("_scripts", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, manager);
             instance.SetValue(null, plugin);
             runtime.Setting.EnableSafeZone = true;
+            if (dungeonsOnly)
+            {
+                CheckReplaySession(assembly, manager, runtime, plugin, true);
+                Check(moveCalls == 0, "Native dungeon replay must never execute movement.");
+                return;
+            }
             var apiType = assembly.GetType("MasterPlayer.Scripting.ScriptSafeZoneApi")!;
             dynamic api = Activator.CreateInstance(apiType, BindingFlags.NonPublic | BindingFlags.Instance,
                 null, ["local-migration-test", "Local migration test"], null)!;
@@ -241,7 +264,7 @@ internal static class ScriptCatalogRegression
         finally { instance.SetValue(null, previous); }
     }
 
-    private static void CheckReplaySession(Assembly assembly, dynamic manager, dynamic runtime, object plugin)
+    private static void CheckReplaySession(Assembly assembly, dynamic manager, dynamic runtime, object plugin, bool dungeonsOnly = false)
     {
         var originalClient = Svc.ClientState;
         var originalObjects = Svc.Objects;
@@ -278,16 +301,26 @@ internal static class ScriptCatalogRegression
                 BindingFlags.Instance | BindingFlags.NonPublic, null, [(object)manager, recorder, null!], null)!;
             plugin.GetType().GetField("_replayController", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, (object)controller);
             settings.EnableMechanics = true;
+            if (!Environment.GetCommandLineArgs().Contains("--pilgrims-replay"))
+                NativeDungeonReplayRegression.Run(assembly, manager, runtime, controller, file);
+            if (dungeonsOnly)
+            {
+                Check(liveObjectReads == 0, "Native dungeon replay read live objects.");
+                return;
+            }
             manager.SetScriptEnabled("masterplayer.dungeon.copperbell", true);
             File.WriteAllText(file, """
                 {"v":2,"territory":1038,"startedUtc":"2026-09-21T01:00:00Z","pluginVersion":"test"}
-                {"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":1038,"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":14448,"InCombat":true,"Targetable":true,"Position":{"X":27,"Y":0,"Z":114}},{"Id":2,"Kind":1,"Position":{"X":27,"Y":0,"Z":114}}]}}
-                {"t":1,"kind":"WorldFrame","data":{"Territory":1038,"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":14448,"InCombat":true,"Targetable":true,"Position":{"X":27,"Y":0,"Z":114},"Cast":{"ActionId":28462,"Location":{"X":3,"Y":0,"Z":4},"Rotation":1.5707964,"StartedAt":"2026-09-21T01:00:01Z","FinishAt":"2026-09-21T01:00:05.3Z"}}]}}
+                {"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":1038,"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":14448,"HitboxRadius":3,"InCombat":true,"Targetable":true,"Position":{"X":27,"Y":0,"Z":114}},{"Id":2,"Kind":1,"Position":{"X":27,"Y":0,"Z":114}}]}}
+                {"t":1,"kind":"WorldFrame","data":{"Territory":1038,"LocalPlayerId":2,"Actors":[{"Id":1,"Oid":14448,"HitboxRadius":3,"InCombat":true,"Targetable":true,"Position":{"X":27,"Y":0,"Z":114},"Cast":{"ActionId":28462,"Location":{"X":3,"Y":0,"Z":4},"Rotation":1.5707964,"StartedAt":"2026-09-21T01:00:01Z","FinishAt":"2026-09-21T01:00:05.3Z"}}]}}
                 {"t":1,"kind":"CastStart","type":"PromeRotation.LogSystem.LogSystemCastStartEvent","packetFacing":1.5707964,"data":{"SourceId":1,"ActionId":28462,"CastTime":4,"Timestamp":"2026-09-21T01:00:01Z","EffectPosition":{"X":3,"Y":0,"Z":4}}}
                 {"t":6,"kind":"WorldFrame","data":{"Territory":1038,"LocalPlayerId":2,"Removed":[1]}}
                 """);
             int Dangers() => ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Count();
-            int Previews() => ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().Count();
+            object[] AllPreviews() => ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().ToArray();
+            bool EnemyOutline(object preview) => ((string)preview.GetType().GetProperty("Id")!.GetValue(preview)!)
+                .Contains("early-arr/enemy/", StringComparison.Ordinal);
+            int Previews() => AllPreviews().Count(p => !EnemyOutline(p));
             Check(controller.Load(file), (string)controller.StatusMessage);
             settings.TerritoryEnabled[1038u] = false;
             controller.Play();
@@ -298,7 +331,11 @@ internal static class ScriptCatalogRegression
             controller.Play();
             Check(controller.ReplayScriptCount == 1 && controller.World.HasSnapshot, (string)manager.ErrorMessage);
             controller.Update(2f);
-            Check(controller.Clock == 2 && Dangers() == 1 && Previews() == 1, "Production playback did not register the recorded AOE.");
+            Check(controller.Clock == 2 && Dangers() == 1 && Previews() == 1,
+                $"Production playback did not register the recorded AOE: clock={controller.Clock}, danger={Dangers()}, previews={Previews()}, status={controller.StatusMessage}, errors={manager.ErrorMessage}, ids={string.Join(',', AllPreviews().Select(p => p.GetType().GetProperty("Id")!.GetValue(p)))}.");
+            Check(AllPreviews().Count(EnemyOutline) == 1
+                && AllPreviews().Where(EnemyOutline).All(p => (bool)p.GetType().GetProperty("OutlineOnly")!.GetValue(p)!),
+                "Copperbell production replay did not publish the native boss outline.");
             var pausedTime = (DateTime)runtime.CurrentTime;
             controller.Pause();
             controller.Update(30f);
@@ -438,28 +475,31 @@ internal static class ScriptCatalogRegression
                     File.WriteAllText(file, string.Join('\n', lines));
                     Check(controller.Load(file), (string)controller.StatusMessage);
                     controller.Play(); controller.Seek(15.9d); controller.Pause();
-                    Check(Dangers() == 4 && Previews() == 1, "PT20 must retain all four exact navigation circles and preview only the next burst.");
+                    Check(Dangers() == 4 && Previews() == 3, "PT20 must retain all four exact navigation circles and preview the next three bursts.");
                     foreach (var ev in cycle.GetProperty("events").EnumerateArray().Where(e => e.GetProperty("kind").GetString() == "effect"))
                     {
                         controller.Seek(14 + ev.GetProperty("t").GetDouble() + .001);
                         var expected = 43459 - ev.GetProperty("action").GetInt32();
-                        Check(Dangers() == expected && Previews() == (expected == 0 ? 0 : 1),
+                        Check(Dangers() == expected && Previews() == Math.Min(expected, 3),
                             "A self-target effect desynchronized production PT20 previews and unresolved dangers.");
                         object Bounds(object geometry) => geometry.GetType().GetMethod("GetBounds")!.Invoke(geometry, null)!;
                         var previewBounds = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!)
                             .Cast<object>().Select(p => Bounds(p.GetType().GetProperty("Geometry")!.GetValue(p)!)).ToArray();
                         if (expected > 0)
                         {
-                            dynamic nextBurst = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
-                                .MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
-                            Check(previewBounds.Single().Equals(Bounds((object)nextBurst.Geometry)), "PT20 preview must match the next navigation circle exactly.");
+                            var nextBursts = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
+                                .OrderBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))
+                                .Take(3).Select(a => Bounds((object)a.Geometry)).ToList();
+                            foreach (var bounds in previewBounds)
+                                Check(nextBursts.Remove(bounds), "PT20 preview must match one of the next three navigation circles exactly.");
+                            Check(nextBursts.Count == 0, "PT20 omitted an exact preview from the next three navigation circles.");
                         }
                     }
                     controller.StopSession();
                     Check(Dangers() == 0 && Previews() == 0, "PT20 retained output after stopping replay.");
                 }
             }
-            Console.WriteLine("PASS production PT20: three recorded sequences retain full navigation and preview only the next exact circle");
+            Console.WriteLine("PASS production PT20: three recorded sequences retain full navigation and preview the next three exact circles");
             using (var pt50 = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory,
                 "Fixtures", "PilgrimsTraverse", "pt50-chase-155404.json"))))
             {
@@ -559,7 +599,7 @@ internal static class ScriptCatalogRegression
                     File.WriteAllText(file, string.Join('\n', lines));
                     Check(controller.Load(file), (string)controller.StatusMessage);
                     controller.Play(); controller.Seek(1d); controller.Pause();
-                    Check(Dangers() == 20 && Previews() == 3, "PT60 must publish all 20 navigation pulses but only two cones and the center goal as previews.");
+                    Check(Dangers() == 21 && Previews() == 5, "PT60 must publish all 20 navigation pulses, the center constraint, and current/next cones on both sides.");
                     dynamic first = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>()
                         .MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
                     var firstAt = new DateTime(2026, 11, 19, 0, 0, 0, DateTimeKind.Utc).AddSeconds(.1 + cycle.GetProperty("effects")[0].GetProperty("t").GetDouble());
@@ -569,13 +609,15 @@ internal static class ScriptCatalogRegression
                     {
                         controller.Seek(.1 + pair.Max(e => e.GetProperty("t").GetDouble()) + .001);
                         var remaining = 20 - ((int)pair.Key + 1) * 2;
-                        Check(Dangers() == remaining && Previews() == (remaining == 0 ? 0 : 3), "PT60 production previews retain a resolved or future sweep.");
+                        Check(Dangers() == remaining + (remaining == 0 ? 0 : 1)
+                            && Previews() == (remaining == 0 ? 0 : Math.Min(remaining, 4) + 1),
+                            "PT60 production previews retain a resolved sweep or omit the next sweep.");
                     }
                     controller.StopSession();
                     Check(Dangers() == 0 && Previews() == 0, "PT60 retained output after stopping replay.");
                 }
             }
-            Console.WriteLine("PASS production PT60: both ARR sequences, calibrated first hit, two cone previews, complete navigation and cleanup");
+            Console.WriteLine("PASS production PT60: both ARR sequences, calibrated first hit, current/next cone previews, strict center constraint, complete navigation and cleanup");
             Pt99BlazeCaptureRegression.Run(assembly, manager, runtime, controller, file);
             CastrumAbaniaReplayRegression.Run(assembly, manager, runtime, controller, file);
             File.WriteAllText(file, string.Join('\n', new[]

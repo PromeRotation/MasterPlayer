@@ -59,6 +59,7 @@ internal static class Pt99TargetControlRegression
         {
             "get_CurrentPlayer" => pc,
             "get_IsReplay" => replay,
+            "get_ReplayWorld" => null,
             _ => throw new NotSupportedException(name)
         };
         var host = typeof(CatalogServiceProxy).GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)!

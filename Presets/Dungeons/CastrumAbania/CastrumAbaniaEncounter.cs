@@ -18,14 +18,43 @@ internal sealed class CastrumAbaniaEncounter
     private readonly Dictionary<ulong, (ulong Target, DateTime Until)> baitTargets = [];
     private readonly Dictionary<ulong, (ulong Target, DateTime Until)> clawTethers = [];
     private readonly HashSet<(ulong Source, uint Action, uint Sequence)> effects = [];
+    private readonly Dictionary<ulong, DateTime> clawTetherEvents = [];
+    private readonly HashSet<ulong> cancelledClaws = [];
+    private IReadOnlySet<ulong>? partyIds;
 
     internal bool Active { get; private set; }
     internal uint ActiveBossOid { get; private set; }
     internal IGeometryShape? Boundary { get; private set; }
     internal IReadOnlyDictionary<ulong, ReplayActorState> Actors => actors;
     internal IReadOnlyDictionary<ulong, (ulong Target, DateTime Until)> ClawTethers => clawTethers;
+    internal bool HaywireActive => ActiveBossOid == CastrumAbaniaCatalog.MagnaRoader && casts.Values.Any(c => c.Action == 7960);
+    internal ulong[] ForbiddenTargets => HaywireActive && !actors.Values.Any(a => a.Oid == CastrumAbaniaCatalog.Cannon && a.Targetable && !a.Dead)
+        ? actors.Values.Where(a => a.Hostile && a.Targetable && !a.Dead).Select(a => a.Id).ToArray() : [];
 
-    internal void Synchronize(IEnumerable<ReplayActorState> observations, DateTime now)
+    internal ReplayActorState? CannonTarget(Vector3 player)
+        => HaywireActive ? actors.Values.Where(a => a.Oid == CastrumAbaniaCatalog.Cannon && a.Targetable && !a.Dead)
+            .MinBy(a => Vector3.DistanceSquared(a.Position, player)) : null;
+
+    internal ulong PriorityTarget(ulong current, Vector3 player)
+    {
+        if (!Active) return 0;
+        var cannon = CannonTarget(player);
+        if (cannon != null && Vector3.DistanceSquared(cannon.Position, player) < 12.25f) return cannon.Id;
+        if (HaywireActive && cannon == null) return 0;
+        var candidates = actors.Values.Where(a => !a.Dead && a.Targetable && a.Hostile
+            && Boundary!.Contains(a.Position)).ToArray();
+        int Priority(ReplayActorState actor) => (ActiveBossOid, actor.Oid) switch
+        {
+            (CastrumAbaniaCatalog.MagnaRoader, 0x1AAA) => 1,
+            (CastrumAbaniaCatalog.Inferno, CastrumAbaniaCatalog.DeathClaw) => 2,
+            (CastrumAbaniaCatalog.Inferno, 0x1AAF) => 1,
+            _ => 0,
+        };
+        return candidates.OrderByDescending(Priority).ThenBy(a => a.Id != current)
+            .ThenBy(a => Vector3.DistanceSquared(a.Position, player)).FirstOrDefault()?.Id ?? 0;
+    }
+
+    internal void Synchronize(IEnumerable<ReplayActorState> observations, DateTime now, IReadOnlySet<ulong>? party = null)
     {
         var incoming = observations.Where(a => a.Id != 0).ToDictionary(a => a.Id);
         var boss = incoming.Values.FirstOrDefault(a => CastrumAbaniaCatalog.IsBoss(a.Oid) && !a.Dead && a.InCombat);
@@ -44,6 +73,7 @@ internal sealed class CastrumAbaniaEncounter
             Boundary = CastrumAbaniaArena.For(boss.Oid, boss.Position.Y);
         }
         actors.Clear();
+        partyIds = party;
         foreach (var (id, actor) in incoming) actors[id] = actor;
         foreach (var actor in incoming.Values)
         {
@@ -58,17 +88,26 @@ internal sealed class CastrumAbaniaEncounter
             foreach (var tether in actor.Tethers)
                 if (ActiveBossOid == CastrumAbaniaCatalog.Inferno && actor.Oid == CastrumAbaniaCatalog.DeathClaw
                     && tether.Id == CastrumAbaniaCatalog.ClawTether)
-                    clawTethers[actor.Id] = (tether.TargetId, now.AddSeconds(15));
+                    if (!cancelledClaws.Contains(actor.Id) && (!clawTetherEvents.TryGetValue(actor.Id, out var changed) || now >= changed.AddSeconds(.5)))
+                        clawTethers[actor.Id] = (tether.TargetId, DateTime.MaxValue);
+            if (actor.Oid == CastrumAbaniaCatalog.DeathClaw && !actor.Tethers.Any(t => t.Id == CastrumAbaniaCatalog.ClawTether)
+                && (!clawTetherEvents.TryGetValue(actor.Id, out var observed) || now >= observed.AddSeconds(.5)))
+            {
+                clawTethers.Remove(actor.Id);
+                cancelledClaws.Remove(actor.Id);
+            }
         }
         if (boss.Statuses.Any(s => s.Id == 1399 && s.ExpiresAt > now))
             ClearHaywire();
         foreach (var key in casts.Where(p => !incoming.ContainsKey(p.Value.Source)
-            || incoming[p.Value.Source].Dead || now > p.Value.Finish.AddSeconds(.5)).Select(p => p.Key).ToArray())
+            || incoming[p.Value.Source].Dead || p.Value.Action != 7960
+                && (now > p.Value.Finish.AddSeconds(.5)
+                    || incoming[p.Value.Source].Cast?.ActionId != p.Value.Action && now >= p.Value.Start.AddSeconds(.5))).Select(p => p.Key).ToArray())
             casts.Remove(key);
-        foreach (var id in spreadTargets.Where(p => now > p.Value.AddSeconds(.3)).Select(p => p.Key).ToArray())
+        foreach (var id in spreadTargets.Keys.Where(id => !incoming.TryGetValue(id, out var a) || a.Dead).ToArray())
             spreadTargets.Remove(id);
-        foreach (var id in baitTargets.Where(p => now > p.Value.Until.AddSeconds(.3)
-            || !incoming.ContainsKey(p.Key) || !incoming.ContainsKey(p.Value.Target)).Select(p => p.Key).ToArray())
+        foreach (var id in baitTargets.Where(p => !incoming.ContainsKey(p.Key) || !incoming.ContainsKey(p.Value.Target)
+            || incoming[p.Key].Dead || incoming[p.Value.Target].Dead).Select(p => p.Key).ToArray())
             baitTargets.Remove(id);
         foreach (var id in clawTethers.Where(p => now > p.Value.Until
             || !incoming.ContainsKey(p.Key) || !incoming.ContainsKey(p.Value.Target)
@@ -113,7 +152,7 @@ internal sealed class CastrumAbaniaEncounter
         if (cast != null) casts.Remove(cast.Key);
         if (effect.ActionId == 8184)
         {
-            var first = casts.Values.Where(c => c.Action == 7960 && c.Finish <= now.AddSeconds(1)).MinBy(c => c.Finish);
+            var first = casts.Values.FirstOrDefault(c => c.Action == 7960);
             if (first != null) casts.Remove(first.Key);
         }
         if (ActiveBossOid == CastrumAbaniaCatalog.SubjectNumberXXIV)
@@ -145,10 +184,19 @@ internal sealed class CastrumAbaniaEncounter
     {
         if (ActiveBossOid == CastrumAbaniaCatalog.Inferno && tether.TetherId == CastrumAbaniaCatalog.ClawTether
             && Normalize(tether.TargetId) != 0)
-            clawTethers[tether.SourceId] = (tether.TargetId, now.AddSeconds(15));
+        {
+            clawTetherEvents[tether.SourceId] = now;
+            cancelledClaws.Remove(tether.SourceId);
+            clawTethers[tether.SourceId] = (tether.TargetId, DateTime.MaxValue);
+        }
     }
 
-    internal void TetherCancel(LogSystemTetherCancelEvent tether) => clawTethers.Remove(tether.SourceId);
+    internal void TetherCancel(LogSystemTetherCancelEvent tether)
+    {
+        clawTetherEvents[tether.SourceId] = tether.Timestamp.ToUniversalTime();
+        cancelledClaws.Add(tether.SourceId);
+        clawTethers.Remove(tether.SourceId);
+    }
 
     internal void Cancel(ulong source, uint action = 0)
     {
@@ -165,9 +213,10 @@ internal sealed class CastrumAbaniaEncounter
     {
         var result = new List<CastrumArea>();
         if (!Active) return result;
-        var party = actors.Values.Where(a => a.Kind == 1 && !a.Dead && Boundary!.Contains(a.Position)).ToArray();
-        var assignedTower = AssignedTower(playerId, party, now);
-        foreach (var cast in casts.Values.Where(c => c.Finish.AddSeconds(.3) >= now))
+        var party = actors.Values.Where(a => (partyIds?.Contains(a.Id) ?? a.Kind == 1) && !a.Dead && Boundary!.Contains(a.Position)).ToArray();
+        var visibleGrid = casts.Values.Where(c => c.Action == 33460).Take(10).Select(c => c.Key).ToHashSet();
+        var visibleFlame = casts.Values.Where(c => c.Action == 33463).Take(3).Select(c => c.Key).ToHashSet();
+        foreach (var cast in casts.Values)
         {
             var hit = cast.Action == 7960 ? cast.Finish.AddSeconds(-.2) : cast.Finish;
             switch (cast.Action)
@@ -182,7 +231,7 @@ internal sealed class CastrumAbaniaEncounter
                     result.Add(Area(cast, "Magitek Pulse", new CircleTemplate(6), hit));
                     break;
                 case 33460:
-                    result.Add(Area(cast, "Ice Grid", RayRectangleTemplate.Symmetric(4, 40), hit));
+                    if (visibleGrid.Contains(cast.Key)) result.Add(Area(cast, "Ice Grid", RayRectangleTemplate.Symmetric(4, 40), hit));
                     break;
                 case 33461:
                     AddSpread(result, cast.Key, "Blizzard II 分散", cast.TargetId, 5, hit, now, playerId, party, cast.Source, cast.Action);
@@ -190,17 +239,17 @@ internal sealed class CastrumAbaniaEncounter
                 case 33462:
                     result.Add(Area(cast, "Fire II 分摊", new CircleTemplate(5), hit) with
                     {
-                        Position = TargetPosition(cast), Safe = true, From = now,
+                        Position = TargetPosition(cast), Safe = true, PreviewOnly = true,
                     });
+                    if (cast.TargetId != playerId)
+                        result.Add(Area(cast, "Fire II 集合", new SohrKhaiWallHintTemplate(Boundary!,
+                            [new CircleGeometry(TargetPosition(cast), 5)]), hit) with
+                        { Key = cast.Key + "/enter", Position = Boundary!.Position, NavigationOnly = true });
                     break;
                 case 33463:
-                    result.Add(Area(cast, "Triflame", new FanTemplate(60, Rad(60)), hit));
+                    if (visibleFlame.Contains(cast.Key)) result.Add(Area(cast, "Triflame", new FanTemplate(60, Rad(60)), hit));
                     break;
                 case 33464:
-                    result.Add(Area(cast, "Thunder II 塔", new CircleTemplate(5), hit) with
-                    {
-                        Safe = true, From = now, PreviewOnly = assignedTower != cast.Key,
-                    });
                     break;
                 case 7975:
                     result.Add(Area(cast, "Ketu Cutter", new FanTemplate(20.5f, Rad(20)), hit));
@@ -216,22 +265,23 @@ internal sealed class CastrumAbaniaEncounter
                     break;
             }
         }
+        AddTowers(result, party, playerId);
         foreach (var (target, hit) in spreadTargets)
             AddSpread(result, $"spread/{target}", "Rahu Ray 分散", target, 10, hit, now, playerId, party, target, 7978);
         foreach (var (source, bait) in baitTargets)
         {
-            if (bait.Until.AddSeconds(.3) < now || !actors.TryGetValue(source, out var caster)
+            if (!actors.TryGetValue(source, out var caster)
                 || !actors.TryGetValue(bait.Target, out var target) || caster.Dead || target.Dead)
                 continue;
             result.Add(new($"bait/{source}", "Sparking Current 引导", RayRectangleTemplate.Symmetric(6, 20),
                 caster.Position, GeometryHelper.AngleTo(caster.Position, target.Position),
-                bait.Until.AddSeconds(-.2), bait.Until.AddSeconds(.3), source, 33467,
-                PreviewOnly: bait.Target == playerId));
+                bait.Until, DateTime.MaxValue, source, 33467,
+                PreviewOnly: bait.Target == playerId, OutlineOnly: true));
             if (bait.Target == playerId)
                 result.Add(new($"bait-aim/{source}", "Sparking Current 引导",
                     new CastrumBaitTemplate(Boundary!, caster.Position,
                         party.Where(a => a.Id != playerId).Select(a => a.Position).ToArray()),
-                    caster.Position, 0, bait.Until.AddSeconds(-.2), bait.Until.AddSeconds(.3), source, 33467,
+                    caster.Position, 0, bait.Until, DateTime.MaxValue, source, 33467,
                     NavigationOnly: true));
         }
         foreach (var (source, tether) in clawTethers)
@@ -241,12 +291,13 @@ internal sealed class CastrumAbaniaEncounter
         AddKnockbacks(result, now, playerId);
         if (ActiveBossOid == CastrumAbaniaCatalog.MagnaRoader && casts.Values.Any(c => c.Action == 7960))
         {
-            var player = actors.GetValueOrDefault(playerId);
-            var turret = actors.Values.Where(a => a.Oid == CastrumAbaniaCatalog.Cannon && a.Targetable && !a.Dead)
-                .MinBy(a => Vector3.DistanceSquared(a.Position, player?.Position ?? Boundary!.Position));
-            if (turret != null)
+            foreach (var turret in actors.Values.Where(a => a.Oid == CastrumAbaniaCatalog.Cannon && a.Targetable && !a.Dead))
+            {
                 result.Add(new($"cannon/{turret.Id}", "炮台交互", new CircleTemplate(1.5f),
-                    turret.Position, 0, now, now.AddSeconds(.5), turret.Id, Safe: true));
+                    turret.Position, 0, now, now.AddSeconds(.5), turret.Id, Safe: true, NavigationOnly: true));
+                result.Add(new($"cannon/{turret.Id}/display", "炮台交互范围", new CircleTemplate(3),
+                    turret.Position, 0, now, DateTime.MaxValue, turret.Id, Safe: true, PreviewOnly: true, OutlineOnly: true));
+            }
         }
         return result;
     }
@@ -284,6 +335,9 @@ internal sealed class CastrumAbaniaEncounter
         baitTargets.Clear();
         clawTethers.Clear();
         effects.Clear();
+        clawTetherEvents.Clear();
+        cancelledClaws.Clear();
+        partyIds = null;
     }
 
     private void ClearHaywire()
@@ -293,37 +347,38 @@ internal sealed class CastrumAbaniaEncounter
     }
 
     private static CastrumArea Area(CastrumCast cast, string name, GeometryTemplate shape, DateTime hit)
-        => new(cast.Key, name, shape, cast.Position, cast.Rotation, hit.AddSeconds(-.2),
-            hit.AddSeconds(.3), cast.Source, cast.Action);
+        => new(cast.Key, name, shape, cast.Position, cast.Rotation, hit,
+            DateTime.MaxValue, cast.Source, cast.Action);
 
     private void AddSpread(List<CastrumArea> result, string key, string name, ulong target, float radius,
         DateTime hit, DateTime now, ulong player, ReplayActorState[] party, ulong owner, uint action)
     {
-        if (hit.AddSeconds(.3) < now || !actors.TryGetValue(target, out var actor) || actor.Dead) return;
+        if (!actors.TryGetValue(target, out var actor) || actor.Dead) return;
         result.Add(new(key, name, new CircleTemplate(radius), actor.Position, 0,
-            hit.AddSeconds(-.2), hit.AddSeconds(.3), owner, action, PreviewOnly: target == player));
+            hit, DateTime.MaxValue, owner, action, PreviewOnly: target == player, OutlineOnly: target == player));
         if (target != player) return;
         foreach (var other in party.Where(a => a.Id != player))
             result.Add(new($"{key}/avoid/{other.Id}", name, new CircleTemplate(radius), other.Position, 0,
-                hit.AddSeconds(-.2), hit.AddSeconds(.3), owner, action, NavigationOnly: true));
+                hit, DateTime.MaxValue, owner, action, NavigationOnly: true));
     }
 
-    private string? AssignedTower(ulong player, ReplayActorState[] party, DateTime now)
+    private void AddTowers(List<CastrumArea> result, ReplayActorState[] party, ulong player)
     {
-        var towers = casts.Values.Where(c => c.Action == 33464 && c.Finish >= now).ToArray();
-        var usedPlayers = new HashSet<ulong>();
-        var usedTowers = new HashSet<string>();
-        var pairs = from tower in towers from member in party
-                    orderby Vector3.DistanceSquared(tower.Position, member.Position), member.Id, tower.Source
-                    select (tower, member);
-        foreach (var (tower, member) in pairs)
+        var towers = casts.Values.Where(c => c.Action == 33464).ToArray();
+        var available = new List<IGeometryShape>();
+        foreach (var tower in towers)
         {
-            if (usedPlayers.Contains(member.Id) || usedTowers.Contains(tower.Key)) continue;
-            usedPlayers.Add(member.Id);
-            usedTowers.Add(tower.Key);
-            if (member.Id == player) return tower.Key;
+            var inside = party.Where(a => Vector3.DistanceSquared(a.Position, tower.Position) <= 25).ToArray();
+            var safe = inside.Length == 0 || inside.Length == 1 && inside[0].Id == player;
+            result.Add(Area(tower, "Thunder II 塔", new CircleTemplate(5), tower.Finish) with
+            { Safe = safe, PreviewOnly = true, OutlineOnly = safe });
+            if (safe) available.Add(new CircleGeometry(tower.Position, 5));
+            else result.Add(Area(tower, "避开已满塔", new CircleTemplate(5), tower.Finish) with
+            { Key = tower.Key + "/avoid", NavigationOnly = true });
         }
-        return null;
+        if (available.Count != 0)
+            result.Add(Area(towers[0], "进入未满塔", new SohrKhaiWallHintTemplate(Boundary!, available.ToArray()), towers[0].Finish) with
+            { Key = "tower/enter", Position = Boundary!.Position, NavigationOnly = true });
     }
 
     private void AddKnockbacks(List<CastrumArea> result, DateTime now, ulong player)
@@ -334,14 +389,22 @@ internal sealed class CastrumAbaniaEncounter
                 continue;
             var landingDangers = result.Where(a => a.Action is 7975 or 7976
                 && a.Until >= cast.Finish && a.From <= cast.Finish.AddSeconds(1)).Select(a => a.Geometry).ToArray();
+            var template = new CastrumKnockbackTemplate(Boundary!, cast.Position, cast.Action == 8328 ? 5 : 10, landingDangers);
             result.Add(Area(cast, "Rahu Comet 击退落点",
-                new CastrumKnockbackTemplate(Boundary!, cast.Position, cast.Action == 8328 ? 5 : 10, landingDangers),
+                template,
                 cast.Finish) with { Key = $"knockback/{cast.Key}", NavigationOnly = true });
-            if (landingDangers.Length == 0)
+            if (actors.TryGetValue(player, out var viewer))
+            {
+                var landing = template.Landing(viewer.Position);
+                result.Add(Area(cast, "Rahu Comet 个人落点", new CircleTemplate(.4f), cast.Finish) with
+                { Key = $"knockback-landing/{cast.Key}", Position = landing, PreviewOnly = true,
+                    Safe = !template.Resolve(Vector3.Zero, 0, null).Contains(viewer.Position), OutlineOnly = true });
+            }
+            if (!casts.Values.Any(c => c.Action == 7976))
                 result.Add(new($"knockback-goal/{cast.Key}", "Rahu Comet 击退站位",
-                    new FanTemplate(20, Rad(40)), Boundary!.Position,
-                    GeometryHelper.AngleTo(cast.Position, Boundary.Position), now, cast.Finish,
-                    cast.Source, cast.Action, Safe: true));
+                    new SohrKhaiWallHintTemplate(Boundary!, [new FanTemplate(20, Rad(40)).Resolve(Boundary!.Position,
+                        GeometryHelper.AngleTo(cast.Position, Boundary.Position), null)]), Boundary.Position, 0,
+                    cast.Finish, DateTime.MaxValue, cast.Source, cast.Action, NavigationOnly: true));
         }
     }
 

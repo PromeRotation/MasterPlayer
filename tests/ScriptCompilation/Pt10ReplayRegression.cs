@@ -54,12 +54,17 @@ internal static class Pt10ReplayRegression
                 var dangers = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>().ToArray();
                 var previews = ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>().ToArray();
                 var expected = 3 - i;
-                Check(dangers.Length == expected && previews.Length == (expected > 0 ? 1 : 0),
+                Check(dangers.Length == expected && previews.Length == Math.Min(expected, 3),
                     $"PT10 recorded cycle {cycle.GetProperty("start")} jump {i + 1} lost navigation/preview: {dangers.Length}/{previews.Length}.");
                 if (expected == 0) continue;
-                dynamic next = dangers.MinBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))!;
-                dynamic preview = previews[0].GetType().GetProperty("Geometry")!.GetValue(previews[0])!;
-                Check(preview.GetBounds().Equals(next.Geometry.GetBounds()), "PT10 preview differs from next navigation circle.");
+                var expectedBounds = dangers.OrderBy(a => ((IEnumerable)a.DangerWindows).Cast<dynamic>().Min(w => (DateTime)w.DangerFrom))
+                    .Take(3).Select(a => (object)a.Geometry.GetBounds()).ToList();
+                foreach (var entry in previews)
+                {
+                    dynamic preview = entry.GetType().GetProperty("Geometry")!.GetValue(entry)!;
+                    Check(expectedBounds.Remove((object)preview.GetBounds()), "PT10 preview differs from the next three navigation circles.");
+                }
+                Check(expectedBounds.Count == 0, "PT10 omitted a navigation circle from its preview.");
             }
             controller.Seek(effects[0] - .2);
             controller.StopSession();

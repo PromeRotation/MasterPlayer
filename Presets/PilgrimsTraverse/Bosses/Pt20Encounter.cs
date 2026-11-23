@@ -17,6 +17,12 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
     private DateTime baitHit;
     private Vector3? root;
     private Cast? touchdown;
+    private ulong plantingSource;
+    private bool plantingPending;
+    private Area[] previousPlantingAreas = [];
+    private Vector3? previousRoot;
+    private ushort previousRootGrowth;
+    private int previousEmbraceHits;
 
     protected override void OnCast(Cast cast)
     {
@@ -31,6 +37,13 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
                 else Hit(cast, new CircleTemplate(11), "Burst");
                 break;
             case 43461:
+                previousPlantingAreas = areas.Values.Where(a => a.Key.StartsWith("embrace/", StringComparison.Ordinal)
+                    || a.Key.StartsWith("roots/", StringComparison.Ordinal)).ToArray();
+                previousRoot = root;
+                previousRootGrowth = rootGrowth;
+                previousEmbraceHits = embraceHits;
+                plantingSource = cast.Source;
+                plantingPending = true;
                 baitTarget = 0;
                 root = cast.Position;
                 embraceHits = 0;
@@ -75,6 +88,7 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
         }
         if (status.Id == 1909 && (root ?? actors.GetValueOrDefault(actor)?.Position) is { } origin)
         {
+            plantingPending = false;
             rootGrowth = Math.Max(rootGrowth, status.Param);
             AddCross("roots/", "生长中的树根", origin, 3 + 3 * rootGrowth, now, DateTime.MaxValue, true);
         }
@@ -87,6 +101,7 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
 
     protected override void OnEffect(LogSystemActionEffectEvent effect, DateTime now)
     {
+        if (effect.ActionId == 43461 && effect.SourceId == plantingSource) plantingPending = false;
         if (effect.ActionId == 43455) touchdown = null;
         if (effect.ActionId is >= 43456 and <= 43459)
         {
@@ -102,7 +117,7 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
 
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
     {
-        PreviewNextWave(result, a => a.Key.StartsWith("burst/", StringComparison.Ordinal) || a.Action is >= 43456 and <= 43459);
+        PreviewNextWave(result, a => a.Key.StartsWith("burst/", StringComparison.Ordinal) || a.Action is >= 43456 and <= 43459, 3);
         if (touchdown is { } cast && now <= cast.Hit.AddSeconds(.5) && !KnockbackImmune(player, cast.Hit))
         {
             var bursts = result.Where(a => a.Name.Contains("Burst", StringComparison.OrdinalIgnoreCase) || a.Key.StartsWith("burst/", StringComparison.Ordinal))
@@ -116,16 +131,49 @@ internal sealed class Pt20Encounter() : PtBossEncounter(20, 0x485C)
         {
             if (baitTarget == player)
                 result.Add(new("root-bait/goal", "树根沿边诱导", new DonutTemplate(13.5f, 14.709f), Center, 0, now, baitHit, Safe: true));
-            else
-            {
-                result.Add(new("root-bait/circle", "树根点名", new CircleTemplate(6), target.Position, 0, baitHit.AddSeconds(-.2), baitHit.AddSeconds(.15)));
-                for (var i = 0; i < 4; ++i)
-                    result.Add(new($"root-bait/{i}", "树根点名十字", new RectangleTemplate(6, 60), target.Position,
-                        Rad(i * 45 - .003f), baitHit.AddSeconds(-.2), baitHit.AddSeconds(.15)));
-            }
+            result.Add(new("root-bait/circle", "树根点名", new CircleTemplate(6), target.Position, 0, baitHit.AddSeconds(-.2), baitHit.AddSeconds(.15),
+                PreviewOnly: baitTarget == player, OutlineOnly: baitTarget == player));
+            for (var i = 0; i < 4; ++i)
+                result.Add(new($"root-bait/{i}", "树根点名十字", new RectangleTemplate(6, 60), target.Position,
+                    Rad(i * 45 - .003f), baitHit.AddSeconds(-.2), baitHit.AddSeconds(.15),
+                    PreviewOnly: baitTarget == player, OutlineOnly: baitTarget == player));
         }
     }
 
-    public override void Cancel(ulong source) { base.Cancel(source); if (touchdown?.Source == source) touchdown = null; }
-    protected override void ResetMechanics() { burstIndex = embraceHits = 0; rootGrowth = 0; burstTelegraphs.Clear(); baitTarget = 0; root = null; touchdown = null; }
+    public override IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player)
+    {
+        if (touchdown is { } cast && now <= cast.Hit.AddSeconds(.5) && !KnockbackImmune(player, cast.Hit))
+            yield return new(Boundary, cast.Position, 10);
+    }
+
+    public override void Cancel(ulong source)
+    {
+        base.Cancel(source);
+        if (touchdown?.Source == source) touchdown = null;
+        // 已生成的物理树根不属于之后的读条；只撤销尚未落地的种植预测。
+        if (!plantingPending || plantingSource != source) return;
+        RemoveGroup("embrace/");
+        RemoveGroup("roots/");
+        foreach (var area in previousPlantingAreas) areas[area.Key] = area;
+        previousPlantingAreas = [];
+        root = previousRoot;
+        rootGrowth = previousRootGrowth;
+        embraceHits = previousEmbraceHits;
+        plantingPending = false;
+        plantingSource = 0;
+    }
+    protected override void ResetMechanics()
+    {
+        burstIndex = embraceHits = 0;
+        rootGrowth = 0;
+        burstTelegraphs.Clear();
+        baitTarget = plantingSource = 0;
+        plantingPending = false;
+        previousPlantingAreas = [];
+        previousRoot = null;
+        previousRootGrowth = 0;
+        previousEmbraceHits = 0;
+        root = null;
+        touchdown = null;
+    }
 }

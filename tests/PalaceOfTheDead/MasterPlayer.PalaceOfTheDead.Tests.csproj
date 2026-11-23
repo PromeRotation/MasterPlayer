@@ -10,6 +10,10 @@
     <Compile Include="../PilgrimsTraverse/PlayerPerspective.cs" Link="PlayerPerspective.cs" />
     <Compile Include="../../Presets/PalaceOfTheDead/*.cs" Link="Palace/%(Filename)%(Extension)" />
     <Compile Include="../../src/Replay/ReplayWorldState.cs" Link="ReplayWorldState.cs" />
+    <Compile Include="../../src/Replay/ReplayDeepDungeonState.cs" Link="ReplayDeepDungeonState.cs" />
+    <Compile Include="../../src/Replay/ReplayDeepDungeonItem.cs" Link="ReplayDeepDungeonItem.cs" />
+    <Compile Include="../../src/Replay/ReplayIncomingEffect.cs" Link="ReplayIncomingEffect.cs" />
+    <Compile Include="../../src/Replay/ReplayDutyAction.cs" Link="ReplayDutyAction.cs" />
     <Compile Include="../../src/Spatial/GlobalUsings.cs" Link="GlobalUsings.cs" />
     <Compile Include="../../src/Spatial/Geometry/*.cs" Link="Geometry/%(Filename)%(Extension)" />
     <Compile Include="../../src/Spatial/SafeZone/*.cs" Link="SafeZone/%(Filename)%(Extension)" />

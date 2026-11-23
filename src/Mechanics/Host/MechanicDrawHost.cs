@@ -38,6 +38,25 @@ public sealed class MechanicDrawHost(MechanicSession session) : IDisposable
         var settings = MasterPlayerSettings.Instance;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
         var module = _session.BossModules.ActiveModule;
+        if ((settings.EnableRadarOverlay || settings.EnableRadar) && module?.StateMachine.ActivePhase == null
+            && _session.ZoneModules.ActiveModule is { } zone)
+        {
+            Sleep();
+            if (zone.WantDrawHints())
+            {
+                ActiveDrawModuleName = zone.GetType().Name;
+                try
+                {
+                    foreach (var hint in zone.CalculateGlobalHints())
+                        _hints.Add((hint, false));
+                }
+                catch (Exception ex)
+                {
+                    NoteErrors(ActiveDrawModuleName, [new(null, "zone-hints", ex)]);
+                }
+            }
+            return;
+        }
         var slot = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ? 0
             : _session.World.Party.FindSlot(PlayerPerspective.GetId());
         if (!(settings.EnableRadarOverlay || settings.EnableRadar) || module == null || visibility == null

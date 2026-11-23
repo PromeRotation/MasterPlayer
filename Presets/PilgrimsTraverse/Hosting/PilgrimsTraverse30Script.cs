@@ -64,8 +64,7 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
         {
             foreach (var actor in world.Actors.Values)
             {
-                if (actor.Oid is Pt30Encounter.BOSS_OID or Pt30Encounter.BALL_OID)
-                    actors.Add(new(actor.Id, actor.Oid, actor.Position, actor.Rotation, actor.Dead, actor.InCombat));
+                actors.Add(new(actor.Id, actor.Oid, actor.Position, actor.Rotation, actor.Dead, actor.InCombat));
                 // Self-target helper casts have a zero native TargetLocation. Their packet carries
                 // the actual offset origin (notably Grip), so never lock a native zero before it.
                 if (actor.Cast is { ActionId: 44918 } cast && cast.Rotation is { } rotation)
@@ -77,9 +76,9 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
         {
             foreach (var obj in Svc.Objects)
             {
-                if (obj.BaseId is Pt30Encounter.BOSS_OID or Pt30Encounter.BALL_OID)
-                    actors.Add(new(obj.EntityId, obj.BaseId, obj.Position, obj.Rotation, obj.IsDead,
-                        obj is IBattleChara b && (b.StatusFlags & StatusFlags.InCombat) != 0));
+                if (obj.Address == 0 || obj.EntityId is 0 or 0xE0000000) continue;
+                actors.Add(new(obj.EntityId, obj.BaseId, obj.Position, obj.Rotation, obj.IsDead,
+                    obj is IBattleChara b && (b.StatusFlags & StatusFlags.InCombat) != 0));
                 if (obj is not IBattleChara { IsCasting: true, CastActionId: 44918 } caster) continue;
                 var native = (NativeBattleChara*)caster.Address;
                 if (native == null || !float.IsFinite(native->CastRotation)) continue;
@@ -93,7 +92,7 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
 
     private void HandleEvent(LogSystemEvent ev)
     {
-        var now = CurrentTime;
+        var now = ev.Timestamp.ToUniversalTime();
         switch (ev)
         {
             case LogSystemCastStartEvent cast when Pt30Encounter.Actions.Contains(cast.ActionId):
@@ -118,7 +117,7 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
                 encounter.Cancel(interrupt.SourceId);
                 break;
             case LogSystemActionEffectEvent effect when Pt30Encounter.Actions.Contains(effect.ActionId):
-                encounter.Effect(effect.SourceId, effect.GlobalSequence, effect.ActionId, effect.EffectPosition, now);
+                encounter.Effect(effect.SourceId, effect.GlobalSequence, effect.ActionId, effect.EffectPosition, now, effect.TargetIndex);
                 if (effect.TargetIndex <= 0 || effect.TargetId == CurrentPlayerId)
                     Log($"[PT30] effect action={effect.ActionId} seq={effect.GlobalSequence} loc={effect.EffectPosition} targetSelf={effect.TargetId == CurrentPlayerId} remaining={encounter.Remaining}");
                 break;
@@ -169,14 +168,18 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
                 && (!hazard.Key.StartsWith("reach/", StringComparison.Ordinal) || encounter.ReachGoal != null);
             if (visible)
             {
-                var preview = hazard.BallPreviewPosition is { } ballPosition
-                    ? new CircleTemplate(4).Resolve(ballPosition, 0, null)
-                    : hazard.Shape.Resolve(hazard.Position, hazard.Rotation, null);
+                var preview = hazard.BallPreviewGeometry ?? hazard.Shape.Resolve(hazard.Position, hazard.Rotation, null);
                 Draw.AddAoePreview(hazard.Key, preview, false, false, 1);
                 ++PreviewCount;
             }
             else Draw.Remove(hazard.Key);
         }
+        if (encounter.ChaseLine is { } line)
+        {
+            using var group = SafeZone.BeginDrawingGroup("Divine Favor 追踪引导线");
+            Draw.AddLinePreview("chase/line", line.Start, line.End, false);
+        }
+        else Draw.Remove("chase/line");
         var chaseGoal = encounter.Goal;
         var desiredGoal = chaseGoal is { } chaseDestination
             ? new Pt30Encounter.Hazard("chase-goal", "Divine Favor 连续移动", new CircleTemplate(1), chaseDestination, 0, now, now.AddSeconds(1))
@@ -217,6 +220,7 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
 
     private void ClearOutput()
     {
+        Draw.Remove("chase/line");
         MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
         foreach (var key in hazards.Keys.ToArray()) Remove(key);
         if (goal.IsValid) SafeZone.Remove(goal);

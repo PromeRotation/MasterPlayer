@@ -249,7 +249,7 @@ PR 共享程序集规则见 `Managers/PromeExAssemblyLoader.cs` 的 `IsSharedAss
 | `SafeZone` | `AddDelayedHit` / `AddTimedDanger` / `AddPersistentDanger` / `AddDangerSnapshot` / `AddPersistentSafeArea` / `AddTimedSafeArea` / `AddObstacle` / `Remove`；跟踪本脚本句柄，默认安全区偏好 `Nearest` |
 | `Move` | `IsRunning` / `GetStatus` / `MoveTo` / `Append` / `Stop` / `ClearQueue` / `SkipCurrent`；受移动开关、回放和控制权门控 |
 | `Draw` | `Add` / `AddBound` / `AddTether` / `Remove`；ID 自动加 `MasterPlayer_Script_{guid}_` 前缀；`AddAoe` 只显示、不参与解算 |
-| `Hints` | `SetFacing(float? headingRadians)` / `ClearFacing()`，回放空操作，停止时释放自身朝向 |
+| `Hints` | `SetFacing` / `ClearFacing`、`SetTarget`（PR 优先攻击目标，0 撤销）、`SetActionRestrictions` / `ClearActionRestrictions`（PR ACR 停手/禁读条/禁攻目标，同时停止相应原生自动攻击）、`SetMovementHold`（暂停 MP 移动）；PR 请求每帧续期，回放禁执行，停止时按 owner 清理 |
 
 `SafeZone.BeginDrawingGroup(string name)` 为作用域内的 AOE 指定显示分组。危险区门面默认经 `DangerMarginInflator` 应用 `DodgeDangerMargin`，安全区/障碍不外扩；使用 owner 精确几何的区域按对应规格在解算层应用一次余量，预览保持原尺寸。场地边界由场地实现通过本地 Registry 管理。
 

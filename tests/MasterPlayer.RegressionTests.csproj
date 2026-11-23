@@ -8,6 +8,7 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;PalaceOfTheDead\**;TerrainCollision\**;ReleasePackaging\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Presets\Hunts\*.cs" Exclude="..\Presets\Hunts\SimpleHuntScript.cs" Link="Hunts\%(Filename)%(Extension)" />
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
   </ItemGroup>
@@ -41,6 +42,8 @@
     <Compile Include="..\src\UI\Radar\AoeVisibilityRegistry.cs" Link="AoeVisibilityRegistry.cs" />
     <Compile Include="..\src\Mechanics\Host\MechanicDrawConvert.cs" Link="MechanicHost\MechanicDrawConvert.cs" />
     <Compile Include="..\src\Mechanics\Host\MechanicHintsConvert.cs" Link="MechanicHost\MechanicHintsConvert.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicNavigationHost.cs" Link="MechanicHost\MechanicNavigationHost.cs" />
+    <Compile Include="..\src\Mechanics\Host\MechanicDrawHost.cs" Link="MechanicHost\MechanicDrawHost.cs" />
     <Compile Include="..\src\Mechanics\Host\MechanicTimelineView.cs" Link="MechanicHost\MechanicTimelineView.cs" />
     <Compile Include="..\src\Mechanics\Host\MechanicEventFactory.cs" Link="MechanicHost\MechanicEventFactory.cs" />
     <Compile Include="..\src\Mechanics\Host\ReplayFeedAdapter.cs" Link="MechanicHost\ReplayFeedAdapter.cs" />
@@ -52,8 +55,17 @@
     <Compile Include="..\src\Scripting\ScriptHintsApi.cs" Link="ScriptHintsApi.cs" />
     <Compile Include="..\src\Mechanics\Host\MechanicFacingControl.cs" Link="MechanicHost\MechanicFacingControl.cs" />
     <Compile Include="..\src\Scripting\IScriptEventRouter.cs" Link="IScriptEventRouter.cs" />
+    <Compile Include="..\src\Scripting\LegacyMapEffectEvent.cs" Link="LegacyMapEffectEvent.cs" />
+    <Compile Include="..\src\Scripting\NativeActionEffectEvent.cs" Link="NativeActionEffectEvent.cs" />
+    <Compile Include="..\src\Scripting\LegacyMapEffectEvents.cs" Link="LegacyMapEffectEvents.cs" />
+    <Compile Include="..\src\Scripting\LegacyMapEffectCapture.cs" Link="LegacyMapEffectCapture.cs" />
     <Compile Include="..\src\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
     <Compile Include="..\src\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />
+    <Compile Include="..\src\Replay\ReplayIncomingEffect.cs" Link="Replay\ReplayIncomingEffect.cs" />
+    <Compile Include="..\src\Replay\ReplayDutyAction.cs" Link="Replay\ReplayDutyAction.cs" />
+    <Compile Include="..\src\Replay\ReplayDeepDungeonState.cs" Link="Replay\ReplayDeepDungeonState.cs" />
+    <Compile Include="..\src\Replay\ReplayDeepDungeonItem.cs" Link="Replay\ReplayDeepDungeonItem.cs" />
+    <Compile Include="..\src\Replay\ReplaySystemLogEvent.cs" Link="Replay\ReplaySystemLogEvent.cs" />
     <Compile Include="..\src\Replay\ReplayPlayback.cs" Link="Replay\ReplayPlayback.cs" />
     <Compile Include="..\src\Replay\ReplayRecordFilter.cs" Link="Replay\ReplayRecordFilter.cs" />
     <Compile Include="..\src\Replay\ReplayScriptEventRouter.cs" Link="Replay\ReplayScriptEventRouter.cs" />
@@ -61,7 +73,42 @@
     <Compile Include="..\src\Replay\ReplayComparison.cs" Link="Replay\ReplayComparison.cs" />
 
     <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\CastrumAbania\CastrumAbaniaScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Vanaspati\VanaspatiMisdirectionControl.cs;..\Presets\Dungeons\CastrumAbania\CastrumAbaniaScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\ArrPrimals\*.cs" Link="Trials\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\UltimaExtreme\*.cs" Link="Trials\UltimaExtreme\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\GarudaExtreme\*.cs" Link="Trials\GarudaExtreme\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\TitanExtreme\*.cs" Link="Trials\TitanExtreme\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\IfritExtreme\*.cs" Link="Trials\IfritExtreme\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Raids\**\*.cs" Exclude="..\Presets\Raids\Entries\**;..\Presets\Raids\CoilScript.cs" Link="Raids\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Quests\**\*.cs" Exclude="..\Presets\Quests\Entries\**" Link="Quests\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\PortaDecumana\*.cs" Link="Trials\Porta\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\ArrPrimalsHard\*.cs" Link="Trials\Hard\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Thornmarch\*.cs" Link="Trials\Thornmarch\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Whorleater\*.cs" Link="Trials\Whorleater\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Susano\*.cs" Link="Trials\Susano\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Lakshmi\*.cs" Link="Trials\Lakshmi\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Shinryu\*.cs" Link="Trials\Shinryu\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Tsukuyomi\*.cs" Link="Trials\Tsukuyomi\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Yojimbo\*.cs" Link="Trials\Yojimbo\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Byakko\*.cs" Link="Trials\Byakko\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Suzaku\*.cs" Link="Trials\Suzaku\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Seiryu\*.cs" Link="Trials\Seiryu\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Titania\*.cs" Link="Trials\Titania\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Innocence\*.cs" Link="Trials\Innocence\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Hades\*.cs" Link="Trials\Hades\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\WarriorOfLight\*.cs" Link="Trials\WarriorOfLight\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Hydaelyn\*.cs" Link="Trials\Hydaelyn\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Asura\*.cs" Link="Trials\Asura\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Zelenia\*.cs" Link="Trials\Zelenia\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Valigarmanda\*.cs" Link="Trials\Valigarmanda\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Arkveld\*.cs" Link="Trials\Arkveld\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Enuo\*.cs" Link="Trials\Enuo\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Necron\*.cs" Link="Trials\Necron\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\QueenEternal\*.cs" Link="Trials\QueenEternal\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\ZoraalJa\*.cs" Link="Trials\ZoraalJa\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Doomtrain\*.cs" Link="Trials\Doomtrain\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\DungeonTrialVoidzones.cs" Link="Trials\DungeonTrialVoidzones.cs" />
+    <Compile Include="..\Presets\Trials\DungeonTrialKnockbackDrawing.cs" Link="Trials\DungeonTrialKnockbackDrawing.cs" />
     <Compile Include="..\Presets\PilgrimsTraverse\*.cs" Link="PilgrimsTraverse\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PilgrimsTraverse\Bosses\*.cs" Link="PilgrimsTraverse\Bosses\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\PalaceOfTheDead\*.cs" Link="PalaceOfTheDead\%(Filename)%(Extension)" />

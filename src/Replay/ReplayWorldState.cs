@@ -9,7 +9,10 @@ public sealed record ReplayStatus(uint Id, ushort Param, ulong SourceId, DateTim
             : now.AddSeconds(Math.Min(MathF.Abs(remaining), 100000f));
 }
 public sealed record ReplayCast(uint ActionId, ulong TargetId, Vector3 Location, float? Rotation,
-    DateTime StartedAt, DateTime FinishAt, bool Interruptible, bool EffectSeen);
+    DateTime StartedAt, DateTime FinishAt, bool Interruptible, bool EffectSeen)
+{
+    public float? TotalTime { get; init; }
+}
 public sealed record ReplayPartyMember(int Slot, string Role, ulong EntityId);
 public sealed record ReplayTether(ushort Id, ulong TargetId, byte Progress = 0);
 public sealed record ReplayCastData(float? PacketFacing);
@@ -31,6 +34,7 @@ public sealed record ReplayActorState
     public bool Dead { get; init; }
     public bool Targetable { get; init; }
     public bool InCombat { get; init; }
+    public bool AggroPlayer { get; init; }
     public bool Hostile { get; init; }
     public ulong TargetId { get; init; }
     public byte Level { get; init; }
@@ -41,6 +45,8 @@ public sealed record ReplayActorState
     public uint MaxMp { get; init; }
     public byte Shield { get; init; }
     public byte EventState { get; init; }
+    public bool OpenedTreasure { get; init; }
+    public int? RenderFlags { get; init; }
     public byte ModelState { get; init; }
     public byte AnimationState1 { get; init; }
     public byte AnimationState2 { get; init; }
@@ -48,10 +54,12 @@ public sealed record ReplayActorState
     public ReplayCast? Cast { get; init; }
     public ReplayStatus[] Statuses { get; init; } = [];
     public ReplayTether[] Tethers { get; init; } = [];
+    public ReplayIncomingEffect[] IncomingEffects { get; init; } = [];
 
     internal bool SameAs(ReplayActorState other)
-        => (this with { Statuses = other.Statuses, Tethers = other.Tethers }) == other
-           && Statuses.SequenceEqual(other.Statuses) && Tethers.SequenceEqual(other.Tethers);
+        => (this with { Statuses = other.Statuses, Tethers = other.Tethers, IncomingEffects = other.IncomingEffects }) == other
+           && Statuses.SequenceEqual(other.Statuses) && Tethers.SequenceEqual(other.Tethers)
+           && IncomingEffects.SequenceEqual(other.IncomingEffects);
 }
 
 public sealed record ReplayWorldFrame
@@ -61,6 +69,11 @@ public sealed record ReplayWorldFrame
     public ulong LocalPlayerId { get; init; }
     public ulong TargetId { get; init; }
     public string LocalTimelineRole { get; init; } = "None";
+    public bool LegacyMovement { get; init; }
+    public float? CameraAzimuth { get; init; }
+    public ulong DutyActionPlayerId { get; init; }
+    public ReplayDutyAction[]? DutyActions { get; init; }
+    public ReplayDeepDungeonState? DeepDungeon { get; init; }
     public ReplayPartyMember[] Party { get; init; } = [];
     public ReplayActorState[] Actors { get; init; } = [];
     public ulong[] Removed { get; init; } = [];
@@ -91,6 +104,11 @@ public sealed class ReplayWorldState
     public ulong LocalPlayerId { get; private set; }
     public ulong TargetId { get; private set; }
     public string LocalTimelineRole { get; private set; } = "None";
+    public bool LegacyMovement { get; private set; }
+    public float? CameraAzimuth { get; private set; }
+    public ulong DutyActionPlayerId { get; private set; }
+    public IReadOnlyList<ReplayDutyAction>? DutyActions { get; private set; }
+    public ReplayDeepDungeonState? DeepDungeon { get; private set; }
     public bool HasSnapshot { get; private set; }
     public long Version { get; private set; }
     public ReplayActorState? LocalPlayer => _actors.GetValueOrDefault(LocalPlayerId);
@@ -105,6 +123,11 @@ public sealed class ReplayWorldState
         LocalPlayerId = frame.LocalPlayerId;
         TargetId = frame.TargetId;
         LocalTimelineRole = frame.LocalTimelineRole;
+        LegacyMovement = frame.LegacyMovement;
+        CameraAzimuth = frame.CameraAzimuth;
+        DutyActionPlayerId = frame.DutyActionPlayerId;
+        DutyActions = frame.DutyActions;
+        DeepDungeon = frame.DeepDungeon;
         Party = frame.Party;
         HasSnapshot = true;
         Version++;

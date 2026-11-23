@@ -91,8 +91,8 @@ internal sealed class Pt60Encounter() : PtBossEncounter(60, 0x49DE)
         {
             var sequence = rotations.Where(r => r.Remaining > 0 && Vector3.DistanceSquared(r.Origin, origin) < 1)
                 .MinBy(r => MathF.Abs(MathF.IEEERemainder(r.Rotation - rotation, MathF.Tau)));
-            if (sequence == null || MathF.Abs(MathF.IEEERemainder(sequence.Rotation - rotation, MathF.Tau)) > .1f) return;
-            sequence.Rotation = rotation + sequence.Increment;
+            if (sequence == null || MathF.Abs(MathF.IEEERemainder(sequence.Rotation - rotation, MathF.Tau)) > .05f) return;
+            sequence.Rotation += sequence.Increment;
             sequence.Next = now.AddSeconds(1.1);
             --sequence.Remaining;
         }
@@ -111,11 +111,20 @@ internal sealed class Pt60Encounter() : PtBossEncounter(60, 0x49DE)
                 if (hit.AddSeconds(.15) < now) continue;
                 result.Add(new($"rotate/{side}/{i}", "Spinning Needles", new FanTemplate(60, Rad(60)), sequence.Origin,
                     sequence.Rotation + i * sequence.Increment, hit.AddSeconds(-.2), hit.AddSeconds(.15), sequence.Owner,
-                    NavigationOnly: i > 0));
+                    NavigationOnly: i > 1, Color: i == 0 && sequence.Remaining > 1
+                        ? new Vector4(1, 1, 0, 1) : new Vector4(128f / 255, 128f / 255, 0, 128f / 255)));
             }
         }
         if (result.Any(a => a.Key.StartsWith("rotate/", StringComparison.Ordinal)))
-            result.Add(new("rotate/goal", "旋转针靠近中心", new CircleTemplate(4), Center, 0, now, now.AddSeconds(1), Safe: true));
+        {
+            var activation = rotations.Where(r => r.Remaining > 0).Min(r => r.Next);
+            var until = now.AddSeconds(1);
+            if (until < activation.AddSeconds(.15)) until = activation.AddSeconds(.15);
+            result.Add(new("rotate/center", "旋转针保持中心四米", new DonutTemplate(4, 100), Center, 0,
+                activation, until, NavigationOnly: true));
+            result.Add(new("rotate/goal", "旋转针靠近中心", new CircleTemplate(4), Center, 0, now, now.AddSeconds(1),
+                Safe: true, PreviewOnly: true));
+        }
     }
 
     public override void Cancel(ulong source) { base.Cancel(source); marchCasters.Remove(source); rotations.RemoveAll(r => r.Owner == source); }

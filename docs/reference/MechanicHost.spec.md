@@ -57,6 +57,20 @@
 - 门控：`MasterPlayerSettings.EnableMechanicModules`（默认 true）总开关 + `MechanicModuleMinMaturity`（默认 Verified，可降 Contributed/AISupport/WIP）。当前区域有 MP 区域专属脚本运行时（ScriptManager 已有查询），该区域暂停桥的模块激活与输出，避免与 MP 区域专属脚本（斗兽棋、首批地城）双重接管。
 - 回放：ReplayController 进入回放时桥切换为回放会话（输入来自 ReplayPlayback 帧/事件转换），退出恢复实时；回放中禁止任何移动输出（铁律 3）。
 
+### 2026-11-22 公共输出链路修复
+
+真实运行库与生产导航桥联测确认，普通 Boss 读条可以进入 MP 注册表并由真实解算器脱险；“模块已激活”不能证明后续导航仍然有效。以下缺陷均有修复前失败、修复后通过的回归证据：
+
+| 触发 | 原因与修复 |
+|---|---|
+| 死亡、战斗结束或其他宿主清理后，同一范围仍被模块发布 | 差分器只比较签名，忽略 Manager 已删除句柄。现在危险区、目标区、障碍同时核验 `ContainsArea`，场地签名命中也检查正式边界是否仍存在；下一帧恢复注册。 |
+| 固定 activation 的危险在判定后继续存在 | `ForbiddenZones` 被误转为一次 0.6 秒命中，之后失活或被回收，而差分器仍报告有区域。现在从 activation 开始持续有效，直到模块撤销该输出；不擅自推测结束时间。 |
+| 分摊、集合等未来补集安全区 | 旧目标区到 activation 才启用，解算器无法提前准备。现在立即发布进入安全形状的目标，由现有危险窗口约束可行路线，模块撤销时清理。它仍是 MP 目标语义，不宣称补齐全部 BMR 连续评分或时间期限语义。 |
+| 只有区域模块，没有激活 Boss | 导航桥在调用 `AIHintsBuilder` 之前就返回，区域 AI 提示及道中自动提示从未被消费；绘制桥也忽略区域全局文字。现在允许区域模块独立聚合，并消费 `WantDrawHints` / `CalculateGlobalHints`。自动提示的局部搜索框不作为正式场地，保留 MP 实时地形；区域自动提示可能忽略未知读条，因此区域独立输出不整体压制通用躲避。 |
+| 视角缺失、提示聚合/转换异常或存在未转换的禁入区 | 旧 `HasActiveModule` 只按状态机激活判断，可能在导航睡眠或失败时继续压制通用躲避。现在要求 Boss 状态机激活、当帧导航成功且没有跳过的禁入区，才整体接管通用躲避；异常清理注册并释放接管。导航内部失败仍允许绘制继续，整个会话帧失败则同时清理绘制和时间轴。 |
+
+定向入口：设置 `FFXIV_SQPACK` 为实际游戏 `sqpack` 目录，运行 `dotnet run --project tests/MasterPlayer.RegressionTests.csproj -p:CI=true -- --bmr-navigation --keep-going`。该入口链接生产导航/绘制桥、真实运行库、MP 注册表和解算器，替换的仅是 Dalamud 服务与插件外壳；覆盖清空恢复、activation 后存活、区域独立输出、异常/缺失视角恢复及补集提前站位。普通读条基线在修复前即通过，不能将上述缺陷扩大为所有战斗的统一现场原因。实时原生采样、宿主控制权和全量副本仍须实机验收。
+
 ## 回放接入（M7）
 
 状态：2026-09-23 已实现（控制器回放会话生命周期 + `src/Mechanics/Host/ReplayFeedAdapter.cs` + `MechanicEventFactory.cs` + ReplayWindow 预测条；离线回归 `tests/MechanicReplayAdapterRegression.cs` 4 场景）。
@@ -79,7 +93,7 @@
 状态：2026-09-23 已实现（MP 侧 `src/Mechanics/Host/MechanicNavigationHost.cs` + `MechanicHintsConvert.cs`，DodgeController 加机制模块激活压制；离线回归 `tests/MechanicHintsConvertRegression.cs` 9 场景）。
 
 - 每帧 `session.Update()` 后驱动 `AIHintsBuilder.Update(hints, playerSlot, false)`（rsr=null），消费：
-  - `ForbiddenZones` → SD* 具体类型识别（SDCircle/SDRect/SDCone/SDDonut/SDCross 及组合）→ MP GeometryTemplate；无法识别回退 0.5 码网格采样连通域 → LocalPolygonTemplate。activation → 绝对时间（注册 AddDelayedHit/AddDelayedDanger；default=立即 → AddPersistentDanger + 帧 diff 续命）。键：`module/{sourceInstanceID}/{activationTick}/{序}`，帧 diff 移除未刷新句柄。
+  - `ForbiddenZones` → SD* 具体类型识别（SDCircle/SDRect/SDCone/SDDonut/SDCross 及组合）→ MP GeometryTemplate；无法识别回退 0.5 码网格采样连通域 → LocalPolygonTemplate。activation → 绝对时间（注册 AddDelayedDanger；default=立即 → AddPersistentDanger）。开始后持续有效，由帧 diff 移除未刷新句柄；缓存命中须确认 Manager 中句柄仍存活。键：`module/{sourceInstanceID}/{activationTick}/{序}`。
   - `TemporaryObstacles` → AddObstacle（同样 diff 生命周期）。
   - `PathfindMapBounds`（激活模块）→ SetArenaBoundary（Custom 多边形顶点直转；圆形/矩形边界转对应模板；模块卸载清空）。
   - `GoalZones`：2026-09-27 起消费机制级强目标——权重峰值 ≥100（「软覆盖」语义）才采样映射（0.5m 网格总和峰值 50% 以上区域轮廓，覆盖率 >65% 判噪声丢弃），注册为优先级 1 目标区，500ms 节流评估；uptime/身位等弱偏好（≤3）不拖拽走位。
@@ -89,8 +103,8 @@
   - 补集语义（2026-09-27）：SDInverted 族/SDOutsideOfUnion/SDPrecisePosition 不再丢弃——`TryConvertComplement` 取内侧安全形状（OutsideOfUnion 取「进入任一成员」主语义、Offset 变体仍跳过），经同一差集注册为优先级 1、Nearest 偏好的目标安全区（不外扩，与 SafeArea 纪律一致）；分摊/集合/数字格类机制从此获得导航约束。
   - 场地障碍位图（2026-09-27）：`PathfindMapObstacles`（SimpleBossModule 族开启 AllowObstacleMap）按角点网格连通域外轮廓转多边形注册为障碍；位图引用+矩形未变时复用转换结果，数据面随 9-27 执行层移除保留（ObstacleMapManager/417 资源）。
   - `Teleporters`（2026-09-27）：转 `SolverTeleporter` 经 `SafeZoneRuntime.SetTeleporters` 发布（内容签名去重，失活清空）；`BossModStyleAStar` 把入口圈内节点扩展出出口后继（耗时按移速折算进 g，落点不可站立跳过，leeway/Score 语义与步行一致）。FRU/M08S/末日列车的传送机制参与解算。
-- 注册仅当 `EnableAutoDodge`（智能躲避）开启时生效；绘制不受该开关限制（与 DodgeController 同纪律：绘制/雷达/躲避任一开启即识别）。两套余量体系不叠加：模块 activation 原样传入，MP 侧余量照常吃（结果更保守，可接受）。
-- 落地差异（相对上一段设计）：ShapeDistance 具体类的参数全部存在私有字段（Cone/DonutSector/ArcCapsule 只存派生法线），直转经反射配方读取（Cone/DonutSector 由边法线还原朝向与半角，coneFactor<0 分角线反向）；采样产物为 WorldPolygonTemplate（外轮廓用角点网格 marching-squares 边链接，对角捏合拆环、孔洞环随最大环丢弃）；Inverted 族/补集语义自 2026-09-27 起转目标安全区注册（见上），仅 SDInvertedUnionOffset 与采样填充率 >65% 的禁入区仍丢弃。危险区注册仍吃 MP 侧 `DodgeDangerMargin` 外扩（与脚本门面一致），障碍/边界/目标区不外扩；实体不绑定（StaticTransform 快照 + 签名变化才 UpdateArea/重建）。DodgeController 在桥有激活模块时压制通用躲避推断。
+- 机制启用时保持注册和规划，实际移动由唯一总开关 `EnableSmartMovement`、回放隔离及宿主控制权门控；绘制独立。模块 activation 原样传入，危险余量由 MP 应用一次。
+- 落地差异（相对上一段设计）：ShapeDistance 具体类的参数全部存在私有字段（Cone/DonutSector/ArcCapsule 只存派生法线），直转经反射配方读取（Cone/DonutSector 由边法线还原朝向与半角，coneFactor<0 分角线反向）；采样产物为 WorldPolygonTemplate（外轮廓用角点网格 marching-squares 边链接，对角捏合拆环、孔洞环随最大环丢弃）；Inverted 族/补集语义自 2026-09-27 起转目标安全区注册（见上），仅 SDInvertedUnionOffset 与采样填充率 >65% 的禁入区仍丢弃。危险区注册仍吃 MP 侧 `DodgeDangerMargin` 外扩（与脚本门面一致），障碍/边界/目标区不外扩；实体不绑定（StaticTransform 快照 + 签名变化才 UpdateArea/重建）。DodgeController 仅在 Boss 模块激活、导航成功且无跳过禁入区时整体让位；区域独立输出保留通用躲避。
 
 ## 时间轴（M6）
 

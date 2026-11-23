@@ -14,6 +14,71 @@ internal static class ReplayWorldRegression
 
     public static void Run(Action<string, Action> run)
     {
+        run("Lakshmi replay duty charges owner nullable unknown full delta and reverse rebuild", () =>
+        {
+            var frame = new ReplayWorldFrame { Full = true, Territory = 719, LocalPlayerId = 100,
+                DutyActionPlayerId = 100, DutyActions = [new(0, 9345, 0, 1)] };
+            var charged = frame with { DutyActions = [new(0, 9345, 1, 1)] };
+            using var stream = new MemoryStream(); using var writer = new ReplayRecordingWriter(stream);
+            writer.WriteHeader(new(2, 719, Start, "duty-charges"));
+            writer.WriteWorldFrame(0, frame); writer.WriteWorldFrame(1, ReplayWorldFrame.Delta(frame, charged));
+            writer.WriteWorldFrame(2, ReplayWorldFrame.Delta(charged, charged with { DutyActions = null }));
+            stream.Position = 0;
+            var loaded = ReplayRecordingReader.Load(stream); var playback = new ReplayPlayback(loaded);
+            playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.DutyActionPlayerId == 100 && playback.World.DutyActions!.Single().CurrentCharges == 0, "Initial known zero lost.");
+            playback.AdvanceTo(1, _ => { }, _ => { });
+            Check(playback.World.DutyActions!.Single().CurrentCharges == 1, "Top-level charge delta lost.");
+            playback.AdvanceTo(2, _ => { }, _ => { }); Check(playback.World.DutyActions == null, "Unknown retained stale charge.");
+            playback = new(loaded); playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.DutyActions!.Single().CurrentCharges == 0, "Reverse rebuild used future charge.");
+            var old = new ReplayWorldState(); old.Apply(new() { Full = true });
+            Check(old.DutyActions == null && old.DutyActionPlayerId == 0, "Old frame guessed charge.");
+        });
+        run("Origenics replay incoming slots roundtrip structural delta confirmation removal and old frames", () =>
+        {
+            foreach (var type in Enumerable.Range(0, 256))
+                Check(ReplayIncomingEffect.IsKnockback(0xABCD000000000000UL | (uint)type) == (type is >= 31 and <= 36),
+                    "Incoming raw effect classification.");
+            var actor = new ReplayActorState { Id = 100, IncomingEffects = [new(2, 17, 3, false, true), new(4, 18, 1, false, false)] };
+            var frame = new ReplayWorldFrame { Full = true, Territory = 1208, LocalPlayerId = 100, Actors = [actor] };
+            var same = frame with { Actors = [actor with { IncomingEffects = actor.IncomingEffects.ToArray() }] };
+            Check(ReplayWorldFrame.Delta(frame, same).Actors.Length == 0, "Equal incoming arrays rewrote actor.");
+            var confirmed = frame with { Actors = [actor with { IncomingEffects = [actor.IncomingEffects[0] with { TargetConfirmed = true }] }] };
+            var delta = ReplayWorldFrame.Delta(frame, confirmed);
+            Check(delta.Actors.Length == 1, "Confirmation/removal omitted from delta.");
+            using var stream = new MemoryStream();
+            using var writer = new ReplayRecordingWriter(stream);
+            writer.WriteHeader(new(2, 1208, Start, "incoming-knockback"));
+            writer.WriteWorldFrame(0, frame); writer.WriteWorldFrame(1, delta);
+            stream.Position = 0;
+            var recording = ReplayRecordingReader.Load(stream); var playback = new ReplayPlayback(recording);
+            playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.IncomingEffects.SequenceEqual(actor.IncomingEffects), "Incoming roundtrip.");
+            playback.AdvanceTo(1, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.IncomingEffects.Single().TargetConfirmed, "Confirmed delta not applied.");
+            playback = new(recording); playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(!playback.World.LocalPlayer!.IncomingEffects[0].TargetConfirmed, "Seek reused later confirmation.");
+            Check(new ReplayActorState().IncomingEffects.Length == 0, "Old frames need empty incoming default.");
+        });
+        run("replay world records legacy movement and camera azimuth through delta and rebuild", () =>
+        {
+            using var stream = new MemoryStream();
+            using var writer = new ReplayRecordingWriter(stream);
+            writer.WriteHeader(new(2, 1109, Start, "ice-directions"));
+            var initial = new ReplayWorldFrame { Full = true, Territory = 1109, LegacyMovement = true, CameraAzimuth = .37f };
+            writer.WriteWorldFrame(0, initial);
+            writer.WriteWorldFrame(1, ReplayWorldFrame.Delta(initial, initial with { LegacyMovement = false, CameraAzimuth = 1.2f }));
+            stream.Position = 0;
+            var playback = new ReplayPlayback(ReplayRecordingReader.Load(stream));
+            playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.LegacyMovement && playback.World.CameraAzimuth == .37f, "Initial camera or movement mode lost.");
+            playback.AdvanceTo(1, _ => { }, _ => { });
+            Check(!playback.World.LegacyMovement && playback.World.CameraAzimuth == 1.2f, "Delta camera or movement mode lost.");
+            // A seek rebuild consumes the same serialized initial frame.
+            var rebuilt = new ReplayWorldState(); rebuilt.Apply(initial);
+            Check(rebuilt.LegacyMovement && rebuilt.CameraAzimuth == .37f, "Rebuild used live camera.");
+        });
         run("replay world preserves initial actors, statuses, casts, tethers, roles and packet facing", () =>
         {
             var recording = Scene();
@@ -130,6 +195,19 @@ internal static class ReplayWorldRegression
                 try { ReplayRecordingReader.Load(stream); } catch (InvalidDataException) { rejected = true; }
                 Check(rejected, "An unusable world recording loaded silently.");
             }
+        });
+        run("replay world legacy event clocks use file time and preserve explicit packet time", () =>
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes("""
+                {"v":1,"territory":1042,"startedUtc":"2026-09-21T01:00:00Z","pluginVersion":"old"}
+                {"t":0.1,"kind":"PlayActionTimeline","type":"PromeRotation.LogSystem.LogSystemPlayActionTimelineEvent","data":{"SourceId":1,"TimelineId":142}}
+                {"t":2,"kind":"ActionEffect","type":"PromeRotation.LogSystem.LogSystemActionEffectEvent","data":{"SourceId":1,"ActionId":3411,"Timestamp":"2026-09-21T01:00:01.750Z"}}
+                """));
+            var loaded = ReplayRecordingReader.Load(stream);
+            Check(loaded.Events[0].Event.Timestamp == Start.AddSeconds(.1),
+                "A legacy timeline inherited the load-time system clock.");
+            Check(loaded.Events[1].Event.Timestamp == Start.AddSeconds(1.75),
+                "Recorded dispatch delay was replaced by file-line time.");
         });
         run("replay world clocks freeze preview expiry and registry windows", () =>
         {

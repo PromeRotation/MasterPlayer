@@ -4,6 +4,7 @@ internal static class ScriptHintsApiRegression
 {
     public static void Run(Action<string, Action> run)
     {
+        FollowRegression.RunScriptControls(run);
         run("script hints api gates facing requests during replay and cleans up safely", () =>
         {
             var hints = new ScriptHintsApi(() => true);

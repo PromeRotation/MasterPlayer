@@ -1013,7 +1013,8 @@ internal sealed class MechanicNavAreaDiffer
             seen.Add(request.Key);
             if (book.TryGetValue(request.Key, out var entry))
             {
-                if (entry.Signature == signature)
+                if (entry.Signature == signature && entry.Handles.Count == request.Primitives.Count
+                    && entry.Handles.All(manager.ContainsArea))
                     continue;
                 if (entry.Handles.Count == request.Primitives.Count)
                 {
@@ -1061,7 +1062,7 @@ internal sealed class MechanicNavAreaDiffer
             seenObstacles.Add(key);
             if (_obstacles.TryGetValue(key, out var existing))
             {
-                if (existing.Signature == prim.Signature)
+                if (existing.Signature == prim.Signature && manager.ContainsArea(existing.Handle))
                     continue;
                 registry.Remove(existing.Handle);
                 _obstacles.Remove(key);
@@ -1104,16 +1105,16 @@ internal sealed class MechanicNavAreaDiffer
             SafeZoneAreaHandle handle;
             if (request.IsGoal)
             {
-                handle = request.Persistent
-                    ? registry.AddPersistentSafeArea(prim.Template, binding, ComplementGoalPriority, PositionPreference.Nearest)
-                    : registry.AddDelayedSafeArea(prim.Template, binding, request.DelaySeconds, 0f, ComplementGoalPriority, PositionPreference.Nearest);
+                // activation 是应已进入安全形状的时刻，目标必须提前参与解算。
+                handle = registry.AddPersistentSafeArea(prim.Template, binding, ComplementGoalPriority, PositionPreference.Nearest);
             }
             else
             {
                 var template = Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin);
                 handle = request.Persistent
                     ? registry.AddPersistentDanger(template, binding)
-                    : registry.AddDelayedHit(template, binding, request.DelaySeconds, SafeZoneRegistry.DefaultHitDurationSeconds);
+                    // AIHints 从 activation 起持续禁入，由组件撤销输出结束危险。
+                    : registry.AddDelayedDanger(template, binding, request.DelaySeconds);
             }
             if (handle.IsValid)
             {

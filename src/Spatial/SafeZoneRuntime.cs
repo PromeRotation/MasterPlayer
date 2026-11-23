@@ -177,12 +177,26 @@ public sealed class SafeZoneRuntime : IDisposable
 
     /// <summary>当前发布的解算传送边（机制导航桥写入，仅主线程）。</summary>
     public IReadOnlyList<SolverTeleporter> Teleporters { get; private set; } = [];
+    private readonly Dictionary<object, SolverTeleporter[]> teleporterOwners = [];
 
     /// <summary>发布/替换解算传送边；空列表清除。</summary>
     public void SetTeleporters(IReadOnlyList<SolverTeleporter> teleporters)
+        => SetTeleporters(this, teleporters);
+
+    /// <summary>按 owner 发布传送边；空列表只撤销该 owner，避免脚本清理覆盖其他脚本或机制桥。</summary>
+    internal void SetTeleporters(object owner, IReadOnlyList<SolverTeleporter> teleporters)
     {
-        Teleporters = teleporters;
-        _movement.SetTeleporters(teleporters);
+        if (teleporters.Count == 0)
+        {
+            if (!teleporterOwners.Remove(owner)) return;
+        }
+        else
+        {
+            if (teleporterOwners.TryGetValue(owner, out var previous) && previous.SequenceEqual(teleporters)) return;
+            teleporterOwners[owner] = teleporters.ToArray();
+        }
+        Teleporters = teleporterOwners.Values.SelectMany(t => t).Distinct().ToArray();
+        _movement.SetTeleporters(Teleporters);
     }
 
     internal SafeZoneRuntime(IGreenMoveSystem movement, Func<bool> externalMovementEnabled, Func<bool> externalHasControl)
@@ -278,6 +292,9 @@ public sealed class SafeZoneRuntime : IDisposable
     {
         if (_disposed) return;
         Manager.ClearAllAreas();
+        teleporterOwners.Clear();
+        Teleporters = [];
+        _movement.SetTeleporters([]);
         Manager.SetFallbackBoundary(terrain.Current);
         ClearMovementRequests();
         _movement.Reset();
@@ -290,6 +307,8 @@ public sealed class SafeZoneRuntime : IDisposable
         _disposed = true;
         terrain.Clear();
         ClearMovementRequests();
+        teleporterOwners.Clear();
+        Teleporters = [];
         try { _movement.Dispose(); }
         finally { Manager.Dispose(); }
     }

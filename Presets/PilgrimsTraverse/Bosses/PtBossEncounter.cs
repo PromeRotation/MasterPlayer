@@ -12,7 +12,8 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     internal sealed record Cast(ulong Source, uint Action, Vector3 Position, float? Rotation, DateTime Start, DateTime Hit, ulong Target, Vector3? SourcePosition = null);
     internal sealed record Area(string Key, string Name, GeometryTemplate Shape, Vector3 Position, float Rotation,
         DateTime From, DateTime Until, ulong Owner = 0, uint Action = 0, bool Safe = false,
-        bool Obstacle = false, bool NavigationOnly = false, bool PreviewOnly = false, int Priority = 5)
+        bool Obstacle = false, bool NavigationOnly = false, bool PreviewOnly = false, int Priority = 5, bool OutlineOnly = false,
+        Vector4? Color = null)
     {
         public IGeometryShape Geometry => Shape.Resolve(Position, Rotation, null);
         public DangerWindow Window => new(From, Until == DateTime.MaxValue ? null : Until, From.AddSeconds(-5)) { HasExplicitTiming = true };
@@ -33,6 +34,17 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     public virtual IGeometryShape Boundary => PtArenaData.Boundary(Floor);
     public virtual bool HoldMovement(DateTime now, ulong player) => false;
     public virtual IEnumerable<string> Hints(DateTime now, ulong player) => [];
+    public virtual IEnumerable<(string Key, Vector3 Start, Vector3 End)> DrawingLines(DateTime now) => [];
+    public virtual IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player) => [];
+    public virtual IReadOnlyList<ulong> ForbiddenDotTargets => [];
+    protected virtual int TargetPriority(ReplayActorState actor) => actor.Oid == BossOid ? 0 : -1;
+    public virtual ReplayActorState? SelectTarget(DateTime now, ulong player, ulong currentTarget)
+    {
+        if (!Active || !actors.TryGetValue(player, out var pc) || pc.Dead || !Boundary.Contains(pc.Position)) return null;
+        return actors.Values.Where(a => !a.Dead && a.Targetable && a.Hp > 1 && TargetPriority(a) >= 0)
+            .OrderByDescending(TargetPriority).ThenByDescending(a => a.Id == currentTarget)
+            .ThenBy(a => Vector3.DistanceSquared(pc.Position, a.Position)).ThenBy(a => a.Id).FirstOrDefault();
+    }
     protected ReplayActorState? Boss => actors.Values.FirstOrDefault(a => a.Oid == BossOid);
 
     public void Synchronize(IEnumerable<ReplayActorState> observations, DateTime now)
@@ -137,12 +149,11 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
         return result;
     }
 
-    protected static void PreviewNextWave(List<Area> result, Func<Area, bool> belongs)
+    protected static void PreviewNextWave(List<Area> result, Func<Area, bool> belongs, int count = 1)
     {
-        var next = result.Where(belongs).MinBy(a => a.From);
-        if (next == null) return;
+        var visible = result.Where(belongs).OrderBy(a => a.From).Take(count).Select(a => a.Key).ToHashSet();
         for (var i = 0; i < result.Count; ++i)
-            if (belongs(result[i]) && result[i].From > next.From)
+            if (belongs(result[i]) && !visible.Contains(result[i].Key))
                 result[i] = result[i] with { NavigationOnly = true };
     }
 
@@ -180,7 +191,7 @@ internal abstract class PtBossEncounter(int floor, uint bossOid)
     }
 
     protected bool KnockbackImmune(ulong player, DateTime hit)
-        => Status(player, 160, hit) != null || Status(player, 1209, hit) != null;
+        => Status(player, 160, hit) != null || Status(player, 1209, hit) != null || Status(player, 2663, hit) != null;
     protected static string CastKey(ulong source, uint action) => $"cast/{source}/{action}";
     protected static float Rad(float degrees) => degrees * MathF.PI / 180;
     protected static Vector3 Direction(float rotation) => new(MathF.Sin(rotation), 0, MathF.Cos(rotation));

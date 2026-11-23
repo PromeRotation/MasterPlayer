@@ -24,6 +24,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     private Mechanics.MechanicDispatcher? _mechanics;
     private MechanicHost.MechanicHostController? _mechanicHost;
     private Scripting.ScriptManager? _scripts;
+    private Scripting.LegacyMapEffectCapture? legacyMapEffects;
+    private Scripting.NativeActionEffectCapture? nativeActionEffects;
     private Replay.ReplayRecorder? _replayRecorder;
     private Replay.ReplayController? _replayController;
     private Radar.RadarOverlayWindow? _radarOverlay;
@@ -54,6 +56,13 @@ public sealed class MasterPlayerPlugin : IPromePlugin
     internal Replay.ReplayController? Replay => _replayController;
 
     internal Windows.ReplayWindow? ReplayWindow => _replayWindow;
+    internal void SetLegacyMapReplayMode(bool active)
+    {
+        legacyMapEffects?.SetReplayMode(active);
+        nativeActionEffects?.SetReplayMode(active);
+    }
+    internal void DrainNativeActionEffects(DateTime? through = null)
+        => nativeActionEffects?.Drain(_scripts?.ReplayModeActive == true, through);
 
     public Integration.RemoteControlClient? RemoteControl => _remoteControl;
     internal Combat.Sequences.CombatSkillSequence? SkillSequences => _skillSequences;
@@ -85,7 +94,12 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             AoeVisibility = new Radar.AoeVisibilityRegistry(settings.AoeVisibility, () => SafeZone.CurrentTime);
             _safeZone = new(PromeRotation.Plugin.Instance.GreenMoveSystem,
                 () => HostMovement.AutomaticMovementEnabled, () => HostMovement.HasControl);
-            _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ => ClearLiveSafeZone());
+            _safeZoneTerritory = PromeEventBus.OnTerritoryChanged(this, _ =>
+            {
+                legacyMapEffects?.Clear();
+                nativeActionEffects?.Clear();
+                ClearLiveSafeZone();
+            });
             _safeZoneDeath = PromeEventBus.OnPlayerDied(this, () => { if (!PlayerPerspective.IsDutyReplay) ClearLiveSafeZone(); });
             _safeZoneBattleEnd = PromeEventBus.OnBattleEnded(this, () => ClearLiveSafeZone(preserveTerrain: true));
             _safeZoneActivation = new SafeZoneActivation(SafeZone.Setting);
@@ -100,6 +114,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
             _scripts.RefreshCatalog();
             _replayRecorder = new Replay.ReplayRecorder();
             _replayController = new Replay.ReplayController(_scripts, _replayRecorder, _mechanicHost);
+            legacyMapEffects = new Scripting.LegacyMapEffectCapture();
+            nativeActionEffects = new Scripting.NativeActionEffectCapture();
             _replayWindow = new Windows.ReplayWindow();
             _radarOverlay = new Radar.RadarOverlayWindow();
             _follow = new Follow.FollowController();
@@ -219,8 +235,11 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var tDodge = System.Diagnostics.Stopwatch.GetTimestamp();
         _mechanics?.Update();
         var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Scripting.SystemLogParameterEvents.Drain(_scripts?.ReplayModeActive == true);
+        DrainNativeActionEffects();
         _replayRecorder?.Update();
         _replayController?.Update(deltaTime);
+        legacyMapEffects?.Drain(_scripts?.ReplayModeActive == true);
         _skillSequences?.Update();
         var t2 = System.Diagnostics.Stopwatch.GetTimestamp();
         _scripts?.Update(deltaTime);
@@ -313,6 +332,9 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         if (_safeZone != null)
             _safeZone.Setting.MovementAllowed = false;
 
+        SafeDispose(ref _replayRecorder);
+        SafeDispose(ref legacyMapEffects);
+        SafeDispose(ref nativeActionEffects);
         SafeDispose(ref _skillSequences);
         SafeDispose(ref _remoteControl);
         SafeDispose(ref _integration);
@@ -321,7 +343,6 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         SafeDispose(ref _follow);
         SafeDispose(ref _radarOverlay);
         SafeDispose(ref _replayController);
-        SafeDispose(ref _replayRecorder);
         SafeDispose(ref _scripts);
         SafeDispose(ref _mechanicHost);
         SafeDispose(ref _mechanics);

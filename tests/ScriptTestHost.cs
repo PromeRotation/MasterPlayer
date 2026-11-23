@@ -105,8 +105,8 @@ public sealed class ScriptDrawApi
     internal readonly Dictionary<string, MasterPlayer.Radar.AoeLinePreview> Lines = [];
     public void Add(string id, IGeometryShape geometry, DrawStyle? style = null, float durationMs = 0f) { }
     public void AddAoe(string id, IGeometryShape geometry, bool safe = false, float durationMs = 0f) { }
-    internal void AddAoePreview(string id, IGeometryShape geometry, bool safe, bool outlineOnly, float progress)
-        => Previews[id] = new(id, geometry, safe, new(), DateTime.MaxValue, outlineOnly, progress);
+    internal void AddAoePreview(string id, IGeometryShape geometry, bool safe, bool outlineOnly, float progress, bool unclipped = false, System.Numerics.Vector4? color = null)
+        => Previews[id] = new(id, geometry, safe, new(), DateTime.MaxValue, outlineOnly, progress, unclipped, color);
     internal void AddLinePreview(string id, System.Numerics.Vector3 start, System.Numerics.Vector3 end, bool safe) => Lines[id] = new(id, start, end, safe, new());
     public void AddTether(string id, object start, object end, DrawStyle? style = null, float durationMs = 0f) { }
     public bool Remove(string id) => Previews.Remove(id) | Lines.Remove(id);

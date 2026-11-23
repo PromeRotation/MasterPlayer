@@ -6,7 +6,7 @@ namespace MasterPlayer.Replay;
 /// <summary>
 /// 回放事件路由：脚本订阅落在本地注册表，回放时由 ReplayController 按录制时间轴 Raise 合成事件。
 /// 每脚本实例一个；派发语义对齐 LogSystemHub（按类型匹配 + 逐订阅者异常隔离，单脚本异常不影响他人）。
-/// 简单事件（BattleStarted 等）由 LogSystem 记录映射补发；无对应记录的（PlayerDied/SystemLog 等）回放不会触发。
+/// 简单事件由 LogSystem 或 MP 本地录制事件映射补发；没有记录的 PlayerDied 等不合成。
 /// </summary>
 internal sealed class ReplayScriptEventRouter : IScriptEventRouter
 {
@@ -99,9 +99,10 @@ internal sealed class ReplayScriptEventRouter : IScriptEventRouter
 
     // 录制只覆盖 LogSystem 事件流；脚本侧的简单事件订阅由对应 LogSystem 记录映射补发。
     // EventManager/LogMessageManager 独有的简单事件（PlayerDied/PlayerRevived/PlayerMoveStateChanged/
-    // SystemLog/BattleLog/ShowMessage）没有 LogSystem 对应记录，回放中不会触发。
+    // BattleLog/ShowMessage）没有对应记录；SystemLog 使用 MP 本地事件。
     private static readonly Dictionary<Type, Action<ReplayScriptEventRouter, LogSystemEvent>> SimpleEventMappings = new()
     {
+        [typeof(ReplaySystemLogEvent)] = static (r, e) => r.InvokeNamed("SystemLog", ((ReplaySystemLogEvent)e).MessageId),
         [typeof(LogSystemBattleStartedEvent)] = static (r, _) => r.InvokeNamed("BattleStarted"),
         [typeof(LogSystemBattleEndedEvent)] = static (r, _) => r.InvokeNamed("BattleEnded"),
         [typeof(LogSystemCountdownStartedEvent)] = static (r, _) => r.InvokeNamed("CountdownStarted"),

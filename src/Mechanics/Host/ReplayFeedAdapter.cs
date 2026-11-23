@@ -133,7 +133,7 @@ internal sealed class ReplayFeedAdapter
         {
             // ReplayCast.FinishAt already includes the NPC finish delay; BMR adds it
             // in ActorCastInfo.NPCRemainingTime, so feed the original cast duration.
-            var total = Math.Max(0.05f, (float)(c.FinishAt - c.StartedAt).TotalSeconds - 0.3f);
+            var total = Math.Max(0.05f, c.TotalTime ?? (float)(c.FinishAt - c.StartedAt).TotalSeconds - 0.3f);
             cast = new(c.ActionId, true, c.TargetId, c.Rotation ?? actor.Rotation, c.Location, total, c.Interruptible,
                 Math.Clamp((float)(now - c.StartedAt).TotalSeconds, 0, total));
         }
@@ -150,7 +150,7 @@ internal sealed class ReplayFeedAdapter
             actor.ClassJob, actor.Level, actor.Position, actor.Rotation, actor.HitboxRadius,
             actor.Hp, actor.MaxHp, actor.Shield, actor.Mp, actor.MaxMp,
             actor.Targetable, isAlly, actor.Dead, actor.InCombat,
-            actor.OwnerId, actor.TargetId, 0, 0, actor.EventState,
+            actor.OwnerId, actor.TargetId, 0, actor.RenderFlags ?? 0, actor.EventState,
             actor.ModelState, actor.AnimationState1, actor.AnimationState2,
             tether?.Id ?? 0, tether?.TargetId ?? 0, cast, statuses);
     }

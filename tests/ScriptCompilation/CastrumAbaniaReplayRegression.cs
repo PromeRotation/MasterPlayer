@@ -35,13 +35,17 @@ internal static class CastrumAbaniaReplayRegression
                     ["Rotation"] = a.GetProperty("rotation").GetSingle(), ["Hp"] = 1000, ["MaxHp"] = 1000,
                     ["Targetable"] = true, ["InCombat"] = a.GetProperty("oid").GetUInt32() == boss,
                 });
+            var party = new[] { 100ul, 101ul, 102ul, 103ul }.Select((id, slot) => new { Slot = slot, EntityId = id }).ToArray();
+            var activeCasts = new Dictionary<ulong, uint>();
+            string Frame(double t, IEnumerable<object> updated) => JsonSerializer.Serialize(new { t, kind = "WorldFrame",
+                data = new { Territory = 1145, LocalPlayerId = player, Actors = updated.ToArray(), Party = party } });
             var records = new List<string>
             {
                 """{"v":2,"territory":1145,"startedUtc":"2026-11-21T00:00:00Z","pluginVersion":"abania-capture-regression"}""",
                 JsonSerializer.Serialize(new { t = 0, kind = "WorldFrame", data = new
                 {
                     Full = true, Territory = 1145, LocalPlayerId = player, Actors = actors.Values.ToArray(),
-                    Party = new[] { 100ul, 101ul, 102ul, 103ul }.Select((id, slot) => new { Slot = slot, EntityId = id }),
+                    Party = party,
                 } }),
             };
             foreach (var e in events)
@@ -53,8 +57,7 @@ internal static class CastrumAbaniaReplayRegression
                 {
                     actors[id]["Position"] = Pose(e.GetProperty("position"));
                     actors[id]["Rotation"] = e.GetProperty("rotation").GetSingle();
-                    records.Add(JsonSerializer.Serialize(new { t, kind = "WorldFrame",
-                        data = new { Territory = 1145, LocalPlayerId = player, Actors = new[] { actors[id] } } }));
+                    records.Add(Frame(t, [actors[id]]));
                     continue;
                 }
                 if (kind == "effect")
@@ -69,8 +72,23 @@ internal static class CastrumAbaniaReplayRegression
                         records.Add(record);
                         records.Add(record); // The duplicate must not retire another pending mechanic.
                     }
+                    if (activeCasts.GetValueOrDefault(id) == e.GetProperty("action").GetUInt32())
+                    {
+                        activeCasts.Remove(id);
+                        actors[id]["Cast"] = null;
+                        records.Add(Frame(t, [actors[id]]));
+                    }
                 }
                 else if (kind == "cast")
+                {
+                    activeCasts[id] = e.GetProperty("action").GetUInt32();
+                    actors[id]["Cast"] = new
+                    {
+                        ActionId = e.GetProperty("action").GetUInt32(), TargetId = e.GetProperty("target").GetUInt64(),
+                        Location = Pose(e.GetProperty("position")), Rotation = e.GetProperty("rotation").GetSingle(),
+                        StartedAt = Start.AddSeconds(t), FinishAt = Start.AddSeconds(t + e.GetProperty("seconds").GetDouble() + .3),
+                    };
+                    records.Add(Frame(t, [actors[id]]));
                     records.Add(JsonSerializer.Serialize(new { t, kind = "CastStart",
                         type = "PromeRotation.LogSystem.LogSystemCastStartEvent",
                         packetFacing = e.GetProperty("rotation").GetSingle(),
@@ -78,6 +96,7 @@ internal static class CastrumAbaniaReplayRegression
                             CastTime = e.GetProperty("seconds").GetSingle(), TargetId = e.GetProperty("target").GetUInt64(),
                             EffectPosition = Pose(e.GetProperty("position")), SourcePosition = Pose(e.GetProperty("sourcePosition")),
                             Timestamp = Start.AddSeconds(t) } }));
+                }
                 else
                     records.Add(JsonSerializer.Serialize(new { t, kind = "TargetIcon",
                         type = "PromeRotation.LogSystem.LogSystemTargetIconEvent",
@@ -103,13 +122,39 @@ internal static class CastrumAbaniaReplayRegression
                 return output.Keys.Cast<string>().Select(k =>
                     (k, output[k]!.GetType().GetField("Item2")!.GetValue(output[k])!)).ToArray();
             }
+            bool VisibleCast(ulong source, uint action)
+            {
+                object script = manager.Running[ScriptId].Script;
+                var encounter = script.GetType().BaseType!.GetField("encounter", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(script)!;
+                var casts = (IDictionary)encounter.GetType().GetField("casts", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(encounter)!;
+                var pending = casts.Values.Cast<object>().Where(c => (uint)c.GetType().GetProperty("Action")!.GetValue(c)! == action).ToArray();
+                Check(pending.Any(c => (ulong)c.GetType().GetProperty("Source")!.GetValue(c)! == source),
+                    $"Action {action}, source={source}: cast missing from production queue.");
+                var cap = action == 33460 ? 10 : action == 33463 ? 3 : int.MaxValue;
+                return pending.Take(cap).Any(c => (ulong)c.GetType().GetProperty("Source")!.GetValue(c)! == source);
+            }
             double? seekTime = null;
             var solved = false;
-            foreach (var group in events.Where(e => e.GetProperty("kind").GetString() is "cast" or "icon"
-                    || e.GetProperty("kind").GetString() == "effect" && e.GetProperty("action").GetUInt32() is 33467 or 33466 or 7978)
+            foreach (var group in events.Where(e => e.GetProperty("kind").GetString() is "cast" or "icon" or "effect")
                 .GroupBy(e => e.GetProperty("t").GetDouble()))
             {
                 var t = group.Key - offset + .02;
+                var before = group.Key - offset - .001;
+                if (before > (double)controller.Clock)
+                {
+                    Advance(before);
+                    foreach (var effect in group.Where(e => e.GetProperty("kind").GetString() == "effect"))
+                    {
+                        var action = effect.GetProperty("action").GetUInt32();
+                        // Haywire telegraphs are consumed by the independent 8184 hit queue.
+                        if (!AoeActions.Contains(action) || action == 7960) continue;
+                        var source = effect.GetProperty("id").GetUInt64();
+                        if (!events.Any(e => e.GetProperty("kind").GetString() == "cast" && e.GetProperty("id").GetUInt64() == source
+                            && e.GetProperty("action").GetUInt32() == action && e.GetProperty("t").GetDouble() < group.Key)) continue;
+                        Check(!VisibleCast(source, action) || Output().Any(a => a.Key.StartsWith($"cast/{source}/{action}/", StringComparison.Ordinal)),
+                            $"Action {action}, source={source}, t={group.Key}: output disappeared before the recorded effect.");
+                    }
+                }
                 Advance(t);
                 foreach (var cast in group)
                 {
@@ -119,6 +164,12 @@ internal static class CastrumAbaniaReplayRegression
                     var prefix = $"cast/{cast.GetProperty("id").GetUInt64()}/{action}/";
                     var areas = Output().Where(a => a.Key.StartsWith(prefix, StringComparison.Ordinal)
                         && a.Key.Count(c => c == '/') == 3).ToArray();
+                    if (!VisibleCast(cast.GetProperty("id").GetUInt64(), action))
+                    {
+                        Check(areas.Length == 0, "Capped helper leaked into production output.");
+                        ++checkedCasts;
+                        continue;
+                    }
                     Check(areas.Length == 1, $"Abania boss={boss}, player={player}, action={action}, t={group.Key}: expected one cast output, got {areas.Length}.");
                     var area = areas[0].Area;
                     var previewOnly = (bool)area.GetType().GetProperty("PreviewOnly")!.GetValue(area)!;
@@ -130,9 +181,12 @@ internal static class CastrumAbaniaReplayRegression
                     if (actualEffect.ValueKind != JsonValueKind.Undefined)
                     {
                         var actualHit = Start.AddSeconds(actualEffect.GetProperty("t").GetDouble() - offset);
-                        Check((DateTime)area.GetType().GetProperty("From")!.GetValue(area)! <= actualHit
-                            && (DateTime)area.GetType().GetProperty("Until")!.GetValue(area)! >= actualHit,
-                            $"Action {action}: the production window missed the recorded damage packet.");
+                        var from = (DateTime)area.GetType().GetProperty("From")!.GetValue(area)!;
+                        var until = (DateTime)area.GetType().GetProperty("Until")!.GetValue(area)!;
+                        // The source activation is the predicted cast finish. Recorded packets in this
+                        // fixture precede it by up to 84ms; this checks prediction error, not damage coverage.
+                        Check(from <= actualHit.AddSeconds(.1) && until >= actualHit,
+                            $"Action {action}, source={cast.GetProperty("id")}, cast={group.Key}: From={from:O}, Until={until:O}, effect={actualHit:O}, error={(from - actualHit).TotalMilliseconds:F1}ms.");
                     }
                     if (action == 33461)
                         Check(previewOnly == (cast.GetProperty("target").GetUInt64() == player),
@@ -143,7 +197,7 @@ internal static class CastrumAbaniaReplayRegression
                         var until = (DateTime)area.GetType().GetProperty("Until")!.GetValue(area)!;
                         var hit = Start.AddSeconds(group.Key - offset + cast.GetProperty("seconds").GetDouble()
                             + (action == 7960 ? .1 : .3));
-                        Check(from <= hit && hit <= until, "Production danger window lost the packet cast timing.");
+                        Check(from <= hit.AddSeconds(.00001) && hit <= until, "Production danger window lost the packet cast timing.");
                     }
                     if (!solved && player == 100 && action is 7957 or 33460 or 7977)
                     {

@@ -42,6 +42,8 @@
     <Compile Include="../../src/Spatial/SafeZoneReborn/*.cs" Link="Movement/%(Filename)%(Extension)" />
     <Compile Include="../../src/Spatial/DirectTraversal*.cs" Link="Movement/%(Filename)%(Extension)" />
     <Compile Include="../../src/Replay/ReplayWorldState.cs" Link="ReplayWorldState.cs" />
+    <Compile Include="../../src/Replay/ReplayDeepDungeonState.cs" Link="ReplayDeepDungeonState.cs" />
+    <Compile Include="../../src/Replay/ReplayDeepDungeonItem.cs" Link="ReplayDeepDungeonItem.cs" />
     <Compile Include="../../src/Movement/Follow/DangerAwareFollowGoalTemplate.cs" Link="DangerAwareFollowGoalTemplate.cs" />
     <Compile Include="../../src/Movement/Follow/OptionalGoalSafety.cs" Link="OptionalGoalSafety.cs" />
     <Compile Include="../../Presets/Crucible/Core/CrucibleCoreGeometry.cs" Link="CrucibleCoreGeometry.cs" />

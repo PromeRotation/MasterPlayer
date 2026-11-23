@@ -23,7 +23,25 @@ if (args.Length >= 2 && args[0] == "--pt30-recording")
 var passed = 0;
 var shardCounter = 0;
 var failures = new List<string>();
+if (args.Contains("--bmr-navigation"))
+{
+    MechanicNavigationHostRegression.Run(Run);
+    Console.WriteLine($"BMR navigation: {passed} passed; {failures.Count} failed");
+    if (failures.Count != 0) Environment.ExitCode = 1;
+    return;
+}
 PlayerPerspectiveRegression.Run(Run);
+SimpleHuntRegression.Run(Run);
+SimpleHuntControlsRegression.Run(Run);
+SimpleHuntSequenceRegression.Run(Run);
+SimpleHuntComboRegression.Run(Run);
+SimpleHuntStoredRegression.Run(Run);
+SimpleHuntTargetRegression.Run(Run);
+SimpleHuntPullRegression.Run(Run);
+SimpleHuntAegeirosRegression.Run(Run);
+SimpleHuntStackRegression.Run(Run);
+SimpleHuntMarchRegression.Run(Run);
+SimpleHuntExecutionRegression.Run(Run);
 FsdMovementHandoffRegression.Run(Run);
 Pt87ClawTailRegression.Run(Run);
 if (args.Contains("--radar-performance"))
@@ -61,6 +79,12 @@ if (args.Contains("--boss-opening"))
 }
 ArenaReentryRegression.Run(Run);
 PilgrimsBossRegression.Run(Run);
+PilgrimsNativeParityRegression.Run(Run);
+EarlyArrNativeParityRegression.Run(Run);
+HeavenswardIntroRegression.Run(Run);
+PalaceNativeParityRegression.Run(Run);
+PalaceFloorNativeRegression.Run(Run);
+NativeEnemyDirectiveRegression.Run(Run);
 CastrumAbaniaRegression.Run(Run);
 Pt20BurstRegression.Run(Run);
 Pt50ChaseRegression.Run(Run);
@@ -410,6 +434,85 @@ Run("AOE preview replacement and script cleanup preserve other owners", () =>
 CrucibleMechanicRegression.Run(Run);
 SkillSequenceRegression.Run(Run);
 ArrDungeonRegression.Run(Run);
+QitanaRegression.Run(Run);
+MalikahRegression.Run(Run);
+MtGulgRegression.Run(Run);
+AmaurotRegression.Run(Run);
+TwinningRegression.Run(Run);
+AnyderRegression.Run(Run);
+CosmosRegression.Run(Run);
+AnamnesisRegression.Run(Run);
+HeroesRegression.Run(Run);
+MatoyaRegression.Run(Run);
+PaglthanRegression.Run(Run);
+ZotRegression.Run(Run);
+BabilRegression.Run(Run);
+VanaspatiRegression.Run(Run);
+KtisisRegression.Run(Run);
+AitiascopeRegression.Run(Run);
+DeadEndsRegression.Run(Run);
+SmiletonRegression.Run(Run);
+StigmaRegression.Run(Run);
+AlzadaalRegression.Run(Run);
+TroiaRegression.Run(Run);
+LapisRegression.Run(Run);
+AetherfontRegression.Run(Run);
+LunarRegression.Run(Run);
+IhuykatumuRegression.Run(Run);
+WorqorRegression.Run(Run);
+SkydeepRegression.Run(Run);
+VanguardRegression.Run(Run);
+OrigenicsRegression.Run(Run);
+AlexandriaRegression.Run(Run);
+TenderValleyRegression.Run(Run);
+StrayboroughRegression.Run(Run);
+YuweyawataRegression.Run(Run);
+UnderkeepRegression.Run(Run);
+MesoRegression.Run(Run);
+MistwakeRegression.Run(Run);
+ClyteumRegression.Run(Run);
+MalboroRegression.Run(Run);
+ArrTrialRegression.Run(Run);
+PortaRegression.Run(Run);
+HardTrialRegression.Run(Run);
+LateArrTrialRegression.Run(Run);
+SusanoRegression.Run(Run);
+LakshmiRegression.Run(Run);
+ShinryuRegression.Run(Run);
+TsukuyomiRegression.Run(Run);
+YojimboRegression.Run(Run);
+FourLordsRegression.Run(Run);
+SeiryuRegression.Run(Run);
+TitaniaRegression.Run(Run);
+InnocenceRegression.Run(Run);
+HadesRegression.Run(Run);
+WarriorOfLightRegression.Run(Run);
+HydaelynRegression.Run(Run);
+AsuraRegression.Run(Run);
+ZeleniaRegression.Run(Run);
+ValigarmandaRegression.Run(Run);
+FollowRegression.RunValigarmandaControls(Run);
+ArkveldRegression.Run(Run);
+EnuoRegression.Run(Run);
+NecronRegression.Run(Run);
+QueenEternalRegression.Run(Run);
+ZoraalJaRegression.Run(Run);
+DoomtrainRegression.Run(Run);
+CoilNodesRegression.Run(Run);
+CaduceusRegression.Run(Run);
+TwintaniaRegression.Run(Run);
+LabyrinthRegression.Run(Run);
+SyrcusRegression.Run(Run);
+DarknessRegression.Run(Run);
+ArrQuestRegression.Run(Run);
+UltimaExtremeRegression.Run(Run);
+GarudaExtremeRegression.Run(Run);
+TitanExtremeRegression.Run(Run);
+IfritExtremeRegression.Run(Run);
+CoilGauntletRegression.Run(Run);
+FollowRegression.RunQueenEternalControls(Run);
+FollowRegression.RunWarriorOfLightControls(Run);
+FollowRegression.RunClyteumControls(Run);
 BlundervilleRegression.Run(Run);
 BlundervillePresetRegression.Run(Run);
 BlundervilleGraphRegression.Run(Run);
@@ -474,6 +577,7 @@ High2FeedbackRegression.Run(Run);
 RecordedLaudaRegression.Run(Run);
 CastRotationRegression.Run(Run);
 RadarClipRegression.Run(Run);
+GubalRadarRegression.Run(Run);
 SafeZoneTemporalRegression.RunPrecision(Run);
 SafeZoneTemporalRegression.Run(Run);
 LocalSafeZoneRegression.Run(Run);
@@ -502,7 +606,11 @@ if (failures.Count > 0)
 
 void Run(string name, Action test)
 {
-    if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter && !name.Contains(filter[9..], StringComparison.OrdinalIgnoreCase)) return;
+    if (args.FirstOrDefault(a => a.StartsWith("--filter=")) is { } filter)
+    {
+        var filters = filter[9..].Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (filters.Length > 0 && !filters.Any(value => name.Contains(value, StringComparison.OrdinalIgnoreCase))) return;
+    }
     // --shard=i/n runs every n-th matching scenario, so n processes cover the suite in parallel.
     if (args.FirstOrDefault(a => a.StartsWith("--shard=")) is { } shard && shard[8..].Split('/') is [var index, var count]
         && shardCounter++ % int.Parse(count) != int.Parse(index)) return;

@@ -22,6 +22,10 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     private DateTime blazeRefugeFrom;
     private DateTime blazeRefugeUntil;
     private GeometryTemplate? blazeRefuge;
+    private GeometryTemplate? blazePreview;
+    private int currentBlazeLines;
+    private bool blazePreviewCancelled;
+    private DateTime blazeWaveUntil;
     private float blazeRefugeMargin;
     public override bool Preparing => !Active && Boss is { Dead: false } && actors.Values.Any(a => a.Oid == 0x48EB && !a.Dead);
     private Vector3 blazeDirection = Vector3.UnitX;
@@ -29,8 +33,10 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     private ulong spinelashTarget;
     private DateTime spinelashHit;
     private DateTime chainAt;
+    private ulong chainSource;
     private readonly HashSet<ulong> chainsReleased = [];
     private DateTime fireBaitUntil;
+    private ulong fireBaitSource;
     private static readonly Vector3[] PillarPositions =
     [
         new(-600, 0, -306.99991f), new(-596.50012f, 0, -306.06201f), new(-593.93793f, 0, -303.49991f),
@@ -46,6 +52,7 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
         switch (cast.Action)
         {
             case 44064 or 44070:
+                chainSource = cast.Source;
                 chainAt = cast.Hit.AddSeconds(.1);
                 chainsReleased.Clear();
                 break;
@@ -69,7 +76,10 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                 drains.Add(cast);
                 drains.Sort((a, b) => a.Hit.CompareTo(b.Hit));
                 break;
-            case 44068 or 44061: fireBaitUntil = cast.Hit.AddSeconds(.1); break;
+            case 44068 or 44061:
+                fireBaitSource = cast.Source;
+                fireBaitUntil = cast.Hit.AddSeconds(.1);
+                break;
             case 44079:
                 if (!StartBlaze(cast)) pendingBlazes.Add(cast);
                 break;
@@ -78,8 +88,21 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
 
     protected override void SynchronizeActors(DateTime now)
     {
-        foreach (var crystal in actors.Values.Where(a => a.Oid == 0x1EBE70 && !a.Dead && seenCrystals.Add(a.Id)))
+        lines.RemoveAll(line => line.Hit.AddSeconds((line.Remaining - 1) * BLAZE_INTERVAL_SECONDS + .15) < now);
+        var arriving = actors.Values.Where(a => a.Oid == 0x1EBE70 && !a.Dead && seenCrystals.Add(a.Id)).ToArray();
+        if (arriving.Length > 0 && (crystals.Count == 0 || blazeWaveUntil != default && now > blazeWaveUntil))
+        {
+            crystals.Clear();
+            blazePreview = null;
+            blazePreviewCancelled = false;
+            blazeWaveUntil = default;
+        }
+        foreach (var crystal in arriving)
             crystals[crystal.Id] = (crystal.Position, blazeDirection);
+        if (crystals.Count == 8 && blazePreview == null && !blazePreviewCancelled)
+            blazePreview = new PtShapeTemplate(new PtCompositeGeometry(
+                [new RectangleGeometry(Center, 0, 40, 30)], crystals.Values.Select(c => (IGeometryShape)new RectangleGeometry(
+                    c.Position, MathF.Atan2(c.Direction.X, c.Direction.Z), 10, 80)).ToArray()));
         foreach (var cast in pendingBlazes.ToArray())
             if (StartBlaze(cast) || now > cast.Hit) pendingBlazes.Remove(cast);
     }
@@ -91,6 +114,8 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
         if (candidate.Key == 0 || Vector3.DistanceSquared(candidate.Value.Position, cast.Position) > 1) return false;
         if (!IsBlazeActive(cast.Start))
         {
+            lines.RemoveAll(line => line.Hit.AddSeconds((line.Remaining - 1) * BLAZE_INTERVAL_SECONDS + .15) < cast.Start);
+            currentBlazeLines = 0;
             ClearBlazeRefuge();
             blazeRefugeFrom = cast.Start;
         }
@@ -103,10 +128,15 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
                     if (blazeFootprint.Add(crystal.Position + step * (4 * i))) blazeRefuge = null;
                 var until = cast.Hit.AddSeconds((count - 1) * BLAZE_INTERVAL_SECONDS + .15);
                 if (until > blazeRefugeUntil) blazeRefugeUntil = until;
+                if (until > blazeWaveUntil) blazeWaveUntil = until;
             }
         var (position, direction) = candidate.Value;
         foreach (var (step, count) in BlazeBranches(position, direction))
+        {
             lines.Add(new(lineIndex++, cast.Source, position, step * 4, cast.Hit, count));
+            currentBlazeLines++;
+        }
+        if (currentBlazeLines >= 16) blazePreview = null;
         crystals.Remove(candidate.Key);
         return true;
     }
@@ -207,7 +237,7 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
         => Status(player, 4562, now) != null || chainAt != default && now >= chainAt.AddSeconds(-.1)
             && now <= chainAt.AddSeconds(2) && !chainsReleased.Contains(player);
 
-    public ReplayActorState? SelectTarget(DateTime now, ulong player, ulong currentTarget)
+    public override ReplayActorState? SelectTarget(DateTime now, ulong player, ulong currentTarget)
     {
         if (!Active || !actors.TryGetValue(player, out var pc) || pc.Dead || !Boundary.Contains(pc.Position)) return null;
         var candidates = actors.Values.Where(a => !a.Dead && a.Targetable && a.Hp > 1);
@@ -252,6 +282,9 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
 
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
     {
+        if (blazePreview != null)
+            result.Add(new("blaze-outline", "地火传播安全轮廓", blazePreview, Center, 0, now, DateTime.MaxValue,
+                Safe: true, PreviewOnly: true, OutlineOnly: true));
         foreach (var index in pillars)
             result.Add(new($"pillar/{index}", "场内石柱", new PtShapeTemplate(pillarShapes[index]), Center, 0, now, DateTime.MaxValue, Obstacle: true));
         for (var color = 0; color < 2; ++color)
@@ -285,9 +318,17 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
             var strips = new PtCompositeGeometry([new RectangleGeometry(new(-593, 0, -300), 0, 2, 32), new RectangleGeometry(new(-607, 0, -300), 0, 2, 32)]);
             result.Add(new("spinelash/bait", "Spinelash 避免破窗", new PtShapeTemplate(strips), Center, 0, now, spinelashHit, Safe: true, Priority: 15));
         }
+        if (spinelashTarget != 0 && now <= spinelashHit.AddSeconds(1)
+            && actors.GetValueOrDefault(spinelashTarget) is { Dead: false } target && Boss is { } source)
+        {
+            result.Add(new("spinelash/preview", "Spinelash 点名诱导", RayRectangleTemplate.Symmetric(4, 60),
+                source.Position, Rad(-.003f), now, spinelashHit.AddSeconds(1),
+                PreviewOnly: true, OutlineOnly: spinelashTarget == player));
+        }
         if (now <= fireBaitUntil)
             foreach (var actor in actors.Values.Where(a => a.Kind == 1 && !a.Dead))
-                result.Add(new($"fire/bait/{actor.Id}", "Ball of Fire 诱导", new CircleTemplate(6), actor.Position, 0, now, fireBaitUntil, PreviewOnly: true));
+                result.Add(new($"fire/bait/{actor.Id}", "Ball of Fire 诱导", new CircleTemplate(6), actor.Position, 0, now, fireBaitUntil,
+                    PreviewOnly: true, OutlineOnly: actor.Id == player));
         foreach (var line in lines)
             for (var i = 0; i < line.Remaining; ++i)
             {
@@ -318,9 +359,27 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     public override void Cancel(ulong source)
     {
         base.Cancel(source);
+        if (fireBaitSource == source)
+        {
+            fireBaitUntil = default;
+            fireBaitSource = 0;
+        }
+        if (chainSource == source)
+        {
+            chainAt = default;
+            chainSource = 0;
+            chainsReleased.Clear();
+        }
         drains.RemoveAll(c => c.Source == source);
-        pendingBlazes.RemoveAll(c => c.Source == source);
-        lines.RemoveAll(l => l.Owner == source);
+        var cancelledBlaze = pendingBlazes.RemoveAll(c => c.Source == source) > 0;
+        var removedLines = lines.RemoveAll(l => l.Owner == source);
+        cancelledBlaze |= removedLines > 0;
+        currentBlazeLines = Math.Max(0, currentBlazeLines - removedLines);
+        if (cancelledBlaze)
+        {
+            blazePreview = null;
+            blazePreviewCancelled = true;
+        }
         if (!lines.Any(l => l.Hit >= blazeRefugeFrom) && !pendingBlazes.Any(c => c.Start >= blazeRefugeFrom))
             ClearBlazeRefuge();
     }
@@ -328,7 +387,11 @@ internal sealed class Pt99Encounter() : PtBossEncounter(99, 0x48EA)
     {
         pillars.Clear(); crystals.Clear(); seenCrystals.Clear(); lines.Clear(); pendingBlazes.Clear(); drains.Clear(); chainsReleased.Clear();
         ClearBlazeRefuge();
-        lineIndex = 0; spinelashTarget = 0; spinelashHit = chainAt = fireBaitUntil = default; blazeDirection = Vector3.UnitX;
+        blazePreview = null;
+        currentBlazeLines = 0;
+        blazePreviewCancelled = false;
+        blazeWaveUntil = default;
+        lineIndex = 0; spinelashTarget = chainSource = fireBaitSource = 0; spinelashHit = chainAt = fireBaitUntil = default; blazeDirection = Vector3.UnitX;
     }
     private sealed class BlazeLine(int id, ulong owner, Vector3 next, Vector3 step, DateTime hit, int remaining)
     {

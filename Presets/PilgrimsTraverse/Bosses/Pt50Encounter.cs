@@ -66,6 +66,17 @@ internal sealed class Pt50Encounter() : PtBossEncounter(50, 0x4872)
         }
         if (effect.ActionId == 43538) wind = null;
     }
+    protected override void SynchronizeActors(DateTime now)
+    {
+        if (chaseRemaining is > 0 and < 4 && (!actors.TryGetValue(chaseTarget, out var target) || target.Dead))
+            ClearChase();
+    }
+    public override IEnumerable<(string Key, Vector3 Start, Vector3 End)> DrawingLines(DateTime now)
+    {
+        if (chaseRemaining > 0 && now <= chaseHit.AddSeconds(.15)
+            && actors.TryGetValue(chaseTarget, out var target) && !target.Dead)
+            yield return ("pit/line", chaseOrigin, target.Position);
+    }
     protected override void AddPersonalAreas(List<Area> result, DateTime now, ulong player)
     {
         if (arenaStage == 2)
@@ -80,10 +91,13 @@ internal sealed class Pt50Encounter() : PtBossEncounter(50, 0x4872)
             }
             if (Status(player, 567, now) is { } sinking)
                 result.Add(new("sand/leave", "流沙沉没期限", sand, Center, 0, sinking.ExpiresAt.AddSeconds(-1), DateTime.MaxValue, NavigationOnly: true));
-            foreach (var (island, i) in PtArenaData.SandIslands.Select((s, i) => (s, i)))
-                result.Add(new($"sand/island/{i}", "流沙陆地", new PtShapeTemplate(island), Center, 0, now, DateTime.MaxValue, Safe: true, PreviewOnly: true));
+            if (windSoon)
+                result.Add(new("sand/shelter", "进入流沙防击退", sand, Center, 0, now, wind!.Hit.AddSeconds(.15), Safe: true, PreviewOnly: true));
+            else
+                foreach (var (island, i) in PtArenaData.SandIslands.Select((s, i) => (s, i)))
+                    result.Add(new($"sand/island/{i}", "流沙陆地", new PtShapeTemplate(island), Center, 0, now, DateTime.MaxValue, Safe: true, PreviewOnly: true));
         }
-        if (wind is { } cast && now <= cast.Hit.AddSeconds(.2) && !windSoon && !quicksand && !WindImmune(player, cast.Hit))
+        if (wind is { } cast && now <= cast.Hit.AddSeconds(.2) && !quicksand && !WindImmune(player, cast.Hit))
             result.Add(new("wind/landing", "Biting Wind 击退落点", new PtKnockbackTemplate(Boundary, cast.Position, 20), Center, 0,
                 cast.Hit.AddSeconds(-.2), cast.Hit.AddSeconds(.15), NavigationOnly: true));
         if (chaseRemaining > 0 && now <= chaseHit.AddSeconds(.15))
@@ -106,6 +120,11 @@ internal sealed class Pt50Encounter() : PtBossEncounter(50, 0x4872)
     }
     public override IEnumerable<string> Hints(DateTime now, ulong player)
         => wind is { } cast && now <= cast.Hit && now >= cast.Hit.AddSeconds(-4) ? ["风击退前进入流沙，判定后立即返回陆地"] : [];
+    public override IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player)
+    {
+        if (wind is { } cast && now <= cast.Hit.AddSeconds(.2) && !WindImmune(player, cast.Hit))
+            yield return new(Boundary, cast.Position, 20);
+    }
     private bool WindImmune(ulong player, DateTime hit) => KnockbackImmune(player, hit) || Status(player, 4625, hit) != null;
     public override void Cancel(ulong source)
     {

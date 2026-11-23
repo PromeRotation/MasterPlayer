@@ -124,7 +124,8 @@ internal static class Program
         e.StartCast(Cast(7156));
         var area = e.Collect(Epoch, 101).Single(a => a.Action == 7156);
         Check(area.Shape is RayRectangleTemplate { Length: 10 } r && r.MaxLocalX - r.MinLocalX == 6, "Charge width/length");
-        Check(!e.Collect(Epoch, 100).Any(a => a.Action == 7156 && !a.NavigationOnly), "Own charge damage rectangle");
+        Check(e.Collect(Epoch, 100).Any(a => a.Action == 7156 && a.PreviewOnly && a.OutlineOnly), "Own charge outline");
+        Check(!e.Collect(Epoch, 100).Any(a => a.Action == 7156 && !a.NavigationOnly && !a.PreviewOnly), "Own charge damage rectangle");
         Check(e.Collect(Epoch, 100).Any(a => a.Key == "landing/10"), "Missing landing constraint");
         e.Synchronize([Actor(10, 0x181D, Center, 100), Player(100, Center + new Vector3(10, 0, 0)), Player(101, Center)], Epoch.AddSeconds(1));
         Check(MathF.Abs(e.Collect(Epoch.AddSeconds(1), 101).Single(a => a.Action == 7156).Rotation - MathF.PI / 2) < .001f, "Charge did not track target");
@@ -171,7 +172,8 @@ internal static class Program
         var actors = new[] { Actor(10, 0x181E, Center, 100), Player(100, Center + new Vector3(0, 0, -15)), Player(101, Center), Actor(20, 0x1E9998, Center) };
         e.Synchronize(actors, Epoch);
         var goal = e.Collect(Epoch, 100).Single(a => a.Key == "pull/170");
-        Check(goal.Safe && Vector3.Distance(goal.Position, Center) > 22.5f && PalaceArena.Boundary.Contains(goal.Position), "Pull goal");
+        Check(goal.Safe && goal.NavigationOnly && !goal.Geometry.Contains(Center)
+            && goal.Geometry.Contains(Center + new Vector3(0, 0, 24)), "Pull goal region");
         Check(!e.Collect(Epoch, 101).Any(a => a.Key == "pull/170"), "Non-tank pull");
         e.Synchronize(actors.Select(a => a.Id == 20 ? a with { EventState = 7 } : a), Epoch.AddSeconds(1));
         Check(!e.Collect(Epoch.AddSeconds(1), 100).Any(a => a.Key == "pull/170"), "State7 pull retained");
@@ -224,7 +226,7 @@ internal static class Program
         e.Synchronize(actors, Epoch.AddSeconds(5));
         Check(e.Collect(Epoch.AddSeconds(5), 100).Single(a => a.Owner == 20).From == bomb.From, "Timer reset");
         e.Apply(Effect(7172, source: 20), Epoch.AddSeconds(10));
-        Check(!e.Collect(Epoch.AddSeconds(10), 100).Any(a => a.Owner == 20) && e.Collect(Epoch.AddSeconds(10), 100).Any(a => a.Owner == 21), "Source cleanup");
+        Check(!e.Collect(Epoch.AddSeconds(10), 100).Any(a => a.Owner is 20 or 21), "Source small-bomb wave cleanup");
         Check(e.ForbiddenTargets(Epoch).Contains(22ul) && !e.ForbiddenTargets(Epoch).Contains(23ul), "Gray distance");
         e.StartCast(Cast(7170, source: 22));
         Check(e.Collect(Epoch, 100).Single(a => a.Action == 7170).Shape is CircleTemplate { Radius: 7.2f }, "Flashthoom");
@@ -307,18 +309,18 @@ internal static class Program
             var e = new PalaceEncounter();
             var mob = Actor(10, 0x1842, Center, 100) with { Statuses = [new(sid, 0, 10, Epoch.AddSeconds(60))] };
             e.Synchronize([mob], Epoch);
-            Check(e.ForbiddenTargets(Epoch.AddSeconds(9.9)).Contains(10ul) && e.PreferredTarget(100, Epoch) == 0, "Spikes absent");
+            Check(e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(9.9)).Contains(10ul) && !e.ForbiddenTargets(Epoch).Contains(10ul) && e.PreferredTarget(100, Epoch) == 10, "Spikes absent");
             foreach (var seconds in new[] { 10.1, 10.2, 20.3, 30.4 })
             {
                 var now = Epoch.AddSeconds(seconds);
                 e.Synchronize([mob], now);
-                Check(!e.ForbiddenTargets(now).Contains(10ul), "Snapshot rearmed spikes");
+                Check(!e.ForbiddenAutoAttackTargets(now).Contains(10ul), "Snapshot rearmed spikes");
             }
             Check(e.PreferredTarget(100, Epoch.AddSeconds(31)) == 10 && e.PreferredTarget(101, Epoch.AddSeconds(31)) == 0, "Priority perspective");
             e.Apply(new LogSystemStatusAddEvent { TargetId = 10, StatusId = sid }, Epoch.AddSeconds(31));
-            Check(e.ForbiddenTargets(Epoch.AddSeconds(31.1)).Contains(10ul), "Refresh ignored");
+            Check(e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(31.1)).Contains(10ul), "Refresh ignored");
             e.Apply(new LogSystemStatusRemoveEvent { TargetId = 10, StatusId = sid }, Epoch.AddSeconds(32));
-            Check(!e.ForbiddenTargets(Epoch.AddSeconds(32)).Contains(10ul), "Removal ignored");
+            Check(!e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(32)).Contains(10ul), "Removal ignored");
         }
     }
 

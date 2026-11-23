@@ -46,36 +46,42 @@ public sealed class MechanicNavigationHost : IDisposable
 
     public void Update()
     {
+        try
+        {
+            UpdateCore();
+            LastError = null;
+        }
+        catch (Exception ex)
+        {
+            Sleep();
+            if (LastError != ex.Message)
+                Svc.Log.Warning($"[MasterPlayer] 机制模块导航失败：{ex.Message}");
+            LastError = ex.Message;
+        }
+    }
+
+    private void UpdateCore()
+    {
         var module = _session.BossModules.ActiveModule;
+        if (module?.StateMachine.ActivePhase == null)
+            module = null;
+        var zone = _session.ZoneModules.ActiveModule;
         var slot = MasterPlayerPlugin.Instance?.Scripts?.ReplayModeActive == true ? 0
             : _session.World.Party.FindSlot(PlayerPerspective.GetId());
-        ModuleActive = module?.StateMachine.ActivePhase != null;
-        if (module == null || !ModuleActive || slot < 0 || _session.World.Party[slot] == null)
+        ModuleActive = false;
+        if ((module == null && zone == null) || slot < 0 || _session.World.Party[slot] == null)
         {
             Sleep();
             return;
         }
 
-        try
+        var id = _session.World.Party[slot]!.InstanceID;
+        if (_perspectiveId != id)
         {
-            var id = _session.World.Party[slot]!.InstanceID;
-            if (_perspectiveId != id)
-            {
-                ClearRegistrations();
-                _perspectiveId = id;
-            }
-            _builder.Update(_hints, slot, false);
+            ClearRegistrations();
+            _perspectiveId = id;
         }
-        catch (Exception ex)
-        {
-            if (LastError != ex.Message)
-            {
-                LastError = ex.Message;
-                Svc.Log.Warning($"[MasterPlayer] 机制模块 {module.GetType().Name} AI 提示聚合失败：{ex.Message}");
-            }
-            Sleep();
-            return;
-        }
+        _builder.Update(_hints, slot, false);
 
         UpdateDiagnostics();
 
@@ -86,10 +92,10 @@ public sealed class MechanicNavigationHost : IDisposable
         var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
         var manager = MasterPlayerPlugin.Instance!.SafeZone.Manager;
         var visibility = MasterPlayerPlugin.Instance?.AoeVisibility;
-        var typeName = module.GetType().Name;
+        var typeName = module?.GetType().Name ?? zone!.GetType().Name;
         var key = $"module-nav/{typeName}";
-        var y = module.WorldState.Party[slot]?.PosRot.Y ?? 0f;
-        var sampleCenter = module.Center.ToVec3(y);
+        var y = _session.World.Party[slot]!.PosRot.Y;
+        var sampleCenter = _hints.PathfindMapCenter.ToVec3(y);
         var sampleRadius = _hints.PathfindMapBounds?.Radius ?? 0f;
 
         var dangers = new List<MechanicNavZoneRequest>(_hints.ForbiddenZones.Count);
@@ -130,7 +136,7 @@ public sealed class MechanicNavigationHost : IDisposable
         if (now >= _goalZonesNextEval)
         {
             _goalZonesNextEval = now.AddSeconds(0.5);
-            _goalZonesPrims = MechanicHintsConvert.ConvertGoalZones(_hints.GoalZones, module.Center, sampleRadius, y);
+            _goalZonesPrims = MechanicHintsConvert.ConvertGoalZones(_hints.GoalZones, _hints.PathfindMapCenter, sampleRadius, y);
         }
         for (var i = 0; i < _goalZonesPrims.Count; ++i)
         {
@@ -158,7 +164,7 @@ public sealed class MechanicNavigationHost : IDisposable
             {
                 _terrainBitmap = terrain.Bitmap;
                 (_terrainLeft, _terrainTop, _terrainRight, _terrainBottom) = (rect.Left, rect.Top, rect.Right, rect.Bottom);
-                _terrainPrims = MechanicHintsConvert.ConvertObstacleBitmap(terrain, module.Center, y);
+                _terrainPrims = MechanicHintsConvert.ConvertObstacleBitmap(terrain, _hints.PathfindMapCenter, y);
             }
             for (var i = 0; i < _terrainPrims.Count; ++i)
                 obstacles.Add(($"{key}/terrain/{i}", _terrainPrims[i]));
@@ -179,10 +185,12 @@ public sealed class MechanicNavigationHost : IDisposable
                     visibility.SetNavigationOnly(h, true);
             } : null);
 
+        // 自动提示的局部搜索框不是正式场地，不能覆盖道中的实时碰撞地形。
         ApplyBoundary(module, y);
         if (NavigationActive) ApplyFacing(now);
         else _facing.Clear();
         PublishTeleporters(y);
+        ModuleActive = true;
     }
 
     private string? _teleporterSignature;
@@ -209,9 +217,9 @@ public sealed class MechanicNavigationHost : IDisposable
         MasterPlayerPlugin.Instance?.SafeZone.SetTeleporters(converted);
     }
 
-    private void ApplyBoundary(BossModule module, float y)
+    private void ApplyBoundary(BossModule? module, float y)
     {
-        var bounds = _hints.PathfindMapBounds;
+        var bounds = module != null ? _hints.PathfindMapBounds : null;
         var registry = MasterPlayerPlugin.Instance!.SafeZone.Registry;
         if (bounds == null)
         {
@@ -223,10 +231,11 @@ public sealed class MechanicNavigationHost : IDisposable
             }
             return;
         }
-        var signature = bounds.GetType().Name + "|" + bounds.Radius.ToString("F2") + "|" + module.Center;
-        if (signature == _boundarySignature)
+        var center = _hints.PathfindMapCenter;
+        var signature = bounds.GetType().Name + "|" + bounds.Radius.ToString("F2") + "|" + center;
+        if (signature == _boundarySignature && MasterPlayerPlugin.Instance!.SafeZone.Manager.HasRegisteredArenaBoundary)
             return;
-        var shape = MechanicHintsConvert.ConvertBounds(bounds, module.Center, y);
+        var shape = MechanicHintsConvert.ConvertBounds(bounds, center, y);
         if (shape == null)
             return;
         registry.SetArenaBoundary(shape);

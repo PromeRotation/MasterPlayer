@@ -1,4 +1,5 @@
 using ECommons.DalamudServices;
+using System.Collections.Concurrent;
 using MasterPlayer.Settings;
 using PromeRotation.Hosting;
 using PromeRotation.LogSystem;
@@ -17,21 +18,38 @@ public sealed class ReplayRecorder : IDisposable
     private readonly IDisposable _battleEndedSub;
     private readonly HashSet<uint> _playerSourceIds = [];
     private readonly IDisposable _logSub;
+    private readonly IDisposable _systemLogSub;
+    private readonly ConcurrentQueue<ReplaySystemLogEvent> pendingSystemLogs = new();
     private ReplayRecordingWriter? _writer;
     private DateTime _startLocal;
     private DateTime _playerSourceCacheAt;
     private bool _autoStarted;
     private bool _disposed;
     private readonly ReplayWorldCapture _worldCapture = new();
+    private readonly Func<DateTime, ReplayWorldFrame> captureWorld;
     private ReplayWorldFrame? _lastWorld;
     private DateTime _nextWorldCapture;
     private double _lastTime;
 
-    public ReplayRecorder()
+    public ReplayRecorder() : this(null)
     {
+    }
+
+    internal ReplayRecorder(Func<DateTime, ReplayWorldFrame>? captureWorld)
+    {
+        this.captureWorld = captureWorld ?? CaptureLiveWorld;
         _battleStartedSub = PromeEventBus.OnBattleStarted(this, OnBattleStarted);
         _battleEndedSub = PromeEventBus.OnBattleEnded(this, OnBattleEnded);
-        _logSub = PromeEventBus.OnLogEvent(this, OnLogEvent);
+        _logSub = Scripting.LiveScriptEventRouter.Instance.Subscribe(this, "LogEvent",
+            (Action<LogSystemEvent>)(ev =>
+            {
+                if (ev is ReplaySystemLogEvent systemLog) pendingSystemLogs.Enqueue(systemLog);
+                else OnLogEvent(ev);
+            }), typeof(LogSystemEvent));
+        _systemLogSub = PromeEventBus.OnSystemLog(this, id =>
+        {
+            if (id != 7222) pendingSystemLogs.Enqueue(new() { Timestamp = DateTime.UtcNow, MessageId = id });
+        });
     }
 
     public static string RecordingsDirectory => Path.Combine(
@@ -66,6 +84,8 @@ public sealed class ReplayRecorder : IDisposable
 
         try
         {
+            DrainSystemLogs();
+            MasterPlayerPlugin.Instance?.DrainNativeActionEffects();
             Directory.CreateDirectory(RecordingsDirectory);
             var territory = (ushort)Svc.ClientState.TerritoryType;
             var territoryName = ResolveTerritoryName(territory);
@@ -105,7 +125,7 @@ public sealed class ReplayRecorder : IDisposable
             return;
 
         var file = CurrentFilePath;
-        try { CaptureWorld(DateTime.UtcNow); }
+        try { DrainSystemLogs(); MasterPlayerPlugin.Instance?.DrainNativeActionEffects(); CaptureWorld(DateTime.UtcNow); }
         catch (Exception ex) { FailRecording(ex); return; }
         var count = EventCount;
         var filtered = FilteredCount;
@@ -116,9 +136,12 @@ public sealed class ReplayRecorder : IDisposable
 
     private void OnLogEvent(LogSystemEvent ev)
     {
+        if (ev is not ReplaySystemLogEvent) DrainSystemLogs();
         _worldCapture.Observe(ev);
         var writer = _writer;
         if (writer == null)
+            return;
+        if (ev is ReplaySystemLogEvent or Scripting.NativeActionEffectEvent && ev.Timestamp.ToUniversalTime() < _startLocal.ToUniversalTime())
             return;
 
         if (!ReplayRecordFilter.ShouldRecord(ev, IsPlayerOwnedSource))
@@ -129,6 +152,17 @@ public sealed class ReplayRecorder : IDisposable
 
         try
         {
+            if (ev is ReplaySystemLogEvent)
+            {
+                // A transfer log must precede a newly sampled floor map. Reversing these
+                // makes the new map look like the old map that the script must wait out.
+                var eventTime = Math.Max(_lastTime, (ev.Timestamp.ToUniversalTime() - _startLocal.ToUniversalTime()).TotalSeconds);
+                writer.WriteEvent(eventTime, ev);
+                _lastTime = eventTime;
+                EventCount++;
+                CaptureWorld(DateTime.UtcNow);
+                return;
+            }
             var t = CaptureWorld(DateTime.UtcNow);
             writer.WriteEvent(t, ev);
             EventCount++;
@@ -141,16 +175,37 @@ public sealed class ReplayRecorder : IDisposable
 
     public void Update()
     {
+        DrainSystemLogs();
         if (_writer == null || DateTime.UtcNow < _nextWorldCapture) return;
         try { CaptureWorld(DateTime.UtcNow); }
         catch (Exception ex) { FailRecording(ex); }
     }
 
-    private double CaptureWorld(DateTime now)
+    private void DrainSystemLogs()
+    {
+        Scripting.SystemLogParameterEvents.Drain(MasterPlayerPlugin.Instance?.Replay?.SessionActive == true);
+        var logs = new List<ReplaySystemLogEvent>();
+        while (pendingSystemLogs.TryDequeue(out var entry))
+            logs.Add(entry);
+        foreach (var entry in logs.OrderBy(e => e.Timestamp))
+        {
+            ReplayWorldCapture.ObserveDeepDungeonSystemLog(entry.MessageId);
+            if (_writer != null && entry.Timestamp >= _startLocal.ToUniversalTime())
+                OnLogEvent(entry);
+        }
+    }
+
+    private ReplayWorldFrame CaptureLiveWorld(DateTime now)
     {
         var world = _worldCapture.Capture(now, PlayerPerspective.GetId());
         if (PlayerPerspective.IsDutyReplay)
             world = world with { LocalTimelineRole = world.Party.FirstOrDefault(p => p.EntityId == world.LocalPlayerId)?.Role ?? "None" };
+        return world;
+    }
+
+    private double CaptureWorld(DateTime now)
+    {
+        var world = captureWorld(now);
         var t = Math.Max(_lastTime, (now - _startLocal.ToUniversalTime()).TotalSeconds);
         _writer!.WriteWorldFrame(t, ReplayWorldFrame.Delta(_lastWorld, world));
         _lastWorld = world;
@@ -247,9 +302,11 @@ public sealed class ReplayRecorder : IDisposable
             return;
         _disposed = true;
 
+        StopRecording();
         try { _battleStartedSub.Dispose(); } catch { }
         try { _battleEndedSub.Dispose(); } catch { }
         try { _logSub.Dispose(); } catch { }
+        _systemLogSub.Dispose();
         CleanupRecording();
     }
 }

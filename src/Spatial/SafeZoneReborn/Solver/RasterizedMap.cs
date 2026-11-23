@@ -636,6 +636,8 @@ public sealed class RasterizedMap
             var hasActive = false;
             var activePriority = int.MinValue;
             var activePreference = PositionPreference.Center;
+            Vector3? preferredPosition = null;
+            var overrideDangerMargin = false;
             foreach (var window in goal.GoalWindows)
             {
                 if (!window.IsActiveAt(solveTime))
@@ -647,6 +649,8 @@ public sealed class RasterizedMap
                     hasActive = true;
                     activePriority = window.Priority;
                     activePreference = window.Preference;
+                    preferredPosition = window.PreferredPosition;
+                    overrideDangerMargin = window.OverrideDangerMargin;
                 }
             }
 
@@ -667,7 +671,8 @@ public sealed class RasterizedMap
             // 默认 priority=0 也让 A* 看见此目标（最低 baseline 1f）。
             var effectivePriority = MathF.Max(activePriority, 1f);
             var goalCenter = EstimateGeometryCenter(goal.Geometry);
-            RegisterGoalHeuristic(goalCenter, effectivePriority, playerPosition);
+            var centerInsideGoal = goal.Geometry.Contains(goalCenter);
+            if (centerInsideGoal) RegisterGoalHeuristic(goalCenter, effectivePriority, playerPosition);
 
             ForEachCellInGeometryBounds(goal.Geometry, marginExpand: 0, (col, row) =>
             {
@@ -682,7 +687,7 @@ public sealed class RasterizedMap
                 //   · 真危险核心（_dangerCore=true）→ 保持真实 MaxG，安全区内的实际危险由核心承载。
                 //   · 硬阻挡（MaxG<0：边界外/障碍）→ 不让步。
                 var maxG = _pixelMaxG[idx];
-                if (maxG >= 0f && maxG < float.MaxValue && !_dangerCore[idx])
+                if (overrideDangerMargin && maxG >= 0f && maxG < float.MaxValue && !_dangerCore[idx])
                 {
                     _pixelMaxG[idx] = float.MaxValue;
                     _pixelMinG[idx] = 0f;
@@ -690,7 +695,12 @@ public sealed class RasterizedMap
                 }
 
                 var center = CellCenter(col, row);
-                var preferenceScore = ComputeGoalPreferenceScore(goal.Geometry, activePreference, goalCenter, center, playerPosition, unsafeClearance, idx);
+                // 月环及凹目标的包围盒中心可能在目标之外，朝该点搜索会停在原地。
+                // 从可站立目标格中取最近点作启发；不改变目标的真实几何或安全余量。
+                if (!centerInsideGoal && maxG == float.MaxValue)
+                    RegisterGoalHeuristic(center, effectivePriority, playerPosition);
+                var preferenceScore = ComputeGoalPreferenceScore(goal.Geometry, activePreference,
+                    preferredPosition ?? goalCenter, center, playerPosition, unsafeClearance, idx);
                 if (maxG >= 0f)
                     MaxGoalPreferenceScore = MathF.Max(MaxGoalPreferenceScore, preferenceScore);
 
@@ -987,8 +997,12 @@ public sealed class RasterizedMap
     private void ForEachCellInGeometryBounds(IGeometryShape geometry, int marginExpand, Action<int, int> action)
     {
         var bounds = geometry.GetBounds();
-        var (minCol, minRow) = WorldToCell(new Vector3(bounds.MinX, PlaneY, bounds.MinZ));
-        var (maxCol, maxRow) = WorldToCell(new Vector3(bounds.MaxX, PlaneY, bounds.MaxZ));
+        var mapMaxX = OriginX + Columns * Resolution;
+        var mapMaxZ = OriginZ + Rows * Resolution;
+        if (bounds.MaxX < OriginX || bounds.MaxZ < OriginZ || bounds.MinX > mapMaxX || bounds.MinZ > mapMaxZ) return;
+        // Inverse constraints are unbounded; clip in world space before converting to integer cells.
+        var (minCol, minRow) = WorldToCell(new Vector3(MathF.Max(bounds.MinX, OriginX), PlaneY, MathF.Max(bounds.MinZ, OriginZ)));
+        var (maxCol, maxRow) = WorldToCell(new Vector3(MathF.Min(bounds.MaxX, mapMaxX), PlaneY, MathF.Min(bounds.MaxZ, mapMaxZ)));
 
         minCol = Math.Max(0, minCol - marginExpand);
         minRow = Math.Max(0, minRow - marginExpand);

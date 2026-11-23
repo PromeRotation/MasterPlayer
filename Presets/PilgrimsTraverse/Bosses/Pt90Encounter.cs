@@ -27,5 +27,10 @@ internal sealed class Pt90Encounter() : PtBossEncounter(90, 0x48F5)
     protected override void OnEffect(LogSystemActionEffectEvent effect, DateTime now)
     { if (effect.ActionId == 44266) skinflayer = null; }
     public override void Cancel(ulong source) { base.Cancel(source); if (skinflayer?.Source == source) skinflayer = null; }
+    public override IEnumerable<PtKnockbackTemplate> KnockbackSources(DateTime now, ulong player)
+    {
+        if (skinflayer is { Rotation: { } rotation } cast && now <= cast.Hit.AddSeconds(.3) && !KnockbackImmune(player, cast.Hit))
+            yield return new(Boundary, cast.Position, 30, Direction(rotation));
+    }
     protected override void ResetMechanics() => skinflayer = null;
 }

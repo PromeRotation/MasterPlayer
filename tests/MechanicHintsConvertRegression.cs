@@ -3,6 +3,7 @@ using BossMod;
 using MasterPlayer.MechanicHost;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
+using MasterPlayer.Spatial.SafeZoneReborn.Solver;
 
 internal static class MechanicHintsConvertRegression
 {
@@ -226,6 +227,47 @@ internal static class MechanicHintsConvertRegression
             var custom = MechanicHintsConvert.ConvertBounds(new ArenaBoundsCustom([new Polygon(default, 10f, 4)]), new WPos(0, 0), 0f);
             Check(custom is WorldPolygonGeometry { WorldPoints.Count: >= 4 }, "custom bounds polygon lost");
             Check(custom!.Contains(Vector3.Zero) && !custom.Contains(new Vector3(20, 0, 0)), "custom bounds coverage wrong");
+        });
+
+        run("mechanic nav differ restores identical danger goal and obstacle after clear", () =>
+        {
+            var now = DateTime.UtcNow;
+            using var manager = new SafeZoneManager(new() { EnableSafeZone = true });
+            var registry = new SafeZoneRegistry(manager, () => now);
+            var differ = new MechanicNavAreaDiffer();
+            var prim = new MechanicNavPrimitive(new CircleTemplate(3), Vector3.Zero, 0, "shape");
+            MechanicNavZoneRequest[] requests =
+            [
+                new("danger", [prim], 0, true, "danger"),
+                new("goal", [prim], 0, true, "goal") { IsGoal = true },
+            ];
+            void Sync() => differ.Sync(registry, manager, requests, [("obstacle", prim)], .2f, null);
+            Sync();
+            manager.ClearAllAreas();
+            Sync();
+            var snapshot = manager.BuildSnapshot(now);
+            Check(snapshot.DangerAreas.Count == 1 && snapshot.GoalAreas.Count == 1 && snapshot.HardObstacles.Count == 1,
+                "Differ cached removed handles instead of restoring the areas.");
+        });
+
+        run("mechanic nav differ prepares future complement goals before activation", () =>
+        {
+            var now = DateTime.UtcNow;
+            using var manager = new SafeZoneManager(new() { EnableSafeZone = true });
+            var registry = new SafeZoneRegistry(manager, () => now);
+            var differ = new MechanicNavAreaDiffer();
+            var prim = new MechanicNavPrimitive(new CircleTemplate(3), Vector3.UnitX * 10, 0, "shape");
+            var goal = new MechanicNavZoneRequest("goal", [prim], 5, false, "goal") { IsGoal = true };
+            differ.Sync(registry, manager, [goal], [], .2f, null);
+            Check(manager.BuildSnapshot(now).GoalAreas.Single().GoalWindows.Any(w => w.IsActiveAt(now)),
+                "Waiting until the mechanic activates leaves no time to enter the safe shape.");
+            var snapshot = manager.BuildSnapshot(now);
+            var solution = new SafeZoneSolver().Solve(snapshot,
+                new(Vector3.Zero, 0, 6, false, false, 0, true, snapshot.Version),
+                new(6, 6, 0, false, 6, 6), SolveOptionsDefaults.Default, now);
+            Check(solution.IsSuccess && solution.TargetPosition is { } target
+                && Vector3.Distance(target, prim.Position) <= 3,
+                "The solver did not start preparing the future complement safe position.");
         });
 
         run("mechanic nav differ keeps identical zones, updates changed and removes vanished", () =>

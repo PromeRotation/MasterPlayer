@@ -48,12 +48,19 @@ public sealed class MechanicHostController : IDisposable
     public int CaptureErrorCount => _drawBridge?.CaptureErrorCount ?? 0;
     public string? DrawCaptureError => _drawBridge?.LastCaptureError;
     public bool HasActiveModule => ModulesEnabled && !(_replaySession != null ? IsReplaySuppressed() : IsSuppressed)
+        && !Mechanics.Hunts.SimpleHuntCatalog.Owns(ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID ?? 0)
         && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        // 区域自动提示可能忽略未知读条，仅 Boss 模块成功导航时整体接管通用躲避。
         && ActiveSession?.BossModules.ActiveModule?.StateMachine.ActivePhase != null
-        && !PtBossCatalog.Owns(ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
+        && _navBridge?.ModuleActive == true
+        && _navBridge.SkippedZoneCount == 0
+        && !PtBossCatalog.Owns(ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID ?? 0,
             _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
         && !Mechanics.Dungeons.CastrumAbaniaCatalog.Owns(
-            ActiveSession.BossModules.ActiveModule.PrimaryActor.OID,
+            ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID ?? 0,
+            _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        && !Mechanics.Dungeons.ArrDungeonCatalog.Owns(
+            ActiveSession?.BossModules.ActiveModule?.PrimaryActor.OID ?? 0,
             _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
         && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
@@ -231,6 +238,9 @@ public sealed class MechanicHostController : IDisposable
         }
         catch (Exception ex)
         {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
             LastError = ex.Message;
             if (ex.Message != _lastLoggedError)
             {
@@ -367,6 +377,9 @@ public sealed class MechanicHostController : IDisposable
         }
         catch (Exception ex)
         {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
             LogReplayError("frame", ex);
         }
     }
@@ -385,6 +398,11 @@ public sealed class MechanicHostController : IDisposable
                 continue;
             if (running.Script is Mechanics.Dungeons.CastrumAbaniaScript { EncounterActive: false })
                 continue;
+            if (running.Script is Mechanics.Dungeons.DungeonScript dungeon
+                && (!dungeon.EncounterActive || dungeon.PreservesTerritoryMechanics))
+                continue;
+            if (running.Script is Mechanics.Hunts.SimpleHuntScript)
+                continue; // Hunts own individual instances, not every mechanic in the territory.
             if (running.Descriptor.Metadata.Territorys.Length != 0)
                 return true;
         }
@@ -395,12 +413,26 @@ public sealed class MechanicHostController : IDisposable
 
     private bool SleepMpOwnedBoss()
     {
+        if (ActiveSession?.BossModules.ActiveModule is { } huntModule && huntModule.StateMachine.ActivePhase != null
+            && Mechanics.Hunts.SimpleHuntCatalog.Owns(huntModule.PrimaryActor.OID))
+        {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
+            return true;
+        }
         if (ActiveSession?.BossModules.ActiveModule is not { } module
             || (!PtBossCatalog.Owns(module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
                 && !Mechanics.Dungeons.CastrumAbaniaCatalog.Owns(
                     module.PrimaryActor.OID,
+                    _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+                && !Mechanics.Dungeons.ArrDungeonCatalog.Owns(
+                    module.PrimaryActor.OID,
                     _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType))) return false;
-        // Migrated Pilgrims and Castrum Abania bosses are implemented by MP scripts. Never publish BMR previews or navigation,
+        // A nearby, loaded ARR boss is not an active encounter; leave hallway/zone output available.
+        if (module.StateMachine.ActivePhase == null && Mechanics.Dungeons.ArrDungeonCatalog.Owns(
+            module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)) return false;
+        // Migrated bosses are implemented by MP scripts. Never publish BMR previews or navigation,
         // including the first frame before ScriptManager starts it and when a user disables the script.
         _navBridge?.Sleep();
         _drawBridge?.Sleep();
@@ -456,6 +488,11 @@ public sealed class MechanicHostController : IDisposable
             if (running.Script is PilgrimsBossScript { EncounterActive: false })
                 continue;
             if (running.Script is Mechanics.Dungeons.CastrumAbaniaScript { EncounterActive: false })
+                continue;
+            if (running.Script is Mechanics.Dungeons.DungeonScript dungeon
+                && (!dungeon.EncounterActive || dungeon.PreservesTerritoryMechanics))
+                continue;
+            if (running.Script is Mechanics.Hunts.SimpleHuntScript)
                 continue;
             var territorys = running.Descriptor.Metadata.Territorys;
             if (territorys.Length != 0 && territorys.Contains(territory))
