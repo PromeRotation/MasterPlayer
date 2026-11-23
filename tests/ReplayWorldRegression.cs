@@ -148,11 +148,14 @@ internal static class ReplayWorldRegression
                 void Dispatch(LogSystemEvent ev) { adapter.Handle(ev, playback.World.CurrentTime); output.Apply(encounter, playback.World.CurrentTime, true); }
                 for (var t = 0d; t < 2; t += step) playback.AdvanceTo(t, Dispatch, Update);
                 playback.AdvanceTo(2, Dispatch, Update);
-                Check(encounter.Casts.Count == 1 && draw.Previews.Single().Value.Geometry.Position == new Vector3(3, 0, 4), "Replayed cast used today's time or live caster position.");
+                Check(encounter.Casts.Count == 1 && draw.Previews["cast/1"].Geometry.Position == new Vector3(3, 0, 4),
+                    "Replayed cast used today's time or live caster position.");
+                Check(draw.Previews.Count == 2 && draw.Previews["early-arr/enemy/1"].Geometry.Position == new Vector3(27, 0, 114),
+                    "Replay lost the recorded enemy outline or duplicated its cast preview.");
                 Check(safe.Manager.BuildSnapshot(playback.World.CurrentTime).DangerAreas.Single().DangerWindows.Single().DangerFrom == Start.AddSeconds(5.3), "Replay shifted the absolute damage window.");
                 var pausedTime = playback.World.CurrentTime;
                 playback.AdvanceTo(2, Dispatch, Update);
-                Check(playback.World.CurrentTime == pausedTime && draw.Previews.Count == 1, "Paused replay advanced or removed its cast.");
+                Check(playback.World.CurrentTime == pausedTime && draw.Previews.Count == 2, "Paused replay advanced or removed its cast or enemy outline.");
                 playback.AdvanceTo(6, Dispatch, Update);
                 Check(encounter.Casts.Count == 0 && draw.Previews.Count == 0 && playback.World.Actors.Count == 1, "Replay end retained destroyed objects or cast output.");
                 output.Clear();
