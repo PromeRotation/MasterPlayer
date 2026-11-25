@@ -46,7 +46,8 @@ public sealed class FollowController : IDisposable
 
     private void UpdateInternal()
     {
-        if (MasterPlayerPlugin.Instance?.SafeZone.Setting.RuntimePreferSafeRefuge == true)
+        if (MasterPlayerPlugin.Instance?.SafeZone is { } runtime
+            && (runtime.FsdSessionActive || runtime.Setting.RuntimePreferSafeRefuge))
         {
             ClearFollowGoal();
             return;

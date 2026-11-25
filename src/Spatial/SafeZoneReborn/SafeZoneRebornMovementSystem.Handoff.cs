@@ -37,7 +37,8 @@ internal sealed partial class SafeZoneRebornMovementSystem
     }
 
     private static bool HasMechanicGoal(SafeZoneSnapshot snapshot, DateTime now) =>
-        snapshot.GoalAreas.Any(goal => goal.GoalWindows.Any(window => window.Priority > 0 && window.IsActiveAt(now)));
+        snapshot.GoalAreas.Any(goal => goal.GoalWindows.Any(window =>
+            window.RequiresMovementHandoff && window.Priority > 0 && window.IsActiveAt(now)));
 
     private void CompleteMovementHandoff(SafeZoneSnapshot snapshot, DateTime now)
     {

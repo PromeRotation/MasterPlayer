@@ -65,6 +65,10 @@ JSON 字段：
 
 NewFolder3 入场前通过 `SetFsdSessionActive(true)` 获取会话，任务结束以 `false` 释放；死亡重开属于同一会话。移动交接独立于该会话：NewFolder3 注册 `NewFolder3.Movement.SetPromeRadarControl`（`Func<bool, bool>`，仅游戏主线程）。MP 在下发路线前设置实时占用并同步调用 `true`；NewFolder3 先关闭自身输出权限、取消自己的路线、暂停原任务后返回 `true`。交接失败时 MP 不下发路线。等待撤离、后台解算以及逃出后相关危险窗口尚未结束时仍保持占用；远处危险及普通攻击目标不单独延长占用。MP 停止自己的执行器后调用 `false`，FSD 从当前位置重新验证并继续同一个开箱尝试，暂停时间不消耗开箱努力或等待预算。关闭、死亡、切区、回放及卸载撤销占用；重载时通过实时标量重新对齐。FSD 会话要求两端同时更新，不能使用缓存 `HasMovementControl=false` 作为恢复依据。
 
+MP死宫普通层已永久移除开箱、探索、石塔导航、清层选敌和魔陶器使用及其设置/入口；会话内外均只保留墙体、陷阱和战斗机制保护，结束会话不恢复普通层自动化。可选跟随在FSD会话内暂停，结束后按原跟随设置恢复。会话状态改变先撤销旧路线，同值重复请求幂等。`GoalWindow.RequiresMovementHandoff`继续区分可选目标与机制站位，避免仅凭正优先级持续保留交接；机制目标默认保持该标志，仍可为必要站位和危险等待持有控制权。卸载清除`FsdSessionActive`及交接状态。
+
+死宫／天宫由FSD的`PromeRadarFloorMovement`同时确认会话与开关；普通层必须读回`FsdSessionActive=true`后才推进。spin仅关闭智能走位，保留整轮会话；切层和十层组间不释放，任务结束补偿尚未应用的请求并释放会话。PT继续使用原会话入口。
+
 PT30 检查同区域、三秒内采样、非回放、`FsdSessionActive/SmartMovementEnabled/CanMove/NavigationActive/Pt30ScriptReady=true` 和 `Pt30ScriptVersion="1.0.0"`，由 MP 自有脚本处理；该 Boss 的 BMR 绘制和导航已停止。用户中途关闭时不每帧重开。会话调用请求入队不代表已经应用，需查询确认。
 
 PT99 选敌消费者使用更短的 500ms 新鲜度，检查 `Ready/ApiVersion`、区域 1290、非回放及 `Pt99TargetControlActive=true`。`Pt99TargetId=0` 或指定目标死亡、不可选、HP≤1 时必须停火，不得回退通用选敌。NewFolder3 在攻击及导航共用的选敌链首位采用此指令，最多每 100ms 读取一次；没有有效接管指令时才使用原有机制/默认 provider。该契约只选目标，不下发攻击技能；两端须同时更新。

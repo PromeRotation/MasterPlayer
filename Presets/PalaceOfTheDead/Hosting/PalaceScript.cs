@@ -14,57 +14,19 @@ namespace MasterPlayer.Mechanics.PalaceOfTheDead;
 public abstract class PalaceScript : MasterPlayerScript
 {
     private readonly PalaceEncounter encounter = new();
-    private readonly PalaceFloorNavigation floor = new();
+    private readonly PalaceFloorHazards floor = new();
     private readonly PalaceCombatControl control = new();
-    private readonly PalaceFloorInteraction interaction = new();
-    private readonly PalacePomanderControl pomanders = new();
     private readonly Dictionary<string, (SafeZoneAreaHandle Handle, PalaceArea Area)> output = [];
     private readonly Dictionary<string, DateTime> messages = [];
     private DateTime nextScan;
     private DateTime nextInterrupt;
     private bool ownsBoundary;
 
-    [UserSetting("楼层清怪")]
-    public PalaceClearBehavior ClearBehavior
-    {
-        get => Settings.Get("ClearBehavior", PalaceClearBehavior.Leveling);
-        set => Settings.Set("ClearBehavior", value);
-    }
-    [UserSetting("自动前往转移石塔")]
-    public bool AutoPassage { get => Settings.GetBool("AutoPassage", true); set => Settings.Set("AutoPassage", value); }
-    [UserSetting("自动前往宝箱")]
-    public bool AutoMoveTreasure { get => Settings.GetBool("AutoMoveTreasure", true); set => Settings.Set("AutoMoveTreasure", value); }
-    [UserSetting("优先开启宝箱")]
-    public bool OpenChestsFirst { get => Settings.GetBool("OpenChestsFirst", false); set => Settings.Set("OpenChestsFirst", value); }
-    [UserSetting("开启金箱")]
-    public bool GoldCoffer { get => Settings.GetBool("GoldCoffer", true); set => Settings.Set("GoldCoffer", value); }
-    [UserSetting("开启银箱")]
-    public bool SilverCoffer { get => Settings.GetBool("SilverCoffer", true); set => Settings.Set("SilverCoffer", value); }
-    [UserSetting("开启铜箱")]
-    public bool BronzeCoffer { get => Settings.GetBool("BronzeCoffer", true); set => Settings.Set("BronzeCoffer", value); }
-    [UserSetting("探索所有房间")]
-    public bool FullClear { get => Settings.GetBool("FullClear", false); set => Settings.Set("FullClear", value); }
     [UserSetting("显示隐藏陷阱")]
     public bool TrapHints { get => Settings.GetBool("TrapHints", true); set => Settings.Set("TrapHints", value); }
-    [UserSetting("导航暂停前的拉怪数量（0为战斗即暂停）")]
-    public int MaxPull { get => Settings.Get("MaxPull", 0); set => Settings.Set("MaxPull", Math.Clamp(value, 0, 15)); }
 
     public bool EncounterActive => encounter.BossActive;
-    internal IReadOnlyList<ushort> FloorRooms => floor.Rooms;
-    internal int FloorCurrentRoom => floor.CurrentRoom(CurrentPlayerId);
-    internal int FloorDestination => floor.DesiredRoom;
-    internal bool IsAutoPomanderEnabled(uint id) => Settings.GetBool($"AutoPomander{id}", false);
-    internal void SetAutoPomanderEnabled(uint id, bool enabled) => Settings.Set($"AutoPomander{id}", enabled);
-    internal int? RequestedPomanderSlot { get; private set; }
-    internal void SelectFloorRoom(int room)
-    {
-        if (floor.SelectRoom(room, CurrentPlayerId)) Render(CurrentTime);
-    }
-    internal void ClearFloorDestination()
-    {
-        floor.ClearDestination();
-        Render(CurrentTime);
-    }
+    internal bool HasFloorMap => floor.HasMap;
     internal void IgnoreNearestFloorTrap()
     {
         if (CurrentPlayer is { } player && floor.IgnoreNearestTrap(player.Position)) Render(CurrentTime);
@@ -122,12 +84,6 @@ public abstract class PalaceScript : MasterPlayerScript
     {
         var now = CurrentTime;
         var eventTime = ev.Timestamp.ToUniversalTime();
-        if (ev is ReplaySystemLogEvent { MessageId: 7222 } systemLog)
-        {
-            floor.SystemLog(systemLog.MessageId, systemLog.Arguments);
-            Render(now);
-            return;
-        }
         if (ev is LogSystemCastStartEvent cast)
         {
             Scan(now);
@@ -179,21 +135,8 @@ public abstract class PalaceScript : MasterPlayerScript
         }
         else ReleaseBoundary();
         var enabled = encounter.BossActive ? bossEnabled : trashEnabled;
-        var floorOptions = new PalaceFloorOptions
-        {
-            ClearBehavior = ClearBehavior, AutoPassage = AutoPassage, AutoMoveTreasure = AutoMoveTreasure,
-            OpenChestsFirst = OpenChestsFirst, GoldCoffer = GoldCoffer, SilverCoffer = SilverCoffer,
-            BronzeCoffer = BronzeCoffer, FullClear = FullClear, TrapHints = TrapHints,
-            MaxPull = MaxPull,
-            AutoPomanders = Enumerable.Range(1, 16).Select(i => (uint)i).Where(IsAutoPomanderEnabled).ToHashSet(),
-        };
         var wanted = enabled ? encounter.Collect(now, player.Id).Concat(
-            encounter.BossActive ? [] : floor.Collect(now, player, floorOptions)).ToArray() : [];
-        var playerInDanger = wanted.Any(a => !a.Safe && !a.PreviewOnly && !a.Obstacle && a.Geometry.Contains(player.Position));
-        if (playerInDanger)
-            wanted = wanted.Where(a => a.Key != "floor/goal/coffer/interact").ToArray();
-        var pomander = enabled && !encounter.BossActive && !playerInDanger ? floor.PomanderToUse : null;
-        RequestedPomanderSlot = pomander?.Slot;
+            encounter.BossActive ? [] : floor.Collect(now, player, TrapHints)).ToArray() : [];
         var keys = wanted.Select(a => a.Key).ToHashSet();
         foreach (var key in output.Keys.Where(k => !keys.Contains(k)).ToArray()) Remove(key);
         foreach (var area in wanted)
@@ -220,6 +163,7 @@ public abstract class PalaceScript : MasterPlayerScript
                     goalWindows: area.Safe ? [new GoalWindow(area.From, area.Until, area.Priority, PositionPreference.Nearest)
                     {
                         OverrideDangerMargin = area.OverrideDangerMargin,
+                        RequiresMovementHandoff = area.RequiresMovementHandoff,
                     }] : null,
                     incrementVersion: false);
             }
@@ -235,14 +179,10 @@ public abstract class PalaceScript : MasterPlayerScript
             var forbidden = encounter.ForbiddenTargets(now).ToArray();
             var facing = trashEnabled ? encounter.Facing(now, player.Id) : null;
             var restrictions = encounter.CastRestrictions(now, player.Id, trashEnabled);
-            var target = encounter.BossActive ? encounter.PreferredTarget(player.Id, now)
-                : floor.PreferredTarget(now, player, ClearBehavior);
-            control.Apply(target, forbidden,
+            control.Apply(0, forbidden,
                 facing, false, blockCasts: restrictions.BlockCasts, cancelCast: restrictions.CancelCast,
                 forbiddenAutoAttackTargets: encounter.ForbiddenAutoAttackTargets(now));
             TryInterrupt(now, player);
-            if (!encounter.BossActive) interaction.Update(now, player, floor.InteractionTarget, wanted);
-            pomanders.Update(now, pomander);
         }
         else control.Clear();
         foreach (var message in encounter.Hints(now))
@@ -288,8 +228,6 @@ public abstract class PalaceScript : MasterPlayerScript
     private void ClearOutput()
     {
         control.Clear();
-        RequestedPomanderSlot = null;
-        pomanders.Reset();
         foreach (var key in output.Keys.ToArray()) Remove(key);
         MasterPlayerPlugin.Instance?.SafeZone.RequestAutomaticMovement(this, false);
         ReleaseBoundary();

@@ -29,6 +29,7 @@ internal static class PalaceScriptRegression
             var assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
             SystemLogParameterRegression.Run(assembly);
             RecorderSystemLogRegression.Run(assembly, config.FullName);
+            IntegrationRegression.Run(assembly);
             var managerType = assembly.GetType("MasterPlayer.Scripting.ScriptManager", true)!;
             dynamic manager = Activator.CreateInstance(managerType)!;
             using var lifetime = (IDisposable)manager;
@@ -40,7 +41,10 @@ internal static class PalaceScriptRegression
                 .Invoke((object)manager, [(object)palace])!;
             palaceSettings.Set("AutoMoveTreasure", true);
             palaceSettings.Set("GoldCoffer", true);
-            palaceSettings.Set("AutoPomander8", false);
+            palaceSettings.Set("AutoPassage", true);
+            palaceSettings.Set("FullClear", true);
+            palaceSettings.Set("ClearBehavior", 3);
+            palaceSettings.Set("AutoPomander8", true);
             if (!((uint[])palace.Metadata.Territorys).SequenceEqual(new uint[] { 603, 604, 605, 606, 607 })) throw new Exception("Wrong Palace territory IDs");
             if (!(bool)manager.IsScriptEnabled("promeradar.potd151-200")) throw new Exception("Palace script must default enabled");
             var script = palace.CreateInstance();
@@ -221,17 +225,25 @@ internal static class PalaceScriptRegression
             Check(Walls() == 0 && Dangers() == 0 && Previews() == 0, "Missing map retained previous floor output.");
             int Goals() => ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).GoalAreas).Cast<object>().Count();
             controller.Seek(6.5d);
-            Check(Goals() == 2 && Walls() == 3, $"Native chest proximity and interaction goals were not published from recorded object data (goals={Goals()}, walls={Walls()}, dangers={Dangers()}).");
-            controller.Seek(6.8d);
-            Check(Goals() == 1 && Dangers() > 0, "Coffer interaction approach remained active while the player stood in a dangerous pool.");
+            Check(Goals() == 0 && Walls() == 3, "Standalone Palace published chest goals despite removing ordinary automation.");
+            var runtimeType = ((object)runtime).GetType();
+            var setFsd = runtimeType.GetMethod("SetFsdSessionActive", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            foreach (var active in new[] { true, false })
+            {
+                setFsd.Invoke((object)runtime, [active]);
+                controller.Seek(6.8d);
+                Check(Goals() == 0 && Dangers() > 0 && Walls() == 3,
+                    "FSD session state enabled ordinary goals or suppressed real floor hazards.");
+            }
             controller.Seek(6.95d);
-            Check(Goals() == 2, "Leaving the dangerous pool did not restore the coffer interaction approach.");
+            Check(Goals() == 0, "Leaving danger recreated chest goals.");
             controller.Seek(7d);
-            Check(Goals() == 0, "Opened treasure did not clear the production navigation goal.");
+            Check(Goals() == 0, "Opened treasure published a movement goal.");
             controller.Seek(6.5d);
-            Check(Goals() == 2, "Reverse Seek retained opened-treasure state.");
+            Check(Goals() == 0, "Reverse Seek recreated ordinary floor navigation.");
             controller.StopSession();
             Check(Walls() == 0 && Previews() == 0 && Goals() == 0, "Floor script stop leaked owner output.");
+            Console.WriteLine("PASS production Palace mechanics only: no chest goals with legacy settings or either FSD session state, real walls/hazards preserved, reverse Seek and owner cleanup");
             var manualRooms = new ushort[25];
             manualRooms[6] = 0x88;
             manualRooms[7] = 0x84;
@@ -253,11 +265,22 @@ internal static class PalaceScriptRegression
             var palaceType = assembly.GetType("MasterPlayer.Mechanics.PalaceOfTheDead.PalaceScript")!;
             void Command(string name, params object[] arguments)
                 => palaceType.GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(runningPalace, arguments);
-            Check(Goals() == 0, "Manual destination was active before selection.");
-            Command("SelectFloorRoom", 7);
-            Check(Goals() == 1, "The production room command did not publish a navigation goal.");
-            Command("ClearFloorDestination");
-            Check(Goals() == 0, "The production clear command retained the navigation goal.");
+            var removedProperties = new[] { "ClearBehavior", "AutoPassage", "AutoMoveTreasure", "OpenChestsFirst",
+                "GoldCoffer", "SilverCoffer", "BronzeCoffer", "FullClear", "MaxPull", "FloorRooms",
+                "FloorDestination", "RequestedPomanderSlot" };
+            foreach (var name in removedProperties)
+                Check(palaceType.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance) == null,
+                    $"Removed Palace setting/output still exists: {name}");
+            foreach (var name in new[] { "SelectFloorRoom", "ClearFloorDestination", "SetAutoPomanderEnabled", "IsAutoPomanderEnabled" })
+                Check(palaceType.GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance) == null,
+                    $"Removed Palace command still exists: {name}");
+            foreach (var name in new[] { "PalaceFloorInteraction", "PalacePomanderControl", "PalaceFloorNavigation", "PalaceFloorOptions", "PalaceClearBehavior" })
+                Check(assembly.GetType("MasterPlayer.Mechanics.PalaceOfTheDead." + name) == null,
+                    $"Removed Palace implementation still ships in the production DLL: {name}");
+            Check(assembly.GetType("MasterPlayer.Mechanics.PalaceOfTheDead.PalaceEncounter")!
+                .GetMethod("PreferredTarget", BindingFlags.NonPublic | BindingFlags.Instance) == null,
+                "The production encounter retained ordinary floor target selection.");
+            Check(Goals() == 0, "Map alone generated an exploration goal.");
             var originalTraps = Dangers();
             Command("IgnoreNearestFloorTrap");
             Check(originalTraps > 0 && Dangers() < originalTraps, "The production trap command did not remove the nearest history location.");
@@ -294,34 +317,22 @@ internal static class PalaceScriptRegression
             Check((bool)controller.Load(file), (string)controller.StatusMessage);
             controller.Play(); controller.Seek(.5d); controller.Pause();
             runningPalace = ((IEnumerable)manager.Running.Values).Cast<dynamic>().Single().Script;
-            int? Requested() => (int?)palaceType.GetProperty("RequestedPomanderSlot", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(runningPalace);
-            Check(Requested() == null, "Full inventory used a pomander before overcap confirmation.");
-            Command("SetAutoPomanderEnabled", 8u, true);
+            Check(Goals() == 0, "Full inventory generated an ordinary goal.");
             controller.Play(); controller.Update(1f); controller.Pause();
-            Check(Requested() == 5, "Recorded 7222 arguments did not select the mapped inventory slot.");
-            ((dynamic)runningPalace).AutoMoveTreasure = false;
-            ((dynamic)runningPalace).GoldCoffer = false;
-            controller.Play(); controller.Update(.3f); controller.Pause();
-            Check(Requested() == 5, "Confirmed AutoPoms incorrectly depended on treasure movement or gold settings.");
-            controller.Play(); controller.Update(.7f); controller.Pause();
-            Check(Requested() == null, "Inventory consumption retained an AutoPoms request.");
-            controller.Play(); controller.Update(1f); controller.Pause();
-            Check(Requested() == 5, "Confirmed coffer lost its pomander association.");
-            controller.Play(); controller.Update(1f); controller.Pause();
-            Check(Requested() == null, "Transfer retained a native pomander request.");
-            controller.Play(); controller.Update(1f); controller.Pause();
-            Check(Requested() == null, "New floor reused previous coffer contents.");
-            ((dynamic)runningPalace).GoldCoffer = true;
+            Check(Goals() == 0 && controller.RouterErrorCount == 0, "Legacy overcap log generated navigation or a routed error.");
+            controller.Seek(3.5d);
+            Check(Goals() == 0, "Inventory refill revived ordinary work.");
+            controller.Seek(4.5d);
+            Check(Goals() == 0 && Walls() == 0, "Transfer retained ordinary work or stale floor constraints.");
+            controller.Seek(5.5d);
+            Check(Goals() == 0, "New floor revived ordinary work.");
             controller.Seek(.5d);
-            runningPalace = ((IEnumerable)manager.Running.Values).Cast<dynamic>().Single().Script;
-            Check(Requested() == null, "Reverse Seek retained future overcap knowledge.");
+            Check(Goals() == 0, "Reverse Seek revived inventory automation.");
             controller.StopSession();
-            Check(Requested() == null && Goals() == 0 && Previews() == 0, "Stop leaked AutoPoms state or owner output.");
-            ((dynamic)runningPalace).AutoMoveTreasure = true;
-            Command("SetAutoPomanderEnabled", 8u, false);
-            Console.WriteLine("PASS production Palace AutoPoms: recorded typed 7222, exact mapped slot, independent settings/combat, inventory changes, transfer, reverse Seek, stop and replay execution isolation");
+            Check(Goals() == 0 && Previews() == 0, "Stop leaked owner output.");
+            Console.WriteLine("PASS production Palace removed automation: no settings, room commands, item/chest executors or floor targets in actual DLL; legacy overcap logs, refill, transfer and Seek remain inert");
             Check(moves == 0 && objectReads == 0, "Recorded Palace replay crossed the live execution boundary");
-            Console.WriteLine("PASS production Palace floor: native map walls, all-territory trap data, radar/world previews, Safety, transfer, map connections, coffers/opened treasure, manual room/trap commands, reverse Seek and owner cleanup");
+            Console.WriteLine("PASS production Palace floor: native map walls, all-territory trap data, radar/world previews, Safety, transfer, map connections, inert coffers/opened treasure, manual trap correction, reverse Seek and owner cleanup");
         }
         finally
         {

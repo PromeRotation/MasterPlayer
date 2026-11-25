@@ -22,7 +22,6 @@ internal sealed class SmartMovementIntegration : IDisposable
     private volatile bool enabledState;
     private bool? previousEnabled;
     private bool disposed;
-    private bool fsdActive;
     private bool fsdOwnsSwitch;
     private bool fsdOwnsPt30Script;
     private DateTime nextPublish;
@@ -81,7 +80,7 @@ internal sealed class SmartMovementIntegration : IDisposable
         try
         {
             if (movementControl.HasFunction) return movementControl.InvokeFunc(active);
-            if (!fsdActive || !active) return true;
+            if (!runtime.FsdSessionActive || !active) return true;
             throw new InvalidOperationException("NewFolder3 缺少同步移动交接接口；需同时更新两个插件。");
         }
         catch (Exception ex)
@@ -121,8 +120,8 @@ internal sealed class SmartMovementIntegration : IDisposable
     {
         while (fsdRequests.TryDequeue(out var active))
         {
-            if (active == fsdActive) continue;
-            fsdActive = active;
+            if (active == runtime.FsdSessionActive) continue;
+            runtime.SetFsdSessionActive(active);
             if (active)
             {
                 fsdOwnsSwitch = !MasterPlayerSettings.Instance.EnableSmartMovement;
@@ -180,7 +179,7 @@ internal sealed class SmartMovementIntegration : IDisposable
             MechanicRuntimeBuildMvid = typeof(MechanicRuntime.MechanicSession).Module.ModuleVersionId,
             Ready = true,
             SmartMovementEnabled = enabled,
-            FsdSessionActive = fsdActive,
+            FsdSessionActive = runtime.FsdSessionActive,
             Pt30ScriptAvailable = plugin.Scripts?.Scripts.Any(s => s.Metadata.Id == "promeradar.pt30") == true,
             Pt30ScriptReady = pt30?.NavigationReady == true,
             Pt30ScriptVersion = "1.0.0",
@@ -249,10 +248,12 @@ internal sealed class SmartMovementIntegration : IDisposable
         disposed = true;
         // Stop our executor before telling FSD that it may resume.
         runtime.SetMovementHandoff(null);
+        runtime.SetFsdSessionActive(false);
         ready = false;
         var finalState = JsonNode.Parse(state)?.AsObject() ?? new JsonObject();
         finalState["ApiVersion"] = 1;
         finalState["Ready"] = false;
+        finalState["FsdSessionActive"] = false;
         finalState["CanMove"] = false;
         finalState["HasMovementControl"] = false;
         finalState["MechanicMovementActive"] = false;

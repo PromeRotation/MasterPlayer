@@ -51,6 +51,14 @@ public sealed class SafeZoneRuntime : IDisposable
     public SafeZoneManager Manager { get; }
     public SafeZoneRegistry Registry { get; }
     public ISafeZoneRebornMovementStatus MovementStatus => _movement;
+    internal bool FsdSessionActive { get; private set; }
+    internal void SetFsdSessionActive(bool active)
+    {
+        if (FsdSessionActive == active) return;
+        // 会话切换时撤销旧职责下的路线，下一帧只能执行重新发布的目标。
+        _movement.Reset();
+        FsdSessionActive = active;
+    }
     internal void SetMovementHandoff(Func<bool, bool>? request)
     {
         if (request == null) _movement.Reset();

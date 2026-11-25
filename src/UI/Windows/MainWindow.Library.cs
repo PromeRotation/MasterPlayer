@@ -342,8 +342,8 @@ public sealed partial class MainWindow
             Md.MutedText(running ? "这个脚本没有可调的设置。" : "脚本设置在脚本运行后显示；上面的机制开关现在就能调，进入区域后生效。");
         Md.EndCard();
 
-        if (running && run!.Script is PalaceScript palace && palace.FloorRooms.Count == 25)
-            DrawPalaceFloorControls(palace);
+        if (running && run!.Script is PalaceScript palace && palace.HasFloorMap)
+            DrawPalaceTrapControls(palace);
         if (running && run!.Script is PilgrimsBossScript { PredictedDamageText: { } prediction })
             Md.ValueRow("预计伤害", prediction);
         if (running && run!.Script is DungeonScript { PredictedDamageText: { } dungeonPrediction })
@@ -362,32 +362,12 @@ public sealed partial class MainWindow
         ImGui.PopID();
     }
 
-    private static void DrawPalaceFloorControls(PalaceScript palace)
+    private static void DrawPalaceTrapControls(PalaceScript palace)
     {
         Md.BeginCard("palace_floor", Md.CardKind.Outlined);
-        Md.SectionLabel("楼层导航");
-        Md.MutedText("点击已知房间前往，再次点击可取消；自动走位总开关控制实际移动。");
-        for (var room = 0; room < 25; ++room)
-        {
-            if (room % 5 != 0) ImGui.SameLine();
-            ImGui.BeginDisabled(room == 0 || palace.FloorRooms[room] == 0 || room == palace.FloorCurrentRoom);
-            var label = palace.FloorDestination == room && room != 0 ? $"→ {room + 1}" : $"{room + 1}";
-            if (ImGui.Button(label + $"##room{room}", new Vector2(Md.Em * 3.5f, 0))) palace.SelectFloorRoom(room);
-            ImGui.EndDisabled();
-        }
-        if (Md.TonalButton("清除目的地")) palace.ClearFloorDestination();
-        ImGui.SameLine();
+        Md.SectionLabel("陷阱修正");
         if (Md.TonalButton("忽略最近历史陷阱")) palace.IgnoreNearestFloorTrap();
         Md.MutedText("手动忽略的历史陷阱在本区域内跨楼层保留，脚本停止时清除。");
-        Md.Gap(0.4f);
-        Md.SectionLabel("满仓自动使用魔陶器");
-        Md.MutedText("只在单人时使用勾选项，为已确认满仓的宝箱腾出空间；默认全部关闭。");
-        for (uint id = 1; id <= 16; ++id)
-        {
-            var row = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.DeepDungeonItem>().GetRow(id);
-            var enabled = palace.IsAutoPomanderEnabled(id);
-            if (ImGui.Checkbox($"{row.Name}##autoPomander{id}", ref enabled)) palace.SetAutoPomanderEnabled(id, enabled);
-        }
         Md.EndCard();
     }
 

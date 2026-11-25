@@ -176,6 +176,18 @@ internal static class IntegrationRegression
             click!(new DtrInteractionEvent { ClickType = MouseClickType.Left });
             apply.Invoke(integration, [plugin]); update.Invoke(integration, [plugin]);
             Check(Enabled() && (bool)settings.EnableSmartMovement && notices.SequenceEqual([true, false, true]), "DTR did not use the same switch and notifications.");
+            var fsdState = runtime.GetType().GetProperty("FsdSessionActive", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            setFsdActive!(true);
+            Check(!(bool)fsdState.GetValue(runtime)!, "FSD IPC changed floor responsibility before Framework applied it.");
+            apply.Invoke(integration, [plugin]);
+            Check((bool)fsdState.GetValue(runtime)!, "FSD IPC did not reach the runtime's floor responsibility gate.");
+            setFsdActive(false);
+            apply.Invoke(integration, [plugin]);
+            Check(!(bool)fsdState.GetValue(runtime)! && (bool)settings.EnableSmartMovement,
+                "Ending FSD retained delegation or changed a movement switch it did not own.");
+            setFsdActive(true);
+            apply.Invoke(integration, [plugin]);
+            Console.WriteLine("PASS production FSD IPC: queued responsibility changes, runtime gate and restoration of original switch");
             pluginType.GetField("_integration", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(plugin, integration);
             setEnabled!(false);
             inPvp = true;
@@ -186,7 +198,9 @@ internal static class IntegrationRegression
             Check(funcs.Count == 0 && setEnabled == null && setFsdActive == null && click == null && dtrDisposed == 1, "IPC/DTR resources leaked across hot reload.");
             using var finalState = JsonDocument.Parse(snapshots.Last());
             Check(!finalState.RootElement.GetProperty("Ready").GetBoolean() && !finalState.RootElement.GetProperty("CanMove").GetBoolean()
-                && finalState.RootElement.GetProperty("SmartMovementEnabled").GetBoolean(), "Unload lost the state schema or changed the user's choice.");
+                && !finalState.RootElement.GetProperty("FsdSessionActive").GetBoolean()
+                && !(bool)fsdState.GetValue(runtime)!
+                && finalState.RootElement.GetProperty("SmartMovementEnabled").GetBoolean(), "Unload lost the state schema, retained floor delegation or changed the user's choice.");
             Console.WriteLine("PASS production IPC/DTR: queued setter, consistent snapshots, shared toggle, unchanged state and hot-reload cleanup");
         }
         finally

@@ -18,6 +18,8 @@ public readonly record struct GoalWindow(
     public bool OverrideDangerMargin { get; init; } = true;
     /// <summary>Center 偏好的评分锚点；目标几何和危险余量保持不变。</summary>
     public Vector3? PreferredPosition { get; init; }
+    /// <summary>机制站位在等待解算或原地等待时仍需暂停宿主；普通任务导航应关闭。</summary>
+    public bool RequiresMovementHandoff { get; init; } = true;
 
     /// <summary>创建一个永久目标窗口（无结束时间）。</summary>
     public static GoalWindow Persistent(DateTime goalFrom, int priority = 0, PositionPreference preference = PositionPreference.Center)

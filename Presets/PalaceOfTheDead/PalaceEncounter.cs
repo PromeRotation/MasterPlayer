@@ -320,13 +320,6 @@ internal sealed class PalaceEncounter
     internal IReadOnlyList<ulong> ForbiddenAutoAttackTargets(DateTime now)
         => spikes.Where(p => p.Value > now).Select(p => p.Key).ToArray();
 
-    internal ulong PreferredTarget(ulong playerId, DateTime now)
-    {
-        var forbidden = ForbiddenTargets(now).ToHashSet();
-        return actors.Values.Where(a => !a.Dead && a.InCombat && a.Targetable && a.Oid == 0x1842
-            && a.TargetId == playerId && !forbidden.Contains(a.Id)).Select(a => a.Id).FirstOrDefault();
-    }
-
     internal IEnumerable<string> Hints(DateTime now)
     {
         foreach (var cast in casts.Values.Where(c => c.Hit >= now))

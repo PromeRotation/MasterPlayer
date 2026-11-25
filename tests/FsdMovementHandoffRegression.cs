@@ -14,6 +14,67 @@ internal static class FsdMovementHandoffRegression
 
     internal static void Run(Action<string, Action> run)
     {
+        run("FSD handoff ordinary chest goals cannot reserve idle or terrain-rejected movement for 35 minutes", () =>
+        {
+            using var runtime = Create(out var move);
+            var calls = 0;
+            runtime.SetMovementHandoff(active => { if (active) calls++; return true; });
+            foreach (var priority in new[] { 20, 2000 })
+                runtime.Manager.AddGoalArea(new CircleTemplate(3), new StaticTransform(Vector3.UnitZ * 38, 0),
+                    [GoalWindow.Persistent(Epoch, priority) with { RequiresMovementHandoff = false }]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            foreach (var now in new[] { Epoch, Epoch.AddMinutes(35) })
+            {
+                Dispatch(runtime, null, Vector3.Zero, snapshot, now);
+                Dispatch(runtime, Idle(snapshot, now), Vector3.Zero, snapshot, now);
+                Check(!runtime.MovementStatus.MechanicMovementActive && !runtime.MovementStatus.HasControl,
+                    "Persistent ordinary chest goals reserved an idle handoff.");
+            }
+            ((SafeZoneRebornMovementSystem)runtime.MovementStatus).CheckTerrainTraversal = (_, _) => false;
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(calls == 0 && move.Moves == 0 && !runtime.MovementStatus.MechanicMovementActive,
+                "A terrain-rejected ordinary goal interrupted FSD.");
+            runtime.Manager.AddDangerArea(new CircleTemplate(2), new StaticTransform(Vector3.Zero, 0),
+                [new(Epoch, Epoch.AddSeconds(1))]);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, null, Vector3.Zero, snapshot, Epoch);
+            Check(runtime.MovementStatus.MechanicMovementActive, "Ordinary goal classification suppressed real damage preemption.");
+            Dispatch(runtime, null, Vector3.UnitZ * 6, snapshot, Epoch.AddSeconds(2));
+            Check(!runtime.MovementStatus.MechanicMovementActive, "Ordinary goals prolonged the completed danger's lease.");
+        });
+
+        run("FSD handoff mechanic goals retain stationary ownership until removal", () =>
+        {
+            using var runtime = Create(out var move);
+            var goal = runtime.Manager.AddGoalArea(new CircleTemplate(1), new StaticTransform(Vector3.Zero, 0),
+                [GoalWindow.Persistent(Epoch, 100)]);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Idle(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            Check(runtime.MovementStatus.MechanicMovementActive && !runtime.MovementStatus.HasControl && move.Moves == 0,
+                "A required stationary mechanic goal yielded to ordinary floor movement.");
+            runtime.Manager.RemoveArea(goal);
+            snapshot = runtime.Manager.BuildSnapshot(Epoch.AddSeconds(1));
+            Dispatch(runtime, null, Vector3.Zero, snapshot, Epoch.AddSeconds(1));
+            Check(!runtime.MovementStatus.MechanicMovementActive, "Removing a mechanism goal left an ownership lease.");
+        });
+
+        run("FSD handoff session transitions stop old routes and repeated requests preserve current mechanisms", () =>
+        {
+            using var runtime = Create(out var move);
+            var snapshot = runtime.Manager.BuildSnapshot(Epoch);
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            runtime.SetFsdSessionActive(true);
+            Check(runtime.FsdSessionActive && !move.IsRunning && !runtime.MovementStatus.MechanicMovementActive,
+                "Starting FSD retained an ordinary route from the previous responsibility.");
+            Dispatch(runtime, Route(snapshot, Epoch), Vector3.Zero, snapshot, Epoch);
+            runtime.SetFsdSessionActive(true);
+            Check(move.IsRunning && runtime.MovementStatus.MechanicMovementActive,
+                "An idempotent session refresh reset active mechanism movement.");
+            runtime.SetFsdSessionActive(false);
+            Check(!runtime.FsdSessionActive && !move.IsRunning && !runtime.MovementStatus.MechanicMovementActive,
+                "Ending FSD left the previous session's route or ownership.");
+        });
+
         run("Terrain publication retains only a running escape fully covered by the old boundary", () =>
         {
             using var runtime = Create(out var move);

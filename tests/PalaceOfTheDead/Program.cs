@@ -26,7 +26,7 @@ internal static class Program
             ("raidwide hints retain safe space", Raidwides),
             ("persistent objects; state7; prediction handoff; reset", ObjectsAndReset),
             ("all gazes and interrupts; ignored Chirp", FloorCasts),
-            ("spikes ten seconds; refresh; removal; target priority", Spikes),
+            ("spikes ten seconds; refresh; removal", Spikes),
             ("old-action cancel and interrupt preserve replacement", Cancellation),
         ];
         var failures = 0;
@@ -309,14 +309,13 @@ internal static class Program
             var e = new PalaceEncounter();
             var mob = Actor(10, 0x1842, Center, 100) with { Statuses = [new(sid, 0, 10, Epoch.AddSeconds(60))] };
             e.Synchronize([mob], Epoch);
-            Check(e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(9.9)).Contains(10ul) && !e.ForbiddenTargets(Epoch).Contains(10ul) && e.PreferredTarget(100, Epoch) == 10, "Spikes absent");
+            Check(e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(9.9)).Contains(10ul) && !e.ForbiddenTargets(Epoch).Contains(10ul), "Spikes absent");
             foreach (var seconds in new[] { 10.1, 10.2, 20.3, 30.4 })
             {
                 var now = Epoch.AddSeconds(seconds);
                 e.Synchronize([mob], now);
                 Check(!e.ForbiddenAutoAttackTargets(now).Contains(10ul), "Snapshot rearmed spikes");
             }
-            Check(e.PreferredTarget(100, Epoch.AddSeconds(31)) == 10 && e.PreferredTarget(101, Epoch.AddSeconds(31)) == 0, "Priority perspective");
             e.Apply(new LogSystemStatusAddEvent { TargetId = 10, StatusId = sid }, Epoch.AddSeconds(31));
             Check(e.ForbiddenAutoAttackTargets(Epoch.AddSeconds(31.1)).Contains(10ul), "Refresh ignored");
             e.Apply(new LogSystemStatusRemoveEvent { TargetId = 10, StatusId = sid }, Epoch.AddSeconds(32));

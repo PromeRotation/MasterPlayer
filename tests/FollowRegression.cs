@@ -79,6 +79,22 @@ internal static partial class FollowRegression
             Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).Version == first.Version, "An unchanged goal must not invalidate each solve.");
         });
 
+        run("FSD session suspends optional follow and restores it without changing settings", () =>
+        {
+            using var scope = new FollowScope();
+            var runtime = MasterPlayerPlugin.Instance!.SafeZone;
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1, "Follow did not register its ordinary goal.");
+            runtime.SetFsdSessionActive(true);
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 0 && scope.StopCount == 0,
+                "FSD retained optional following or stopped an executor it did not own.");
+            runtime.SetFsdSessionActive(false);
+            scope.Update();
+            Check(scope.Manager.BuildSnapshot(DateTime.UtcNow).GoalAreas.Count == 1,
+                "Ending FSD failed to restore the user's optional following.");
+        });
+
         run("PT30 safe refuge suspends optional follow until the owner releases it", () =>
         {
             using var scope = new FollowScope();
