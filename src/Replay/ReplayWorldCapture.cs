@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.ClientState.Statuses;
 using ECommons.DalamudServices;
 using PromeRotation.Helpers;
 using PromeRotation.LogSystem;
@@ -9,6 +10,8 @@ using NativeBattleChara = FFXIVClientStructs.FFXIV.Client.Game.Character.BattleC
 using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 using NativeTreasure = FFXIVClientStructs.FFXIV.Client.Game.Object.Treasure;
 using NativeGroupManager = FFXIVClientStructs.FFXIV.Client.Game.Group.GroupManager;
+using NativeActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
+using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game;
 
@@ -51,6 +54,17 @@ internal sealed class ReplayWorldCapture
         var manager = (NativeGroupManager*)(Svc.Party?.GroupManagerAddress ?? 0);
         if (manager == null) return result.ToArray();
         var group = DutyReplayState.Active ? &manager->ReplayGroup : &manager->MainGroup;
+        // PR resolves actors for its priority slots. A roster member may still exist after its actor disappears.
+        var occupied = result.Select(p => p.Slot).ToHashSet();
+        for (var index = 0; index < Math.Min(8, (int)group->MemberCount); ++index)
+        {
+            var id = group->PartyMembers[index].EntityId;
+            if (id is 0 or 0xE0000000 || !seen.Add(id)) continue;
+            var slot = Enumerable.Range(0, 8).FirstOrDefault(s => !occupied.Contains(s), -1);
+            if (slot < 0) break;
+            occupied.Add(slot);
+            result.Add(new(slot, ((PartyPrioritySlot)slot).ToString(), id));
+        }
         // Match the source's regular 3x8 alliance layout. The 6x4 layout uses different slot semantics.
         if (!group->IsAlliance || group->IsSmallGroupAlliance) return result.ToArray();
         for (var index = 0; index < 16; ++index)
@@ -81,12 +95,40 @@ internal sealed class ReplayWorldCapture
         return new()
         {
             Full = true, Territory = territory, LocalPlayerId = currentPlayerId, TargetId = Id(Svc.Targets.Target),
+            SourcePlayerId = CaptureSourcePlayerId(),
             LegacyMovement = Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1,
             CameraAzimuth = CaptureCameraAzimuth(),
+            AllowedFateId = CaptureAllowedFate(actors.FirstOrDefault(a => a.Id == currentPlayerId)?.Level),
             DutyActionPlayerId = currentPlayerId, DutyActions = CaptureDutyActions(currentPlayerId),
             DeepDungeon = CaptureDeepDungeon(),
             LocalTimelineRole = TimelineRoleManager.CurrentRole.ToString(), Party = CaptureParty(), Actors = actors.ToArray()
         };
+    }
+
+    internal static unsafe ulong? CaptureSourcePlayerId()
+    {
+        if (DutyReplayState.Active)
+        {
+            foreach (var obj in Svc.Objects)
+                if (obj.Address != 0 && ((NativeGameObject*)obj.Address)->ObjectIndex == 0)
+                    return Id(obj);
+            return 0;
+        }
+        var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
+        return ui != null ? ui->PlayerState.EntityId : null;
+    }
+
+    internal static unsafe uint CaptureAllowedFate(byte? playerLevel)
+    {
+        var manager = FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager.Instance();
+        if (manager == null || manager->CurrentFate == null) return 0;
+        var id = manager->CurrentFate->FateId;
+        var fate = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>()?.GetRowOrDefault(id);
+        if (fate == null) return 0;
+        if (fate.Value.EurekaFate != 1)
+            return playerLevel <= fate.Value.ClassJobLevelMax ? id : 0u;
+        var ui = FFXIVClientStructs.FFXIV.Client.Game.UI.UIState.Instance();
+        return ui != null && ui->PlayerState.GetContentValue(2) <= fate.Value.ClassJobLevelMax ? id : 0u;
     }
 
     internal static unsafe float? CaptureCameraAzimuth()
@@ -185,6 +227,11 @@ internal sealed class ReplayWorldCapture
         {
             Id = id, EntityId = obj.EntityId, GameObjectId = obj.GameObjectId, Oid = obj.BaseId,
             Name = obj.Name.TextValue, Kind = (byte)obj.ObjectKind, SubKind = obj.SubKind, OwnerId = obj.OwnerId,
+            ObjectIndex = native != null ? native->ObjectIndex : null,
+            FateId = native != null ? native->FateId : null,
+            IsEnemy = native != null
+                ? native->IsCharacter() && NativeActionManager.ClassifyTarget((NativeCharacter*)native) == NativeActionManager.TargetCategory.Enemy
+                : null,
             Position = obj.Position, Rotation = obj.Rotation, HitboxRadius = obj.HitboxRadius,
             Dead = obj.IsDead, Targetable = obj.IsTargetable, TargetId = obj.TargetObjectId,
             AggroPlayer = playerEnmity?.Contains(obj.EntityId) == true,
@@ -197,8 +244,12 @@ internal sealed class ReplayWorldCapture
         {
             var battleNative = (NativeBattleChara*)obj.Address;
             var tethers = new List<ReplayTether>();
+            var tetherSlot = 0;
             foreach (var tether in battleNative != null ? battleNative->Vfx.Tethers : [])
-                if (tether.Id != 0) tethers.Add(new(tether.Id, tether.TargetId, tether.Progress));
+            {
+                if (tether.Id != 0) tethers.Add(new(tether.Id, tether.TargetId, tether.Progress) { SlotIndex = tetherSlot });
+                ++tetherSlot;
+            }
             ReplayCast? cast = null;
             if (battleNative != null && battle.IsCasting && battle.CastActionId != 0 && float.IsFinite(battle.CurrentCastTime) && float.IsFinite(battle.TotalCastTime))
             {
@@ -209,7 +260,8 @@ internal sealed class ReplayWorldCapture
                     now.AddSeconds(-battle.CurrentCastTime), now.AddSeconds(Math.Max(0, battle.TotalCastTime - battle.CurrentCastTime) + 0.3),
                     battle.IsCastInterruptible, info->ResponseActionId == battle.CastActionId && info->ResponseGlobalSequence != 0)
                 {
-                    TotalTime = battle.TotalCastTime
+                    TotalTime = battle.TotalCastTime,
+                    IsSpell = battle.CastActionType == 1
                 };
             }
             actor = actor with
@@ -221,11 +273,31 @@ internal sealed class ReplayWorldCapture
                 ModelState = battleNative != null ? battleNative->Timeline.ModelState : (byte)0, AnimationState1 = battleNative != null ? battleNative->Timeline.AnimationState[0] : (byte)0,
                 AnimationState2 = battleNative != null ? battleNative->Timeline.AnimationState[1] : (byte)0, Cast = cast, Tethers = tethers.ToArray(),
                 IncomingEffects = CaptureIncomingEffects(battleNative),
-                Statuses = battle.StatusList.Where(s => s.StatusId != 0).Select(s => new ReplayStatus(s.StatusId, s.Param, s.SourceId,
-                    ReplayStatus.Expiration(now, s.RemainingTime))).ToArray()
+                Statuses = CaptureStatuses(battle.StatusList, now)
             };
         }
         return actor;
+    }
+
+    internal static ReplayStatus[] CaptureStatuses(IEnumerable<IStatus> statuses, DateTime now)
+    {
+        var result = new List<ReplayStatus>();
+        var slot = 0;
+        foreach (var status in statuses)
+        {
+            var id = status.StatusId;
+            if (id != 0)
+            {
+                var remaining = status.RemainingTime;
+                result.Add(new(id, status.Param, status.SourceId, ReplayStatus.Expiration(now, remaining))
+                {
+                    SlotIndex = slot,
+                    ZeroRemainingTime = remaining == 0 ? true : null
+                });
+            }
+            ++slot;
+        }
+        return result.ToArray();
     }
 
     internal static unsafe ReplayIncomingEffect[] CaptureIncomingEffects(NativeBattleChara* character)

@@ -8,6 +8,19 @@
     <DefaultItemExcludes>$(DefaultItemExcludes);ScriptCompilation\**;MechanicRuntime\**;UiCompatibility\**;RemoteControl\**;PilgrimsTraverse30\**;PilgrimsTraverse\**;PalaceOfTheDead\**;TerrainCollision\**;ReleasePackaging\**;WorldDrawing\**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\Presets\Quantum\*.cs" Link="Quantum\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\EurekaOrthos\*.cs" Link="EurekaOrthos\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\EurekaOrthos\Floor\*.cs" Exclude="..\Presets\EurekaOrthos\Floor\EurekaFloorScript.cs" Link="EurekaOrthos\Floor\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\DeepDungeon\DeepDungeonFloorEncounter.cs" Link="DeepDungeon\DeepDungeonFloorEncounter.cs" />
+    <Compile Include="..\Presets\DeepDungeon\DeepDungeonEffectInput.cs" Link="DeepDungeon\DeepDungeonEffectInput.cs" />
+    <Compile Include="..\Presets\PilgrimsTraverse\Floor\PilgrimsFloorEncounter.cs" Link="PilgrimsTraverse\Floor\PilgrimsFloorEncounter.cs" />
+    <EmbeddedResource Include="..\Presets\EurekaOrthos\Floor\ObstacleMaps\*" LogicalName="MasterPlayer.EurekaLOS.%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\HeavenOnHigh\*.cs" Link="HeavenOnHigh\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\HeavenOnHigh\Floor\*.cs" Exclude="..\Presets\HeavenOnHigh\Floor\HeavenOnHighFloorScript.cs" Link="HeavenOnHigh\Floor\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\MaskedCarnivale\*.cs" Link="MaskedCarnivale\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Fates\*.cs" Link="Fates\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\HallOfTheNovice\*.cs" Link="HallOfTheNovice\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\TreasureHunt\*.cs" Link="TreasureHunt\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Hunts\*.cs" Exclude="..\Presets\Hunts\SimpleHuntScript.cs" Link="Hunts\%(Filename)%(Extension)" />
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <ProjectReference Include="..\MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
@@ -15,8 +28,10 @@
   <ItemGroup>
     <Compile Include="..\src\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\src\UI\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
+    <Compile Include="..\src\UI\WorldDrawing\ITriangulatedDrawingGeometry.cs" Link="ITriangulatedDrawingGeometry.cs" />
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blunderville\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Fixtures\EurekaOrthos\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse30\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt20-bursts-200454.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse\pt10-leafmash-114707.json" CopyToOutputDirectory="PreserveNewest" />
@@ -51,6 +66,9 @@
     <Compile Include="..\src\Movement\Dodge\AoeShapeDatabase.cs" Link="AoeShapeDatabase.cs" />
     <Compile Include="..\src\Movement\Dodge\DangerMarginInflator.cs" Link="DangerMarginInflator.cs" />
     <Compile Include="..\src\Scripting\CastRotation.cs" Link="CastRotation.cs" />
+    <Compile Include="..\src\Scripting\ScriptTimeline.cs" Link="ScriptTimeline.cs" />
+    <Compile Include="..\src\Scripting\ScriptTimelineEntry.cs" Link="ScriptTimelineEntry.cs" />
+    <Compile Include="..\src\Scripting\ScriptTimelineHint.cs" Link="ScriptTimelineHint.cs" />
     <Compile Include="..\src\Scripting\Visual\*.cs" Link="Visual\%(Filename)%(Extension)" />
     <Compile Include="..\src\Scripting\ScriptMoveApi.cs" Link="ScriptMoveApi.cs" />
     <Compile Include="..\src\Scripting\ScriptHintsApi.cs" Link="ScriptHintsApi.cs" />
@@ -75,13 +93,14 @@
 
     <Compile Include="..\Presets\Crucible\**\*.cs" Exclude="..\Presets\Crucible\CrucibleScript.cs;..\Presets\Crucible\Entries\**" Link="Crucible\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Dungeons\**\*.cs" Exclude="..\Presets\Dungeons\DungeonScript.cs;..\Presets\Dungeons\Vanaspati\VanaspatiMisdirectionControl.cs;..\Presets\Dungeons\CastrumAbania\CastrumAbaniaScript.cs;..\Presets\Dungeons\Entries\**" Link="Dungeons\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Trials\Thordan\*.cs" Link="Trials\Thordan\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\ArrPrimals\*.cs" Link="Trials\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\UltimaExtreme\*.cs" Link="Trials\UltimaExtreme\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\GarudaExtreme\*.cs" Link="Trials\GarudaExtreme\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\TitanExtreme\*.cs" Link="Trials\TitanExtreme\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\IfritExtreme\*.cs" Link="Trials\IfritExtreme\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Raids\**\*.cs" Exclude="..\Presets\Raids\Entries\**;..\Presets\Raids\CoilScript.cs" Link="Raids\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Presets\Quests\**\*.cs" Exclude="..\Presets\Quests\Entries\**" Link="Quests\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Quests\**\*.cs" Exclude="..\Presets\Quests\Entries\**;..\Presets\Quests\TargetPriority\QuestTargetScript.cs" Link="Quests\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\PortaDecumana\*.cs" Link="Trials\Porta\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\ArrPrimalsHard\*.cs" Link="Trials\Hard\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Trials\Thornmarch\*.cs" Link="Trials\Thornmarch\%(Filename)%(Extension)" />

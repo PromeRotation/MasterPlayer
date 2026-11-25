@@ -10,14 +10,15 @@ internal sealed class HuntStackJoinGeometry(Vector3[] centers, float radius) : G
     public override bool Contains(Vector3 point, float epsilon = GeometryHelper.DefaultEpsilon)
     {
         var safeRadius = MathF.Max(0, radius - epsilon);
-        return !centers.Any(c => Vector2.DistanceSquared(new(c.X, c.Z), new(point.X, point.Z)) <= safeRadius * safeRadius);
+        return !centers.Any(c => Vector2.DistanceSquared(new(c.X, c.Z), new(point.X, point.Z)) < safeRadius * safeRadius);
     }
 
     public override bool IntersectsSegment(Vector3 start, Vector3 end, float epsilon = GeometryHelper.DefaultEpsilon)
     {
+        if (Contains(start, epsilon) || Contains(end, epsilon)) return true;
         var direction = new Vector2(end.X - start.X, end.Z - start.Z);
         var lengthSquared = direction.LengthSquared();
-        if (lengthSquared < .0000001f) return Contains(start, epsilon);
+        if (lengthSquared == 0) return Contains(start, epsilon);
         var safeRadius = MathF.Max(0, radius - epsilon);
         var intervals = new List<(float From, float Until)>();
         foreach (var center in centers)
@@ -34,7 +35,7 @@ internal sealed class HuntStackJoinGeometry(Vector3[] centers, float radius) : G
         foreach (var interval in intervals.OrderBy(i => i.From))
         {
             if (interval.Until < covered) continue;
-            if (interval.From > covered) return true;
+            if (interval.From >= covered) return true;
             covered = interval.Until;
             if (covered >= 1) return false;
         }

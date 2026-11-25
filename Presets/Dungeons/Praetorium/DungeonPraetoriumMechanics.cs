@@ -45,6 +45,9 @@ internal sealed partial class DungeonEncounter
 
     internal void MapEffect(uint index, uint state, DateTime? timestamp = null)
     {
+        TacticalMap(index, state);
+        BarP2Map(index, state);
+        BarP3Map(index, state);
         ArrQuestMap(index, state);
         ThornMap(index, state, timestamp ?? _now);
         WolMap(index, state, timestamp ?? _now);

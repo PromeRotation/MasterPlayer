@@ -7,24 +7,40 @@ internal sealed partial class DungeonEncounter
 {
     public ulong PlayerId { get; private set; }
     public IEnumerable<DungeonPendingCast> Gazes => _casts.Values.Where(c => c.Rule.Action is 28648 or 4331 or 5216 or 7364 or 8066 or 7940 or 7949 or 9829
+        || IsTactical && c.Rule.Action is 40743 or 40757
+        || IsHeavenOnHigh && c.Rule.Action is 11900 or 11922
+        || territory == HeavenswardIntroCatalog.EDDA && c.Rule.Action == 6403
+        || territory == JobQuestCatalog.SOMEWHERE_ONLY_SHE_KNOWS && c.Rule.Action is 37523 or 37537
+        || IsGamboling && c.Rule.Action == 17198
+        || IsFadedThordan && c.Rule.Action == 21090
+        || HasTreasureGaze && NativeTreasureCatalog.GazeAction(c.Rule.Action) && !TreasurePlayerGazeAction(c.Rule.Action)
         || territory == DohnMhegCatalog.TERRITORY && c.Rule.Action == 13552
         || territory == WorqorCatalog.TERRITORY && c.Rule.Action == 36297
         || territory == LakshmiCatalog.TERRITORY && c.Rule.Action == 9613
         || IsDarkness && Active?.BossOid == 0xE00 && c.Rule.Action == 3281
-        || IsInnocence && c.Rule.Action == 16025).Concat(AntitowerGazes()).Concat(TroiaGazes()).Concat(LapisGazes()).Concat(QueenGazes());
+        || HasCarnivaleGaze && c.Rule.Action is 14951 or 14875
+        || IsInnocence && c.Rule.Action == 16025).Concat(AntitowerGazes()).Concat(TroiaGazes()).Concat(LapisGazes()).Concat(QueenGazes()).Concat(TreasurePlayerGazes()).Concat(CarnivaleDemonEyes);
 
     public ulong PriorityTarget(ulong current, Vector3 player)
     {
+        if (IsQuantum) return QuantumPriorityTarget(current, player);
         var initial = DamagePriorityTarget(current, player);
         return NativeTankTarget(initial, player)?.Actor.Id ?? initial;
     }
 
     private ulong DamagePriorityTarget(ulong current, Vector3 player)
     {
+        if (IsNativeFate) return FatePriorityTarget(current, player);
+        if (IsNovice) return NovicePriorityTarget(current, player);
+        if (IsNativeTreasure) return TreasurePriorityTarget(current, player);
+        if (IsMainScenarioQuest || IsBarPassage || IsCarnivale) return MainScenarioPriorityTarget(current, player);
+        if (IsFallenKuribu || IsSummoningNode) return FallenPriorityTarget(current, player);
+        if (IsNpcPartyQuest || IsIo || IsRaisingSword) return JobQuestPriorityTarget(current, player);
         var haveTail = _actors.Values.Any(a => a.Oid == 0x10A && !a.Dead);
         int Priority(DungeonActor a) => Active?.BossOid switch
         {
             _ when IsHeavenswardIntro => HeavenswardIntroPriority(a),
+            _ when IsOrcus && a.Oid is 0x3666 or 0x3667 => 1,
             _ when IsCaduceus => CaduceusPriority(a),
             _ when IsTwintania => TwinPriority(a),
             _ when IsUltimaExtreme => a.Oid switch { 0x915 => 2, 0x90F => 1, _ => 0 },
@@ -142,25 +158,112 @@ internal sealed partial class DungeonEncounter
 
     public float? GazeFacing(Vector3 player, float rotation)
     {
+        if (IsThordan) return Thordan.Facing(player, rotation);
+        if (IsKefka) return Kefka.Facing(player, rotation);
         if (territory == SkydeepCatalog.TERRITORY) return SkydeepFacing(player, rotation);
         if (territory == StigmaCatalog.TERRITORY && Active?.BossOid == 0x3428) return StigmaFacing(player, rotation);
         if (Active?.BossOid == 0x1AFE) return SirenFacing(player, rotation);
+        if (VisibleCarnivaleEyes != null && Active == null) return null;
         var directions = Gazes.Where(c => c.FinishAt <= _now.AddSeconds(.75))
-            .Where(c => c.Rule.Action is not (36624 or 3281) || Vector2.DistanceSquared(new(c.Location.X, c.Location.Z), new(player.X, player.Z)) <= 10000f * 10000f)
-            .Select(c => MathF.Atan2(c.Location.X - player.X, c.Location.Z - player.Z)).ToArray();
-        if (directions.Length == 0) return null;
-        var candidates = new[] { rotation }.Concat(directions.SelectMany(d => new[]
-            { d + MathF.PI, d + MathF.PI / 4 + .05f, d - MathF.PI / 4 - .05f }));
-        foreach (var candidate in candidates)
-            if (float.IsFinite(candidate) && directions.All(d => MathF.Abs(MathF.Atan2(MathF.Sin(candidate - d), MathF.Cos(candidate - d))) > MathF.PI / 4 + .01f))
-                return candidate;
-        return null;
+            .Where(c => c.Rule.Action is not (11900 or 11922 or 14691 or 14951 or 14875 or 36624 or 3281 or 6403 or 37523 or 37537 or 17198 or 21090 or 40743 or 40757) && !NativeTreasureCatalog.GazeAction(c.Rule.Action)
+                || Vector2.DistanceSquared(new(c.Location.X, c.Location.Z), new(player.X, player.Z)) <= 10000f * 10000f)
+            .Select(c => (Center: MathF.Atan2(c.Location.X - player.X, c.Location.Z - player.Z), HalfWidth: MathF.PI / 4))
+            .Concat(TreasureHexDirections(player).Where(d => d.Activation <= _now.AddSeconds(.75))
+                .Select(d => (d.Center, d.HalfWidth))).ToArray();
+        return DungeonFacingDirections.Solve(directions, rotation);
     }
 
     public IEnumerable<DungeonAmbientAoe> AmbientAoes()
     {
+        if (IsThordan)
+        {
+            foreach (var aoe in ThordanAoes()) yield return aoe;
+            yield break;
+        }
+        if (IsWickedThunder)
+        {
+            foreach (var aoe in WickedThunderAoes()) yield return aoe;
+            yield break;
+        }
+        if (IsKefka)
+        {
+            foreach (var aoe in KefkaAoes()) yield return aoe;
+            yield break;
+        }
+        if (IsQuantum)
+        {
+            foreach (var aoe in QuantumOutput.Aoes(Quantum)) yield return aoe;
+            yield break;
+        }
+        foreach (var aoe in EurekaAoes()) yield return aoe;
+        foreach (var aoe in HeavenOnHighAoes()) yield return aoe;
+        foreach (var aoe in TacticalAoes()) yield return aoe;
+        foreach (var aoe in FateAoes()) yield return aoe;
+        foreach (var aoe in NovicePrecombatAoes()) yield return aoe;
+        foreach (var aoe in TreasureLights()) yield return aoe;
+        foreach (var aoe in TreasureSequenceAoes()) yield return aoe;
+        foreach (var aoe in TreasureRotationAoes()) yield return aoe;
+        foreach (var aoe in TreasureGymnasionSequenceAoes()) yield return aoe;
+        foreach (var aoe in TreasureNarkissosAoes()) yield return aoe;
+        foreach (var aoe in TreasureMolterAoes()) yield return aoe;
+        foreach (var aoe in TreasureCastBaitAoes()) yield return aoe;
+        foreach (var aoe in TreasureWallKnockbackAoes()) yield return aoe;
+        foreach (var aoe in TreasureBuffetAoes()) yield return aoe;
+        foreach (var aoe in TreasureKelpieAoes()) yield return aoe;
+        foreach (var aoe in TreasureCreatedCircleAoes()) yield return aoe;
+        foreach (var aoe in TreasureIceAoes()) yield return aoe;
+        foreach (var aoe in TreasureVaultGroupAoes()) yield return aoe;
+        foreach (var aoe in TreasureBitterAoes()) yield return aoe;
+        foreach (var aoe in TreasureFortressAoes()) yield return aoe;
+        foreach (var aoe in TreasureYanAoes()) yield return aoe;
+        foreach (var aoe in TreasureHexAoes()) yield return aoe;
+        foreach (var aoe in TreasureBeamAoes()) yield return aoe;
+        foreach (var aoe in TreasureObstacles()) yield return aoe;
+        foreach (var aoe in TreasureCleaves()) yield return aoe;
+        foreach (var aoe in TreasureBaitAoes()) yield return aoe;
+        foreach (var aoe in TreasureOdiousAoes()) yield return aoe;
+        foreach (var aoe in TreasureEnemies()) yield return aoe;
         foreach (var aoe in EarlyArrEnemyOutlines()) yield return aoe;
         foreach (var aoe in HeavenswardIntroEnemies()) yield return aoe;
+        foreach (var aoe in JobQuestEnemies()) yield return aoe;
+        foreach (var aoe in PortraitAoes()) yield return aoe;
+        foreach (var aoe in SamuraiAoes()) yield return aoe;
+        foreach (var aoe in JobQuestPartyAoes()) yield return aoe;
+        foreach (var aoe in HeroesPretendersAoes()) yield return aoe;
+        foreach (var aoe in BarP2Aoes()) yield return aoe;
+        foreach (var aoe in BarP3Aoes()) yield return aoe;
+        foreach (var aoe in CarnivaleAoes()) yield return aoe;
+        foreach (var aoe in AlphaAoes()) yield return aoe;
+        foreach (var aoe in IseultalonAoes()) yield return aoe;
+        foreach (var aoe in DikaiosyneAoes()) yield return aoe;
+        foreach (var aoe in BekkoAoes()) yield return aoe;
+        foreach (var aoe in OrcusAoes()) yield return aoe;
+        foreach (var aoe in FallenAoes()) yield return aoe;
+        foreach (var aoe in SageLifeAoes()) yield return aoe;
+        foreach (var aoe in GuildivainAoes()) yield return aoe;
+        foreach (var aoe in SleepOtisAoes()) yield return aoe;
+        foreach (var aoe in SlickshellAoes()) yield return aoe;
+        foreach (var aoe in MaxQuestAoes()) yield return aoe;
+        foreach (var aoe in TimeBetweenAoes()) yield return aoe;
+        foreach (var aoe in NodeAoes()) yield return aoe;
+        foreach (var aoe in SteelAoes()) yield return aoe;
+        foreach (var aoe in QuestWindAoes()) yield return aoe;
+        foreach (var aoe in MainScenarioKnockbacks()) yield return aoe;
+        foreach (var aoe in FeastElectrocutions()) yield return aoe;
+        foreach (var aoe in RhalgrAoes()) yield return aoe;
+        foreach (var aoe in EndwalkerQuestAoes()) yield return aoe;
+        foreach (var aoe in PalacePoxAreas()) yield return aoe;
+        foreach (var aoe in HeavenswardQuestAoes()) yield return aoe;
+        foreach (var aoe in TisiphoneZombieAreas()) yield return aoe;
+        foreach (var aoe in PalaceSerpentAoes()) yield return aoe;
+        foreach (var aoe in PalacePlantAoes()) yield return aoe;
+        foreach (var aoe in NybethAoes()) yield return aoe;
+        foreach (var aoe in GodmotherAoes()) yield return aoe;
+        foreach (var aoe in GudannaAoes()) yield return aoe;
+        foreach (var aoe in BlackRiderAoes()) yield return aoe;
+        foreach (var aoe in YaquaruAoes()) yield return aoe;
+        foreach (var aoe in GraoullyAoes()) yield return aoe;
+        foreach (var aoe in EddaGazeDrawing()) yield return aoe;
         foreach (var aoe in NativeEnemyGoals()) yield return aoe;
         foreach (var aoe in NativeEnemyMarkers()) yield return aoe;
         foreach (var aoe in ArrTrialAoes()) yield return aoe;

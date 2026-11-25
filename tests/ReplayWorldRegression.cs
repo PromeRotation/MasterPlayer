@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text;
+using Dalamud.Game.ClientState.Statuses;
 using MasterPlayer.Mechanics.Dungeons;
 using MasterPlayer.Radar;
 using MasterPlayer.Replay;
@@ -231,6 +232,112 @@ internal static class ReplayWorldRegression
             Check(ReplayStatus.Expiration(Start, -30) == Start.AddSeconds(30), "A pending self-cast status became permanent.");
             Check(ReplayStatus.Expiration(Start, float.MaxValue) == Start.AddSeconds(100000), "An outlier status overflows the replay clock.");
             Check(ReplayStatus.Expiration(Start, 0) == DateTime.MaxValue, "A durationless status became expired.");
+        });
+        run("replay world native zero remaining metadata original slots delta roundtrip and reverse rebuild", () =>
+        {
+            IStatus Status(uint id, float remaining) => ScriptServiceProxy.Create<IStatus>((name, _) => name switch
+            {
+                "get_StatusId" => (object)id,
+                "get_Param" => (ushort)7,
+                "get_SourceId" => 10u,
+                "get_RemainingTime" => remaining,
+                _ => throw new NotSupportedException(name),
+            });
+            var captured = ReplayWorldCapture.CaptureStatuses(
+                [Status(0, 0), Status(197, 0), Status(198, -30), Status(999, 15)], Start);
+            Check(captured.Length == 3 && captured.Select(s => s.SlotIndex).SequenceEqual(new int?[] { 1, 2, 3 }),
+                "Capture filtered statuses before preserving native slot indices.");
+            Check(captured[0].ZeroRemainingTime == true && captured[0].ExpiresAt == DateTime.MaxValue
+                && captured[1].ZeroRemainingTime == null && captured[1].ExpiresAt == Start.AddSeconds(30)
+                && captured[2].ZeroRemainingTime == null, "Capture guessed zero from normalized expiry or negative duration.");
+            var actor = new ReplayActorState { Id = 100, Statuses = captured,
+                Cast = new(6386, 0, Vector3.Zero, 0, Start, Start.AddSeconds(3), false, false) { IsSpell = false } };
+            var frame = new ReplayWorldFrame { Full = true, Territory = 603, LocalPlayerId = 100, Actors = [actor] };
+            var next = frame with { Actors = [actor with
+            {
+                Statuses = [captured[0] with { ZeroRemainingTime = null }, captured[1], captured[2]],
+                Cast = actor.Cast with { IsSpell = true }
+            }] };
+            var delta = ReplayWorldFrame.Delta(frame, next);
+            Check(delta.Actors.Length == 1, "Metadata-only input change was omitted from delta.");
+            Check(ReplayWorldFrame.Delta(frame, frame with
+            {
+                Actors = [actor with { Statuses = [captured[0] with { ZeroRemainingTime = null }, captured[1], captured[2]] }]
+            }).Actors.Length == 1, "Zero remaining metadata alone was omitted from delta.");
+            Check(ReplayWorldFrame.Delta(frame, frame with
+            {
+                Actors = [actor with { Cast = actor.Cast with { IsSpell = true } }]
+            }).Actors.Length == 1, "Spell type metadata alone was omitted from delta.");
+            using var stream = new MemoryStream();
+            using var writer = new ReplayRecordingWriter(stream);
+            writer.WriteHeader(new(2, 603, Start, "native-status-clock"));
+            writer.WriteWorldFrame(0, frame);
+            writer.WriteWorldFrame(1, delta);
+            stream.Position = 0;
+            var recording = ReplayRecordingReader.Load(stream);
+            var playback = new ReplayPlayback(recording);
+            playback.AdvanceTo(1, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.Statuses[0].ZeroRemainingTime == null
+                && playback.World.LocalPlayer.Cast!.IsSpell == true, "Metadata delta failed roundtrip.");
+            playback = new(recording);
+            playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.Statuses[0].ZeroRemainingTime == true
+                && playback.World.LocalPlayer.Cast!.IsSpell == false, "Reverse rebuild reused later input.");
+            Check(new ReplayStatus(197, 0, 10, DateTime.MaxValue).ZeroRemainingTime == null
+                && new ReplayCast(1, 0, Vector3.Zero, 0, Start, Start, false, false).IsSpell == null,
+                "Old records guessed native zero duration or action type.");
+            using var legacy = new MemoryStream(Encoding.UTF8.GetBytes("""
+                {"v":2,"territory":603,"startedUtc":"2026-09-21T01:00:00Z"}
+                {"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":603,"LocalPlayerId":100,"Actors":[{"Id":100,"Statuses":[{"Id":197,"ExpiresAt":"9999-12-31T23:59:59.9999999Z"}],"Cast":{"ActionId":6386,"StartedAt":"2026-09-21T01:00:00Z","FinishAt":"2026-09-21T01:00:03Z"}}]}}
+                """));
+            var old = ReplayRecordingReader.Load(legacy).WorldFrames.Single().Frame.Actors.Single();
+            Check(old.Statuses[0].ZeroRemainingTime == null && old.Cast!.IsSpell == null,
+                "Actual legacy JSON fabricated native metadata.");
+        });
+        run("replay world native tether slot holes progress metadata delta legacy and reverse rebuild", () =>
+        {
+            var actor = new ReplayActorState
+            {
+                Id = 100, GameObjectId = 1000, Tethers = [new(5, 101, 7) { SlotIndex = 1 }]
+            };
+            var initial = new ReplayWorldFrame { Full = true, Territory = 448, LocalPlayerId = 100, Actors = [actor] };
+            var changed = initial with { Actors = [actor with { Tethers = [actor.Tethers[0] with { SlotIndex = 0 }] }] };
+            var delta = ReplayWorldFrame.Delta(initial, changed);
+            Check(delta.Actors.Length == 1 && delta.Actors[0].Tethers.Single().SlotIndex == 0,
+                "Slot-only change was omitted from delta.");
+            Check(ReplayWorldFrame.Delta(initial, initial with
+            {
+                Actors = [actor with { Tethers = [actor.Tethers[0] with { Progress = 8 }] }]
+            }).Actors.Length == 1, "Progress-only change was omitted from delta.");
+            Check(ReplayWorldFrame.Delta(initial, initial with
+            {
+                Actors = [actor with { GameObjectId = 1001 }]
+            }).Actors.Length == 1, "Generation-only change was omitted from delta.");
+            Check(ReplayWorldFrame.Delta(initial, initial with
+            {
+                Actors = [actor with { Tethers = [actor.Tethers[0] with { }] }]
+            }).Actors.Length == 0, "Equal copied metadata fabricated a delta.");
+            using var stream = new MemoryStream();
+            using var writer = new ReplayRecordingWriter(stream);
+            writer.WriteHeader(new(2, 448, Start, "native-tether-slots"));
+            writer.WriteWorldFrame(0, initial);
+            writer.WriteWorldFrame(1, delta);
+            stream.Position = 0;
+            var recording = ReplayRecordingReader.Load(stream);
+            var playback = new ReplayPlayback(recording);
+            playback.AdvanceTo(1, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.Tethers.Single() is { SlotIndex: 0, Progress: 7 },
+                "Writer reader playback dropped native slot or progress.");
+            playback = new(recording);
+            playback.AdvanceTo(0, _ => { }, _ => { });
+            Check(playback.World.LocalPlayer!.Tethers.Single().SlotIndex == 1,
+                "Reverse rebuild filled the original slot0 hole.");
+            using var legacy = new MemoryStream(Encoding.UTF8.GetBytes("""
+                {"v":2,"territory":448,"startedUtc":"2026-09-21T01:00:00Z"}
+                {"t":0,"kind":"WorldFrame","data":{"Full":true,"Territory":448,"LocalPlayerId":100,"Actors":[{"Id":100,"Tethers":[{"Id":5,"TargetId":101,"Progress":7}]}]}}
+                """));
+            Check(ReplayRecordingReader.Load(legacy).WorldFrames.Single().Frame.Actors.Single().Tethers.Single().SlotIndex == null,
+                "Old JSON fabricated a native slot index.");
         });
         run("replay world dynamic bindings use recorded entities and never fall through to live", () =>
         {

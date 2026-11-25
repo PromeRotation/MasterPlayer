@@ -107,7 +107,8 @@ public sealed class RadarView
         }
         else
         {
-            var position = world != null ? world.LocalPlayer?.Position : player?.Position;
+            var position = (snapshot.ArenaBoundary as ILocalViewBoundary)?.ViewCenter
+                ?? (world != null ? world.LocalPlayer?.Position : player?.Position);
             if (position == null)
             {
                 return false;
@@ -348,7 +349,7 @@ public sealed class RadarView
         {
             return;
         }
-        if (boundary is LocalTerrainBoundary) return;
+        if (boundary is LocalTerrainBoundary || boundary is ILocalViewBoundary { ShowBoundary: false }) return;
 
         if (boundary is ILocalViewBoundary)
         {

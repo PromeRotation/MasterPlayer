@@ -254,6 +254,8 @@ public sealed class MasterPlayerPlugin : IPromePlugin
         var t4 = System.Diagnostics.Stopwatch.GetTimestamp();
         AoeVisibility?.Update(SafeZone.Manager);
         _radar?.Update();
+        worldDrawing?.UpdateGround(PlayerPerspective.LivePlayer?.Position, (ushort)Svc.ClientState.TerritoryType,
+            PlayerPerspective.IsReplay ? default : Spatial.Terrain.NativeTerrainRaycaster.CaptureLayoutIdentity());
         _integration?.Update(this);
         var t5 = System.Diagnostics.Stopwatch.GetTimestamp();
         var total = System.Diagnostics.Stopwatch.GetElapsedTime(t0, t5).TotalMilliseconds;

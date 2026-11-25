@@ -43,15 +43,460 @@ def csv_text(rows, fields):
 def mp_ownership(row):
     source = row["source"]
     module = row["module"].rsplit(".", 1)[-1]
+    if source.endswith("/Modules/Stormblood/DeepDungeon/HeavenOnHigh/HoHFloorModule.cs") and module in {f"HoH{n}" for n in range(10, 101, 10)}:
+        return "mp_native_offline_verified", "Presets/HeavenOnHigh/Entries/HeavenOnHighFloors.cs", "仅十Zone授权机制：七动态凝视/两独立donut/普通VFX25原目标引用与NPC钟/Source0 HintDisabled、真实raw结束及非空替换、packet首见nullable初始化/冷启与热Created/7248保收据；500房间4432陷阱源表与墙符号oracle、双视图同状态/联合PR面向/真实solver脱陷阱/九Boss即时交接/十区禁桥。38相关模型、生产0错4既有警告、16条专项含2公共与988全目录PASS/0FAIL且exit0，见NativeHeavenOnHighBosses.spec.md及native-hoh-zones-20261125-*。interrupt/stun只意图，不新增动作；无探索/主动清怪/箱/机关/道具/层间推进，真实宿主及像素待实机"
+    if source.endswith("/Modules/Heavensward/Extreme/Ext3Thordan/Ex3Thordan.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/ThordanExtreme.cs", "34真实激活组件，T448/CFC91/OID1453本机核表；三phase/335state/134预期AID及有序EnterExit源oracle，凝视联合PR面向、原引用bait/盾标记不扩大禁攻、Heavy四段/隐藏预测Thrust/动态Pierce、Faith16与Holy精确导航；36相关模型、生产0错4既有警告、11实际DLL专项与974全目录PASS/0FAIL，Faith28227/双场各26244点及真实solver/Seek/owner，DLL指纹见NativeThordanExtreme.spec.md与native-thordan-20261125-*；真实宿主物理像素待验"
+    if source.endswith("/Modules/Stormblood/Raid/O8NKefka/O8NKefka.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/KefkaNormal.cs", "14真实组件，T751/CFC289/OID2153本机核对；四共享AOE任意Finish/独立Wave、原引用R5/R6分散与exact8、F+3.1持久Ruin、径向10/固定15及R19落点硬导航、正反10000凝视联合PR面向；raw动态钟/60状态槽/旧Party/Pet冷热/缺Actor预测已验；119集中模型及Pet单跑1、生产0错4既有警告、46相关实际DLL专项与948全目录PASS/0FAIL，78732位移和169362文本源oracle/真实solver/Seek/owner；真实宿主物理像素待验，见NativeKefkaNormal.spec.md及native-kefka-20261125-*-05.log"
+    if source.endswith("/Modules/Dawntrail/Quantum/Q1FinalVerse/Q1FinalVerse.cs"):
+        return "bmr_pending", "Presets/Dungeons/Entries/QuantumFinalVerse.cs", "九实际机制组件已原生实现；T1311-CFC1063/OID48EE本机核表，源Q15-35与Q40后半WIP不扩实现，AutoPotion禁止迁移；17模型与生产0错4既有警告及实际DLL连续地火/Map/重复Source图标/VFX/真实solver/Seek/owner已验，场地205200点及双色各23852点真实源oracle；预战与非Party视角仅显示不导航。缺前置方向历史的冷激活保留零方向线及诊断，不物化异常巨量预告，定向显示/导航仍待输入证据，故不登记已完成；详见NativeQuantumFinalVerse.spec.md"
+    if "/Modules/Endwalker/DeepDungeon/EurekaOrthos/" in source:
+        for prefix, entry in [("DD10", "EurekaGancanagh"), ("DD20", "EurekaCloningNode")]:
+            if Path(source).stem.startswith(prefix):
+                return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss机制，禁止深宫道中自动化；T1099/1100-CFC897/898本机核表；五激活组件，地雷无限存储插入前六/隐藏晋升及R20实参，完整32552重复及零目标包消费钟加9点6/FIFO真实32864 Finish/严格首钟一秒前缀，原姿态及源float投影量化；首次raw权威无假Finish/迟packet不回滚/缺视角冷激活/Director卸loaded保pending/旧Actor不复活；798集中模型含三旧夹具修钟后单跑，生产0错4既有警告，实际DLL全目录902PASS和专项源场各6724点/角度72例/真实解算/Seek/owner；仅源显示与普通导航，无玩家传送或新执行，实机待验；见NativeEurekaOrthosBosses.spec.md"
+        for prefix, entry in [("DD30", "EurekaTiamat"), ("DD40", "EurekaTwintania")]:
+            if Path(source).stem.startswith(prefix):
+                return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss机制，禁止深宫道中自动化；T1101/1102-CFC899/900本机核表；13激活组件，五击原目标引用/原Cast/每完整效果包消费及四头移动窗口，双独立Twister实际Update与提前Finish/Created代际和索引交错，风池三路及单帧首匹配，Timeline锁当前姿态/真实Finish，Turbine原位移与交集导航；已知Player/Pet/Chocobo/Buddy及非Spell排除，旧录像未知保持未知；30定向模型/生产0错4既有警告/实际DLL14专项和907全目录PASS，场各6724点及5043源Distance对照/真实solver/Seek/owner；扩大模型另有失败独立处理，不据此声称全量通过；真实宿主像素待验，见NativeEurekaOrthosBosses.spec.md"
+        for prefix, entry in [("DD50", "EurekaChimera"), ("DD60", "EurekaMinotaur"), ("DD70", "EurekaAeturna")]:
+            if Path(source).stem.startswith(prefix):
+                return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss战斗机制，禁止深宫道中自动化；T1103/1104/1105与CFC901/902/903本机双向核表；21激活组件，双Voice队列与Model先于Cast、原引用冲锋/球及双Stretch、旧Party输入时序、八连FIFO/出生Shock与Groan15模型及免疫外导航、Shatter惰性创建序锁点/闩锁/全清、冷回溯顺序及SteelClaw历史主目标FIFO；59定向模型、生产0错4既有警告、同DLL21专项及914全目录PASS/0FAIL，每场6724源场点及真实solver/缺视角/Seek/owner撤销；仅源实际显示/导航，无新增自动动作，真实物理/宿主执行和像素待验；见NativeEurekaOrthosBosses.spec.md"
+        for prefix, entry in [("DD80", "EurekaProtoKaliya"), ("DD90", "EurekaAdministrator"), ("DD99", "EurekaExcalibur")]:
+            if Path(source).stem.startswith(prefix):
+                return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss战斗机制，禁止深宫道中自动化；T1106/1107/1108与CFC904/905/906核表；25激活组件，真实状态槽/旧Party/冷补播与Pet门控，Barofield真孔及源顶点边界差异如实保留、磁力10秒锁点和Distance OR导航；90Source图标恰6排序/连续前缀与颜色、隐藏线独立FIFO；99原短刀状态快照/双完整安全带补集四多边形及退化片修复、属性槽mask、Thermal双侧与Effect-only Cross FIFO；87集中模型、生产0错4既有警告、同DLL32专项及925全目录PASS/0FAIL，源Distance26244/19683/19109点及实际solver无fallback、双视图/Seek/owner已验；真实物理/宿主执行和像素待验；见NativeEurekaOrthosBosses.spec.md"
+    hoh_bosses = {"DD10Mojabune": 10, "DD20Beccho": 20, "DD30Hiruko": 30, "DD40Bhima": 40, "DD50Gozu": 50,
+                  "DD60Suikazura": 60, "DD70Kenko": 70, "DD80Kajigakaka": 80, "DD90Onra": 90}
+    if any(source.endswith(f"/Modules/Stormblood/DeepDungeon/{name}.cs") for name in hoh_bosses):
+        floor = next(floor for name, floor in hoh_bosses.items() if source.endswith(f"/{name}.cs"))
+        if floor == 70:
+            return "mp_native_offline_verified", "Presets/HeavenOnHigh/Entries/HeavenOnHigh70.cs", "七激活组件五读条及12207/12204真实native效果；T774-CFC546/Name7489本机核表，5772源场点；双独立池捕获Icon目标槽/default与处理钟+7点2/首实体State7/Ululation真实Finish，R3软Goal与R3分散显示R4导航；Devour与Hound独立原引用/时钟/结束，完整组件目标导航门控/首存储预测钟/R100诱导，首次raw合成Finish前捕获及已消费防复活；453集中模型893全目录PASS，生产0错4既有警告，源显示及实际导航/Seek/owner已验，池内安全提示文字与风险模型保留但脚本日志无旧桥风险着色，楼层Zone仍待迁/真实宿主像素待验"
+        if floor in (60, 80, 90):
+            return "mp_native_offline_verified", f"Presets/HeavenOnHigh/Entries/HeavenOnHigh{floor}.cs", "三Boss17组件16读条输入；本机T783/784/775-CFC545/547/548及中文Name独立查表；源场每场5772点/90独立半径25差集，60创建7点9环仅11930真实Finish首source消费、80创建8点5冰球仅11992 native效果、90创建3点2沙球逐轴首项三Finish/销毁先Finish后remove及缺席先于同帧新生；无限容量/冷激活/原钟/无超时/死亡销毁/同ID已验；447集中模型38天宫专项886全目录PASS，生产0错误4既有警告，显示与实际导航窗口及Raidwide仅预测；保楼层Zone未计迁移，真实宿主像素待验"
+        return "mp_native_offline_verified", f"Presets/HeavenOnHigh/Entries/HeavenOnHigh{floor}.cs", "五Boss共20组件18规则；真实区域770/771/772/782/773与CFC540-544独立核表；精确双场每场5772源点，30径向KB忽略免疫/连续撞墙源ray对照仅显示，默认10000凝视PR模型，分散R6显示R7导航/目标FIFO销毁冻结，原位置R6/R8硬障碍及文字；输入钟/晚NPCcap/同代packet/旧Cancel水位/raw基线销毁/脱战保持已补；444集中模型24实际DLL专项876全目录PASS，生产0错误4既有警告；五真实Zone会话不重建仍待迁，真实宿主执行和像素待验"
+    if source.endswith("/Modules/Dawntrail/Quest/Role/BarThePassage/P3Apyaahi.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/BarThePassageP2.cs", "十一激活组件/十二规则；惰性首4670战斗拉战、466A默认死亡HP0销毁完成；Power全局FIFO与sticky风险、九击地火Finish首匹配/原位置方向与缓存时钟、独立R6分摊分散和旧引用、径向13连续落点/严格免疫/首R6即时Goal，双场20及64边形7442点源oracle与精确Map环F+.5及F+2；206集中模型/生产0错4既有警告/实际DLL全目录633PASS，公共采样拒绝边界/动态float饱和钟与首raw elapsed补正/Seek/owner已验，真实宿主执行待实机"
+    if source.endswith("/Modules/Dawntrail/Quest/Role/BarThePassage/P1Trash.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/BarThePassageP2.cs", "六组件/七规则；1246-CFC1016，友方465D可选战斗拉战/独立CFC与可选性完成；84及17原引用/直接清槽/首中央4664和惰性首465D目标/F+1.1钟及priority1矩形Goal；loaded-pending顺序/同OID占位/后台阶段历史与缺席Primary交接；249集中模型/生产0错4既有警告/实际DLL628PASS、显示普通导航Seek与owner已验，P3已另完成原生迁移，真实执行待实机"
+    if source.endswith("/Modules/Dawntrail/Quest/Role/BarThePassage/P2Trash.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/BarThePassageP2.cs", "五组件/三普通规则；友方4660独立阶段、Native40866原pose/default安全锥priority1Goal、40907及40908共享恰第五包清除/零序号时钟收据/后建盾不重置次数；精确Map替换两矩形23664点对照、后台盾次数场地/Director只卸Loaded保Pending；249集中模型/生产0错4既有警告/实际DLL628PASS，显示导航Seek与owner已验，旧无Native录像效果及实机执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage07AChorusSlime/Stage07Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "三提示及显示组件；CFC617-Instance35007-T796、本机表非反向CFC识别；2703固定出生引用R7.6动态黄色轮廓/圈内提示/准备到战斗Name文字，仅显示无导航动作，2703及2702群体拉战全DeadOrDestroyed完成；共用Loaded/Pending冷倒序/旧Party0直接加载/500码3D/同OID占位/wipe保Pending与无出生复活不重建；215集中模型/生产0错4既有警告/实际DLL全目录641PASS，Seek/机制停用/owner已验，真实像素宿主待实机"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage07AChorusSlime/Stage07Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两构造组件；2705全实例原引用R7.6黄色轮廓/提示无导航、Death删除/Destroyed冻结/同ID新生分代/复活不重入；逐模块构造历史含Pending晋升前驱销毁旧圆，死Pending模块永久丢弃到新出生；Layout4Quads差集Round内缩0.5的64外顶点四24点孔及166三角形，生产48847点源oracle含边缘；215集中模型/生产0错4既有警告/实际DLL全目录641PASS，预战战斗场地/显示/Seek/owner已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage08BombedyOfErrors/Stage08Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "三提示及显示组件；CFC618-Instance35008-T796本机表、2708固定R10及2709/270A原引用R6黄色轮廓/Death删除Destroyed冻结无导航动作；全候选2708优先级1其他0保留Pointless不可覆盖，准备到战斗提示，下一幕打断建议不冒充本幕意图；共用Loaded/Pending及群体DeadOrDestroyed；215集中模型/生产0错4既有警告/实际DLL全目录641PASS，Seek/机制停用/owner已验，Act2继续保桥，真实宿主像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage04GentlemanPreferSwords/Stage04Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "五实际组件：Primary默认可选中拉战/HP0死亡销毁结束、两阶段Name提示、77.5前长全宽4及R6锁定AOE、14369完整caster引用/代际/Enemy打断意图无自动技能、甲虫1其他0保Pointless及原红色markers；共用切展示Unselect保后台取消收据/packet宽限、同代补正与raw真替换、旧Finish拒绝；218共用模型/0错4既有警告/实际DLL全目录653PASS，显示导航Seekowner已验，游戏宿主像素执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage08BombedyOfErrors/Stage08Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "四实际组件：Hints与270C/270D原引用R6黄色轮廓持续、Death删除Destroyed冻结同ID分代不导航；14708 R8与14680独立打断意图，群体拉战全DeadOrDestroyed、270B1其他0保Pointless；Layout2Corners四墙差集Round内缩保89.98度、64外39/33孔137三角，547组XZ位值一致/生产48851点oracle；218共用模型/0错4既有警告/实际DLL全目录653PASS，未增自动打断/引爆/移动，真实像素宿主待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage10ALittleKnightMusic/Stage10.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "十实际组件：构造Name攻略与成就提示开战整体撤、默认Primary可选中拉战/HP0死亡销毁结束、四独立R9/9.5/10/10.5总120度扇及14722 R6；14719/20/21/24四独立Interrupt组件保存原caster代际/时间及Enemy投影，既有MP无执行消费者不增自动技能，14723枚举不消费；后台切换取消收据packet宽限/同代补正raw换代/迟旧Finish/Seek关停owner；218共用模型/0错4既有警告/实际DLL全目录653PASS，宿主与实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage06EyeSociety/Stage06Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "06两幕及07第三幕共12组件8逐幕规则：SID571四独立mask及source Raid0不随PR排序，构造Pending/旧roster与开战新roster分离；默认10000真凝视及精确两90度普通锥、R6点3目标FIFO/销毁冻结/补正不复活；Voltage锁Actor起点复杂视线99秒风险与Slime R7点6仅轮廓；244集中模型24专项854全目录PASS/三场地各5694点及8源点各7569点含真实世界填充；真实宿主像素执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage06EyeSociety/Stage06Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "06两幕及07第三幕共12组件8逐幕规则：SID571四独立mask及source Raid0不随PR排序，构造Pending/旧roster与开战新roster分离；默认10000真凝视及精确两90度普通锥、R6点3目标FIFO/销毁冻结/补正不复活；Voltage锁Actor起点复杂视线99秒风险与Slime R7点6仅轮廓；244集中模型24专项854全目录PASS/三场地各5694点及8源点各7569点含真实世界填充；真实宿主像素执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage07AChorusSlime/Stage07Act3.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "06两幕及07第三幕共12组件8逐幕规则：SID571四独立mask及source Raid0不随PR排序，构造Pending/旧roster与开战新roster分离；默认10000真凝视及精确两90度普通锥、R6点3目标FIFO/销毁冻结/补正不复活；Voltage锁Actor起点复杂视线99秒风险与Slime R7点6仅轮廓；244集中模型24专项854全目录PASS/三场地各5694点及8源点各7569点含真实世界填充；真实宿主像素执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage02MuchAdoAboutPudding/Stage02Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "02两幕及03/09共14组件7逐幕规则：纯Interrupt/精确R14总120锥/R5普通与R4三路独立池/R6三路及float1点2和double1效果钟；群体与默认Primary分离/六橙adds无条件priority含PendingDead；晚owner补播/五动作饱和raw及未claim取消墓碑；227模型14专项832全目录PASS/每幕5772源场地点；真实宿主与像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage02MuchAdoAboutPudding/Stage02Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "02两幕及03/09共14组件7逐幕规则：纯Interrupt/精确R14总120锥/R5普通与R4三路独立池/R6三路及float1点2和double1效果钟；群体与默认Primary分离/六橙adds无条件priority含PendingDead；晚owner补播/五动作饱和raw及未claim取消墓碑；227模型14专项832全目录PASS/每幕5772源场地点；真实宿主与像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage03WaitingForGolem/Stage03.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "02两幕及03/09共14组件7逐幕规则：纯Interrupt/精确R14总120锥/R5普通与R4三路独立池/R6三路及float1点2和double1效果钟；群体与默认Primary分离/六橙adds无条件priority含PendingDead；晚owner补播/五动作饱和raw及未claim取消墓碑；227模型14专项832全目录PASS/每幕5772源场地点；真实宿主与像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage09ToKillAMockingslime/Stage09.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "02两幕及03/09共14组件7逐幕规则：纯Interrupt/精确R14总120锥/R5普通与R4三路独立池/R6三路及float1点2和double1效果钟；群体与默认Primary分离/六橙adds无条件priority含PendingDead；晚owner补播/五动作饱和raw及未claim取消墓碑；227模型14专项832全目录PASS/每幕5772源场地点；真实宿主与像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage31AnythingGogos/Stage31Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕22组件25逐幕规则及23127原生效果；独立双Meteor队列/Fire全局Blizzard5点1/Icestorm点9真实清理；Pyretic64逐actor先cast后status；三路Thunder/全状态原位置Maelstrom硬障碍；215模型/21专项/820全目录PASS/每幕5772源场地点，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage31AnythingGogos/Stage31Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕22组件25逐幕规则及23127原生效果；独立双Meteor队列/Fire全局Blizzard5点1/Icestorm点9真实清理；Pyretic64逐actor先cast后status；三路Thunder/全状态原位置Maelstrom硬障碍；215模型/21专项/820全目录PASS/每幕5772源场地点，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage32AGoldenOpportunity/Stage32Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕29组件29逐幕规则及两真实效果；三段Quake消费钟1点5/四路Beam交集异或并集洞与自接触填充/三独立AwayPull仅显示/双延迟全屏/Rupture首caster动态倒计时；215模型/21专项/820全目录PASS/Beam30240格点288边侧/每幕5772源场地点，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage32AGoldenOpportunity/Stage32Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕29组件29逐幕规则及两真实效果；三段Quake消费钟1点5/四路Beam交集异或并集洞与自接触填充/三独立AwayPull仅显示/双延迟全屏/Rupture首caster动态倒计时；215模型/21专项/820全目录PASS/Beam30240格点288边侧/每幕5772源场地点，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage29RedFraughtAndBlue/Stage29Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕25组件20逐幕规则；R39总30与Pillar共享队列任意Finish；Forward50独立Away25完整击退模型仅显示；Ferrofluid全局6吸斥/真实Finish仅清KB/原生效果清AOE；Pyretic64要求/任意960Lose清全/同帧逐actor先cast后status；纯提示保持旧MP消费；190模型/19专项/801全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage29RedFraughtAndBlue/Stage29Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两幕25组件20逐幕规则；R39总30与Pillar共享队列任意Finish；Forward50独立Away25完整击退模型仅显示；Ferrofluid全局6吸斥/真实Finish仅清KB/原生效果清AOE；Pyretic64要求/任意960Lose清全/同帧逐actor先cast后status；纯提示保持旧MP消费；190模型/19专项/801全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage30TheCatchOfTheSiegfried/Stage30Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "三幕29组件30逐幕规则；Bomb8点4与Rubber20六点3出生模型冻结代际/同帧FinishCreate原序/锁原始Primary；BoulderR10原生效果全清；HyperTorchSpark独立队列/8排序/严格1秒前缀；SwiftAway10仅显示/三路R6火池source门控；完整旧Party缺席重现免疫；190模型/19专项/801全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage30TheCatchOfTheSiegfried/Stage30Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "三幕29组件30逐幕规则；Bomb8点4与Rubber20六点3出生模型冻结代际/同帧FinishCreate原序/锁原始Primary；BoulderR10原生效果全清；HyperTorchSpark独立队列/8排序/严格1秒前缀；SwiftAway10仅显示/三路R6火池source门控；完整旧Party缺席重现免疫；190模型/19专项/801全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage30TheCatchOfTheSiegfried/Stage30Act3.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "三幕29组件30逐幕规则；Bomb8点4与Rubber20六点3出生模型冻结代际/同帧FinishCreate原序/锁原始Primary；BoulderR10原生效果全清；HyperTorchSpark独立队列/8排序/严格1秒前缀；SwiftAway10仅显示/三路R6火池source门控；完整旧Party缺席重现免疫；190模型/19专项/801全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage27LockUpYourSnorters/Stage27.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6组件2读条/3效果；Fireball R8普通导航；Snort15撞墙独立击退与取消后炸弹投影窗口，真实模型变化含活跃Create非default追加重复Actor引用/共享6d钟/原生多目标包只删首项/Destroy旧代冻结；恰8Bomb触发Fungah5d或5.3d独立标志/免疫按旧名单槽回调/仅显示，ME首引用攻略与最新Create35秒钟；166模型/12专项/784全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage28DangerousWhenDead/Stage28.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "9组件10读条/6状态；R10与三动作共享R6队列/99排序/任意Finish/迟旧代保护，raidwide64存活槽raw钟/纯打断治疗召唤提示；量化1EA9FA池并集补集反转/原始绿显/19055单全局钟/零池不导航；真实逐槽sourceParamexpiry差分/重复Gain/首方向Lose，6.6速两秒连续强制行进仅显示/最终Bilrost或出界提示；166模型/12专项/784全目录PASS/5772点源场地，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage25DirtyRottenAzulmagia/Stage25Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "9组件7规则；保留源51.2长90宽矩形/36.2总120锥/R8/R7.2及6-30/10-20/20-30独立环，真实Finish不按效果超时；1307反伤910Doom完整原始槽仅文字/成就提示，不增动作限制；147集中模型/774全目录PASS/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage25DirtyRottenAzulmagia/Stage25Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6组件4规则；51.2长8宽矩形/36.2总120锥/R8/6-30环，反伤556个人910只文字；首!Dead Angon提示/橙标记，全部候选priority1 adds其余0保Pointless不禁Boss；无Burn预测/技能执行；147模型774全目录PASS/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage25DirtyRottenAzulmagia/Stage25Act3.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "14组件10规则；9普通AOE及Web全局bool任意Finish/同代补正不重开；Meteor R15锁点与R10动态cast/1.2d处理钟effect/量化live三路独立，state7过滤逐实体原始位置首匹配无超时；2681全实体R8硬障碍，556优先1307/Doom原始槽无自动Loom；147模型774全目录/5772点oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage26PapaMia/Stage26Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "5组件3规则；R3锁点Gust/18686纯CastHint/18688独立打断意图，63/269完整原始状态槽只提示不自动驱散；默认Primary生命周期与标记，无增益禁攻；147模型/11项身份复核后定向PASS/774全目录/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage26PapaMia/Stage26Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "8组件4规则；R4圈及纯提示/动态Raidwide和SingleTarget，原始1797/271状态提示；2C59 state!=7原始R8硬障碍含dead；icon23处理钟5d覆盖动态DirForward15同点+Z/三类别严格免疫/无超时/现存source18605清除，Primary同ID重绑保钟，KB仅显示无新增导航执行；147模型774全目录/5772点oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage23BehemothsAndBroomsticks/Stage23.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6组件4规则；R6/R10及55.8总60锥、动态Meteor原钟预测不造R50；2733全实体原始动态R8硬障碍含Dead/state7真实Destroy，未增加拉近；晚激活及激活前取消水位/反向Seek/owner；130集中模型17实际专项755全目录PASS/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage24AmazingTechnicolorPitFiends/Stage24Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "4组件3规则；2735/2734任意InCombat拉战全DeadOrDestroyed结束HP0不代Dead；R5圆/总90锥及独立15318打断intent，固定Primary与首Viking魔物免文字不增伤害类型禁攻；全红标记/无自动技能；130模型17专项755全目录PASS/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage24AmazingTechnicolorPitFiends/Stage24Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "7组件6规则；R5圆/锥及R6圈，15321打断intent；15319/20共享单体当前raw目标/时钟、自目标回退、dead/缺Actor名单，双免文字源均查Magus保留不扩限制；priority1 adds其余0无Pointless保护；130模型17专项755全目录/5772点oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage24AmazingTechnicolorPitFiends/Stage24Act3.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "9组件4规则；R8圆/总90锥，活273B原始R3硬障碍死藏复活无cast依赖；15325动态旧引用半宽4诱导导航与独立Start锁向10码Forward KB链/严格免疫/活电场落点、KB仅双视图不增导航；15326动态预测，add priority1/全红标记；130模型17专项755全目录/5772点oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage22HereComesTheBoom/Stage22Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "2提示组件无AOE，Source可选26FE阻挡/玩家本帧净XZ与任意可选26FC拉战，MP按统一视角自身历史，冷创建/Y/换人/同ID/静止不造移动；全DeadOrDestroyed非Primary或HP0/全部标记；116集中模型9专项740全目录PASS/5772点源场地oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage22HereComesTheBoom/Stage22Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6组件5规则，Sap共享R8/99排序/任意Finish，11.75总120锥与7.2圆；Ignition动态NPC剩余钟/64槽预测不造R50避让；晚激活未认领raw及原0.3f延迟、后台接替/反向Seek/owner，炸弹原序!Dead提示和橙标记无自动StickyTongue，116模型9专项740全目录/5772点源oracle，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage20MissTyphon/Stage20Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "4组件2规则，大场默认Primary，14706独立R8与14704提示/30码锁Loc径向StopAtWall；原生状态三类免疫严格expiry，击退仅显示，源顶点逐边180点oracle并明确索引漏顶点差异；109集中模型、20关12条及21关9条实际DLL专项含各2公共、733全目录PASS，Seek/owner/后台时钟已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage20MissTyphon/Stage20Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6唯一组件5规则，小场默认Primary，四普通圈锥及14712仅打断；重复LightningBolt激活不双圈；109集中模型、20关12条及21关9条实际DLL专项含各2公共、733全目录PASS，Seek/owner/后台时钟已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage20MissTyphon/Stage20Act3.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "9组件7规则，小场Primary与橙adds/2和1和0无Pointless保护；共享14706/14747队列99排序任意Finish，Wallop矩形与20码/独立30码各自链，无截墙；具名Interrupt只Start/Finish缓存，无自动技能；109集中模型、20关12条及21关9条实际DLL专项含各2公共、733全目录PASS，Seek/owner/后台时钟已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage21ChimeraOnAHotTinRoof/Stage21Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "4组件2规则，大场任意imp入战全DeadOrDestroyed非HP0，全部标记/持续弱火抗冰文本，R5圆与独立打断，无额外单体预测；109集中模型、20关12条及21关9条实际DLL专项含各2公共、733全目录PASS，Seek/owner/后台时钟已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage21ChimeraOnAHotTinRoof/Stage21Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "8组件5规则，小场默认Primary/橙imp，R5/R9/8至30环及15081三路R9，MainTarget/零seq/空Targets/消费钟0.9d/Dead实体state非7逐实体首匹配，无超时；双独立打断和!Dead imp文本；109集中模型、20关12条及21关9条实际DLL专项含各2公共、733全目录PASS，Seek/owner/后台时钟已验，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage18MidsummerNightsExplosion/Stage18Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "7组件5规则，大场群体入战和全DeadOrDestroyed非HP0；构造桶R10仅轮廓与combat独立缓存，Destroy冻结/Death按引用删/复活不加/同ID新生；动态charge原引用几何与继承导航伤害但覆写Aim文本，无KB或自动瞄桶；持久创建序bootstrap首钟反例，5929点场地源oracle，96集中模型20实际DLL专项716全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage18MidsummerNightsExplosion/Stage18Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "7组件5规则，与Act1独立两桶缓存/动态原引用bait及共享动作后台接替；画全部本幕Boss及橙桶，1/0并Pointless保护，普通R10/R6/R8与R15总90锥保真实结束，BoneShaker仅枚举；5929点源场地oracle，96模型20专项716全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage19OnAClearDayYouCanSmellForever/Stage19Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "6组件4规则，小场默认Primary生命周期/绘制；反射任意caster Start/Finish双bool锁存，仅文字无禁攻；15076打断与三路R6，真实MainTarget消费钟加double1.6f、cast动态目标/Loc、实体state非7含dead量化2码首匹配，无超时；已激活原锁钟与晚bootstrap now加0.3f分离，5236点源oracle，96模型20专项716全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage19OnAClearDayYouCanSmellForever/Stage19Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "7组件6规则，15076精确1.6d；15077仅开InkJet提示，15078只有Finish关且覆写base使Eyes为空，Blind15原生槽差分/旧roster时序/缺席身份/销毁同ID/切人，绝不误造凝视或自动动作；新模块不收激活前Reflect Finish，后台状态/事件独立，5236点源oracle，96模型20专项716全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage16SunsetBullevard/Stage16Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "仅构造Hints，任意26F2入战/全DeadOrDestroyed结束非HP0；大场全部同OID敌人标记，原攻略不新增自动风筝或自爆；5929点源场地oracle，83集中模型/19实际DLL专项/698全目录PASS，反向Seek及owner已验，实机像素执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage16SunsetBullevard/Stage16Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "8组件7规则，R12圆/R44共享60锥任意Finish/10-20环，range10000凝视完整眼瞳视线与PR面向、14686原文raw伤害钟；14873动态原引用bait与独立lastStart单槽Primary动态20码击退分开，Raid64/NPC/死缺目标预测、同ID显示与引用导航、三类别免疫真实状态槽、首raw确认/时钟漂移/null后再施法/旧Finish均验；7636点冲锋和5929点场地源oracle，83模型19专项698全目录PASS，无击退导航及自动青魔，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage17TheSwordOfMusic/Stage17Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "4组件，2720/271F群体入战及全DeadOrDestroyed结束；14759前6半宽2及14760R8总120锥，反魔法Primary与反物理首右爪保持久创建顺序，仅文字不增加禁攻或注释击退；5236点小场源oracle，83模型19专项698全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage17TheSwordOfMusic/Stage17Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "7组件5规则，前77.5半宽2/前6半宽2/R8总120及15049仅打断；15048完整原生三路R6，cast跟当前目标或Loc，真实MainTarget事件消费钟加double1.1f、零序号独立包/legacy展开跳过，Dead实体state非7量化每Update按创建序只吃首个2码预测；后台起止和事件保留即时接替，爪1/0橙色及首活反伤仅文字；5236点源场地，83模型19专项698全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage14BlobsInTheWoods/Stage14Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "3组件，群体DeadOrDestroyed与独立LastSongHint bool；Layout2Corners正式场地和64/12/8原遮挡轮廓分离，14756锁Actor位置，真实Finish撤销；NonZero多part原生视域、导航与世界全填充，后台激活/同帧交接/迟raw和取消/缺视角仍消费起止；每幕60552点源与实际世界MeshBuilder oracle，64模型/14专项/681全目录PASS，实机像素移动待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage14BlobsInTheWoods/Stage14Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "3组件，群体阶段及独立bool非列表计数；LayoutBigQuad正式内缩场地与64/4原遮挡域，锁Actor原点，maxRange0不造60圆；每幕60552点源和世界填充oracle，packet SourcePosition反例/双caster真实结束/取消代际/Seek/owner通过；纯Clipper2Lib归一非BMR桥，64模型/14专项/681全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage15TheMeNobodyNodes/Stage15.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "8组件10规则，Primary默认阶段/32边小场，14893锁Loc方向首Finish加3.6三段270扇环5.5/10.5/15.5全剩余Risky共享钟，14894-6跨source逐轴1角差0.05首匹配消费钟加0.6；视觉取消持久helper取消销毁推进，当前visual代际补正不串旧同钟序列；5普通AOE/14890仅打断、Shabti2Serpent1与橙色；20619点源oracle，64模型/14专项/681全目录PASS，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage13BeautyAndABeast/Stage13Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "构造攻略开战撤、26F5/26F6任意拉战及全部DeadOrDestroyed结束HP0不替Dead、固定Primary加全Vodoriga默认敌色无改优先级；14879 R7.4总120锁定扇与真实Finish；CFC623-Instance35013-T796本机名猩红死妖姬卡蜜拉；69模型/生产0错4既有警告/实际DLL669PASS含CircleBig5929点源oracle反Seek及owner，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage13BeautyAndABeast/Stage13Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "构造攻略及8战斗组件9AID，R5/R10组/R6/前42半宽4/10至20环；14888与14884任意Finish仍保新代时间边界；14951真实默认range10000锁Cast.Loc完整眼形瞳孔弧与PR末窗面向，15045仅Interrupt、14882原文整队伤害raw结束时钟及后台作用域；默认Primary阶段不等Succubus且橙色无改优先级；69模型/44专项/生产0错4既有警告/实际DLL669PASS含5929点小场地oracle，实机PR执行像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage11SomeLikeItExcruciatinglyHot/Stage11Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "仅一个构造Hints；2718任意同OID拉战/全DeadOrDestroyed结束HP0不替代Dead、全部同OID箭头、开战撤攻略；14583源未激活组件不造AOE伤害打断动作，仅活跃11场精确抑制该读条通用推断并隔离玩家未知动作其他act；CFC621-Instance35011-T796本机表；227共用模型/生产0错4既有警告/实际DLL659PASS，Seek关停owner已验，真实宿主像素待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage11SomeLikeItExcruciatinglyHot/Stage11Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "仅一个构造Hints，2719群体拉战全DeadOrDestroyed、HP0不替代Dead及全同OID箭头，四炸弹攻略开战撤；源14583枚举无组件不扩AOE/打断，精确通用抑制；Layout4Quads完整四孔源几何复用，预战显示/战斗正式边界独立；227共用模型/生产0错4既有警告/实际DLL659PASS含Pending/反Seek/机制关闭owner，真实像素宿主待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage12ThePlantomOfTheOpera/Stage12Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "仅一个构造Hints，IceSpikes/BombToss及下一幕攻略开战撤；271A默认Primary可选中进战及死亡销毁HP0结束不等同OID、全部271A箭头、已出生同OID候补可下一帧交接；14750仅枚举不造战斗组件；CFC622-Instance35012-T796及Name8103本机表；227共用模型/生产0错4既有警告/实际DLL659PASS，显示导航边界/Seek/owner已验实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage12ThePlantomOfTheOpera/Stage12Act2.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "五组件：构造Name攻略开战撤，14751 R16.96总120及14754 R46.96总60锁定扇，首次packet到raw锁点确认及演员转向不改锁；14752纯召唤提示、14753仅Stun完整caster代际时钟/Enemy资格保Pointless无自动技能；默认Primary结束、Roselet源Object橙色及1其他0优先级；227共用模型/生产0错4既有警告/实际DLL659PASS，真实像素宿主执行待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage04GentlemanPreferSwords/Stage04Act1.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "两提示组件/无AOE动作组件；CFC614-Instance35004-T796按本机表核对、25C8精确接管/25D2群体拉战与全DeadOrDestroyed完成、准备战斗文字/固定Primary/完整marker；64边形5183点源oracle，249集中模型/生产0错4既有警告/实际DLL628PASS，双视图/跨场尸体与旧Pending回血新生/Seek/owner已验，Act2保桥不扩打断，实机待验"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage05TheThreepennyTurtles/Stage05.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "单构造提示组件/战斗无组件；CFC615-Instance35005-T796/全部25CC任意拉战与全DeadOrDestroyed完成、真实R16.01379正32边形5183点源oracle、全部龟marker与固定Primary/旧Pending丢弃后回血不重建；249集中模型/生产0错4既有警告/实际DLL628PASS，双视图/跨场/Seek/owner已验，不增加驱散及自动动作，实机待验"
+    if source.endswith("/Modules/Dawntrail/Quest/MSQ/TheWarmthOfTheFamily/AlphaAlligator.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/TheWarmthOfTheFamily.cs", "双组件/1244-CFC1009；84及17旧Actor引用/直接清槽/raw顺序与共享40562钟、首中央蜥蜴列表及优先级1窄矩形安全目标、Primary死亡保活及缓存4637独立结束；219集中模型/生产0错误4既有警告/实际DLL全目录619PASS、6643点源凹场oracle，显示普通导航Seek与owner已验，零长源NaN导航无定义不扩执行，真实执行待实机"
+    if source.endswith("/Modules/Global/MaskedCarnivale/Stage01AllsWellThatStartsWell/Stage01.cs"):
+        return "mp_native_offline_verified", "Presets/MaskedCarnivale/Entries/Stage01.cs", "战前Hints及IronJustice14199原生；共享796仅25BE接管/CFC610身份、R24.5正64边形5624点源oracle、任意群怪拉战/固定Primary/全DeadOrDestroyed完成、raw取消未知动作旧包及同ID新生；219集中模型/生产0错误4既有警告/实际DLL全目录619PASS，战前纯显示及战斗双视图导航Seek与owner已验，真实执行待实机"
+    if source.endswith("/Modules/Global/Quest/FF15Collab/Iseultalon.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/Iseultalon.cs", "八组件/839-CFC647；两类R3塔/default钟/占员及Forbidden异常/首塔独立AI、重复Icon129旧引用、宽线原始动态姿态与消费钟、窄线危险色、销毁Finish先于同帧新塔；235集中模型/生产0错误4既有警告/实际DLL全目录616PASS、6084点源圆oracle，显示普通导航Seek与owner已验，真实执行待实机"
+    if source.endswith("/Modules/Shadowbringers/Quest/Role/ToHaveLovedAndLost.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/ToHaveLovedAndLost.cs", "十一组件/十六动作、869-CFC672；六动作共享R3塔精确Loc首删除/已消费补正不复活、min1-max无限分摊、R6-R7分散、锁Loc径向10码击退不截墙严格免疫且源仅显示；235集中模型/生产0错误4既有警告/实际DLL全目录616PASS、4096点源圆oracle，显示普通导航Seek与owner已验，真实执行待实机"
+    if source.endswith("/Modules/Dawntrail/Quest/Role/HeroesAndPretenders.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/HeroesAndPretenders.cs", "六激活组件；1218/CFC1001、20边形2916点源oracle、八次Flurry首逐轴匹配/实际施法者推进/三圈Risky、Gold恰二人与独立Acid导航、Arrow旧引用/同代补正及首存储预测钟；64集中模型/生产0错误4既有警告/实际DLL全目录613PASS，双视图导航Seek与owner已验，真实执行待实机"
+    if source.endswith("/Modules/Stormblood/Quest/MSQ/TheTimeBetweenTheSeconds.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/TheTimeBetweenTheSeconds.cs", "双阶段六组件/五规则；685/CFC465、八顶点凹场4422点源oracle、P1可选性与P2真实列表结束、raw身份/同ID主怪重绑、ActorID0火圈锁点量化及阶段重播、迟到旧包屏障；54集中模型/生产0错误4既有警告/实际DLL全目录611PASS，双视图普通导航Seek与owner已验，真实执行待实机"
+    if source.endswith("/Modules/Global/Quest/FF15Collab/MA-x.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/MAXQuest.cs", "三激活组件/三实际读条原生实现；野外141/OID252B精确接管、战前无导航场地及多实例候选、Noctis洋红与Trooper橙色、默认完成/新Create代际/wipe、FATE资格及1409禁DoT意图不扩大PR禁攻；43集中模型/生产0错误4既有警告/实际DLL全目录608PASS，双视图导航Seek与owner已验，实机待验"
+    if source.endswith("/Modules/Stormblood/Quest/MSQ/HopeOnTheWaves.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/HopeOnTheWaves.cs", "八激活组件/七规则；757/CFC472区域阶段保活、真实50边旋转椭圆4623点源oracle、六AOE真实结束与独立自爆float倒计时FIFO、首Alphinaud完整Actor空槽历史、Adds全候选setter及坦克拉位意图原生实现；旧桥无自动拉位消费者不扩执行；43集中模型/生产0错误4既有警告/实际DLL全目录608PASS，双视图普通导航Seek与owner已验，任务Zone保桥，实机待验"
+    if source.endswith("/Modules/Stormblood/Quest/MSQ/HisForgottenHome.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/HisForgottenHome.cs", "4激活组件/3规则；七顶点场地4292点源oracle、区域内Primary死亡及BattleEnded保活、同ID新代及旧引用、wipe屏障、Icon26独立5.1秒与任意1087Start清理、R6毒区Native主目标及cast/event/live交接、Isse目标完整priority原生实现；46集中模型/生产0错误4既有警告/实际DLL全目录594PASS，显示导航Seek与owner已验，实机待验"
+    if source.endswith("/Modules/Shadowbringers/Quest/MSQ/ASleepDisturbed.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/ASleepDisturbed.cs", "8激活组件/6规则；双独立首次钟连线、Player/Buddy双向及旧引用、真实OpTether替换、raw/typed确认和销毁绕过收据、NPC分散分摊、R19.5方场及priority0原生实现；68集中模型及真实解算、生产0错误/4既有警告、实际DLL全目录588PASS，显示导航Seek与owner已验，任务交互保桥，实机待验"
+    if source.endswith("/Modules/Dawntrail/Quest/MSQ/TheProtectorAndTheDestroyer/E1OtisOathbroken.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/OtisOathbroken.cs", "9激活组件/10规则；精确20边形、玩家InCombat拉战、前6锥与共享圆组、Rush前4显示/前2导航/动态黄色、99排序及原始起点补正、NPC站位原生实现；68集中模型及真实解算、生产0错误/4既有警告、实际DLL全目录588PASS，双视图Seek与owner已验，4349和任务交互保桥，实机待验"
+    if source.endswith("/Global/HallOfTheNovice/NoviceTactical.cs"):
+        return "mp_native_offline_verified", "Presets/HallOfTheNovice/Entries/NoviceTactical.cs", "33激活组件/28读条规则/19完整Native效果与三区域入口原生实现；独立标记/五击追踪/环FIFO/Surge与Fan前缀/双塔/57及84连线/四独立径向击退/10000凝视PR面向；raw事件收据及旧Actor冻结；78专项模型/493集中模型分批及失败单跑通过、生产0错误/实际DLL583PASS、入口226；显示导航Seek与owner已验，交互仅保留源意图不扩大旧消费，真实宿主执行待实机"
+    if source.endswith("/Endwalker/FATE/Chi.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/Chi.cs", "六组合两段FIFO/首段导航与轴带、创建Bunker/Bomb严格风险及显示窗口、真实Finish及完整Native消费、动态原目标死刑原生实现；同钟多代补正/创建OID代际/Reset补播已验；623集中模型/生产0错误/实际DLL573PASS，双视图导航Seek与owner已验，实机待验"
+    if source.endswith("/Dawntrail/FATE/MicaTheMagicalMu.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/MicaTheMagicalMu.cs", "五槽Draw首Actor与空槽/缓存晋升/CardTrick风险、Flourish首对交换/前三pizza/前四hoop、四Rolling原count时钟全Risky及完整Native FIFO原生实现；真实cast引用与创建代际已验；623集中模型/生产0错误/实际DLL573PASS，双视图导航Seek与owner已验，实机待验"
+    if source.endswith("/Dawntrail/FATE/TheSerpentlordSeethes/Ttokrrone.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/Ttokrrone.cs", "八激活组件原生实现；真实48边形/4225点源oracle及marker Clamp、四Tempest/四Sandspout、六Swallow含38643、strict4.5连续球前缀、7或4击旋转真实Finish及独立float/double时钟和同count缓存；623集中模型/生产0错误/实际DLL573PASS，双视图导航Seek与owner已验，实机待验"
+    if source.endswith("/Shadowbringers/FATE/Formidable.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/Formidable.cs", "十二组件原生实现；源本地玩家R30显示/strict轴差5更新缓存方场分离、七击真实效果消费、Source图标独立min2分摊、创建锁点充能与强制导弹标记、SteamDome15原模型仅投影、1269原始Stay诊断不扩大控制；600集中模型/生产0错误/实际DLL562PASS，双视图及既有导航/Seek/owner已验，世界圆裁剪和真实宿主执行待验"
+    if source.endswith("/Shadowbringers/FATE/Archaeotania.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/Archaeotania.cs", "十五组件/十普通几何原生实现；严格slot0拉战/半宽29方场、Source图标独立min8分摊与Native真实主目标清理、动态R5硬障碍、Forward48原始击退模型按开始顺序连续投影且仅显示；raw/packet/未知动作交接与代际、dead caster/viewer、严格免疫及owner已验；587集中模型/生产0错误/真实DLL全目录集中回放，双视图和当前导航离线已验，真实物理与宿主执行待实机"
+    if source.endswith("/Endwalker/FATE/Daivadipa.cs"):
+        return "mp_native_offline_verified", "Presets/Fates/Entries/Daivadipa.cs", "十组件/六普通几何原生实现；半宽24.5方场/strict25源slot0拉战，双球队列整体Reverse/严格前缀/前8原时钟晋升，持久Actor顺序、当前CastInfo单体与+1延迟全屏Native效果、四方向2秒6.6强制行进模型/完整隐藏Lit与首半圆危险集合；587集中模型/生产0错误/真实DLL集中回放，双视图/当前导航/Seek/owner已验，行进仅显示不扩PR执行，实机待验"
+    if source.endswith("/Global/HallOfTheNovice/NoviceTank04.cs"):
+        return "mp_native_offline_verified", "Presets/HallOfTheNovice/Entries/NoviceTank04.cs", "单组件原生实现；首对象绑定/不可选不跳过/完成下一轮Pending逆序晋升、targetable-only拉战、全1564合法候选禁攻/Pointless保护、恰三全对象bbox弱Goal及严格距1职业null-target动作意图；弱Goal/动作不扩大旧消费边界，592集中模型/生产0错误/实际DLL557PASS，双视图/Seek/owner清理已验，真实PR执行待实机"
+    if source.endswith(tuple(f"/Global/HallOfTheNovice/{name}.cs"
+                             for name in ("NoviceDPS03", "NoviceDPS05", "NoviceBasicFinal"))):
+        return "mp_native_offline_verified", f"Presets/HallOfTheNovice/Entries/{module}.cs", "三个单组件原生迁移；持久首角斗士指示、全部增援/同OID partial setter、Pointless与NPC队伍基础优先级、活跃模块不套auto无敌；精确R20场地与源默认Primary双端绘制、初见HP0及同ID新代；568集中模型/生产0错误/真实DLL全目录541PASS，入口216，Seek/开关/owner清理已验；无新增禁攻/停手或特殊移动，PR真实选敌及最终像素待实机"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/VaultOneiron/{name}.cs"
+                             for name in ("VaultYan", "Hexapod"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "十五组件/十六规则原生实现；Yan袋塔坐标FIFO/创建顺序/跨OID旧帧屏障及Rush锁原点和长度补正；Hex正负Pole/矿硬障碍/状态参数与真实Lose/逐Actor首次顺序/Bomb死亡复活/强制行进模型；436集中模型、生产0错误、实际DLL536PASS及最终专项，双视图/当前导航/Seek/owner已验，特殊移动未扩执行，实机待验"
+    if source.endswith(("/Dawntrail/Hunt/RankS/ArchAethereater.cs", "/Dawntrail/Hunt/RankS/Sansheya.cs", "/Dawntrail/Hunt/RankA/UrnaVariabilis.cs")):
+        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "十九组件/四十三读条及六Effect原生规则；Arch全局Finish双段FIFO/独立冷热、Sans前二引用Risky三段真实效果FIFO/动态冲锋、Urna正负磁力动态主怪与静态AOE/独立结束/专用导航；原始状态槽序和队伍帧序/packet收据/销毁代际已验；436集中模型、生产0错误、实际DLL536PASS及最终专项，双视图/导航/Seek/owner清理，StayMove诊断与磁力投影不扩执行，实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/VaultOneiron/{name}.cs"
+                             for name in ("OldBitterEye", "MobileFortress"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "二十三激活组件/三十六消费规则原生实现；Bitter全局预告/精确中心/旧读条剩余时间封顶与7.1延迟、50拉近min4.9仅显示及免疫；Fortress三套队列恰8扩展/IV复位、Quiet精确3.5与方向AND前缀、Systematic仅16排序及单向Risky/Danger/全局Finish；两动态矩形真实Native效果消费及分散6/7、奖励优先级；406集中模型/生产0错误/实际DLL全目录520PASS，双视图/当前导航/Seek/owner清理离线已验，实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/VaultOneiron/{name}.cs"
+                             for name in ("Paeonia", "SpiritOfThunder"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "十九激活组件/三十五消费规则原生实现；Paeonia独立正反双环/源锁点与消费钟2、八项前四/默认10000凝视PR面向；Spirit普通八项前四及高压四项前三独立、首黄全Risky、六创建beam原量化位置40x10/+7.7与任意Finish全清；动态目标圈6/Finish-only、两类分散及独立目标/类型/判定伤害预测、源奖励R7；398集中模型/生产0错误/实际DLL全目录511PASS，后续520集中补强预测类型目标时钟和Native效果保留，双视图/当前导航/Seek/owner清理已验，实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/CenoteJaJaGural/{name}.cs"
+                             for name in ("GoldenMolter", "Room1"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/CenoteJaJaGural.cs", "二十六激活组件/三十七消费规则原生实现；Crypsis真实Start与任意3997 Lose对账、动态9码进入约束/销毁主引用冻结、Sprint仅intent；创建池量化R17/default钟/完整ushort4全局FIFO、光线前四前二黄；Room1真实组合场地3186点oracle/12trash启动/原生state7结束、动态宽3冲锋Finish消费；390集中模型/生产0错误/实际DLL全目录505PASS，颜色后续按源默认Danger补正并包含520集中回归，双视图/当前导航/身份代际/Seek/owner清理已验；实机待验"
+    if source.endswith(tuple(f"/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/{name}.cs"
+                             for name in ("GymnasiouAcheloios", "Hippomenes", "Narkissos"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "三十激活组件/五十规则原生实现；双锤绝对角及四锤配对/真实Finish消费钟、四种Blaster顺序与六动作Native全局FIFO、仅首导航和R5中心约束；Sap累计五次/任意Finish、四方向2秒6.6强制行进/只查Sap末落点及迷乱诊断；231集中模型、生产0错误及实际DLL全目录495PASS，双视图/源当前导航/PR凝视/身份代际/旧raw屏障/Seek/owner清理已验，不扩强制行进或迷乱执行；实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs"
+                             for name in ("SecretCladoselache", "DaenOseTheAvariciousTyphon"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "十九激活组件/二十一规则原生实现；Clado双单槽配对六击全局效果FIFO/2.1消费钟，Typhon创建中心单圈14.3及双31击旋转14.5/1.1、隐藏期间推进和轴角匹配；动态宽5冲锋、分散/精确八人分摊及仅显示20码撞墙击退；204集中模型、生产0错误及实际DLL全目录476PASS，双视图/当前导航/切人/Seek/owner清理离线已验，实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs"
+                             for name in ("SecretKeeper", "DaenOseTheAvariciousUltros", "DaenOseTheAvariciousEchidna"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "三十三激活组件/四十二规则原生实现；Keeper锥与20码拉近独立/首槽hitbox起手缓存/max1有效位移、精确1.4d毒区三路及全同OID R12常驻顺劈；Ultros20码撞墙/水圈方向独立导航与免疫、R8显示R9分散；Echidna全局动态凝视槽/跨来源Finish/原目标代际冻结/PR面向、精确八人分摊、VoidStream expected99前四/晋升；193集中模型/生产0错误/实际DLL全目录467PASS，双视图/导航/Seek/owner清理；实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/VaultOneiron/{name}.cs"
+                             for name in ("Gwyddneu", "GreatGimmeCat", "VaultRoadripper", "Fastitocalon"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "三十二激活组件/五十一规则原生实现；Violet前四插入FIFO、真三角Prism八项源快排、Uplift十二/十六项全显示与逐项F-3风险/前四色；创建球锁点+7.9且Electrify全清、beam世界Z-21/锁向+7.7且每四Finish晋升；Tremblor三段轴向匹配/消费钟+3；四动态Finish bait含冲锋二维实时长度、源死亡隐藏复活/销毁冻结；Roadripper尸体AllDestroyed/首独立缓存及Wheel原目标FIFO；179集中模型/实际DLL全目录455PASS，双视图/导航/Seek/owner清理；实机待验"
+    if source.endswith(tuple(f"/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/{name}.cs"
+                             for name in ("GymnasiouPithekos", "GymnasiouStyphnolobion", "GymnasiouMeganereis"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "共二十六激活组件/三十九规则原生实现；Source111逐条六秒R18诱导及首目标R17.5、32212 Start清理；中心量化两段地震F+.5/Finish消费钟+2且忽略helper朝向；动态R60全30度EarthShaker真实Native source FIFO及目标Raidwide预测；20码撞墙击退仅投影、免疫外保留Hydrobomb方向导航/首KB时钟、R8显示R9分散导航target FIFO；164集中模型/生产0错误/实际DLL全目录439PASS，双视图/真实结束/切人/Seek/owner清理，实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs" for name in ("SecretDjinn", "SecretWorm"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "Djinn九组件/八规则和Worm七组件/九规则原生实现；25码径向撞墙击退仅显示/提示、免疫/独立来源/真实结束；Source图标逐条五秒诱导R10及首目标R17.5导航，Start全清；创建圈锁点加5.7秒且保留销毁历史，任意21715真实Finish全局FIFO；显式销毁/同ID新代/旧帧屏障，155集中模型/实际DLL全目录429PASS、双视图/导航/切人/Seek/owner清理，实机待验"
+    if source.endswith("/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/LyssaChrysine.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "八组件/十一规则原生实现；创建柱锁点加3.7秒且任意32315真实Finish全清，显式销毁/新代屏障；双同心队列独立中心量化锁点/F+.5首判定/逐轴匹配/Finish消费钟+2，helper朝向不参与，八人精确分摊；155集中模型及活视觉已消费补正定向、实际DLL全目录429PASS，双视图/导航/切人/Seek/owner清理，实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/CenoteJaJaGural/Room{room}.cs" for room in (2, 3, 4))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/CenoteJaJaGural.cs", "三十二激活组件/五十六读条规则原生实现；按房间trash存在启动、不筛死亡/可选/战斗，原房间对象state7或销毁结束，同ID换OID不替代；保留独立Start锁点/方向/判定和真实结束，三真实组合场地/最终中心及每房3186点源oracle、完整trash/奖励priority/洋红且不画房间对象；143集中模型、实际DLL全目录418PASS，双视图/导航/短取消/切人/逆向Seek/owner清理；未激活吸引/击退不扩控制，实机待验"
+    if source.endswith(tuple(f"/Stormblood/TreasureHunt/TheShiftingAltarsOfUznair/{name}.cs"
+                             for name in ("AltarAiravata", "AltarKelpie"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingAltars.cs", "共十九激活组件/十九消费规则原生实现；Airavata Icon Source单槽覆盖/动态DirForward二十码撞墙击退与Buffet首读条诱导独立，保留Primary锥心/Source旋转/target-centered文字不对称及无额外伤害预测；Kelpie水球创建锁量化位置加8.6秒、死亡/空闲销毁/到期保留至13443真实结束，径向击退与免疫仍生效的场地中心水球方向导航分离；134集中模型、实际DLL全目录412PASS、双视图/导航/引用冻结/代际/取消/Seek/owner清理；真实物理与宿主执行待验"
+    if source.endswith(tuple(f"/Stormblood/TreasureHunt/TheShiftingAltarsOfUznair/{name}.cs"
+                             for name in ("AltarDullahan", "TheWinged"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingAltars.cs", "十激活组件/十二规则各自原生实现；保留二十码径向击退原始来源代际/起手锁点/判定/墙截断/免疫/真实结束，Dullahan插入顺序串联与TerrorEye-only落点提示、恰好八人分摊，Winged首个有效锥内击退及Feather矩形；KB源无导航仅显示，普通危险/分摊导航，奖励All与优先级完整；125集中模型、实际DLL全目录407PASS、取消/销毁/切人/逆向Seek/owner清理验证；实机待验"
+    if source.endswith("/Endwalker/TreasureHunt/TheExcitatron6000/LuckyFace.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/Excitatron.cs", "CFC819双向核对Territory1000；十三激活组件/十七规则、源32边形入口差集及最终AABB中心、真实helper独立读条及Fake/MerryGoRound边界、R6显示/R7分散导航与原目标FIFO/引用冻结/死亡复活、源单体/全屏及奖励All/priority原生实现；117集中模型及实际DLL全目录401PASS，源场地3186点对照、双视图/导航/Seek/owner清理验证；实机待验"
+    if source.endswith("/Stormblood/TreasureHunt/TheHiddenCanalsOfUznair/Airavata.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/HiddenCanals.cs", "CFC276双向核对Territory725；七激活组件/十一规则、真实三形状并集减入口及最终AABB中心、2064常驻顺劈与施法中/本人源队伍方向诱导、全部同OID主怪标记、完整16OID All和奖励优先级原生实现；未激活小怪类不接管，117集中模型及实际DLL全目录401PASS，源场地3186点对照、双视图/导航/Seek/owner清理验证；实机待验"
+    if source.endswith("/Stormblood/TreasureHunt/TheLostCanalsOfUznair/CanalIcebeast.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/LostCanals.cs", "CFC268双向核对Territory712；七激活组件/六规则、真实并集减入口场地、1EBF常驻顺劈/源队伍诱导、9557默认10000范围锁点凝视/眼睛/瞳孔/视角弧与PR面向及回放执行隔离、实际R6 Freezeover与奖励All原生实现；117集中模型及实际DLL全目录401PASS，源场地3186点对照、双视图/导航/真实结束/Seek/owner清理验证；实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheDungeonsOfLyheGhiah/{name}.cs"
+                             for name in ("Alichino", "Goliath"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/DungeonsOfLyheGhiah.cs", "CFC688双向核对Territory879；二十一唯一激活组件/二十九规则，130世界顶点凹场及AABB中心、真实独立读条、8人精确分摊目标FIFO/引用冻结/死亡复活、EventState-only原位置R8硬障碍、AllDeadOrDestroyed奖励与优先级原生实现；110集中模型及实际DLL全目录391PASS，源场地2964点对照、双视图/导航/Seek/owner清理验证；未激活Fount/吸引及HeatGaze凝视不扩控制；实机待验"
+    if source.endswith("/Dawntrail/TreasureHunt/VaultOneiron/GildedSentry.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "七激活组件、固定方场、锁起手几何及观察结束、动态单体/全队预测、奖励怪优先级和洋红方向标记、All组生命周期原生迁移；模型及实际DLL覆盖双视图/导航、原桥八槽、Pointless与高差/FATE顺序、真实raw更正、逆向Seek和owner清理；实机待验"
+    if source.endswith("/Dawntrail/TreasureHunt/VaultOneiron/VaultGargantuan.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "入口主OID4898；九激活组件/十四规则、固定方场及R15实际Scoop、Mash延迟原目标FIFO、全队预测、奖励优先级/洋红和全部trash标记原生实现；AllDestroyed保留尸体及首489A缓存独立死亡/销毁结束，检查先于首次缓存，同ID新代不重绑、packet DTO替换不漏标；模型及实际DLL验证双视图/导航/Seek/owner清理；未激活Inhale不扩吸引；实机待验"
+    if source.endswith(tuple(f"/Dawntrail/TreasureHunt/VaultOneiron/{name}.cs"
+                             for name in ("VaultBat", "VaultFluidSoul", "VaultWindSpirit"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/VaultOneiron.cs", "二十八激活组件/四十三规则；三入口小怪与首个独立缓存Boss、AllDestroyed尸体/代际及首次缓存顺序原生实现；三动态诱导死刑保留原来源/目标引用、销毁冻结/死亡清理、原八槽队友方向导航、列表首项伤害时钟及Native按source首项消费；取消保留、同代补正不复活已消费项、缺Actor保留槽位预测、奖励priority差异经102模型与实际DLL双视图/导航/Seek/owner集中验证；无额外特殊移动执行；实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs"
+                             for name in ("SecretBasket", "SecretPorxie"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "十八激活组件/二十八规则；Basket三段锁位锁向、首项轴向/角度匹配及处理时钟Finish+1.1，延迟全屏唯一代际时钟仅Native效果清；Porxie四爆三圈、原位置状态/量化输出、异来源首项方框匹配、实际效果位置及处理时钟+4.5、future缓存和取消销毁保留；同代原点补正/旧来源不可回滚或复活、普通组件/奖励All经88项模型与实际DLL双视图/导航/逆向Seek/owner集中验证；源无激活击退吸引不扩执行；实机待验"
+    if source.endswith("/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/FuathTroublemaker.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "五激活组件/五规则；R6精确8人分摊保留原目标引用/销毁冻结/死亡隐藏复活、目标FIFO及真实结束，R3同伴/满员拒绝/重叠目标R12避让/任一合法圈导航，死标记者显示与Active导航分离；十字臂40半宽2.5、动态单体/Calls adds、All/奖励经模型及实际DLL验证双视图/导航/Seek/owner清理，无额外Shared预测或源未激活动作；实机待验"
+    if source.endswith(tuple(f"/Stormblood/TreasureHunt/TheShiftingAltarsOfUznair/{name}.cs"
+                             for name in ("Hati", "AltarMandragora", "TheGreatGoldWhisker"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingAltars.cs", "十四激活组件、48边场地和中心轴投影例外、锁起手AOE/真实结束、奖励怪优先级及洋红标记原生迁移；两Delayable按捕获源槽与原目标FIFO/Native MainTarget清理，取消和销毁保留队列，raw真实变化与packet同代更正隔离；模型及实际DLL验证双视图/导航、源八槽、代际、反向Seek和owner清理；未激活凝视及变身不扩接管；实机待验"
+    if source.endswith(tuple(f"/Stormblood/TreasureHunt/TheShiftingAltarsOfUznair/{name}.cs"
+                             for name in ("AltarSkatene", "AltarBeast", "AltarArachne", "TheOlderOne"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingAltars.cs", "三十八激活组件/四十六规则原生迁移；全Matanga常驻顺劈在读条中保持，真实R9.42轮廓与非目标避让、目标本人的源八槽R100队友方向约束分离；三延迟单体保留原目标FIFO/取消历史且效果先到不残留预测；两默认10000凝视、独立三环及不可选Idol几何、奖励All/priority/颜色通过模型和实际DLL集中回归；未激活视觉和特殊移动不扩接管；实机待验"
+    if source.endswith(tuple(f"/Stormblood/TreasureHunt/TheShiftingAltarsOfUznair/{name}.cs"
+                             for name in ("AltarChimera", "AltarDiresaur", "AltarTotem"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingAltars.cs", "三十二激活组件/二十四规则原生迁移；Icon23来源身份、原位置R6/R10诱导、首目标R17.5导航、原八槽队友避让、死亡保留/销毁冻结及同ID新代显示与引用身份分离；真实Start恰一次/三次清全表，同代packet不重数、raw真实变化重启；毒区cast/native主目标/event/live三路及EventState过滤、每轮首项交接；Chimera两Interrupt意图和文字保留、不扩自动打断，Languorous为普通扇；共享Matanga/延迟单体/预测及All奖励通过模型与实际DLL双视图/导航/Seek/owner集中验证；实机待验"
+    if source.endswith(tuple(f"/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/{name}.cs"
+                             for name in ("GymnasiouMandragoras", "GymnasiouLeon", "LampasChrysine"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "十五激活组件/二十四读条、48边场地、三种当前CastInfo单体预测、Leon实际R12、奖励怪差异优先级与颜色/All生命期原生迁移；Lampas前四插入FIFO全部导航/总数大于二时前二危险色、隐藏项晋升及文字、取消/销毁/同ID重建/同代补正/逆向Seek和owner清理通过模型与实际DLL；无源特殊移动不扩执行；实机待验"
+    if source.endswith(tuple(f"/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/{name}.cs"
+                             for name in ("GymnasiouTigris", "GymnasiouSatyros", "GymnasiouTriton", "GymnasiouSphinx"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "二十八激活组件/三十九规则、48边场地、动态单体/全屏预测、奖励优先级/颜色及All生命期原生迁移；凝视眼睛/视角弧及PR面向保留窄安全缝；无过滤R4硬障碍；R5毒区cast/native主目标或包落点/event/live及每轮首项交接；R6显示/R7分散目标FIFO、销毁冻结与死亡复活；模型和实际DLL覆盖导航/双视图、当前对象采样、逆向Seek及owner隔离；未扩未激活拉近/囚禁；实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs"
+                             for name in ("SecretUndine", "SecretSwallow", "SecretPegasus", "GreedyPixie"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "三十五激活组件/五十读条、固定48边场地、分身独立时钟及锁起手几何、动态单体/全队预测、四套奖励优先级与All/辅助体排除原生迁移；Swallow仅激活九组件且21719圆21720环，BodySlam不扩击退；模型及实际DLL验证未激活动作接管边界、不可选辅助来源、双视图/导航、当前时钟、源八槽九人截断与死亡空洞、逆向Seek及owner清理；实机待验"
+    if source.endswith(tuple(f"/Shadowbringers/TreasureHunt/TheShiftingOubliettesOfLyheGhiah/{name}.cs"
+                             for name in ("SecretKorrigan", "SecretSerpent"))):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingOubliettes.cs", "十四激活组件/二十二规则、源奖励优先级/颜色及All生命周期原生迁移；Korrigan默认10000凝视/双视图/PR面向及原目标MainTarget延迟FIFO，Serpent独立R8读条/R7.5仅EventState过滤实时硬障碍/动态单体；模型和实际DLL验证观察结束、销毁历史、双视图/导航、逆向Seek及owner清理；未激活吸引不扩执行；实机待验"
+    if source.endswith("/Endwalker/TreasureHunt/TheShiftingGymnasionAgonon/GymnasiouMegakantha.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/ShiftingGymnasion.cs", "八激活组件/十二读条及三动作真实效果原生迁移；32242锁R40半圆/新Start覆盖但不重置全局五效果计数、取消和销毁保留、第五次清零、旧代补正不覆盖后源或复活已结算状态；33015/33016只计数及来源级通用躲避压制不建新AOE；动态单体、全部rest标记及奖励All通过模型与实际DLL集中回归/Seek/owner清理；实机待验"
+    if source.endswith("/Dawntrail/TreasureHunt/CenoteJaJaGural/BullApollyon.cs"):
+        return "mp_native_offline_verified", "Presets/TreasureHunt/Entries/CenoteJaJaGural.cs", "十一激活组件/十八规则、独立4/11/2.5秒读条、当前单体/全屏预测、七奖励优先级/颜色及All生命期原生迁移；32边形减入口矩形并按差集AABB居中，源运行库2025点Contains及clamp对照通过；模型和实际DLL覆盖双视图/导航、真实结束、机制开关、逆向Seek和owner清理；未扩传送/吸引及其他房间接管；实机待验"
+    if "/Hunt/" in source and module == "Aglaope":
+        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "八激活组件/七规则；Sonata锁R16.2单槽及done跨Start，真实native八槽raw/原TargetIndex/全世界pending状态/首任意状态ACK/原槽确认/严格三秒保留；Raid0等待不随视角，Finish不清圈；独立Away10/R30/严格免疫KB仅显示与危险文字，无新增导航或执行。首raw权威与NPC饱和时钟、未认领读条替换、显式销毁及接收者同ID新代均已验证；687集中模型、生产0错4既有警告、实际DLL全目录与强化专项通过，显示数据/真实Sonata解算/Seek/owner及旧录像缺失诊断已验；实机待验"
+    for filename, entry in [
+        ("DD60TheBlackRider.cs", "PalaceBlackRider"),
+        ("DD70Yaquaru.cs", "PalaceYaquaru"),
+    ]:
+        if source.endswith(f"/Heavensward/DeepDungeon/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss机制，禁止深宫道中流程自动化；真实593/594区域核表，五/四组件原生迁移。BlackRider动态原引用冲锋/独立起读原点及队伍槽25撞墙击退/免疫门外方向约束/双视图落点与三路毒池，Yaquaru激活时捕获池引用/严格评分模型/原始Heavy四槽及逐副本Lose-Gain对账；Reset真实raw基线/缺视角同帧换目标和首饱和raw已补。687集中模型、生产0错4既有警告、两场各5772点源oracle、实际DLL专项与全目录exit0；显示/实际导航/Seek/owner及楼层共存已验，弱Goal及驱散不扩大执行，实机待验；见NativePalaceBosses.spec.md"
+    if "/Hunt/" in source and module == "ForgivenRebellion":
+        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "Blizzard三候选与共享缓存、七次真实Finish旋转、SourceId图标配对/量化锁点及六次Effect旋转、每owner行进历史与两普通组件首项落点均原生迁移；模型及实际DLL验证精确时钟/参数、仅raw时长改变、代际更正、活动owner/helper销毁、显示/导航分离、逆向Seek及回放控制隔离；源行进仅显示提示，不新增执行；实机待验"
+    if "/Hunt/" in source and module == "Sugriva":
+        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "九读条与九激活组件；Twister独立单槽20码击退/R8双视图与min8max8分摊导航、动态Butcher效果按来源FIFO及首项Tankbuster时钟、Prey累加/F+1.1/恰第二投石Start/Chocobo和raw事件Lose收据原生迁移；同帧Destroy先于新Start、各actor读条先于状态、helper补播、精确参数/严格免疫/引用代际/切人隔离/逆向Seek/owner清理通过模型及实际DLL；源无击退逆推导航或原生动作执行，不扩范围；实机待验"
     if "/Hunt/" in source and module in {
+        "QueenHawk", "TheRaintriller", "Ker", "Gunitt", "AtticusThePrimogenitor", "Heshuala", "Ihnuxokiy", "Neyoozoteel", "Nechuciho",
+        "ForgivenPedantry", "Ixtab", "Keheniheyamewi",
+        "ForgivenRebellion",
         "KerShroud", "CrystalIncarnation", "Gajasura", "Orghana", "OPoorestPauldia", "ArchEta",
         "Hulder", "ForgivenGossip", "BoneCrawler", "Okina", "Angada", "Gamma", "LunatenderQueen",
         "Baal", "Huracan", "Grassman", "Maliktender", "FanAil",
         "Starcrier", "Storsie", "MoussePrincess", "Ophioneus", "Ruminator", "Sphatika", "Gurangatch", "Burfurlur",
         "Minerva", "Armstrong", "Supay", "TheMudman", "Petalodus", "LilMurderer", "Nuckelavee",
-        "Rusalka", "Sugaar", "Aegeiros", "Nariphon", "Yilan", "NarrowRift", "SallyTheSweeper",
+        "Rusalka", "Sugaar", "Aegeiros", "Nariphon", "Yilan", "NarrowRift", "SallyTheSweeper", "Tarchia",
+        "Yehehetoauapyo", "RraxYitya", "Pkuucha", "TheForecaster", "KirlirgerTheAbhorrent", "Tyger", "CatsEye",
     }:
-        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "40模块222条读条及实际后续判定原生迁移；连续队列/双视图/PR凝视/热病停手移动/方向错乱/目标诱导分散/旋转十字/原生主目标/拉动投影/常驻顺劈/分摊截止时序/强制行进/记录逆序均通过模型及实际DLL回放；实机待验"
+        return "mp_native_offline_verified", "Presets/Hunts/Entries/SimpleHunts.cs", "62模块432条读条及实际后续判定原生迁移；连续队列/双视图/PR凝视/热病停手移动/方向错乱/目标诱导分散/旋转十字/原生主目标/拉动投影/常驻顺劈/分摊截止时序/强制行进/记录逆序/Tarchia构造预览/取消后续、Omen方向缓存、Wingblade实际侧数、Pkuucha完整FIFO及隐藏R14、Forecaster气候替换、Kirlirger无限分摊、Tyger尾锥绘制导航分离、CatsEye两组件分摊及动态原始首项凝视、QueenHawk状态清圈与三秒行进、Raintriller辅助来源与三段FIFO、Ker逐帧PR停手禁读条取消施法及MP移动暂停、Gunitt原槽禁入mask及Shared聚合/死亡队首/真实Finish、Atticus喊话锁点及双风险吐息/辅助体FIFO、Heshuala几何匹配/真实Finish/冻结十字/未确认预测撤销、Ihnuxokiy效果队列/三秒行进/单体预测、Neyoozoteel全局索引三连/八击十字/目标FIFO、Nechuciho四段全局索引/前二风险晋升、Pedantry双段/动态Fever/Native主目标Witch/结束目标、Ixtab双重咏唱/组件目标FIFO/Doom转移对账、Slippery独立起点/全Risky队列/五秒行进窗口、公共按演员顺序补播及各owner输入基线均通过模型及实际DLL回放；实机待验"
+    for filename, entry in [
+        ("DD80Gudanna.cs", "PalaceGudanna"),
+        ("DD90TheGodmother.cs", "PalaceGodmother"),
+    ]:
+        if source.endswith(f"/Heavensward/DeepDungeon/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅Boss机制，不含深宫道中流程自动化；真实595/596区域核表，Gudanna八次native效果循环/7099锁存/原位置全Tornado硬障碍/构造攻略与缺视角历史，Godmother创建锁点10秒/任意7106真实Finish全清/首Giddy禁攻及四点重复索引/动态顺劈/灰炸弹priority5与独立DoT意图；weak0.5和10精确模型保留但不扩大旧MP导航。505集中模型、生产0错4既有警告、两场各5772点源oracle、实际DLL专项和全目录889条PASS/exit0；Director卸载/旧实体不重启/死亡缺视角/Seek/owner及楼层共存已验，实机待验；见NativePalaceBosses.spec.md"
+    for filename, entry in [
+        ("DD20Spurge.cs", "PalaceSpurge"),
+        ("DD120Kirtimukha.cs", "PalaceKirtimukha"),
+        ("DD100NybethObdilord.cs", "PalaceNybeth"),
+    ]:
+        if source.endswith(f"/Heavensward/DeepDungeon/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅接管Boss；本机真实区域核表，双植物顺劈全来源/未知读条/蜂priority与独立禁DoT意图/当前NPC预测钟，Nybeth五激活动作/原引用目标圆/首存储预测钟/当前队伍mask/迟packet与raw代际/构造攻略loaded-pending-Director生命周期；场地实际源5772或5694点oracle、463集中模型、生产0错4既有警告、实际DLL专项与全目录exit0；双视图数据/生产导航/Seek/owner及楼层共存已验，禁DoT执行按总规格暂缓，实机待验；见NativePalaceBosses.spec.md"
+    for filename, entry in [
+        ("DD10PalaceDeathgaze.cs", "PalaceDeathgaze"),
+        ("DD110Alicanto.cs", "PalaceAlicanto"),
+        ("DD50EddaBlackbosom.cs", "PalaceEdda"),
+        ("DD40Ixtab.cs", "PalaceIxtab"),
+        ("DD140AhPuch.cs", "PalaceAhPuch"),
+        ("DD150Tisiphone.cs", "PalaceTisiphone"),
+        ("DD30Ningishzida.cs", "PalaceNingishzida"),
+        ("DD130Alfard.cs", "PalaceAlfard"),
+    ]:
+        if source.endswith(f"/Heavensward/DeepDungeon/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "仅接管Boss；精确场地/来源级通用躲避/观察结束/双视图已通过模型及实际DLL回放；含凝视、多路毒圈交接、顺劈诱导、四落圈后回中及Tisiphone职业优先级/滚动僵尸规划；楼层Zone会话持续保留；实机待验"
+    if source.endswith("/Heavensward/Quest/MSQ/DivineIntervention.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/DivineIntervention.cs", "七组件及精确胶囊差集、锁起点冲锋、双Boss联合生命周期、铁链选敌及有色标记已通过模型和实际DLL回放；实机待验"
+    if source.endswith("/Heavensward/Quest/Job/Dragoon/DragoonsFate.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/DragoonsFate.cs", "四AOE及精确四边形、Prey最近Gain及迟到Lose、NPC24槽空洞、恰三层薄冰低权重交接、隐藏导航与独立朝向轮廓、真实结束及旧帧隔离通过模型和实际DLL回放；旧录像缺原生敌我分类时不推断NPC槽；实机待验"
+    for filename, entry, evidence in [
+        ("/Endwalker/Quest/MSQ/WhereEverythingBegins/P1.cs", "WhereEverythingBegins",
+         "真实1091/CFC874映射、精确36边形并集、任意trash入战触发与主体HP0终止、前五Nox显式FIFO、NPC动态R6分摊/R6显示R7分散导航、仅可选存活trash标记通过模型与实际DLL回放；P2仍保留"),
+        ("/Endwalker/Quest/MSQ/FrostyReception.cs", "AFrostyReception",
+         "真实1010/CFC812映射、精确20边形、八读条/七组件、LockOn动态创建时钟与冻结旧代、固定落圈全局FIFO、两独立分散按action和target清理、原生敌我标记通过模型和实际DLL回放；Zone仍保留"),
+        ("/Endwalker/Quest/MSQ/TheGameIsAfoot.cs", "TheGameIsAfoot",
+         "真实1177/CFC960映射、精确48边形加偏心矩形并集、前八落石FIFO、动态NPC分摊分散、冲锋锁起点与终点派生长度及仅恰三人导航/死亡联盟NPC计数、独立Raidwide与Tankbuster通过模型和实际DLL回放；Zone仍保留"),
+        ("/Stormblood/Quest/MSQ/RhalgrsBeacon.cs", "RhalgrsBeacon",
+         "真实671/CFC466映射、Termini动态朝向及共享/滑动时钟、销毁冻结代际与逐个效果、毒圈读条/效果/实体三路交接、10码锁点击退及全部实体导航与有效落点判定分离通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/AFeastOfLies.cs", "AFeastOfLies",
+         "真实863/CFC664映射、十四组件、前五Burn显式FIFO、十一/十二/十三雷圈显示与导航分离、最近hitbox选敌/PendingDead/空雷球回退及Serpent、20码撞墙击退通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/MSQ/TheMeasureOfHisReach.cs", "TheMeasureOfHisReach",
+         "真实687/CFC468映射、四激活AOE及R10月光小队/NPC伤害预测、联盟排除、主怪独立结束和双视图通过模型及实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/FadedMemories/FlameGeneralAldynn.cs", "FadedMemories",
+         "真实932/CFC743映射、两激活AOE、三将朝向标记、任意AID匹配施法来源及实际观察结束通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/FadedMemories/KingThordan.cs", "FadedMemories",
+         "真实932映射、10000凝视及PR面向/眼形弧双视图、真实结束/锁点、671仅单体优先级及事件快照交接、四种原生实体标记通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/FadedMemories/Zenos.cs", "FadedMemories",
+         "真实932映射、三剑任意入战触发与仅主体HP0结束、只画三剑、玩家来源21121纯全队预测及普通AOE观察结束通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/FadedMemories/Nidhogg.cs", "FadedMemories",
+         "真实932映射、R8高跳与全宽8前62龙眼雷光、分身施法不额外画分身、仅主怪结束通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/MSQ/DeathUntoDawn/P4LunarIfrit.cs", "DeathUntoDawn",
+         "真实977/CFC780映射、前三冲锋/前二十字显式FIFO及空槽晋升、三独立Raidwide含联盟/NPC、钉子priority5保PendingDead及附带AOE许可通过模型和实际DLL回放；其他阶段与Zone仍保留"),
+        ("/Shadowbringers/Quest/MSQ/TheOracleOfLight.cs", "TheOracleOfLight",
+         "真实861/CFC662映射、双雷线及前八火圈显式FIFO、真实CastInfo变化重新排队、锁方向20码多源依次击退/撞墙射线/严格免疫/三角投影及位移线、raw时长和后续朝向修正通过模型和实际DLL回放；独立Zone仍保留"),
+        ("/Stormblood/Quest/Job/Paladin/RaisingTheSword.cs", "RaisingTheSword",
+         "真实706/CFC270映射、R20.5圆场、三AOE、EventState风圈与全部风圈锥导航、锁点10码击退/严格免疫/墙截断/角色投影及场外射线边界通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/Job/Dancer/GambolingForGil.cs", "GambolingForGil",
+         "真实867任务映射和50段椭圆、动态Foxshot/NPC诱导/死亡目标/名单伤害、独立锁点25码击退、两套风圈集合、凝视PR面向和眼弧双视图通过模型和实际DLL回放；独立Zone仍保留"),
+        ("/Stormblood/Quest/Job/Monk/ThePowerToProtect.cs", "ThePowerToProtect",
+         "真实四边形场地、火圈读条/效果/实体逐帧交接、包落点修正与双视图、1269严格末一秒停手及移动保持至真实Lose、死亡/销毁重建独立状态通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/Job/Summoner/AnArtForTheLiving.cs", "AnArtForTheLiving",
+         "真实16顶点场地、指示器原序创建时钟、逐轴炸弹替换及首位置销毁、死亡隐藏复活/冻结旧代、325选敌与PendingDead边界通过模型和实际DLL回放"),
+        ("/Shadowbringers/Quest/Job/Gunbreaker/SteelAgainstSteel.cs", "SteelAgainstSteel",
+         "动态剑组按Actor原序激活、无读条default时钟、销毁冻结同ID代际效果、前四直线FIFO晋升、独立半环及NPC动态R6分摊实际结束通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/Job/Scholar/OurUnsungHeroes.cs", "OurUnsungHeroes",
+         "五激活组件、图标源对象/独立消费时钟/重复点名与逐项效果出队、NPC24伤害及冻结引用、死亡与同ID重建、325仅改变选敌并保持空目标续租通过模型和实际DLL回放"),
+        ("/Endwalker/Quest/Job/Sage/LifeEphemeralPathEternal/AncelAndMahaud.cs", "LifeEphemeralPathEternal",
+         "十激活组件、精确20边形、视觉建环/实际helper结束及消费时钟、NPC单人塔硬进入与满塔避让分支、超员轮廓和伤害、分摊分散目标交接通过模型和实际DLL回放"),
+        ("/Endwalker/Quest/Job/Sage/LifeEphemeralPathEternal/Guildivain.cs", "LifeEphemeralPathEternal",
+         "九激活组件、Player/Buddy双向动态诱导及NPC避让、同pair重连/效果清理/快照交接/包独有连线销毁、原生EventState与网络状态分离、重复缩场恢复通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/Job/Samurai/TheBattleOnBekko.cs", "TheBattleOnBekko",
+         "四段半环保留真实朝向/逐轴和角度匹配/实际取消销毁推进及处理时钟、前八线插入顺序、原位置R4障碍与EventState、纯Raidwide通过模型和实际DLL回放"),
+        ("/Endwalker/Quest/Job/Reaper/TheKillingArt.cs", "TheKillingArt",
+         "精确64边形入口差集和源中心、前四半环FIFO及同caster多代独立身份、动态毒圈读条/效果/实体一对一交接与处理时钟、小怪选敌及未激活技能回退通过模型和实际DLL回放"),
+        ("/Dawntrail/Quest/Job/Viper/FangsOfTheViper.cs", "FangsOfTheViper",
+         "精确20边形、六读条范围、原始PlayerState/ARR对象零拉怪、Gowrow引用缓存与判定顺序、主代切换/同ID重建/Director、指定敌人绘制及SourcePlayerId回放通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/Job/Samurai/TheFaceOfTrueEvil.cs", "TheFaceOfTrueEvil",
+         "四读条范围、动态全分身Arashi、三触发共享时钟、取消不清/8419效果清、旧快照屏障、纯Raidwide预测和主怪独立生命周期通过模型和实际DLL回放"),
+        ("/Endwalker/Quest/Job/Sage/SagesFocus.cs", "SagesFocus",
+         "十激活组件、精确20边形、NPC24单体及全队预测、R5显示/R6分散导航、死亡恢复/读条目标交接、未激活DosisIII不接管及三Boss标记通过模型和实际DLL回放"),
+        ("/Stormblood/Quest/Job/DarkKnight/TheOrphansAndTheBrokenBlade.cs", "TheOrphansAndTheBrokenBlade",
+         "四激活组件、NPC持续分摊及硬进入圈、8457取消/完成/效果不清、9298统一清、目标引用和权威目标交接、链priority5及原生敌我绘制通过模型和实际DLL回放"),
+    ]:
+        if source.endswith(filename):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", evidence + "；逆向Seek、回放控制隔离和owner清理通过；实机待验"
+    for filename, entry in [
+        ("/Stormblood/Quest/Job/Samurai/BloodOnTheDeck.cs", "BloodOnTheDeck"),
+        ("/Dawntrail/Quest/Job/Pictomancer/MindOverManor.cs", "MindOverManor"),
+        ("/Dawntrail/Quest/Job/Pictomancer/SomewhereOnlySheKnows/TheWingedSteed.cs", "SomewhereOnlySheKnows"),
+        ("/Dawntrail/Quest/Job/Pictomancer/SomewhereOnlySheKnows/FlightOfTheGriffin.cs", "SomewhereOnlySheKnows"),
+        ("/Dawntrail/Quest/Job/Pictomancer/SomewhereOnlySheKnows/JanquetilaquesPortrait.cs", "SomewhereOnlySheKnows"),
+    ]:
+        if source.endswith(filename):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "原生职业任务Boss；精确场地和源中心、独立观察结束、两组联合生命周期、原生敌我标记、10000凝视及PR面向、花创建快照/地震实际结束/双侧水线校正和前九插入次序通过模型与实际DLL回放；伤害预测非AOE，回放控制隔离及owner清理通过；实机待验"
+    for filename, entry in [
+        ("PLD/BigSolleretsToFill.cs", "BigSolleretsToFill"),
+        ("THM/TheThreatOfPerplexity.cs", "TheThreatOfPerplexity"),
+    ]:
+        if source.endswith(f"/QuestBattle/ARealmReborn/ClassJobQuests/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "本机CFC435/325与Territory498/267双向核验；分别仅OID11D2→5、OID2A4→677(真实标量重载，2A5非第二OID)，未匹配保基础规则及Pointless；模型、实际DLL验证合法槽、预测致死、开关/逆向Seek/owner撤销；源无路线交互/专属AOE/移动；实机待验"
+    for filename, entry in [
+        ("BLM/TheVoidgateBreathesGloomy.cs", "TheVoidgateBreathesGloomy"),
+        ("MNK/BrotherFromAnotherMother.cs", "BrotherFromAnotherMother"),
+        ("SMN/AusteritiesofFlame.cs", "AusteritiesOfFlame"),
+    ]:
+        if source.endswith(f"/QuestBattle/ARealmReborn/ClassJobQuests/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "本机CFC/Territory/Quest双向核验317/314/323；显式0/5精确部分覆盖，未匹配保留基础仇恨/队伍/高度/FATE/无敌规则及Pointless保护；合法敌人槽、设置、逆向Seek、实时PR目标发布和owner清理通过模型与实际DLL；源无专属AOE或移动，通用躲避保留；实机待验"
+    if source.endswith("/QuestBattle/ARealmReborn/MSQ/TheLominsanWay.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/TheLominsanWay.cs", "本机CFC354/Territory307/Quest66347核验；OID6EA显式1、6E9显式Pointless(-1)，未匹配保留基础规则；仅合法敌人显式负优先级清当前PR目标，无禁攻/全停手/禁AOE/移动扩张；模型、实际DLL和实时Hints验证设置、预测致死回退、逆向Seek与owner撤销；实机待验"
+    for filename, entry in [
+        ("AST/TheHandsOfFate.cs", "TheHandsOfFate"),
+        ("MCH/ThePowerofaTourney.cs", "ThePowerOfATourney"),
+        ("NIN/NinjaAssassin.cs", "NinjaAssassin"),
+        ("SCH/Quarantine.cs", "Quarantine"),
+    ]:
+        if source.endswith(f"/QuestBattle/Heavensward/ClassJobQuests/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "区域原生优先级5选敌，其余保留仇恨/队伍含NPC/高度/FATE/无敌基础优先级及Pointless保护，无Boss或入战前提；合法敌人槽及原生敌我分类、可用性与设置开关、反向Seek和owner清理通过模型/实际DLL回放；通用躲避及其他区域机制保留；旧录像缺ObjectIndex/IsEnemy/FATE时不猜测；实机待验"
+    if source.endswith("/QuestBattle/ARealmReborn/MSQ/OhCaptainMyCaptain.cs"):
+        return "mp_native_offline_verified", "Presets/Quests/Entries/OhCaptainMyCaptain.cs", "本机CFC337/Territory273双向核验；OID3BC优先级2，其余保留源仇恨/战斗队伍含NPC/FATE/高度/无敌及Pointless基础规则；普通与原生NPC槽、FATE进出和逐帧PR目标发布、逆向Seek/回放隔离/owner清理通过模型及实际DLL；通用躲避保留；实机待验"
+    for filename, entry in [
+        ("ChasingShadows.cs", "ChasingShadows"), ("LurkersInTheGrotto.cs", "LurkersInTheGrotto"),
+    ]:
+        if source.endswith(f"/QuestBattle/ARealmReborn/MSQ/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "本机CFC双向确认Territory233/252；全部合法候选优先级覆盖、未知OID最高组、零优先级仍可攻击、无入战前提及原生对象槽、开关/反向Seek/回放隔离/owner清理通过模型和实际DLL回放；通用躲避保留；实机待验"
+    for filename, entry in [
+        ("ARealmReborn/ClassJobQuests/MNK/StarcrossedRivals.cs", "StarcrossedRivals"),
+        ("ARealmReborn/MSQ/LordOfTheInferno.cs", "LordOfTheInferno"),
+        ("ARealmReborn/ClassJobQuests/MNK/FiveEasyPieces.cs", "FiveEasyPieces"),
+        ("Heavensward/MSQ/FamiliarFaces.cs", "FamiliarFaces"),
+        ("ARealmReborn/ClassJobQuests/NIN/TheCrowKnows.cs", "TheCrowKnows"),
+        ("Stormblood/ClassJobQuests/BLM/ShadesofShatotto.cs", "ShadesOfShatotto"),
+        ("Stormblood/ClassJobQuests/BLM/OneGolemtoRuleThemAll.cs", "OneGolemToRuleThemAll"),
+        ("ARealmReborn/MSQ/NotoriousBiggs.cs", "NotoriousBiggs"),
+        ("ARealmReborn/MSQ/EveryLittleThingSheDoesIsMagitek.cs", "EveryLittleThingSheDoesIsMagitek"),
+        ("ARealmReborn/ClassJobQuests/MNK/ReturnoftheHolyfist.cs", "ReturnOfTheHolyfist"),
+        ("ARealmReborn/MSQ/TheReasonRoaille.cs", "TheReasonRoaille"),
+    ]:
+        if source.endswith(f"/QuestBattle/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Quests/Entries/{entry}.cs", "本机CFC/Territory双向核验；全部合法候选精确优先级、PrioritizeAll可达域及HP先行分支、Pointless保护/预测伤害/待生效治疗/高度顺序、零优先级回退、设置/反向Seek/回放隔离/owner清理通过模型和实际DLL回放；实时16ms内预测致死改目标及实际Hints发布验证通过；通用躲避保留；实机待验"
+    if source.endswith("/Heavensward/Quest/TheWarringTriad/ABloodyReunion.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/ABloodyReunion.cs", "原生Regula及两炮台；锁定AOE/首登记炮台当前读条倒计时/当前爆炸优先级/来源接管/双视图标记已离线验证；实机待验"
+    for filename, entry in [
+        ("ASpectacleForTheAges.cs", "ASpectacleForTheAges"),
+        ("CloseEncountersOfTheVIthKind.cs", "CloseEncountersOfTheVIthKind"),
+    ]:
+        if source.endswith(f"/Heavensward/Quest/MSQ/{filename}"):
+            return "mp_native_offline_verified", f"Presets/Dungeons/Entries/{entry}.cs", "本机表确认Territory533/459；原生范围/临时障碍/选敌和动态剑阵，死亡与销毁分离、来源级接管及双视图、Seek通过模型与实际DLL回放；仅接管对应Boss，区域Zone保留；实机待验"
     if "/Crucible/" in source:
         return "excluded_existing_mp", "Presets/Crucible/Entries", "MP 区域脚本；不导入 BMR"
     if source.endswith("/Raid/T01Caduceus/T01ADS.cs"):
@@ -188,10 +633,13 @@ def mp_ownership(row):
     if "/PilgrimsTraverse/" in source and row["kind"] == "BossModule":
         floor = re.search(r"/DD(\d+)", source).group(1)
         return "mp_native_offline_verified", f"Presets/PilgrimsTraverse/Entries/PilgrimsTraverse{int(floor)}.cs", "十Boss连续时序/后续预览/真实形状与双视图击退投影已离线验证；PT80实时宿主六层停止已持有路线及清理通过；PT10持续伤害保留诊断，禁DoT执行暂缓；普通楼层保留桥"
-    if "/DeepDungeon/DD" in source and re.match(r"DD(160|170|180|190)", module):
-        return "mp_native_offline_verified", "Presets/PalaceOfTheDead/Entries/Palace151To200.cs", "四Boss原生判定、锁起点炸弹/成组释放、本人冲锋轮廓/诱导、击退落点、水圈拉位及停止清理已离线验证；Floor区域模块仍单独复核"
-    if source.endswith("/PalaceFloorModule.cs") and module in {f"Palace{n}" for n in range(160, 201, 10)}:
-        return "mp_native_offline_verified", "Presets/PalaceOfTheDead/Entries/Palace151To200.cs", "地图/墙/历史陷阱/BFS/凝视/清怪/箱子接近与交互/手选房间/忽略陷阱/反伤仅停自动攻击已原生离线验证；公开日志7222参数复制、满仓箱关联与槽位映射AutoPoms、录制开停及顺序通过实际DLL验证；原生动作实机待验"
+    if source.endswith("/Modules/Heavensward/DeepDungeon/DD190TheGodfather.cs"):
+        return "mp_script_needs_parity_review", "Presets/PalaceOfTheDead/Entries/Palace151To200.cs", "模型、真实读条结束/整波炸弹/原引用及双视图导航已离线验证；仅灰炸弹指定目标禁攻的宿主执行仍有缺口：PR MechanicControl.ApplyTarget遇任何ForbiddenTargets返回true，使TargetSelectorService跳过其他合法目标的普通重评估。不能换门面绕过、不全停手补偿、不修改PR。保留既有模型及native-palace-earlyzones-20261125-palace-02.log证据；待宿主能力与实机证据，详见PalaceOfTheDead151To200.spec.md"
+    if "/DeepDungeon/DD" in source and re.match(r"DD(160|170|180)", module):
+        return "mp_native_offline_verified", "Presets/PalaceOfTheDead/Entries/Palace151To200.cs", "独立复核后补齐：观察结束及短取消/毒圈逐项交接/冻水对象身份/首炸弹禁攻与整波结束/永久旋风/单向阶段及循环；击退专用方向禁区、双视图线与角色投影、个人提示和伤害预测诊断已接MP；模型、实际DLL四Boss与161条真实ARR读条验证通过；PR执行及最终像素实机待验"
+    if source.endswith("/PalaceFloorModule.cs") and module in {f"Palace{n}" for n in range(10, 201, 10)}:
+        entry = "Palace1To150" if int(module.removeprefix("Palace")) <= 150 else "Palace151To200"
+        return "mp_native_offline_verified", f"Presets/PalaceOfTheDead/Entries/{entry}.cs", "仅授权战斗机制：20Zone共用raw真实结束/动态来源凝视及独立VFX25目标原引用、NPC float钟、60状态槽反伤停普攻、普通AOE/打断/HintDisabled与Boss楼层消费门控；1000房间墙体/6556历史陷阱生成对照，换层7248/旧图等待及即时Boss交接已验。77模型、生产0错4既有警告、同DLL29相关专项/18Palace检查/956全目录PASS且进程exit0，真实solver/逆向Seek/owner/回放隔离覆盖，见native-palace-earlyzones-20261125-*及PalaceOfTheDead151To200.spec.md。只迁机制，无探索/箱/清层目标/道具/层间推进，已删流程不恢复；独立Boss分别登记，宿主执行及最终像素待实机"
     return "bmr_pending", "", "BMR 候选；实际激活还受区域、成熟度、脚本和设置门控"
 
 
@@ -266,6 +714,8 @@ def main():
     for row in inventory:
         source = UPSTREAM / row["source"].removeprefix("BossMod/")
         state, entry, ownership = mp_ownership(row)
+        if row["kind"] == "ZoneModule" and row["category"] == "DeepDungeon":
+            ownership += "；深宫楼层Zone含机制与流程混合职责，按2026-11-25用户范围仅迁移AOE、面向/视线、停手禁攻及机制所需站位，保持源机制及已有MP消费范围。禁止迁移道中探索、开箱、机关交互、自动前进、道具使用和层间推进等流程自动化。保留既有审计状态及历史验证记录；历史流程验证不构成本轮继续移植或扩展的授权，楼层会话共存不代表Zone机制已迁，未核实机制仍须逐项验收"
         if state == "excluded_existing_mp":
             files = []
         else:

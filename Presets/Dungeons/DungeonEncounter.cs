@@ -4,7 +4,7 @@ using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Mechanics.Dungeons;
 
-internal sealed record DungeonCastObservation(uint Action, Vector3 Location, float? Rotation, DateTime StartedAt, DateTime FinishAt, ulong TargetId = 0);
+internal sealed record DungeonCastObservation(uint Action, Vector3 Location, float? Rotation, DateTime StartedAt, DateTime FinishAt, ulong TargetId = 0, Vector3? SourcePosition = null, float? TotalTime = null, bool? IsSpell = null);
 internal sealed record DungeonActor(ulong Id, uint Oid, Vector3 Position, bool Dead = false, bool Targetable = true, bool InCombat = false,
     DungeonCastObservation? Cast = null, ulong TargetId = 0, string Name = "", int PartySlot = -1, string PartyRole = "",
     uint[]? Statuses = null, bool Hostile = true, int? RenderFlags = null,
@@ -12,11 +12,17 @@ internal sealed record DungeonActor(ulong Id, uint Oid, Vector3 Position, bool D
     byte EventState = 0, IReadOnlyDictionary<uint, ulong>? Tethers = null, IReadOnlyDictionary<uint, DateTime>? StatusExpirations = null,
     byte AnimationState1 = 0, byte ModelState = 0, uint ClassJob = 0, uint? EventAnimation = null, uint NameId = 0,
     byte AnimationState2 = 0, bool Buddy = false, IReadOnlyList<MasterPlayer.Replay.ReplayIncomingEffect>? IncomingEffects = null,
-    IReadOnlyDictionary<uint, ulong>? StatusSources = null, uint? Hp = null, uint? MaxHp = null, bool AggroPlayer = false);
+    IReadOnlyDictionary<uint, ulong>? StatusSources = null, uint? Hp = null, uint? MaxHp = null, bool AggroPlayer = false,
+    bool FriendlyNpc = false, bool? IsEnemy = null, ushort? ObjectIndex = null, bool Player = false, uint? FateId = null, IReadOnlyList<MasterPlayer.Replay.ReplayStatus>? StatusSlots = null, ushort NativeType = 0,
+    MasterPlayer.Replay.ReplayTether? FirstTether = null, ulong GameObjectId = 0);
 internal sealed record DungeonPendingCast(ulong Source, DungeonCastRule Rule, Vector3 Location, float Rotation, DateTime StartedAt, DateTime FinishAt, ulong TargetId = 0)
 {
     public bool EffectSeen { get; set; }
     public bool UntilObservedEnd { get; init; }
+    public bool Observed { get; set; }
+    public Vector3? SourcePosition { get; init; }
+    public DateTime FinishEventBoundary { get; init; }
+    public DateTime? InputFinishAt { get; init; }
 }
 
 internal sealed record DungeonDamagePrediction(ulong TargetId, int PartySlot, string Role, string Name, DateTime Activation, string DamageType);
@@ -29,7 +35,8 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     public IGeometryShape? Arena { get; private set; }
     public IReadOnlyDictionary<ulong, DungeonPendingCast> Casts => _casts;
     public IReadOnlyDictionary<ulong, DungeonActor> Actors => _actors;
-    internal bool PreserveFightAcrossPlayerDeath => Active != null && (IsHades || IsInnocence || IsWarriorOfLight || IsHydaelyn || IsAsura || IsZelenia || IsValigarmanda || IsArkveld || IsEnuo || IsNecron || IsQueenEternal || IsZoraalJa || IsDoomtrain || IsCoilNodes || IsCoilGauntlet || IsCaduceus || IsTwintania || IsLabyrinth || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsHeavenswardIntro);
+    internal uint? AllowedFateId { get; set; }
+    internal bool PreserveFightAcrossPlayerDeath => Active != null && (IsHades || IsInnocence || IsWarriorOfLight || IsHydaelyn || IsAsura || IsZelenia || IsValigarmanda || IsArkveld || IsEnuo || IsNecron || IsQueenEternal || IsZoraalJa || IsDoomtrain || IsCoilNodes || IsCoilGauntlet || IsCaduceus || IsTwintania || IsLabyrinth || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsNativeQuestBoss || IsCarnivale || IsNativeTreasure || IsHeavenOnHigh || IsEurekaOrthos || IsQuantum || IsKefka || IsThordan || IsWickedThunder);
     public ulong[] ForbiddenTargets => _actors.Values.Where(a => a.Hostile && !a.Dead && a.Targetable
         && (Active?.BossOid == 0x4645 && HasStatus(a, HalataliCatalog.BURNING_WARD)
             || Active?.BossOid == 0x4A8D && a.Id == PrimaryId && HasStatus(a, DzemaelCatalog.INVINCIBILITY)
@@ -41,11 +48,12 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             || Active?.BossOid == 0x179B && HasStatus(a, 775)
             || Active?.BossOid == 0x1AA5 || Active?.BossOid == 0x1FAC && a.Id == PrimaryId && HasStatus(a, 325)
             || HolminsterBossForbidden(a) || DohnForbidden(a) || MesoForbidden(a) || PortaForbidden(a) || HadesForbidden(a)))
-        .Select(a => a.Id).ToArray();
+        .Select(a => a.Id).Concat(NoviceForbiddenTargets).Concat(GodmotherForbiddenTargets).Distinct().ToArray();
     public IEnumerable<KeyValuePair<string, DungeonPendingCast>> OutputCasts
     {
         get
         {
+            if (IsQuantum || IsKefka || IsThordan || IsWickedThunder) yield break;
             var fireflows = _casts.Values.Where(c => c.Rule.Action is 40588 or 40589)
                 .OrderBy(c => c.FinishAt).ThenBy(c => c.Source).Take(4).Select(c => c.Source).ToHashSet();
             var bursts = _casts.Values.Where(c => c.Rule.Action == 28658).Take(4).Select(c => c.Source).ToHashSet();
@@ -53,7 +61,15 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             var infiniteReach = _casts.Values.Where(c => c.Rule.Action == 28794).Take(6).Select(c => c.Source).ToHashSet();
             foreach (var cast in _casts.Values)
             {
-                if (IsDoomtrain) continue;
+                if (IsEurekaOrthos && cast.Rule.Action == 32700) continue;
+                if (territory == EurekaOrthosCatalog.TIAMAT && cast.Rule.Action is 31844 or 31846 or 31850) continue;
+                if (IsDoomtrain || !BarPassageCastVisible(cast) || !CarnivaleCastVisible(cast)) continue;
+                if (IsTreasureNarkissos && cast.Rule.Action == 32336) continue;
+                if (IsNativeTreasure && (cast.Rule.Action is 32294 or 38271 || NativeTreasureCatalog.VaultGroupAction(cast.Rule.Action))) continue;
+                if (Active?.BossOid == NativeTreasureCatalog.MOBILE_FORTRESS
+                    && cast.Rule.Action is 43732 or >= 43734 and <= 43741) continue;
+                if (IsPortrait && cast.Rule.Action is 37535 or 37529) continue;
+                if (IsBekko && cast.Rule.Action == 8446) continue;
                 if (IsTitanExtreme) continue;
                 if (IsIfritExtreme && !IfritExCastAllowed(cast.Rule.Action)) continue;
                 if (cast.Rule.PartyAoe != null) continue;
@@ -79,6 +95,8 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                 if (cast.Rule.Action == 28658 && !bursts.Contains(cast.Source)) continue;
                 if (cast.Rule.Action == 45568 && !voidMatters.Contains(cast.Source)) continue;
                 if (cast.Rule.Action == 28794 && !infiniteReach.Contains(cast.Source)) continue;
+                if (IsMainScenarioQuest && cast.Rule.Action is 24054 or 24046 or 18035 or 16290 or 16286 or 30021 or 34888 or 38200 or 38197 or 38205 or 38209) continue;
+                if (IsIseultalon && cast.Rule.Action == 14603) continue;
                 if (!CastrumCastVisible(cast)) continue;
                 if (!TroiaCastVisible(cast)) continue;
                 if (!IhuyCastVisible(cast)) continue;
@@ -98,6 +116,23 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                 if (IsZoraalJa && cast.Rule.Action is 37714 or 38184 or 37712 or 37720 or 37738) continue;
                 yield return new($"cast/{cast.Source}", cast);
             }
+            if (IsEurekaOrthos)
+                foreach (var source in eurekaMandraOrder.Take(6))
+                    if (_casts.TryGetValue(source, out var mine))
+                        yield return new($"cast/{source}", mine);
+            if (IsMainScenarioQuest)
+                foreach (var source in mainScenarioCastOrder)
+                    if (_casts.TryGetValue(source, out var ordered) && ordered.Rule.Action is 24054 or 24046 or 18035 or 16290 or 30021 or 34888 or 38200
+                        && MainScenarioCastVisible(ordered))
+                        yield return new($"cast/{source}", ordered);
+            if (IsPortrait)
+                foreach (var source in portraitIvyOrder.Take(9))
+                    if (_casts.TryGetValue(source, out var ivy))
+                        yield return new($"cast/{source}", ivy);
+            if (IsBekko)
+                foreach (var source in bekkoYukikaze.Take(8))
+                    if (_casts.TryGetValue(source, out var yukikaze))
+                        yield return new($"cast/{source}", yukikaze);
             foreach (var sequence in sequences)
                 yield return new($"concentric/{sequence.Source}", sequence.Current);
             for (var i = 0; i < sandPillars.Count; ++i)
@@ -127,7 +162,29 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     {
         get
         {
+            if (IsThordan)
+            {
+                foreach (var prediction in Thordan.Damage()) yield return prediction;
+                yield break;
+            }
+            if (IsWickedThunder)
+            {
+                foreach (var prediction in WickedThunder.Damage()) yield return prediction;
+                yield break;
+            }
+            if (IsKefka)
+            {
+                foreach (var prediction in Kefka.Damage()) yield return prediction;
+                yield break;
+            }
+            if (IsQuantum)
+            {
+                foreach (var prediction in Quantum.Damage()) yield return prediction;
+                yield break;
+            }
             foreach (var cast in _casts.Values.Where(c => c.Rule.Hint is "死刑" or "可打断死刑" or "单体伤害")
+                .Where(c => !IsDaivadipa || c.Rule.Action != 26510)
+                .Where(c => !IsNativeTreasure || !NativeTreasureCatalog.SingleTargetAction(c.Rule.Action))
                 .Where(c => c.Rule.Action is not (45742 or 45997 or 29620 or 30205 or 31837)
                     && !(territory == AitiascopeCatalog.TERRITORY && c.Rule.Action is 25673 or 25686)
                     && !(territory == DeadEndsCatalog.TERRITORY && c.Rule.Action is 25920 or 25949 or 25935)
@@ -148,6 +205,30 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                     yield return new(target, actor.PartySlot, actor.PartyRole, actor.Name, cast.FinishAt, "Tankbuster");
             }
             foreach (var prediction in RaidwideDamage) yield return prediction;
+            foreach (var prediction in FateDamage()) yield return prediction;
+            foreach (var prediction in TacticalDamage()) yield return prediction;
+            foreach (var prediction in KenkoDamage()) yield return prediction;
+            foreach (var prediction in PalacePlantDamage()) yield return prediction;
+            foreach (var prediction in NybethDamage()) yield return prediction;
+            foreach (var prediction in GodmotherDamage()) yield return prediction;
+            foreach (var prediction in BlackRiderDamage()) yield return prediction;
+            foreach (var prediction in EurekaChimeraDamage()) yield return prediction;
+            foreach (var prediction in EurekaAeturnaDamage()) yield return prediction;
+            foreach (var prediction in EurekaKaliyaDamage()) yield return prediction;
+            foreach (var prediction in EurekaAdministratorDamage()) yield return prediction;
+            foreach (var prediction in TreasureDamage()) yield return prediction;
+            foreach (var prediction in FallenDamage()) yield return prediction;
+            foreach (var prediction in SageTowerDamage()) yield return prediction;
+            foreach (var prediction in GuildivainDamage()) yield return prediction;
+            foreach (var prediction in SleepBeamDamage()) yield return prediction;
+            foreach (var prediction in SlickshellDamage()) yield return prediction;
+            foreach (var prediction in FoxshotDamage()) yield return prediction;
+            foreach (var prediction in HeroesPretendersDamage()) yield return prediction;
+            foreach (var prediction in IseultalonDamage()) yield return prediction;
+            if (IsDikaiosyne && Active != null)
+                foreach (var prediction in QuestTowerDamage(fractureTowers)) yield return prediction;
+            foreach (var prediction in MainScenarioDamage()) yield return prediction;
+            foreach (var prediction in CarnivaleDamage()) yield return prediction;
             foreach (var prediction in TitanExDamage()) yield return prediction;
             foreach (var prediction in IfritExDamage()) yield return prediction;
             foreach (var prediction in ThornDamage()) yield return prediction;
@@ -227,7 +308,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     }
     private readonly Dictionary<ulong, DungeonActor> _actors = [];
     private readonly Dictionary<ulong, DungeonPendingCast> _casts = [];
-    private readonly Dictionary<ulong, (uint Action, DateTime EndedAt)> _finished = [];
+    private readonly Dictionary<ulong, (uint Action, DateTime StartedAt, DateTime EndedAt, HashSet<uint> ActionsAtEnd)> _finished = [];
     private readonly Dictionary<(ulong Source, uint Action, uint Sequence), DateTime> _effects = [];
     private readonly Dictionary<ulong, uint> _ripples = [];
     private readonly HashSet<(ulong Source, uint Action)> _missingRotation = [];
@@ -238,20 +319,141 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public void Synchronize(IEnumerable<DungeonActor> actors, Vector3? player, DateTime now, Func<string, bool>? enabled = null, ulong playerId = 0)
     {
+        if (IsThordan)
+        {
+            ThordanSynchronize(actors, now, enabled, playerId);
+            return;
+        }
+        if (IsWickedThunder)
+        {
+            WickedThunderSynchronize(actors, now, enabled, playerId);
+            return;
+        }
+        if (IsKefka)
+        {
+            KefkaSynchronize(actors, now, enabled, playerId);
+            return;
+        }
+        if (IsQuantum)
+        {
+            QuantumSynchronize(actors, now, enabled, playerId);
+            return;
+        }
         _now = now;
+        BarP3AdvanceClocks(now);
         PlayerId = playerId;
+        if (IsHeavenOnHigh)
+            heavenOnHighEnabled = enabled?.Invoke(Definitions[0].Name) != false;
+        var treasurePreviousDefinition = Active;
         var previousPlatforms = _actors.Values.Where(a => a.Oid is >= 0x1E87E2 and <= 0x1E87E4)
             .ToDictionary(a => a.Id, a => a.RenderFlags);
         var previousMines = Active?.BossOid == 0x1018
             ? _actors.Values.Where(a => a.Oid == 0x101A).ToArray() : [];
         _actors.Clear();
         foreach (var actor in actors) _actors[actor.Id] = actor;
+        EurekaObserve(enabled);
+        PalaceGuideObserve(enabled);
+        PalaceEarlyPairUpdate();
+        GodmotherInput();
+        SleepSynchronizeActors();
+        if (IsAlphaAlligator || IsBarPassage || IsCarnivale) ObserveJobQuestParty();
+        AlphaInput();
+        BarPassageInput();
+        BarPassageObserve();
+        CarnivaleInput(enabled);
+        ObserveMaxQuest(enabled);
+        HopeObserve();
+        TimeBetweenInput();
+        HeroesPretendersInput();
+        IseultalonInput();
+        DikaiosyneInput();
+        TimeBetweenObserve();
+        ObserveNovice(enabled);
+        ObserveFate(enabled, player);
+        if (IsFormidable && Active != null && _actors.GetValueOrDefault(PrimaryId)?.InCombat == false)
+            ResetFight();
+        TreasureYanObserve();
+        treasureSackDestroyed.RemoveWhere(id => !_actors.ContainsKey(id));
+        TreasureRoomsObserve();
+        ViperObserve();
+        TreasureCachedBossObserve(false);
+        tisiphoneEnabled = territory == HeavenswardIntroCatalog.TISIPHONE && enabled?.Invoke("Tisiphone") != false;
         foreach (var mine in previousMines)
             if (!_actors.ContainsKey(mine.Id)) FractalRemoveMine(mine.Position);
         if (territory == 1036) UpdateCoral();
         if (player == null && PreserveFightAcrossPlayerDeath && _actors.GetValueOrDefault(PlayerId) is { } observer)
             player = observer.Position;
-        if (player == null) { ResetFight(); return; }
+        if (player == null && IsViper)
+            player = ViperSourcePlayer?.Position;
+        if (player == null && IsEurekaOrthos)
+            player = _actors.Values.FirstOrDefault(a => a.Player && a.PartySlot == 0)?.Position;
+        if (player == null)
+        {
+            // Carnivale module state is independent of the viewing player. Hide outputs
+            // while the perspective is absent, retaining cast receipts for reconciliation.
+            if (IsCarnivale)
+            {
+                foreach (var actor in _actors.Values.ToArray())
+                {
+                    CarnivaleSiegfriedObserveCreated(actor.Id);
+                    ObserveCast(actor, now);
+                    CarnivalePyreticObserve(actor);
+                }
+                CarnivaleEyeUpdate();
+                CarnivaleVoltageBootstrap();
+                CarnivaleLastSongBootstrap();
+                CarnivaleBallastBootstrap();
+                CarnivaleChargeBootstrap();
+                CarnivaleRebekkahUpdate();
+                CarnivaleClawUpdate();
+                CarnivaleTyphonBootstrap();
+                CarnivaleChimeraBootstrap();
+                CarnivaleSapBootstrap();
+                CarnivalePitBootstrap();
+                CarnivaleAzulmagiaBootstrap();
+                CarnivalePapaBootstrap();
+                CarnivaleSnorterUpdate();
+                CarnivaleDraugarUpdate();
+                CarnivaleRedUpdate();
+                CarnivaleSiegfriedUpdate();
+                CarnivaleGogoUpdate();
+                CarnivaleGoldorUpdate();
+                CarnivaleLastSongComplete(enabled);
+                CarnivaleUnselect();
+            }
+            else if (IsEurekaOrthos && Active != null && eurekaEnabled)
+            {
+                foreach (var source in _casts.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) RemoveActor(source);
+                foreach (var actor in EurekaInputActors().ToArray())
+                {
+                    EurekaTwintaniaCreated(actor);
+                    EurekaMinotaurCreated(actor);
+                    var eurekaCreated = EurekaChimeraBeforeCast(actor);
+                    ObserveCast(actor, now);
+                    EurekaChimeraAfterCast(actor, eurekaCreated);
+                }
+                EurekaChimeraInputComplete();
+                EurekaUpdate();
+            }
+            else if (IsPalaceManagedBoss && palaceGuideEnabled && palaceGuideLoaded is { Active: true } loadedPalace)
+            {
+                // Keep global component history while no viewing player is available.
+                // Personal output is gated by the script; world events still advance.
+                Active ??= Definitions[0];
+                PrimaryId = loadedPalace.Primary.Actor.Id;
+                Arena ??= Active.Arena(loadedPalace.Primary.Actor.Position);
+                BlackRiderRestoreCasts();
+                foreach (var source in _casts.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) RemoveActor(source);
+                foreach (var actor in _actors.Values.ToArray())
+                {
+                    GodmotherCreated(actor);
+                    ObserveCast(actor, now);
+                }
+                PalaceEarlyPairCommitRoster();
+            }
+            else ResetFight();
+            return;
+        }
         if (IsFractalTrash && !FractalEncounterAlive(player.Value)) ResetFight();
         if (IsArboretumTrash && !ArboretumTrashAlive(player.Value)) ResetFight();
         if (IsAntDolls && !_actors.Values.Any(AntDollAlive)) ResetFight();
@@ -271,7 +473,21 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         MesoSelectPrimary();
         if (IsCaduceus && !CaduceusAlive) ResetFight();
         var primary = _actors.GetValueOrDefault(PrimaryId);
-        if ((IsCoilNodes || IsTwintania || IsLabyrinth && !IsLabyrinthBone || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsHeavenswardIntro) && primary?.Hp == 0)
+        if ((IsHeavenOnHigh || IsEurekaOrthos) && primary?.Hp == 0)
+        {
+            ResetFight();
+            primary = null;
+        }
+        if ((IsSleep || IsOtis) && Active != null && (primary == null || primary.Dead || primary.Hp == 0))
+            sleepOtisCompleted.Add(PrimaryId);
+        if (IsViper && Active != null && (viperGowrowDead || primary == null || primary.Dead))
+        {
+            viperCompleted = true;
+            ResetFight();
+        }
+        if (IsJobQuestGroup && !JobQuestGroupAlive) ResetFight();
+        if (IsNativeTreasure && Active != null && !TreasureGroupAlive) ResetFight();
+        if ((IsCoilNodes || IsTwintania || IsLabyrinth && !IsLabyrinthBone || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsNativeQuestBoss && !IsViper && !IsSlickshell && !IsHopeOnTheWaves && !IsTimeBetween && !IsAlphaAlligator && !IsBarPassage && !IsCarnivale) && primary?.Hp == 0 && !DivinePairAlive && !JobQuestGroupAlive)
         {
             ResetFight();
             primary = null;
@@ -328,14 +544,19 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             var phaseTwo = _actors.Values.FirstOrDefault(a => a.Oid == 0x5D0 && !a.Dead && a.InCombat);
             if (phaseTwo != null) { PrimaryId = phaseTwo.Id; primary = phaseTwo; }
         }
-        if (Active == null || primary == null && !IsCaduceus && !IsCoilGauntlet && !IsDoomtrain && !IsNecron && !IsMalboro && !IsSohrTrash && !IsTroiaGroup && !IsLapisCarriage && !IsAetherfontTrash && !IsVanguardTrash && !IsOrigenicsTrash && !IsYuweTrash && !IsMesoHeadsmen && !InnocencePhaseAlive && !HadesPhaseAlive || primary != null && (primary.Dead || !primary.InCombat)
+        if (Active == null || primary == null && !IsSlickshell && !IsHopeOnTheWaves && !IsTimeBetween && !IsAlphaAlligator && !IsBarPassage && !IsCarnivale && !IsCaduceus && !IsCoilGauntlet && !IsDoomtrain && !IsNecron && !IsMalboro && !IsSohrTrash && !IsTroiaGroup && !IsLapisCarriage && !IsAetherfontTrash && !IsVanguardTrash && !IsOrigenicsTrash && !IsYuweTrash && !IsMesoHeadsmen && !InnocencePhaseAlive && !HadesPhaseAlive && !DivinePairAlive && !JobQuestGroupAlive && !TreasureGroupAlive || primary != null && (primary.Dead || !primary.InCombat)
+                && !IsNativeTreasure && !IsSlickshell && !IsHopeOnTheWaves && !IsTimeBetween && !IsAlphaAlligator && !IsBarPassage && !IsCarnivale
+                && !DivinePairAlive
+                && !JobQuestGroupAlive
                 && !IsCaduceus
                 && (!IsDoomtrain || doomPhase2)
                 && !IsResearchTrash && !IsFractalTrash && !IsArboretumTrash && !IsAntDolls && !IsSohrTrash && !IsXelTrash
                 && !IsGhimlytGroup && !IsGulgPrejudice && !IsAnyderSharks && !IsAnamnesisPair && !IsPaglthanFortress && !IsZotSisters && !IsTroiaGroup && !IsLapisCarriage && !IsAetherfontTrash && !IsVanguardTrash && !IsOrigenicsTrash && !IsYuweTrash
                 && (!IsAetherfontOcto || primary.Dead)
                 && (!IsNativeTrial || primary.Dead)
-                && (!IsHeavenswardIntro || primary.Dead)
+                && (!IsNativeQuestBoss || primary.Dead)
+                && (!IsHeavenOnHigh || primary.Dead)
+                && (!IsEurekaOrthos || primary.Dead)
                 && !IsLabyrinthBone
                 && !IsThornmarch
                 && !InnocencePhaseAlive
@@ -353,15 +574,24 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                 && (territory != ClyteumCatalog.TERRITORY || primary.Dead)
             || enabled?.Invoke(Active.Name) == false)
         {
-            ResetFight();
+            if (IsBarPassage) BarPassageUnselect();
+            else if (IsCarnivale) CarnivaleUnselect();
+            else ResetFight();
             if (player is { } position)
             {
-                primary = _actors.Values.Where(a => (!a.Dead || territory == ArboretumCatalog.TERRITORY && ArboretumCatalog.MALBORO.Contains(a.Oid) || territory == YuweyawataCatalog.TERRITORY && YuweDefinition(a) is { } yd && YuweyawataCatalog.IsTrash(yd.BossOid)) && (a.Targetable || territory == ArboretumCatalog.TERRITORY && ArboretumCatalog.MALBORO.Contains(a.Oid) || territory == FractalCatalog.TERRITORY && FractalCatalog.IsControl(a.Oid)
+                IEnumerable<DungeonActor> candidates = _actors.Values;
+                if (IsBarPassage) candidates = BarPassageCandidates;
+                else if (IsCarnivale) candidates = CarnivaleCandidates;
+                else if (IsNovice) candidates = NoviceActors;
+                primary = candidates.Where(a => (!a.Dead || IsBarPassage || IsCarnivale || IsAlphaAlligator || IsSlickshell || IsHopeOnTheWaves || IsTimeBetween || IsTreasureYanPrimary(a) || IsTreasureRoomPrimary(a) || territory == ArboretumCatalog.TERRITORY && ArboretumCatalog.MALBORO.Contains(a.Oid) || territory == YuweyawataCatalog.TERRITORY && YuweDefinition(a) is { } yd && YuweyawataCatalog.IsTrash(yd.BossOid)) && (a.Targetable || IsBarPassage || IsCarnivale || IsTreasureYanPrimary(a) || IsTreasureRoomPrimary(a) || territory == ArboretumCatalog.TERRITORY && ArboretumCatalog.MALBORO.Contains(a.Oid) || territory == FractalCatalog.TERRITORY && FractalCatalog.IsControl(a.Oid)
                     || territory == SohrKhaiCatalog.TERRITORY && a.Oid == 0x1612
                     || territory == BardamCatalog.TERRITORY && a.Oid == 0x1AA5
                     || territory == PaglthanCatalog.TERRITORY && a.Oid == 0x32FE
-                    || IsCoilGauntlet
+                    || IsCoilGauntlet || IsTactical || IsOtis
                     || IsStepsOfFaith
+                    || IsViper && a.Oid == 0x429F
+                    || IsScarmiglioneQuest && a.Oid == 0x39B3
+                    || territory == MainScenarioQuestCatalog.FADED_MEMORIES && a.Oid == 0x2F28
                     || territory is AetherfontCatalog.TERRITORY or YuweyawataCatalog.TERRITORY)
                     && (territory switch
                     {
@@ -389,7 +619,29 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                         TitanExtremeCatalog.TERRITORY => !titanExWiping && a.Targetable && a.InCombat && a.Hp != 0,
                         IfritExtremeCatalog.TERRITORY => !ifritExWiping && a.Targetable && a.InCombat && a.Hp != 0,
                         ArrQuestCatalog.ARCHON or ArrQuestCatalog.ULTIMATE_WEAPON or ArrQuestCatalog.STEPS_OF_FAITH => !arrQuestWiping && a.InCombat && a.Hp != 0,
-                        HeavenswardIntroCatalog.REGULA or HeavenswardIntroCatalog.DEATHGAZE or HeavenswardIntroCatalog.ALICANTO => a.InCombat && a.Hp != 0,
+                        _ when IsBarPassage => BarPassageCanPull(a),
+                        _ when IsCarnivale => CarnivalePull(a),
+                        _ when IsAlphaAlligator => a.InCombat && !alphaWiping && !alphaCompleted.Contains(a.Id),
+                        _ when IsSlickshell => a.InCombat && !slickshellWiping,
+                        _ when IsHopeOnTheWaves => a.InCombat && !hopeWiping,
+                        _ when IsTimeBetween => a.InCombat && !timeWiping && !timeCompleted.Contains(a.Id),
+                        _ when IsHeroesPretenders => a.InCombat && !heroesPretendersWiping && !heroesPretendersCompleted.Contains(a.Id),
+                        _ when IsIseultalon => a.InCombat && !iseultalonWiping && !iseultalonCompleted.Contains(a.Id),
+                        _ when IsDikaiosyne => a.InCombat && !dikaiosyneWiping && !dikaiosyneCompleted.Contains(a.Id),
+                        _ when IsMaxQuest => a.InCombat && a.Hp != 0 && !maxQuestWiping && !maxQuestCompleted.Contains(a.Id),
+                        _ when IsSleep || IsOtis => SleepOtisPull(a),
+                        _ when IsViper => ViperPull,
+                        _ when IsScarmiglioneQuest => a.Hp != 0 && ScarmiglioneQuestPull,
+                        MainScenarioQuestCatalog.FADED_MEMORIES when a.Oid == 0x2F28 => a.Hp != 0 && FadedZenosPull,
+                        _ when IsNativeFate => FatePull(a, position) && a.Hp != 0 && !fateCompleted.Contains(a.Id),
+                        _ when IsNovice => (IsTactical || (territory == NoviceCatalog.TANK04 ? a.Id == noviceTank04Primary : a.InCombat))
+                            && a.Hp != 0 && !noviceCompleted.Contains(a.Id),
+                        _ when IsPalaceManagedBoss => PalaceGuideCanPull(a),
+                        _ when IsNativeQuestBoss => a.InCombat && a.Hp != 0,
+                        _ when IsHeavenOnHigh => a.InCombat && a.Hp != 0,
+                        _ when IsEurekaOrthos => !eurekaWiping && a.Id == eurekaLoadedPrimary && a.InCombat && a.Hp != 0,
+                        _ when IsTreasureRoomPrimary(a) => TreasureRoomCanStart(a),
+                        _ when IsTreasureYanPrimary(a) => true,
                         _ => ResearchCanStart(a, position),
                     })
                     && Definitions.Any(d => (d.BossOid == a.Oid || d.PrimaryAliases?.Contains(a.Oid) == true) && enabled?.Invoke(d.Name) != false
@@ -397,7 +649,9 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                         && (territory != FractalCatalog.TERRITORY || !FractalCatalog.IsTrash(d.BossOid) || d.BossOid == a.Oid)
                         && (d.BossOid != 0xD1E || IsSnowcloakTrash(a))))
                     .OrderBy(a => IsZoraalJa && a.Oid == 0x42B4 ? 0 : 1)
-                    .ThenBy(a => Vector3.DistanceSquared(a.Position, position)).FirstOrDefault();
+                    .ThenBy(a => IsTreasureRoomPrimary(a) ? TreasureRoomOrder(a) : 0)
+                    .ThenBy(a => IsBarPassage ? BarPassageOrder(a) : 0)
+                    .ThenBy(a => IsBarPassage || IsNovice || IsTreasureRoomPrimary(a) ? 0 : Vector3.DistanceSquared(a.Position, position)).FirstOrDefault();
                 if (primary != null)
                 {
                     if (territory == TroiaCatalog.TERRITORY) Active = TroiaDefinition(primary);
@@ -407,6 +661,9 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                     else Active = Definitions.FirstOrDefault(d => d.BossOid == primary.Oid)
                         ?? Definitions.First(d => d.PrimaryAliases?.Contains(primary.Oid) == true);
                     PrimaryId = primary.Id;
+                    TimeBetweenStarted(primary);
+                    if (!IsBarPassage) AlphaStarted();
+                    BarPassageStarted(primary);
                     if (IsCaduceus) caduceusStarted = now;
                     if (IsMalboro) malboroStarted = true;
                     Arena = Active!.BossOid == 0x3873 && neroArenaChanged
@@ -421,7 +678,41 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                 }
             }
         }
-        if (Active == null) return;
+        AlphaObserve();
+        BarPassageObserve();
+        if (Active == null)
+        {
+            if (IsCarnivale)
+            {
+                if (carnivaleModules.Any(m => m.Eyes != null))
+                    foreach (var actor in _actors.Values.ToArray()) ObserveCast(actor, now);
+                CarnivaleEyeUpdate();
+            }
+            return;
+        }
+        MicaObserveActors();
+        TreasureYanObserve();
+        TreasureBaitObserve();
+        TreasureBuffetObserve();
+        TreasureCachedBossObserve(true);
+        ObserveJobQuestParty();
+        TacticalObserve();
+        FallenObserve();
+        GuildivainObserve();
+        SleepOtisObserve();
+        SlickshellObserve();
+        TimeBetweenObserve();
+        IoObserve();
+        NodeObserve();
+        SteelObserve();
+        QuestWindObserve();
+        HeroesPretendersObserve();
+        IseultalonObserve();
+        RhalgrObserve();
+        EndwalkerQuestObserve();
+        ViperCacheGowrow();
+        PortraitObserve();
+        ObserveHeavenswardQuest();
         LapisSelectPrimary();
         AetherfontSelectPrimary();
         VanguardSelectPrimary();
@@ -509,39 +800,78 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             foreach (var actor in _actors.Values.Where(a => a.EventState is 1 or 2)) SirenEventState(actor.Id, actor.EventState);
         foreach (var source in malboroCasts.Select(c => c.Source).Where(id => !_actors.ContainsKey(id)).Distinct().ToArray())
             MalboroFinish(source, 0);
-        foreach (var actor in _actors.Values.ToArray())
+        if (IsNativeTreasure && !ReferenceEquals(treasurePreviousDefinition, Active))
+            treasureParty = [.. TreasurePartyInput];
+        TreasureHexObserve();
+        TreasureHydrosphereObserveMissing();
+        TreasureCreatedCircleObserveMissing();
+        TreasureBeamObserveMissing();
+        TreasureRotationObserveMissing();
+        TreasurePlayerGazeObserve();
+        TreasureMolterSynchronize();
+        // The world feed destroys missing actors before applying this frame's creates/casts.
+        // A disappearing sphere must not consume a replacement created at the same position.
+        if (UsesDeepDungeonCastIdentity)
+            foreach (var source in _casts.Keys.Concat(treasureObservedCasts.Keys).Concat(heavenOnHighSpawnActors.Keys)
+                .Distinct().Where(id => !_actors.ContainsKey(id)).ToArray()) RemoveActor(source);
+        BlackRiderRestoreCasts();
+        KenkoInput();
+        GodmotherInput();
+        foreach (var actor in (IsEurekaOrthos
+            ? EurekaInputActors()
+            : _actors.Values.AsEnumerable()).ToArray())
         {
+            if (IsAlphaAlligator) continue;
+            // Upstream bootstrap interleaves each actor's Created and CastStarted in world order.
+            ChiCreated(FateCreatedActor(actor), observed: !fateCreatedActors.ContainsKey(actor.Id));
+            SteelCreated(actor);
+            HeavenOnHighObserveSpawn(actor);
+            KenkoObserveCreated(actor);
+            EurekaTwintaniaCreated(actor);
+            EurekaMinotaurCreated(actor);
+            GodmotherCreated(actor);
+            TreasureHexMineCreated(actor.Id, actor.Oid, actor.Position);
+            TreasureHydrosphereCreated(actor.Id, actor.Oid, actor.Position, observed: true);
+            TreasureCreatedCircle(actor.Id, actor.Oid, actor.Position, observed: true);
+            TreasureBeamCreated(actor.Id, actor.Oid, actor.Position, actor.Rotation, observed: true);
+            TreasureRotationCreated(actor.Id, actor.Oid, actor.Rotation, observed: true);
             if (IsMalboro) { MalboroObserve(actor); continue; }
             // Retain dead dreamers for the group gate, while still observing cast endings below.
-            if (actor.Dead && !IsNativeTrial && !(territory == TroiaCatalog.TERRITORY && actor.Oid == 0x3968)
+            if (actor.Dead && !UsesDeepDungeonCastIdentity && !IsBarPassage && !IsCarnivale && !IsNativeFate && !IsTactical && !IsNativeTreasure && !IsNativeTrial && !IsCarnivale && !JobQuestCatalog.IsTerritory(territory) && !IsMainScenarioQuest && !(territory == TroiaCatalog.TERRITORY && actor.Oid == 0x3968)
                 && !(territory == LapisCatalog.TERRITORY && actor.Oid == 0x3D04)
                 && territory is not (LunarCatalog.TERRITORY or IhuykatumuCatalog.TERRITORY or WorqorCatalog.TERRITORY or SkydeepCatalog.TERRITORY or VanguardCatalog.TERRITORY or OrigenicsCatalog.TERRITORY or AlexandriaCatalog.TERRITORY or TenderValleyCatalog.TERRITORY or StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY)
                 && !(IsLapisCarriage && LapisCatalog.IsCarriage(actor.Oid)))
             {
+                if (IsNativeQuestBoss)
+                {
+                    if (_casts.TryGetValue(actor.Id, out var deadCast)) Finish(actor.Id, deadCast.Rule.Action);
+                    continue;
+                }
                 // Vanaspati keeps dead bubbles in the fire union until destruction or Withdraw.
                 if (territory == VanaspatiCatalog.TERRITORY && actor.Oid == 0x3731) { _casts.Remove(actor.Id); continue; }
                 if (IsSohrTrash && Active?.BossOid == 0x1612 && actor.Id == PrimaryId) continue;
                 if (Active?.BossOid == 0x179F && actor.Oid == 0x17A0) continue;
                 if (Active?.BossOid == 0x193D && actor.Oid == 0x193F) { _casts.Remove(actor.Id); continue; }
                 if (Active?.BossOid == 0x1023 && actor.Oid is 0x1023 or 0x1021) _casts.Remove(actor.Id);
-                else RemoveActor(actor.Id);
+                else RemoveActor(actor.Id, destroyed: false);
                 continue;
             }
-            if (actor.Cast is { } cast)
-            {
-                StartCast(actor.Id, cast, now, fromPacket: false);
-            }
-            else
-            {
-                _missingRotation.RemoveWhere(k => k.Source == actor.Id);
-                if (_casts.TryGetValue(actor.Id, out var old) && now >= old.StartedAt.AddSeconds(0.2)
-                    && (old.EffectSeen || now >= old.FinishAt.AddSeconds(-0.35) || now < old.FinishAt.AddSeconds(-0.5)))
-                    Finish(actor.Id, old.Rule.Action, completed: old.EffectSeen || now >= old.FinishAt.AddSeconds(-0.35));
-            }
+            CarnivaleSiegfriedObserveCreated(actor.Id);
+            var eurekaCreated = EurekaChimeraBeforeCast(actor);
+            ObserveCast(actor, now);
+            EurekaChimeraAfterCast(actor, eurekaCreated);
+            CarnivalePyreticObserve(actor);
+            TreasureMolterObserve(actor);
+            TreasureHexObserveActor(actor);
         }
+        EurekaChimeraInputComplete();
+        PalaceEarlyPairCommitRoster();
         foreach (var source in _casts.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) RemoveActor(source);
         foreach (var source in delayedDamage.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) delayedDamage.Remove(source);
         foreach (var source in _ripples.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) _ripples.Remove(source);
+        foreach (var created in fateCreatedActors.Values.Where(a => !_actors.ContainsKey(a.Id)))
+            ChiCreated(created, observed: false);
+        SynchronizeFate();
         SynchronizeCuttersCry();
         SynchronizeStoneVigil();
         SynchronizePraetorium();
@@ -587,36 +917,189 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         SynchronizeAlex();
         SynchronizeTender();
         SynchronizeStray();
+        SynchronizeGraoully();
+        if (IsNativeTreasure)
+        {
+            treasureParty = [.. TreasurePartyInput];
+            TreasureCastBaitObserve();
+            TreasurePlayerStatusesObserve();
+        }
         if (territory == AetherfontCatalog.TERRITORY)
             foreach (var id in aetherfontStacks.Keys.Where(id => !_actors.TryGetValue(id, out var a) || a.Dead).ToArray())
                 aetherfontStacks.Remove(id);
+        KenkoUpdate();
+        EurekaUpdate();
+        CarnivaleEyeUpdate();
+        CarnivaleVoltageBootstrap();
+        CarnivaleLastSongBootstrap();
+        CarnivaleBallastBootstrap();
+        CarnivaleChargeBootstrap();
+        CarnivaleRebekkahUpdate();
+        CarnivaleClawUpdate();
+        CarnivaleTyphonBootstrap();
+        CarnivaleChimeraBootstrap();
+        CarnivaleSapBootstrap();
+        CarnivalePitBootstrap();
+        CarnivaleAzulmagiaBootstrap();
+        CarnivalePapaBootstrap();
+        CarnivaleSnorterUpdate();
+        CarnivaleDraugarUpdate();
+        CarnivaleRedUpdate();
+        CarnivaleSiegfriedUpdate();
+        CarnivaleGogoUpdate();
+        CarnivaleGoldorUpdate();
+        CarnivaleLastSongComplete(enabled);
         Tick(now);
+    }
+
+    private void ObserveCast(DungeonActor actor, DateTime now)
+    {
+        if (actor.Cast is { } cast)
+        {
+            StartCast(actor.Id, cast, now, fromPacket: false);
+        }
+        else
+        {
+            if (IsCarnivale || UsesDeepDungeonCastIdentity) treasureObservedCasts.Remove(actor.Id);
+            _missingRotation.RemoveWhere(k => k.Source == actor.Id);
+            if (_casts.TryGetValue(actor.Id, out var old) && (old.Observed || now >= old.StartedAt.AddSeconds(0.2))
+                && (IsNativeTreasure || IsCarnivale || IsHeavenOnHigh || IsEurekaOrthos || IsNativeQuestBoss || old.EffectSeen || now >= old.FinishAt.AddSeconds(-0.35) || now < old.FinishAt.AddSeconds(-0.5)))
+            {
+                Finish(actor.Id, old.Rule.Action, completed: old.EffectSeen || now >= old.FinishAt.AddSeconds(-0.35));
+                if (IsCarnivale && !old.Observed)
+                    carnivaleUnobservedEnds[actor.Id] = old;
+            }
+        }
     }
 
     public void StartCast(ulong source, DungeonCastObservation cast, DateTime now, bool fromPacket = true)
     {
         _now = now;
+        var definition = Active;
+        if (IsBarPassage) definition = BarPassageCastDefinition(cast.Action);
+        else if (IsCarnivale) definition = CarnivaleCastDefinition(cast.Action);
         if (IsMalboro) { MalboroStart(source, cast, fromPacket); return; }
-        if (Active == null || !_actors.TryGetValue(source, out var actor)
-            || actor.Dead && !(IsGarudaExtreme && cast.Action == 1555)
-            || !IsNativeTrial && !IsHeavenswardIntro && cast.FinishAt.AddSeconds(2) <= now) return;
+        if (definition == null || !_actors.TryGetValue(source, out var actor)
+            || actor.Dead && !UsesDeepDungeonCastIdentity && !IsBarPassage && !IsCarnivale && !IsNativeFate && !IsTactical && !IsNativeTreasure && !IsMainScenarioQuest && !IsHeroesPretenders && !IsDikaiosyne && !(IsGarudaExtreme && cast.Action == 1555)
+            || !UsesObservedCastEnd && cast.FinishAt.AddSeconds(2) <= now) return;
+        if (IsTimeBetween && cast.Action == 8993 && TimeBetweenPhase == 0) return;
         if (IsTitania && titaniaWaitingRemoval.Contains(source) || IsInnocence && innocenceWaitingRemoval.Contains(source)) return;
         if (IsHades && hadesWaitingRemoval.Contains(source)) return;
         if (IsWarriorOfLight && wolWaitingRemoval.Contains(source)) return;
-        if (_finished.TryGetValue(source, out var finished) && finished.Action == cast.Action && cast.StartedAt <= finished.EndedAt) return;
+        if (!fromPacket && territory == JobQuestCatalog.FACE_OF_TRUE_EVIL
+            && cast.Action is 8419 or 8643 or 8642 && cast.StartedAt <= arashiResolvedAt) return;
+        if (IsEurekaOrthos && !EurekaSpellSource(source)) return;
+        var eurekaFirstRaw = IsEurekaOrthos && !fromPacket
+            && _casts.TryGetValue(source, out var eurekaPacket) && !eurekaPacket.Observed
+            && eurekaPacket.Rule.Action == cast.Action && !treasureObservedCasts.ContainsKey(source);
+        if (IsEurekaOrthos && fromPacket && treasureObservedCasts.ContainsKey(source)) return;
+        // Reject stale generations before a CastInfo change can finish the accepted cast.
+        if (_casts.TryGetValue(source, out var latest)
+            && !eurekaFirstRaw && cast.StartedAt < latest.StartedAt.AddSeconds(latest.Rule.Action == cast.Action ? -.25 : 0)) return;
+        var acceptedGeneration = _casts.TryGetValue(source, out var accepted) && accepted.Rule.Action == cast.Action
+            && Math.Abs((accepted.StartedAt - cast.StartedAt).TotalSeconds) < .25
+            && Math.Abs(((accepted.InputFinishAt ?? accepted.FinishAt) - cast.FinishAt).TotalSeconds) < .75;
+        // Once the authoritative CastInfo is observed, a delayed packet cannot retarget that generation.
+        if ((IsNybeth || IsBlackRider || IsEurekaOrthos) && fromPacket && acceptedGeneration && accepted!.Observed) return;
+        var barP3FirstRaw = IsBarPassage && !fromPacket && cast.Action is 40917 or 40922 or 40916 or 40927
+            && _casts.TryGetValue(source, out var barP3Packet) && !barP3Packet.Observed;
+        var kenkoFirstRaw = IsKenko && !fromPacket && cast.Action == 12206
+            && _casts.TryGetValue(source, out var kenkoPacket) && !kenkoPacket.Observed ? kenkoPacket : null;
+        (DungeonPendingCast Cast, HeavenOnHighBait? Charge, HeavenOnHighBait? Devour)? kenkoFirstRawBaits = kenkoFirstRaw == null ? null
+            : (kenkoFirstRaw, kenkoCharges.FirstOrDefault(b => ReferenceEquals(b.Cast, kenkoFirstRaw)),
+                kenkoDevours.FirstOrDefault(b => ReferenceEquals(b.Cast, kenkoFirstRaw)));
+        var observedCasts = IsNativeFate || IsTactical ? fateObservedCasts : treasureObservedCasts;
+        if (UsesDeepDungeonCastIdentity && !fromPacket && treasureObservedCasts.TryGetValue(source, out var hohRaw)
+            && !NativeCastChanged(hohRaw, cast)) return;
+        // The native feed changes CastInfo only when its identity/shape fields change.
+        // Elapsed-clock drift alone must not end and restart Carnivale components.
+        if (IsCarnivale && !fromPacket && (CarnivaleEyeAction(cast.Action) || cast.Action == 14710 || CarnivaleEarlyAction(cast.Action) || CarnivaleSunsetAction(cast.Action) || CarnivaleClawAction(cast.Action) || CarnivaleKegAction(cast.Action) || CarnivaleRebekkahAction(cast.Action) || CarnivaleTyphonAction(cast.Action) || CarnivaleChimeraAction(cast.Action) || CarnivaleBoomAction(cast.Action) || CarnivaleBehemothAction(cast.Action) || CarnivalePitAction(cast.Action) || CarnivaleAzulmagiaAction(cast.Action) || CarnivalePapaAction(cast.Action) || CarnivaleSnorterAction(cast.Action) || CarnivaleDraugarAction(cast.Action) || CarnivaleRedAction(cast.Action) || CarnivaleSiegfriedAction(cast.Action) || CarnivaleGogoAction(cast.Action) || CarnivaleGoldorAction(cast.Action))
+            && treasureObservedCasts.TryGetValue(source, out var sunsetRaw) && !NativeCastChanged(sunsetRaw, cast)
+            // A pre-pull Stage22/23 observation had no component to claim it. The new
+            // component must still receive the current cast during activation.
+            && !(!_casts.ContainsKey(source)
+                && (CarnivaleEyeBootstrap(cast.Action)
+                    || cast.Action == 14710 && carnivaleLoaded.Any(m => m.VoltageNeedsBootstrap)
+                    || CarnivaleEarlyBootstrap(cast.Action)
+                    || CarnivaleBoomAction(cast.Action) && carnivaleLoaded.Any(m => m.SapNeedsBootstrap)
+                    || CarnivaleBehemothAction(cast.Action) && carnivaleLoaded.Any(m => m.Started && m.Primary.Actor.Oid == 0x2732)
+                    || CarnivalePitAction(cast.Action) && carnivaleLoaded.Any(m => m.PitNeedsBootstrap)
+                    || CarnivaleAzulmagiaAction(cast.Action) && carnivaleLoaded.Any(m => m.AzulmagiaNeedsBootstrap)
+                    || CarnivalePapaAction(cast.Action) && carnivaleLoaded.Any(m => m.PapaNeedsBootstrap)
+                    || CarnivaleSnorterAction(cast.Action) && carnivaleLoaded.Any(m => m.Snorter is { NeedsBootstrap: true })
+                    || CarnivaleDraugarAction(cast.Action) && carnivaleLoaded.Any(m => m.Draugar is { NeedsBootstrap: true })
+                    || CarnivaleRedAction(cast.Action) && carnivaleLoaded.Any(m => m.Red is { NeedsBootstrap: true })
+                    || CarnivaleSiegfriedAction(cast.Action) && carnivaleLoaded.Any(m => m.Siegfried is { NeedsBootstrap: true })
+                    || CarnivaleGogoAction(cast.Action) && carnivaleLoaded.Any(m => m.Gogo is { NeedsBootstrap: true })
+                    || CarnivaleGoldorAction(cast.Action) && carnivaleLoaded.Any(m => m.Goldor is { NeedsBootstrap: true }))))
+            return;
+        var blackRiderFirstRaw = IsBlackRider && !fromPacket && cast.Action == 7089
+            && acceptedGeneration && !accepted!.Observed;
+        var carnivaleChargeFirstRaw = IsCarnivale && !fromPacket && CarnivaleChargeAction(cast.Action)
+            && _casts.TryGetValue(source, out var chargePacket) && !chargePacket.Observed;
+        var rawNativeChanged = (IsNativeTreasure || IsNativeFate || IsTactical) && !fromPacket
+            && observedCasts.TryGetValue(source, out var previousRaw) && NativeCastChanged(previousRaw, cast);
+        var questRawChanged = (IsAlphaAlligator || IsBarPassage || IsCarnivale || UsesDeepDungeonCastIdentity) && !fromPacket
+            && (treasureObservedCasts.TryGetValue(source, out var questRaw) && NativeCastChanged(questRaw, cast)
+                || !eurekaFirstRaw && (IsBarPassage || IsCarnivale || UsesDeepDungeonCastIdentity) && _casts.TryGetValue(source, out var packetCast) && !packetCast.Observed
+                    && (packetCast.Location != cast.Location || packetCast.Rotation != cast.Rotation
+                        || packetCast.TargetId != cast.TargetId
+                        || Math.Abs(((packetCast.FinishAt - packetCast.StartedAt)
+                            - (cast.FinishAt - cast.StartedAt)).TotalSeconds) > .00001));
+        DungeonPendingCast? recoveredCarnivaleCast = null;
+        if (IsCarnivale && !fromPacket && carnivaleUnobservedEnds.TryGetValue(source, out var unobserved)
+            && cast.StartedAt >= unobserved.StartedAt.AddSeconds(-.25))
+        {
+            questRawChanged = true;
+            if (cast.Action == unobserved.Rule.Action && Math.Abs((cast.StartedAt - unobserved.StartedAt).TotalSeconds) < .25
+                && Math.Abs((cast.FinishAt - unobserved.FinishAt).TotalSeconds) < .75)
+                recoveredCarnivaleCast = unobserved;
+        }
+        if (_finished.TryGetValue(source, out var finished)
+            && (cast.StartedAt < finished.EndedAt
+                || cast.StartedAt == finished.EndedAt && finished.ActionsAtEnd.Contains(cast.Action))
+            && !eurekaFirstRaw && !questRawChanged && !((IsNativeFate || IsTactical) && rawNativeChanged)
+            && !(acceptedGeneration && cast.StartedAt > finished.StartedAt && accepted!.StartedAt > finished.StartedAt)) return;
+        if ((IsAlphaAlligator || IsBarPassage || IsCarnivale || UsesDeepDungeonCastIdentity) && !fromPacket) treasureObservedCasts[source] = cast;
+        var firstTreasureRaw = IsNativeTreasure && !fromPacket && !observedCasts.ContainsKey(source);
+        if ((IsNativeTreasure || IsNativeFate || IsTactical) && !fromPacket) observedCasts[source] = cast;
+        var nativeReplacement = false;
         if (_casts.TryGetValue(source, out var existing))
         {
             var tolerance = existing.Rule.Action == cast.Action ? 0.25 : 0;
-            if (cast.StartedAt < existing.StartedAt.AddSeconds(-tolerance)) return;
-            if (existing.Rule.Action != cast.Action || (IsNativeTrial || IsHeavenswardIntro || territory is StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY)
-                && (Math.Abs((existing.StartedAt - cast.StartedAt).TotalSeconds) >= .25
-                    || Math.Abs((existing.FinishAt - cast.FinishAt).TotalSeconds) >= .75))
+            if (!eurekaFirstRaw && cast.StartedAt < existing.StartedAt.AddSeconds(-tolerance)) return;
+            var partyTargetChanged = (UsesQuestPartyMarks && JobQuestPartyAction(existing.Rule.Action))
+                && existing.TargetId != cast.TargetId
+                && !(IsNativeTreasure && definition.BossOid == NativeTreasureCatalog.DAEN_ECHIDNA
+                    && TreasurePlayerGazeAction(cast.Action) && fromPacket && acceptedGeneration)
+                || rawNativeChanged || questRawChanged;
+            if (existing.Rule.Action != cast.Action
+                || partyTargetChanged
+                || (UsesObservedCastEnd || territory is StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY)
+                && !eurekaFirstRaw && (Math.Abs((existing.StartedAt - cast.StartedAt).TotalSeconds) >= .25
+                    || Math.Abs(((existing.InputFinishAt ?? existing.FinishAt) - cast.FinishAt).TotalSeconds) >= .75))
+            {
                 Finish(source, existing.Rule.Action, completed: existing.EffectSeen || now >= existing.FinishAt.AddSeconds(-0.35));
+                // A target handoff finishes the old component record, while this cast generation remains live.
+                if (partyTargetChanged && acceptedGeneration) _finished.Remove(source);
+                if (rawNativeChanged) observedCasts[source] = cast;
+                nativeReplacement = UsesDeepDungeonCastIdentity || IsBarPassage || IsCarnivale || IsMainScenarioQuest || IsHeroesPretenders || IsDikaiosyne || IsNativeTreasure || IsNativeFate || IsTactical || QuestWindAction(cast.Action);
+                // A replacement starts a fresh observation baseline, including packet-only generations.
+                if (UsesDeepDungeonCastIdentity || IsBarPassage || IsCarnivale || IsMainScenarioQuest || IsHeroesPretenders || IsDikaiosyne || QuestWindAction(cast.Action)) questWindObserved.Remove(source);
+            }
         }
-        var rule = Active.Casts.FirstOrDefault(r => r.Action == cast.Action
-            && (r.CasterOid == actor.Oid || IsNativeTrial && r.CasterOid == 0 || territory is ZotCatalog.TERRITORY or LapisCatalog.TERRITORY or AetherfontCatalog.TERRITORY or LunarCatalog.TERRITORY or IhuykatumuCatalog.TERRITORY or WorqorCatalog.TERRITORY or SkydeepCatalog.TERRITORY or VanguardCatalog.TERRITORY or OrigenicsCatalog.TERRITORY or AlexandriaCatalog.TERRITORY or TenderValleyCatalog.TERRITORY or StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY && r.CasterOid == 0));
-        if (territory == AnyderCatalog.TERRITORY && Active.BossOid == 0x249E)
+        if ((IsPalaceSerpent || IsOrcus && cast.Action == 27593 || IsIo && cast.Action == 2175
+            || IsSteel && source == PrimaryId || (IsRhalgr && cast.Action == 8346 || IsSlickshell && cast.Action == 1087) || IsNativeTreasure || IsNativeFate || IsTactical) && fromPacket)
+        {
+            if (actor.Cast != null && actor.Cast.StartedAt > cast.StartedAt.AddSeconds(.25)) return;
+            _actors[source] = actor with { Cast = cast };
+        }
+        var rule = definition.Casts.FirstOrDefault(r => r.Action == cast.Action
+            && (r.CasterOid == actor.Oid || UsesObservedCastEnd && r.CasterOid == 0 || territory is ZotCatalog.TERRITORY or LapisCatalog.TERRITORY or AetherfontCatalog.TERRITORY or LunarCatalog.TERRITORY or IhuykatumuCatalog.TERRITORY or WorqorCatalog.TERRITORY or SkydeepCatalog.TERRITORY or VanguardCatalog.TERRITORY or OrigenicsCatalog.TERRITORY or AlexandriaCatalog.TERRITORY or TenderValleyCatalog.TERRITORY or StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY && r.CasterOid == 0));
+        if (territory == AnyderCatalog.TERRITORY && definition.BossOid == 0x249E)
             anyderLashes.RemoveAll(l => l.Visual != cast.Action);
+        // Unclaimed casts still deliver the source's arbitrary-action Finish for grouped waves.
+        if (rule == null && (IsTactical || IsOtis)) rule = new(cast.Action, 0, "Unclaimed cast observation", null);
         if (rule == null) return;
         if (IsTwintania && !TwinCastAllowed(rule.Action)) return;
         if (IsGarudaExtreme && !GarudaExCastAllowed(rule.Action)) return;
@@ -628,7 +1111,15 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             warning?.Invoke($"{rule.Name}: 无有效读条落点，跳过预测。");
             return;
         }
-        var directional = rule.Action is 5823 or 8265 or 8266 or 9809 or 9810 or 14196 or 15848 or 15834 or 15837
+        var directional = IsNativeFate || IsTactical || IsCarnivale && rule.Action is 14692 or 14694 or 14893 or 14894 or 14895 or 14896 or 15325 or 18689 or 18961 or 18971 or 18984 or 18838 or 18839 or 34464 || IsBarPassage && rule.Action == 40917 || IsHeroesPretenders && rule.Action == 37467 || territory == MainScenarioQuestCatalog.ORACLE_OF_LIGHT && rule.Action == 18036
+            || rule.Action is 5823 or 8265 or 8266 or 9809 or 9810 or 14196 or 15848 or 15834 or 15837
+            || IsBekko && rule.Action is >= 8439 and <= 8442
+            || IsOrcus && rule.Action is 27602 or 27600 or 27603 or 27601
+            || IsSteel && rule.Action == 17561
+            || IsTreasureMegakantha && rule.Action == 32242
+            || IsTreasureBasket && rule.Action is 21724 or 21725 or 21726
+            || IsTreasurePorxie && rule.Action == 22937
+            || IsNativeTreasure && rule.Action is 43687 or 43688 or 21706 or 32858 or 33164 or 32342 or 32343 or 32344
             || IsShinryu && rule.Action == 8075
             || IsSeiryu && rule.Action == 14349
             || IsHades && rule.Action == 16751
@@ -667,15 +1158,63 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             return;
         }
         var rotation = directional || rule.Action == 3519 ? cast.Rotation ?? actor.Rotation : 0;
+        if (!fromPacket) QuestWindObserveCast(source, cast);
+        if (IsDivineIntervention && rule.Action == 3993 || IsTreasureYan && rule.Action == 44269 || IsOtis && rule.Action == 38209)
+        {
+            if (IsDivineIntervention && _casts.TryGetValue(source, out var charge) && charge.Rule.Action == cast.Action
+                && Math.Abs((charge.StartedAt - cast.StartedAt).TotalSeconds) < .25
+                && Math.Abs((charge.FinishAt - cast.FinishAt).TotalSeconds) < .75)
+            {
+                charge.Observed |= !fromPacket;
+                return;
+            }
+            var chargeOrigin = cast.SourcePosition ?? actor.Position;
+            if ((IsTreasureYan || IsOtis && cast.SourcePosition == null) && _casts.TryGetValue(source, out var lockedRush)
+                && lockedRush.Rule.Action == cast.Action
+                && Math.Abs((lockedRush.StartedAt - cast.StartedAt).TotalSeconds) < .25
+                && Math.Abs((lockedRush.FinishAt - cast.FinishAt).TotalSeconds) < .75)
+                chargeOrigin = lockedRush.SourcePosition ?? chargeOrigin;
+            var direction = cast.Location - chargeOrigin;
+            var width = (IsOtis, IsTreasureYan) switch { (true, _) => 5, (_, true) => 8, _ => 4 };
+            rule = rule with { Shape = RayRectangleTemplate.Symmetric(width, new Vector2(direction.X, direction.Z).Length()) };
+            rotation = MathF.Atan2(direction.X, direction.Z);
+            cast = cast with { Location = QuantizedDungeonPosition(chargeOrigin), SourcePosition = chargeOrigin };
+        }
         var start = cast.StartedAt;
         var finish = cast.FinishAt;
+        var sourcePosition = cast.SourcePosition ?? actor.Position;
+        var observed = !fromPacket;
+        var treasureCorrection = false;
+        var fateCorrection = false;
+        var tacticalCorrection = false;
+        var slickshellCorrection = false;
+        DungeonPendingCast? previousTacticalCast = null;
+        DungeonPendingCast? previousFateCast = null;
+        DungeonPendingCast? previousSleepOtisCast = null;
         if (_casts.TryGetValue(source, out var previous) && previous.Rule.Action == cast.Action
-            && Math.Abs((previous.FinishAt - finish).TotalSeconds) < 0.75 && Math.Abs((previous.StartedAt - start).TotalSeconds) < 0.25)
+            && (eurekaFirstRaw || Math.Abs(((previous.InputFinishAt ?? previous.FinishAt) - finish).TotalSeconds) < 0.75 && Math.Abs((previous.StartedAt - start).TotalSeconds) < 0.25))
         {
-            // The scan restores missing casts; only a packet corrects an existing locked snapshot.
-            if (!fromPacket || (previous.Location == cast.Location && previous.Rotation == rotation && previous.TargetId == cast.TargetId)) return;
-            start = previous.StartedAt;
-            finish = previous.FinishAt;
+            previous.Observed |= observed;
+            observed = previous.Observed;
+            if (IsTreasurePorxie && cast.Action == 22937 && cast.SourcePosition == null)
+                sourcePosition = previous.SourcePosition ?? sourcePosition;
+            if (IsBarPassage && cast.Action == 40917 && fromPacket && cast.SourcePosition == null)
+                sourcePosition = previous.SourcePosition ?? sourcePosition;
+            // First raw confirms packet-only origins. Later raw movement does not move a locked cast.
+            var keepLockedRaw = !fromPacket && !(firstTreasureRaw && previous.TargetId != cast.TargetId);
+            var samePacket = previous.Location == cast.Location && previous.Rotation == rotation && previous.TargetId == cast.TargetId
+                && (!(IsTreasureYan || IsOtis && cast.Action == 38209) || previous.Rule.Shape == rule.Shape)
+                && (!(IsPortrait && cast.Action == 37535 || IsTreasurePorxie && cast.Action == 22937
+                    || IsOtis && cast.Action == 38209 || IsBarPassage && cast.Action == 40917)
+                    || previous.SourcePosition == sourcePosition);
+            if (!barP3FirstRaw && !carnivaleChargeFirstRaw && !blackRiderFirstRaw && !eurekaFirstRaw && (keepLockedRaw || samePacket)) return;
+            treasureCorrection = IsNativeTreasure;
+            slickshellCorrection = IsSlickshell;
+            if (!carnivaleChargeFirstRaw && !blackRiderFirstRaw && !eurekaFirstRaw)
+            {
+                start = previous.StartedAt;
+                finish = previous.FinishAt;
+            }
             InnocenceFinish(previous);
             HadesFinish(previous);
             WolFinish(previous);
@@ -688,16 +1227,94 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             NecronFinish(previous);
             QueenFinish(previous);
             DoomCorrectTarget(previous, cast.TargetId);
+            fateCorrection = IsNativeFate;
+            tacticalCorrection = IsTactical;
+            previousTacticalCast = tacticalCorrection ? previous : null;
+            previousFateCast = fateCorrection ? previous : null;
+            previousSleepOtisCast = IsOtis ? previous : null;
+            FateFinish(previous, correction: true);
         }
+        var finishEventBoundary = start;
+        if (recoveredCarnivaleCast != null) finishEventBoundary = recoveredCarnivaleCast.FinishEventBoundary;
+        else if (acceptedGeneration && !nativeReplacement) finishEventBoundary = accepted!.FinishEventBoundary;
+        else if (!fromPacket && questRawChanged) finishEventBoundary = now;
+        DateTime? inputFinishAt = null;
+        if (UsesDeepDungeonCastIdentity)
+        {
+            inputFinishAt = cast.FinishAt;
+            if (acceptedGeneration && !nativeReplacement && !eurekaFirstRaw)
+                inputFinishAt = accepted!.InputFinishAt ?? accepted.FinishAt;
+        }
+        if (UsesDeepDungeonCastIdentity && !fromPacket && (!acceptedGeneration || nativeReplacement || blackRiderFirstRaw || eurekaFirstRaw))
+        {
+            // A newly observed NPC cast caps elapsed time at its total, leaving the
+            // source's NPC finish delay even when the recorded deadline is already past.
+            var total = cast.TotalTime ?? (float)Math.Max(0, (cast.FinishAt - cast.StartedAt).TotalSeconds - .3);
+            var minimumFinish = now.AddSeconds((total + .3f) - total);
+            if (finish < minimumFinish) finish = minimumFinish;
+        }
+        if (IsCarnivale && !fromPacket && !_casts.ContainsKey(source)
+            && (CarnivaleEyeBootstrap(cast.Action)
+                    || cast.Action == 14710 && carnivaleLoaded.Any(m => m.VoltageNeedsBootstrap)
+                    || CarnivaleEarlyBootstrap(cast.Action)
+                    || CarnivaleBoomAction(cast.Action) && carnivaleLoaded.Any(m => m.SapNeedsBootstrap)
+                || CarnivaleBehemothAction(cast.Action) && carnivaleLoaded.Any(m => m.Started && m.Primary.Actor.Oid == 0x2732)
+                || CarnivalePitAction(cast.Action) && carnivaleLoaded.Any(m => m.PitNeedsBootstrap)
+                    || CarnivaleAzulmagiaAction(cast.Action) && carnivaleLoaded.Any(m => m.AzulmagiaNeedsBootstrap)
+                    || CarnivalePapaAction(cast.Action) && carnivaleLoaded.Any(m => m.PapaNeedsBootstrap)
+                    || CarnivaleSnorterAction(cast.Action) && carnivaleLoaded.Any(m => m.Snorter is { NeedsBootstrap: true })
+                    || CarnivaleDraugarAction(cast.Action) && carnivaleLoaded.Any(m => m.Draugar is { NeedsBootstrap: true })
+                    || CarnivaleRedAction(cast.Action) && carnivaleLoaded.Any(m => m.Red is { NeedsBootstrap: true })
+                    || CarnivaleSiegfriedAction(cast.Action) && carnivaleLoaded.Any(m => m.Siegfried is { NeedsBootstrap: true })
+                    || CarnivaleGogoAction(cast.Action) && carnivaleLoaded.Any(m => m.Gogo is { NeedsBootstrap: true })
+                    || CarnivaleGoldorAction(cast.Action) && carnivaleLoaded.Any(m => m.Goldor is { NeedsBootstrap: true }))
+            && finish < now.AddSeconds((double).3f))
+            finish = now.AddSeconds((double).3f);
         _casts[source] = new(source, rule, cast.Location, rotation, start, finish, cast.TargetId)
         {
-            UntilObservedEnd = IsNativeTrial || IsHeavenswardIntro || territory is TroiaCatalog.TERRITORY or LapisCatalog.TERRITORY or AetherfontCatalog.TERRITORY or LunarCatalog.TERRITORY or IhuykatumuCatalog.TERRITORY or WorqorCatalog.TERRITORY or SkydeepCatalog.TERRITORY or VanguardCatalog.TERRITORY or OrigenicsCatalog.TERRITORY or AlexandriaCatalog.TERRITORY or TenderValleyCatalog.TERRITORY or StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY,
+            Observed = observed,
+            FinishEventBoundary = finishEventBoundary,
+            InputFinishAt = inputFinishAt,
+            SourcePosition = sourcePosition,
+            UntilObservedEnd = UsesObservedCastEnd || territory is TroiaCatalog.TERRITORY or LapisCatalog.TERRITORY or AetherfontCatalog.TERRITORY or LunarCatalog.TERRITORY or IhuykatumuCatalog.TERRITORY or WorqorCatalog.TERRITORY or SkydeepCatalog.TERRITORY or VanguardCatalog.TERRITORY or OrigenicsCatalog.TERRITORY or AlexandriaCatalog.TERRITORY or TenderValleyCatalog.TERRITORY or StrayboroughCatalog.TERRITORY or YuweyawataCatalog.TERRITORY or UnderkeepCatalog.TERRITORY or MesoCatalog.TERRITORY or MistwakeCatalog.TERRITORY or ClyteumCatalog.TERRITORY,
         };
+        CarnivaleCastStarted(_casts[source], acceptedGeneration && !nativeReplacement, carnivaleChargeFirstRaw);
+        HeavenOnHighCast(_casts[source], acceptedGeneration && !nativeReplacement);
+        EurekaCast(_casts[source]);
+        KenkoCast(_casts[source], acceptedGeneration && !nativeReplacement, kenkoFirstRawBaits);
+        NybethCast(_casts[source], acceptedGeneration && !nativeReplacement);
+        BlackRiderCast(_casts[source], acceptedGeneration && !nativeReplacement, blackRiderFirstRaw, !fromPacket);
+        if (IsCarnivale) carnivaleUnobservedEnds.Remove(source);
+        PortraitCastStarted(_casts[source]);
+        TreasureCastStarted(_casts[source], treasureCorrection, firstTreasureRaw);
+        SamuraiCast(_casts[source]);
+        FateCast(_casts[source], fateCorrection, previousFateCast);
+        TacticalCast(_casts[source], tacticalCorrection, previousTacticalCast);
+        SleepOtisCast(_casts[source], previousSleepOtisCast);
+        SlickshellCast(_casts[source], slickshellCorrection);
+        HopeCast(_casts[source]);
+        JobQuestPartyCast(_casts[source]);
+        HeroesPretendersCast(_casts[source]);
+        IseultalonCast(_casts[source]);
+        AlphaCast(_casts[source]);
+        DikaiosyneCast(_casts[source]);
+        BarP3Cast(_casts[source], cast.TotalTime, !fromPacket, cast.StartedAt);
+        BekkoCast(_casts[source]);
+        OrcusCast(_casts[source]);
+        SageLifeCast(_casts[source]);
+        SteelCast(_casts[source]);
+        QuestWindCast(_casts[source]);
+        MainScenarioCastStarted(_casts[source]);
+        RhalgrCast(_casts[source]);
+        EndwalkerQuestCast(_casts[source]);
+        // Clear the replaced record's tombstone only after a valid new cast has been committed.
+        if (nativeReplacement || questRawChanged || (IsNativeFate || IsTactical) && rawNativeChanged) _finished.Remove(source);
         if (rule.Action is 45742 or 45997 or 29620 or 30205 or 31837
             || territory == QitanaCatalog.TERRITORY && rule.Action is 15497 or 15505 or 15513) delayedDamage[source] = _casts[source];
         if (rule.Action == 29268) incendiarySupport = _casts[source] with { FinishAt = finish.AddSeconds(1) };
         if (territory == HeavenswardIntroCatalog.REGULA && rule.Action == 6032 && !regulaDetonating.Contains(source))
             regulaDetonating.Add(source);
+        if (territory == HeavenswardIntroCatalog.REGULA_VITH && rule.Action == 4005) questTerminusActive = true;
         WandererCast(_casts[source]);
         AmdaporCast(_casts[source]);
         SnowcloakCast(_casts[source]);
@@ -795,14 +1412,96 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         }
     }
 
+    private void RecordCastFinish(ulong source, uint action, DateTime startedAt, DateTime endedAt)
+    {
+        // Several distinct casts can end in the same feed frame. Permit a new
+        // action at that boundary without allowing any already closed action back.
+        var actions = _finished.TryGetValue(source, out var previous) && previous.EndedAt == endedAt
+            ? previous.ActionsAtEnd : [];
+        actions.Add(action);
+        _finished[source] = (action, startedAt, endedAt, actions);
+    }
+
     public void Finish(ulong source, uint action = 0, DateTime? endedAt = null, bool completed = false)
     {
+        // These components may activate after a raw cast was first seen. A real
+        // end before activation must prevent the unchanged snapshot being claimed.
+        if (IsCarnivale && !_casts.ContainsKey(source)
+            && _actors.GetValueOrDefault(source)?.Cast is { } unclaimed
+            && (action == 0 || action == unclaimed.Action)
+            && (CarnivaleEyeAction(unclaimed.Action) || unclaimed.Action == 14710 || CarnivaleEarlyAction(unclaimed.Action) || CarnivaleBoomAction(unclaimed.Action) || CarnivaleBehemothAction(unclaimed.Action)
+                || CarnivalePitAction(unclaimed.Action) || CarnivaleAzulmagiaAction(unclaimed.Action) || CarnivalePapaAction(unclaimed.Action) || CarnivaleSnorterAction(unclaimed.Action) || CarnivaleDraugarAction(unclaimed.Action) || CarnivaleRedAction(unclaimed.Action) || CarnivaleSiegfriedAction(unclaimed.Action) || CarnivaleGogoAction(unclaimed.Action) || CarnivaleGoldorAction(unclaimed.Action))
+            && (endedAt ?? _now) >= unclaimed.StartedAt)
+            RecordCastFinish(source, unclaimed.Action, unclaimed.StartedAt, endedAt ?? _now);
+        if (IsCarnivale && carnivaleUnobservedEnds.TryGetValue(source, out var unobserved)
+            && (action == 0 || action == unobserved.Rule.Action)
+            && (endedAt ?? _now) >= unobserved.FinishEventBoundary)
+            carnivaleUnobservedEnds.Remove(source);
         if (IsMalboro) { MalboroFinish(source, action); return; }
-        if (_casts.TryGetValue(source, out var cast) && (action == 0 || action == cast.Rule.Action))
+        if ((IsPalaceSerpent || IsSteel && source == PrimaryId) && _actors.GetValueOrDefault(source) is { Cast: { } observed } serpent
+            && (action == 0 || action == observed.Action) && (endedAt ?? _now) >= observed.StartedAt)
+        {
+            _actors[source] = serpent with { Cast = null };
+            RecordCastFinish(source, observed.Action, observed.StartedAt, endedAt ?? _now);
+        }
+        if (_casts.TryGetValue(source, out var cast) && (action == 0 || action == cast.Rule.Action
+            || IsCarnivale && (cast.Rule.Action is 14888 or 14884 or 14871 or 14876 or 14906 or 14907 or 19059 or 19064 or 19067 or 18696 or 18895 or 18971 or 18984 or 18836 or 18837 or 18838 or 18839 or 18841 or 18897 or 23101 or 23105 or 23131 or 23122 or 20055 or 23123 or 23129 or 34448
+                || carnivaleLoaded.Any(m => m.Started && m.Primary.Actor.Oid == 0x272C) && cast.Rule.Action is 14747 or 14706
+                || cast.Rule.Action == 34449 && carnivaleLoaded.Any(m => m.Started && m.Primary.Actor.Oid == 0x3FA5))))
         {
             var predictedEnd = cast.FinishAt.AddSeconds(-0.3);
             var time = endedAt ?? (_now < predictedEnd ? _now : predictedEnd);
             if (time < cast.StartedAt) return;
+            // A newer observed native generation cannot be ended by an older queued event.
+            if ((IsCarnivale || UsesDeepDungeonCastIdentity) && endedAt is { } eventTime && eventTime < cast.FinishEventBoundary) return;
+            if (IsNativeTreasure)
+            {
+                TreasureSequenceFinish(cast, _now);
+                TreasureGymnasionFinish(cast, _now);
+                TreasureNarkissosFinish(cast);
+                TreasureBitterFinish(cast);
+                TreasureFortressFinish(cast);
+                TreasureHexFinish(cast);
+                TreasureIceFinish(cast, _now);
+                TreasureCreatedCircleFinish(cast);
+                TreasureVaultGroupFinish(cast);
+                TreasureCastBaitFinish(cast);
+                TreasureBeamFinish(cast);
+                TreasurePlayerGazeFinish(cast);
+                TreasureWallKnockbackFinish(cast);
+                TreasureBuffetFinish(cast);
+                if (cast.Rule.Action == 13443) treasureHydrospheres.Clear();
+                treasureCastBaitCurrent.Remove(source);
+                treasureLightOrder.Remove(source);
+                treasureCurrentCasts.Remove(source);
+                treasureObservedCasts.Remove(source);
+            }
+            CarnivaleCastFinished(cast);
+            HeavenOnHighFinish(cast);
+            EurekaFinish(cast, completed);
+            KenkoFinish(cast);
+            NybethFinish(cast);
+            GodmotherFinish(cast);
+            BlackRiderFinish(cast);
+            PortraitFinish(cast);
+            FateFinish(cast);
+            TacticalFinish(cast);
+            SleepOtisFinish(cast);
+            HopeFinish(cast);
+            JobQuestPartyFinish(cast);
+            BekkoFinish(cast);
+            OrcusFinish(cast);
+            SageLifeFinish(cast);
+            SteelFinish(cast);
+            QuestWindFinish(cast);
+            HeroesPretendersFinish(cast);
+            IseultalonFinish(cast);
+            AlphaFinish(cast);
+            DikaiosyneFinish(cast);
+            BarP3Finish(cast);
+            RhalgrFinish(cast);
+            EndwalkerQuestFinish(cast);
+            arashiStarted.Remove(source);
             HydaFinish(source, cast.Rule.Action);
             AsuraFinish(source, cast.Rule.Action);
             ZeleniaFinish(source, cast.Rule.Action);
@@ -827,6 +1526,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
                 }
             }
             _casts.Remove(source);
+            mainScenarioCastOrder.Remove(source);
             regulaDetonating.Remove(source);
             SnowcloakFinish(cast, completed, endedAt ?? _now);
             KeeperFinish(cast, completed);
@@ -907,7 +1607,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             if (!completed && cast.Rule.Action == 29268) incendiarySupport = null;
             if (cast.Rule.Action == 942 || cast.Rule.Action == 950 && !completed) goobbuesGrief = null;
             losSnapshots.Remove(source);
-            _finished[source] = (cast.Rule.Action, time);
+            RecordCastFinish(source, cast.Rule.Action, cast.StartedAt, time);
         }
     }
 
@@ -915,10 +1615,78 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         float? sourceRotation = null, bool? hasTargets = null, Vector3? sourcePosition = null)
     {
         _now = now;
+        if (UsesEurekaNativeEffect(action))
+        {
+            EurekaEffect(source, action, target, location, now);
+            return;
+        }
         if (Active?.BossOid == 0x477A && action == 42229 && target != 0)
             StatusChanged(target, QarnCatalog.DOOM, true, now);
         if (territory == BurnCatalog.TERRITORY && action == 12697) burnSpreads.Remove(target);
+        CarnivalePapaEffect(source, action);
+        CarnivaleSnorterEffect(source, action);
+        CarnivaleRedEffect(source, action);
+        CarnivaleSiegfriedEffect(source, action);
+        CarnivaleGogoEffect(source, action);
+        CarnivaleGoldorEffect(source, action);
+        FateEffect(source, action, sequence, target, occurredAt ?? now);
+        TacticalEffect(source, action, sequence, target, occurredAt ?? now, location);
+        if (UsesBarP2NativeEffect(action))
+        {
+            BarP2Effect(source, action, sequence, occurredAt ?? now);
+            return;
+        }
+        if (UsesCarnivaleNativeEffect(action))
+        {
+            // The adapter already excludes flattened legacy effects. Each native
+            // packet is an event, including separate packets with sequence zero.
+            CarnivaleClawEffect(source, action, sequence, target, location, now, occurredAt ?? now);
+            return;
+        }
+        if (UsesPalaceEarlyPairNativeEffect(action))
+        {
+            TrialVoidzoneEffect(action, target, location, now);
+            return;
+        }
+        if (UsesGudannaNativeEffect(action))
+        {
+            GudannaEffect(action);
+            return;
+        }
+        if (UsesGodmotherNativeEffect(action))
+        {
+            if (Active == null) return;
+            // Native capture emits once per complete packet; the adapter excludes
+            // flattened legacy targets. Source counters consume every packet.
+            ++godmotherBombIndex;
+            return;
+        }
+        if (UsesHeavenOnHighNativeEffect(action))
+        {
+            if (IsKenko)
+            {
+                if (sequence == 0 || _effects.TryAdd((source, action, sequence), now))
+                    KenkoEffect(action, target, now);
+            }
+            else HeavenOnHighSpawnEffect(source, sequence);
+            return;
+        }
         if (!_effects.TryAdd((source, action, sequence), now)) return;
+        HeroesPretendersEffect(source, action, now);
+        if (IsIseultalon && action == 15083) thunderboltSpreads.Clear();
+        if (IsIseultalon && action == 14604) deathRayActivation = null;
+        PortraitEffect(source, action, sourcePosition);
+        FallenEffect(action, target);
+        GuildivainEffect(action, target);
+        SteelEffect(source, action);
+        if (territory == JobQuestCatalog.ORPHANS_AND_BROKEN_BLADE && action == 9298)
+            jobQuestStacks.Clear();
+        if (territory == JobQuestCatalog.FACE_OF_TRUE_EVIL && action == 8419)
+        {
+            arashiActivation = null;
+            arashiResolvedAt = now;
+        }
+        PalaceSerpentEffect(action);
         AlzadaalEffect(action);
         TroiaEffect(action, occurredAt ?? now);
         LapisEffect(source, action, target, occurredAt ?? now);
@@ -972,7 +1740,9 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         CaduceusEffect(source, action, target, location);
         TwinEffect(source, action, target, location);
         if (IsCoilGauntlet && gauntletStage >= 5 && action == 1258) ++gauntletEmergencyHits;
-        TrialVoidzoneEffect(action, target, location, occurredAt ?? now);
+        RhalgrEffect(source, action);
+        if (TreasureVoidzoneAction == 0 || action != TreasureVoidzoneAction)
+            TrialVoidzoneEffect(action, target, location, IsOrcus || IsRhalgr || IsSlickshell ? now : occurredAt ?? now);
         AntitowerEffect(source, action, target, sourceRotation);
         SohrEffect(source, action, target, occurredAt ?? now);
         XelEffect(action, target);
@@ -1055,6 +1825,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public void StatusChanged(ulong target, uint status, bool present, DateTime timestamp, ushort param = 0, DateTime? expiresAt = null, ulong sourceId = 0)
     {
+        CarnivaleEyeStatus(target, status, present);
         if (Active == null) return;
         var key = (target, status);
         if (!statusChanges.TryGetValue(key, out var previous) || timestamp >= previous.ChangedAt)
@@ -1062,10 +1833,23 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             statusChanges[key] = (present, timestamp, param);
             ValigStatus(target, status, present, param, expiresAt ?? default, sourceId, at: timestamp);
             PharosStatus(target, status, present, param, timestamp);
+            GraoullyStatus(target, status, present, param);
             ResearchStatus(target, status, present, timestamp);
             FractalStatus(target, status, present, timestamp);
             AntitowerStatus(target, status, present);
             BaelStatus(target, status, present, timestamp, expiresAt);
+            IoStatus(target, status, present, expiresAt);
+            if (IsDaivadipa)
+                daivadipaStatuses.Status(target, status, present, timestamp, param, expiresAt, sourceId);
+            if (IsFormidable)
+            {
+                formidableStatuses.Changed = FormidableStatusObserved;
+                formidableStatuses.Status(target, status, present, timestamp, param, expiresAt, sourceId);
+            }
+            TreasureMolterStatus(target, status, present, timestamp, param, expiresAt, sourceId);
+            if (IsTreasureNarkissos)
+                treasurePlayerStatuses.Status(target, status, present, timestamp, param, expiresAt, sourceId);
+            TreasureHexStatus(target, status, present, timestamp, param, expiresAt, sourceId);
             SirenStatus(target, status, present, expiresAt);
             DomaStatus(target, status, present, expiresAt);
             BurnStatus(target, status, present, param);
@@ -1085,6 +1869,9 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             MistStatus(target, status, present, timestamp);
             ClyStatus(target, status, present, expiresAt);
             WhorlStatus(target, status, present, timestamp, expiresAt);
+            CarnivaleChargeStatus(target, status, present, expiresAt);
+            PalaceEarlyPairStatus(target, status, present, expiresAt, sourceId);
+            CarnivaleBlindStatus(target, status, present);
             ShinryuStatus(target, status, present);
             TsukuyomiStatus(target, status, present, param, expiresAt);
             WolStatus(target, status, present, timestamp, expiresAt);
@@ -1105,14 +1892,109 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             ? change.Present
             : actor.Statuses?.Contains(status) == true;
 
-    public void RemoveActor(ulong source, DateTime? timestamp = null)
+    public void RemoveActor(ulong source, DateTime? timestamp = null, bool destroyed = true)
     {
+        if (UsesDeepDungeonCastIdentity && _casts.TryGetValue(source, out var hohCast))
+            Finish(source, hohCast.Rule.Action, timestamp ?? _now);
+        if (UsesDeepDungeonCastIdentity && destroyed) treasureObservedCasts.Remove(source);
+        if (IsHeavenOnHigh && destroyed) HeavenOnHighSpawnRemoved(source);
+        if (IsPalaceManagedBoss && destroyed) PalaceGuideRemoved(source);
+        if (IsGodmother && destroyed) GodmotherRemoved(source);
+        if (destroyed) KenkoRemoved(source);
+        if (destroyed)
+        {
+            noviceCompleted.Remove(source);
+            noviceTank04Known.Remove(source);
+            noviceTank04Pending.Remove(source);
+        }
+        if (destroyed) FateRemoved(source);
+        if (destroyed) TacticalRemoved(source);
+        if (destroyed) SleepOtisRemoved(source);
+        if (destroyed) SlickshellRemoved(source);
+        if (destroyed) maxQuestCompleted.Remove(source);
+        if (destroyed && IsHopeOnTheWaves) hopeActors.Remove(source);
+        fateObservedCasts.Remove(source);
+        if (destroyed) TreasureYanRemoved(source);
+        if (destroyed) TreasureHexRemoved(source, timestamp ?? _now);
+        if (destroyed) TreasureRoomDestroyed(source);
+        if (destroyed) TreasureCreatedCircleDestroyed(source);
+        if (destroyed) TreasureRotationDestroyed(source);
+        if (destroyed) TreasureBeamDestroyed(source);
+        if (destroyed) TreasurePlayerGazeRemoved(source);
+        if (destroyed && IsTreasureNarkissos) treasurePlayerStatuses.Remove(source, timestamp ?? _now);
+        if (destroyed) TreasureMolterRemoved(source);
+        if (IsNativeTreasure)
+        {
+            if (destroyed) TreasureBaitRemoved(source);
+            if (destroyed && treasureCachedBoss?.Id == source) treasureCachedBossRemoved = true;
+            if (destroyed) TreasureCastBaitRemoved(source);
+            if (destroyed) TreasureBuffetRemoved(source);
+            if (destroyed) treasureHydrosphereActors.Remove(source);
+            treasureLightOrder.Remove(source);
+            treasureCurrentCasts.Remove(source);
+            treasureObservedCasts.Remove(source);
+        }
+        if (destroyed) GuildivainRemoved(source);
+        if (destroyed) NodeRemoved(source);
+        if (destroyed) SteelRemoved(source);
+        if (destroyed) IoRemoved(source);
+        if (destroyed) QuestWindRemoved(source);
+        if (destroyed) RhalgrRemoved(source);
+        if (destroyed) EndwalkerQuestRemoved(source);
+        mainScenarioCastOrder.Remove(source);
+        if (IsViper && source == viperGowrow && destroyed) viperGowrowRemoved = true;
+        if (IsViper && source == viperPrimary && destroyed) viperPrimary = 0;
+        if (IsPortrait && _casts.TryGetValue(source, out var portraitCast))
+            PortraitFinish(portraitCast);
+        portraitFlowers.Remove(source);
+        if (destroyed) portraitFlowerEvents.Remove(source);
+        portraitStarted.Remove(source);
+        arashiStarted.Remove(source);
+        if (destroyed) JobQuestPartyRemoved(source);
+        if (destroyed) FallenObserve(source);
+        if (destroyed) GraoullyStatus(source, 904, false);
+        if (destroyed && territory == HeavenswardIntroCatalog.REGULA_VITH && questTerminusIds.Remove(source))
+            questTerminusActive = false;
         regulaDetonating.Remove(source);
         CoilRemoved(source);
         ShinryuRemoved(source);
         YojimboRemoved(source);
         if (_casts.TryGetValue(source, out var endingCast))
         {
+            if (IsNativeTreasure)
+            {
+                TreasureSequenceFinish(endingCast, _now);
+                TreasureGymnasionFinish(endingCast, _now);
+                TreasureNarkissosFinish(endingCast);
+                TreasureBitterFinish(endingCast);
+                TreasureFortressFinish(endingCast);
+                TreasureHexFinish(endingCast);
+                TreasureIceFinish(endingCast, _now);
+                TreasureCreatedCircleFinish(endingCast);
+                TreasureVaultGroupFinish(endingCast);
+                TreasureCastBaitFinish(endingCast);
+                TreasureBeamFinish(endingCast);
+                TreasurePlayerGazeFinish(endingCast);
+                TreasureWallKnockbackFinish(endingCast);
+                TreasureBuffetFinish(endingCast);
+                if (endingCast.Rule.Action == 13443) treasureHydrospheres.Clear();
+            }
+            FateFinish(endingCast);
+            TacticalFinish(endingCast);
+            SleepOtisFinish(endingCast);
+            JobQuestPartyFinish(endingCast);
+            BekkoFinish(endingCast);
+            OrcusFinish(endingCast);
+            SageLifeFinish(endingCast);
+            SteelFinish(endingCast);
+            QuestWindFinish(endingCast);
+            HeroesPretendersFinish(endingCast);
+            IseultalonFinish(endingCast);
+            AlphaFinish(endingCast);
+            DikaiosyneFinish(endingCast);
+            BarP3Finish(endingCast);
+            RhalgrFinish(endingCast);
+            EndwalkerQuestFinish(endingCast);
             ByakkoFinish(endingCast);
             SuzakuFinish(endingCast);
             DoomFinish(endingCast);
@@ -1286,8 +2168,19 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         if (akhMorn?.Source == source || akhMorn?.TargetId == source) akhMorn = null;
         if (keeperDisgust?.Source == source) keeperDisgust = null;
         foreach (var key in statusChanges.Keys.Where(k => k.Actor == source).ToArray()) statusChanges.Remove(key);
+        if (IsDivineIntervention && Active != null && !DivinePairAlive)
+        {
+            ResetFight();
+            return;
+        }
+        if (IsJobQuestGroup && !JobQuestGroupAlive)
+        {
+            ResetFight();
+            return;
+        }
         if (source == PrimaryId)
         {
+            if (IsBarPassage || IsCarnivale || IsAlphaAlligator || IsSlickshell || IsHopeOnTheWaves || IsTimeBetween || DivinePairAlive || JobQuestGroupAlive || TreasureGroupAlive) return;
             if (IsCaduceus)
             {
                 if (!CaduceusAlive) ResetFight();
@@ -1361,7 +2254,34 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public void Tick(DateTime now)
     {
+        if (IsThordan)
+        {
+            _now = now;
+            Thordan.Update(now);
+            ThordanPublish();
+            return;
+        }
+        if (IsWickedThunder)
+        {
+            WickedThunder.Update(now);
+            WickedThunderPublish();
+            return;
+        }
+        if (IsKefka)
+        {
+            Kefka.Update(now);
+            KefkaPublish();
+            return;
+        }
+        if (IsQuantum)
+        {
+            Quantum.Update(now);
+            QuantumPublishState();
+            return;
+        }
         _now = now;
+        TreasureFortressUpdate();
+        BarP3Update();
         TickResearch(now);
         TickZot();
         UnderTick(now);
@@ -1386,7 +2306,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         IfritExObserve();
         if (sirenShadow.Count > 0 && sirenShadow[0].Activation < now) { sirenShadow.Clear(); sirenShadowCones = 0; }
         // These sequences advance on observed cast endings, never on elapsed prediction time.
-        foreach (var cast in _casts.Values.Where(c => now >= c.FinishAt.AddSeconds(2) && !IsNativeTrial && !IsHeavenswardIntro && territory != DeadEndsCatalog.TERRITORY
+        foreach (var cast in _casts.Values.Where(c => now >= c.FinishAt.AddSeconds(2) && !UsesObservedCastEnd && territory != DeadEndsCatalog.TERRITORY
             && territory != AlzadaalCatalog.TERRITORY && territory != TroiaCatalog.TERRITORY && territory != LapisCatalog.TERRITORY
             && territory != AetherfontCatalog.TERRITORY && territory != LunarCatalog.TERRITORY && territory != IhuykatumuCatalog.TERRITORY
             && territory != WorqorCatalog.TERRITORY && territory != SkydeepCatalog.TERRITORY && territory != VanguardCatalog.TERRITORY
@@ -1403,14 +2323,120 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             terminusEst.Remove(cast.Source);
             finishedTerminus.Add(cast.Source);
         }
-        foreach (var id in _finished.Where(c => now >= c.Value.EndedAt.AddSeconds(10) || !_actors.ContainsKey(c.Key)).Select(c => c.Key).ToArray()) _finished.Remove(id);
+        foreach (var id in _finished.Keys.Where(id => !_actors.ContainsKey(id)).ToArray()) _finished.Remove(id);
         foreach (var key in _effects.Where(e => now - e.Value > TimeSpan.FromSeconds(10)).Select(e => e.Key).ToArray()) _effects.Remove(key);
     }
 
     public IEnumerable<string> Hints(Vector3? player)
     {
+        if (IsThordan)
+        {
+            foreach (var hint in Thordan.Hints()) yield return hint;
+            yield break;
+        }
+        if (IsWickedThunder)
+        {
+            foreach (var hint in WickedThunder.Hints()) yield return hint;
+            yield break;
+        }
+        if (IsKefka)
+        {
+            foreach (var hint in Kefka.Hints()) yield return hint;
+            yield break;
+        }
+        if (IsQuantum)
+        {
+            foreach (var hint in Quantum.Hints()) yield return hint;
+            yield break;
+        }
+        if (IsHeavenOnHigh && player is { } hohPlayer && HeavenOnHighAoes().Any(a => a.Obstacle
+            && a.Shape.Resolve(a.Position, a.Rotation, null).Contains(hohPlayer, 0)))
+            yield return "GTFO from voidzone!";
+        if (IsHeavenOnHigh && player is { } hohSpawnPlayer && HeavenOnHighSpawnAreas()
+            .Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(hohSpawnPlayer, 0)))
+            yield return "GTFO from aoe!";
+        foreach (var hint in TacticalHints(player)) yield return hint;
+        if (player is { } kenkoPlayer)
+            foreach (var hint in KenkoHints(kenkoPlayer)) yield return hint;
+        foreach (var hint in TreasureWallKnockbackHints()) yield return hint;
+        foreach (var hint in TreasureBuffetHints(player)) yield return hint;
+        if (player is { } kelpiePlayer && TreasureKelpieLandingUnsafe(kelpiePlayer)) yield return "GTFO from aoe!";
+        if (player is { } createdPlayer && TreasureCreatedCircleAoes().Concat(TreasureIceAoes())
+            .Concat(TreasureVaultGroupAoes().Where(a => a.Navigate)).Concat(TreasureBeamAoes()).Concat(TreasureRotationAoes())
+            .Concat(TreasureGymnasionSequenceAoes().Where(a => a.Navigate && a.Display))
+            .Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(createdPlayer, 0)))
+            yield return "GTFO from aoe!";
+        foreach (var hint in TreasureCastBaitHints(player)) yield return hint;
+        if (treasureEarthquake != null) yield return "Raidwide";
+        if (player is { } sequencePlayer && treasureSweepAoes.Any(a =>
+            a.Shape.Resolve(a.Position, a.Rotation, null).Contains(sequencePlayer)))
+            yield return "GTFO from exaflare!";
+        if (player is { } strikePlayer && TreasureSequenceAoes().Where(a => a.Id.StartsWith("treasure/strike/"))
+            .Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(strikePlayer)))
+            yield return "GTFO from aoe!";
+        if (IsNativeTreasure && treasureDelayedHits.Count > 0) yield return "Tankbuster";
+        if (player is { } treasurePosition && (TreasureObstacles().Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(treasurePosition))
+            || TreasureVoidzoneAction != 0 && TrialVoidzoneAoes().Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(treasurePosition))))
+            yield return "GTFO from voidzone!";
+        if (IoStopActivation is { } ioActivation && ioActivation <= _now.AddSeconds(1000))
+            yield return "Stop everything!";
+        if (player is { } jobPosition && NodeAoes().Concat(SteelAoes())
+            .Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(jobPosition)))
+            yield return "GTFO from aoe!";
+        foreach (var hint in JobQuestPartyHints(player)) yield return hint;
+        foreach (var hint in HeroesPretendersHints(player)) yield return hint;
+        foreach (var hint in BarP2Hints(player)) yield return hint;
+        foreach (var hint in BarP3Hints(player)) yield return hint;
+        foreach (var hint in CarnivaleHints(player)) yield return hint;
+        foreach (var hint in AlphaHints(player)) yield return hint;
+        foreach (var hint in IseultalonHints(player)) yield return hint;
+        foreach (var hint in DikaiosyneHints(player)) yield return hint;
+        foreach (var hint in FallenHints(player)) yield return hint;
+        foreach (var hint in SageLifeHints(player)) yield return hint;
+        foreach (var hint in GuildivainHints(player)) yield return hint;
+        foreach (var hint in SleepOtisHints(player)) yield return hint;
+        foreach (var hint in SlickshellHints(player)) yield return hint;
+        foreach (var hint in MaxQuestHints()) yield return hint;
+        foreach (var hint in PalacePlantHints(player)) yield return hint;
+        foreach (var hint in NybethHints(player)) yield return hint;
+        foreach (var hint in GodmotherHints(player)) yield return hint;
+        foreach (var hint in GudannaHints(player)) yield return hint;
+        foreach (var hint in BlackRiderHints(player)) yield return hint;
+        foreach (var hint in YaquaruHints(player)) yield return hint;
+        foreach (var hint in HopeHints()) yield return hint;
+        foreach (var hint in QuestWindHints(player)) yield return hint;
+        foreach (var hint in MainScenarioHints(player)) yield return hint;
+        foreach (var hint in RhalgrHints(player)) yield return hint;
+        foreach (var hint in EndwalkerQuestHints(player)) yield return hint;
+        if (player is { } bekkoPlayer)
+            foreach (var hint in BekkoAoes().Where(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(bekkoPlayer))
+                .Select(a => a.Obstacle ? "GTFO from voidzone!" : "GTFO from aoe!").Distinct())
+                yield return hint;
+        if (player is { } orcusPlayer)
+        {
+            if (OrcusAoes().Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(orcusPlayer)))
+                yield return "GTFO from aoe!";
+            if ((IsOrcus || IsIo) && TrialVoidzoneAoes().Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(orcusPlayer)))
+                yield return "GTFO from voidzone!";
+        }
+        if (player is { } portraitPlayer)
+            foreach (var hint in PortraitHints(portraitPlayer)) yield return hint;
+        if (player is { } samuraiPlayer && SamuraiAoes().Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(samuraiPlayer)))
+            yield return "GTFO from aoe!";
         foreach (var hint in EnemyPressureHints()) yield return hint;
         if (RegulaDetonationHint is { } detonationHint) yield return detonationHint;
+        foreach (var hint in NoviceHints()) yield return hint;
+        foreach (var hint in FateHints(player)) yield return hint;
+        if (TisiphonePrecombatHint is { } precombatHint) yield return precombatHint;
+        foreach (var hint in PalaceSerpentHints(player)) yield return hint;
+        if (player is { } gazePlayer && EddaGazeDanger(gazePlayer)) yield return "Turn away from gaze!";
+        if (player is { } poxPlayer && PalacePoxSources.Any(a => Vector2.DistanceSquared(
+            new(a.Position.X, a.Position.Z), new(poxPlayer.X, poxPlayer.Z)) <= 16))
+            yield return "GTFO from voidzone!";
+        if (player is { } questPlayer && HeavenswardQuestVoidzones.Any(a => Vector2.DistanceSquared(
+            new(a.Position.X, a.Position.Z), new(questPlayer.X, questPlayer.Z))
+            <= (territory == HeavenswardIntroCatalog.ALDYNN ? 16 : 64)))
+            yield return "GTFO from voidzone!";
         foreach (var hint in ArrTrialHints(player)) yield return hint;
         foreach (var hint in PortaHints(player)) yield return hint;
         if (HardTrialCountdown is { } hardCountdown) yield return hardCountdown;
@@ -1483,7 +2509,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
             if (_actors.Values.Any(a => a.PartySlot >= 0 && !a.Dead && HasStatus(a, 18))) yield return "中毒：可驱散";
         }
         if (territory == 1036 && CoralColor != "Resolved") yield return "正确开关：" + CoralColor switch { "Blue" => "蓝", "Red" => "红", "Green" => "绿", _ => "未知" };
-        foreach (var hint in _casts.Values.Select(c => c.Rule.Hint).OfType<string>().Distinct()) yield return hint;
+        foreach (var hint in _casts.Values.Where(BarPassageCastVisible).Where(CarnivaleCastVisible).Select(c => c.Rule.Hint).OfType<string>().Distinct()) yield return hint;
         if (FractalInteractionTarget != null) yield return Active?.BossOid == 0x1013 ? "使用孵化器眩晕首领" : "交互控制单元以继续前进";
         foreach (var cast in _casts.Values.Where(c => Active?.BossOid == 0x1023 && c.Rule.Hint == "打断或眩晕"))
             if (_actors.TryGetValue(cast.Source, out var caster)) yield return $"{caster.Name}：打断或眩晕 {cast.Rule.Name}";
@@ -1578,13 +2604,181 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         if (Active?.BossOid == 0x4B0D && _actors.TryGetValue(PlayerId, out var afflicted)
             && (HasStatus(afflicted, 3779) || HasStatus(afflicted, 3463)))
             yield return "触电/麻痹：可驱散";
-        if (player is { } p && OutputCasts.Any(c => c.Value.Rule.Shape?.Resolve(c.Value.Location, c.Value.Rotation, null).Contains(p) == true)) yield return "离开范围！";
+        if (player is { } cleavePlayer && TreasureCleaveDanger(cleavePlayer)) yield return "GTFO from cleave!";
+        if (TreasureInterruptTargets.Any()) yield return "Interrupt!";
+        var bitterInterrupts = _casts.Values.Where(c => IsNativeTreasure && c.Rule.Action == 43677).ToArray();
+        if (bitterInterrupts.Length == 1 && _actors.GetValueOrDefault(bitterInterrupts[0].Source) is { } bitterCaster)
+            yield return $"Interrupt {bitterCaster.Name}!";
+        else if (bitterInterrupts.Length > 1)
+            yield return "Interrupt!";
+        foreach (var hint in TreasureNarkissosHints()) yield return hint;
+        foreach (var hint in TreasureYanHints()) yield return hint;
+        foreach (var hint in TreasureHexHints()) yield return hint;
+        if (player is { } eurekaPlayer)
+        {
+            foreach (var hint in EurekaTiamatHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaTwintaniaHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaMinotaurHints()) yield return hint;
+            foreach (var hint in EurekaChimeraHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaAeturnaHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaKaliyaHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaAdministratorHints(eurekaPlayer)) yield return hint;
+            foreach (var hint in EurekaExcaliburHints(eurekaPlayer)) yield return hint;
+        }
+        if (TreasureSprintIntent != null) yield return "疾跑接近隐藏目标（9码内）";
+        if (player is { } baitPlayer)
+            foreach (var hint in TreasureBaitHints(baitPlayer)) yield return hint;
+        if (player is { } p && (OutputCasts.Any(c => c.Value.Rule.Shape?.Resolve(c.Value.Location, c.Value.Rotation, null).Contains(p) == true)
+            || TreasureLights().Concat(TreasureOdiousAoes()).Concat(TreasureNarkissosAoes().Where(a => a.Navigate))
+                .Concat(TreasureBitterAoes()).Concat(TreasureFortressAoes().Where(a => a.Navigate))
+                .Any(a => a.Shape.Resolve(a.Position, a.Rotation, null).Contains(p))
+            || EurekaBreathDanger(p)))
+            yield return "离开范围！";
     }
 
     public void ResetFight()
     {
+        if (IsThordan) Thordan.Clear();
+        if (IsWickedThunder) WickedThunder.Clear();
+        if (IsKefka) Kefka.Clear();
+        if (IsQuantum) Quantum.Clear();
+        ResetEurekaOutput();
+        heavenOnHighKnockbacks.Clear();
+        ResetHeavenOnHighSpawns();
+        ResetKenko();
+        ResetNybeth();
+        ResetGodmother();
+        fateStacks.Clear();
+        fateKnockbacks.Clear();
+        fateObservedCasts.Clear();
+        fateEffects.Clear();
+        ResetDaivadipa();
+        ResetFormidable();
+        ResetChi();
+        ResetMica();
+        ResetTtokrrone();
+        ResetTactical();
+        ResetSleepOtis();
+        ResetSlickshell();
+        fateCastBaits.Clear();
+        fateCastBaitId = 0;
+        treasureVaultGroups.Clear();
+        treasureHighVoltage.Clear();
+        ResetTreasureBeams();
+        treasurePlayerGaze = null;
+        treasureIceSequences.Clear();
+        treasureIceId = 0;
+        treasureCreatedCircles.Clear();
+        treasureCreatedCircleActors.Clear();
+        treasureDestroyedCircleActors.Clear();
+        ResetTreasureSequences();
+        ResetTreasureRotations();
+        ResetTreasureGymnasionSequences();
+        ResetTreasureNarkissos();
+        ResetTreasureMolter();
+        treasureBitterPrediction = null;
+        treasureBitterDonut = false;
+        treasureBitterLeapTimes.Clear();
+        ResetTreasureYan();
+        ResetTreasureHex();
+        ResetTreasureFortress();
+        treasureWallKnockbacks.Clear();
+        treasureHydrospheres.Clear();
+        treasureHydrosphereActors.Clear();
+        treasureBuffetBaits.Clear();
+        treasureBuffetIcon = null;
+        treasureBuffetPrimary = null;
+        treasureBuffetPrimaryRemoved = false;
+        treasureDelayedHits.Clear();
+        treasureLightOrder.Clear();
+        treasureBaits.Clear();
+        treasureBaitPrimary = null;
+        treasureBaitPrimaryRemoved = false;
+        treasureBaitStarts = 0;
+        treasureCachedBoss = null;
+        treasureCachedBossRemoved = false;
+        treasureCastBaits.Clear();
+        treasureCastBaitCurrent.Clear();
+        treasureCastBaitId = 0;
+        treasureEffects.Clear();
+        treasureCurrentCasts.Clear();
+        treasureObservedCasts.Clear();
+        treasureParty = [];
+        treasureOdious = null;
+        treasureOdiousHits = 0;
         Active = null; PrimaryId = 0; Arena = null;
+        ResetPortrait();
+        arashiActivation = null;
+        arashiResolvedAt = default;
+        arashiStarted.Clear();
+        jobQuestNpcSlots.Clear();
+        jobQuestStacks.Clear();
+        jobQuestSpreads.Clear();
+        jobQuestPartyStarted.Clear();
+        treasureMissingStackTargets.Clear();
+        bekkoRings.Clear();
+        bekkoStarted.Clear();
+        bekkoYukikaze.Clear();
+        bekkoRingId = 0;
+        orcusRings.Clear();
+        orcusStarted.Clear();
+        orcusRingId = 0;
+        fallenSpreads.Clear();
+        fallenStacks.Clear();
+        fallenMarkId = 0;
+        sageRocks.Clear();
+        sageRockStarted.Clear();
+        sageTowers.Clear();
+        sageRockId = 0;
+        guildivainBaits.Clear();
+        guildivainTethers.Clear();
+        guildivainObservedTethers.Clear();
+        guildivainStates.Clear();
+        guildivainActivation = default;
+        guildivainBaitId = 0;
+        guildivainInitialized = false;
+        nodeExplosives.Clear();
+        nodeObjects.Clear();
+        nodeExplosiveId = 0;
+        steelSwords.Clear();
+        steelObjects.Clear();
+        steelBolts.Clear();
+        steelBoltStarted.Clear();
+        steelObjectId = 0;
+        steelCasting = false;
+        ioCaution.Clear();
+        ioDeadCaution.Clear();
+        questWindStarted.Clear();
+        questWindObserved.Clear();
+        mainScenarioCastOrder.Clear();
+        hopeDetonators.Clear();
+        ResetTimeBetween();
+        ResetHeroesPretenders();
+        ResetIseultalon();
+        ResetAlpha();
+        ResetBarPassage();
+        ResetDikaiosyne();
+        frostyLockPredictions.Clear();
+        frostyLockCasts.Clear();
+        frostyLockKnown.Clear();
+        endwalkerCharges.Clear();
+        frostyLockKey = 0;
+        rhalgrTermini.Clear();
+        rhalgrKnown.Clear();
+        rhalgrTerminusKey = 0;
+        rhalgrTerminusActivation = null;
+        rhalgrGunblade = null;
+        rhalgrStarted.Clear();
+        foxshotBaits.Clear();
+        questWindKnockback = null;
         regulaDetonating.Clear();
+        questTerminusActive = false;
+        questTerminusIds.Clear();
+        palaceSerpentHits = 0;
+        graoullyPrey = 0;
+        graoullyObservedPrey.Clear();
+        graoullyPartners.Clear();
+        graoullyIce.Clear();
         glowingPlatform = 0;
         sandPillars.Clear(); orbs.Clear(); detonatedOrbs.Clear(); orbTarget = 0;
         typhoons.Clear(); finishedTyphoons.Clear(); touchdown = null;
@@ -1704,6 +2898,45 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
         ResetGauntlet();
         trialVoidzones.Clear(); trialVoidzoneKey = 0;
         portaParty.Clear();
+        carnivaleUnobservedEnds.Clear();
+        foreach (var module in carnivaleModules)
+        {
+            module.Interrupts.Clear();
+            module.LastSongs.Clear();
+            module.LastSongCasting = false;
+            module.LastSongNeedsBootstrap = false;
+            module.Ballasts.Clear();
+            module.BallastVisuals.Clear();
+            module.BallastNeedsBootstrap = false;
+            module.Charges.Clear();
+            module.ChargeKegs.Clear();
+            module.ChargeInputs.Clear();
+            module.ChargeKnockback = null;
+            module.ChargeNeedsBootstrap = false;
+            module.ChargeImmunity.Clear();
+            module.VoidzoneNeedsBootstrap = false;
+            module.PuddingNeedsBootstrap = false;
+            module.VoltageNeedsBootstrap = false;
+            module.Voltages.Clear();
+            if (module.Eyes != null) module.Eyes = new();
+            module.PitNeedsBootstrap = false;
+            module.SapNeedsBootstrap = false;
+            module.Saps.Clear();
+            module.ChimeraNeedsBootstrap = false;
+            module.TyphonNeedsBootstrap = false;
+            module.CastKnockbacks.Clear();
+            module.TyphonFireballs.Clear();
+            module.ImpSongHint = "Interrupt!";
+            module.RebekkahNeedsBootstrap = false;
+            module.ReflectCast = null;
+            module.ReflectCasting = false;
+            module.ReflectActive = false;
+            module.BlindTrigger = null;
+            module.BlindCasting = false;
+            module.Blindness.Clear();
+            module.RayCasts.Clear();
+            module.RayPredictions.Clear();
+        }
         _casts.Clear(); _finished.Clear(); _effects.Clear(); _ripples.Clear(); _missingRotation.Clear(); sequences.Clear(); statusChanges.Clear();
     }
 

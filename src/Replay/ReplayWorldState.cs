@@ -4,6 +4,8 @@ namespace MasterPlayer.Replay;
 
 public sealed record ReplayStatus(uint Id, ushort Param, ulong SourceId, DateTime ExpiresAt)
 {
+    public int? SlotIndex { get; init; }
+    public bool? ZeroRemainingTime { get; init; }
     internal static DateTime Expiration(DateTime now, float remaining)
         => !float.IsFinite(remaining) || remaining == 0 ? DateTime.MaxValue
             : now.AddSeconds(Math.Min(MathF.Abs(remaining), 100000f));
@@ -12,9 +14,13 @@ public sealed record ReplayCast(uint ActionId, ulong TargetId, Vector3 Location,
     DateTime StartedAt, DateTime FinishAt, bool Interruptible, bool EffectSeen)
 {
     public float? TotalTime { get; init; }
+    public bool? IsSpell { get; init; }
 }
 public sealed record ReplayPartyMember(int Slot, string Role, ulong EntityId);
-public sealed record ReplayTether(ushort Id, ulong TargetId, byte Progress = 0);
+public sealed record ReplayTether(ushort Id, ulong TargetId, byte Progress = 0)
+{
+    public int? SlotIndex { get; init; }
+}
 public sealed record ReplayCastData(float? PacketFacing);
 
 public sealed record ReplayActorState
@@ -24,9 +30,11 @@ public sealed record ReplayActorState
     public uint EntityId { get; init; }
     public uint Oid { get; init; }
     public uint NameId { get; init; }
+    public uint? FateId { get; init; }
     public string Name { get; init; } = "";
     public byte Kind { get; init; }
     public byte SubKind { get; init; }
+    public ushort? ObjectIndex { get; init; }
     public ulong OwnerId { get; init; }
     public Vector3 Position { get; init; }
     public float Rotation { get; init; }
@@ -36,6 +44,7 @@ public sealed record ReplayActorState
     public bool InCombat { get; init; }
     public bool AggroPlayer { get; init; }
     public bool Hostile { get; init; }
+    public bool? IsEnemy { get; init; }
     public ulong TargetId { get; init; }
     public byte Level { get; init; }
     public uint ClassJob { get; init; }
@@ -67,10 +76,12 @@ public sealed record ReplayWorldFrame
     public bool Full { get; init; }
     public ushort Territory { get; init; }
     public ulong LocalPlayerId { get; init; }
+    public ulong? SourcePlayerId { get; init; }
     public ulong TargetId { get; init; }
     public string LocalTimelineRole { get; init; } = "None";
     public bool LegacyMovement { get; init; }
     public float? CameraAzimuth { get; init; }
+    public uint? AllowedFateId { get; init; }
     public ulong DutyActionPlayerId { get; init; }
     public ReplayDutyAction[]? DutyActions { get; init; }
     public ReplayDeepDungeonState? DeepDungeon { get; init; }
@@ -102,10 +113,12 @@ public sealed class ReplayWorldState
     public DateTime CurrentTime { get; internal set; }
     public ushort Territory { get; internal set; }
     public ulong LocalPlayerId { get; private set; }
+    public ulong? SourcePlayerId { get; private set; }
     public ulong TargetId { get; private set; }
     public string LocalTimelineRole { get; private set; } = "None";
     public bool LegacyMovement { get; private set; }
     public float? CameraAzimuth { get; private set; }
+    public uint? AllowedFateId { get; private set; }
     public ulong DutyActionPlayerId { get; private set; }
     public IReadOnlyList<ReplayDutyAction>? DutyActions { get; private set; }
     public ReplayDeepDungeonState? DeepDungeon { get; private set; }
@@ -121,10 +134,12 @@ public sealed class ReplayWorldState
         foreach (var actor in frame.Actors) _actors[actor.Id] = actor;
         Territory = frame.Territory;
         LocalPlayerId = frame.LocalPlayerId;
+        SourcePlayerId = frame.SourcePlayerId;
         TargetId = frame.TargetId;
         LocalTimelineRole = frame.LocalTimelineRole;
         LegacyMovement = frame.LegacyMovement;
         CameraAzimuth = frame.CameraAzimuth;
+        AllowedFateId = frame.AllowedFateId;
         DutyActionPlayerId = frame.DutyActionPlayerId;
         DutyActions = frame.DutyActions;
         DeepDungeon = frame.DeepDungeon;

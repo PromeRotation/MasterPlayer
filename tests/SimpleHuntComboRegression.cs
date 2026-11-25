@@ -180,10 +180,12 @@ internal static class SimpleHuntComboRegression
         grassman.Synchronize([grassBoss], _ => true);
         grassman.Start(1, first with { Rotation = .1f }, true);
         grassman.Synchronize([grassBoss with { Cast = first with { Rotation = .1f } }], _ => true);
-        Check(grassman.Hints(null).Single() == "Raidwide",
-            "An observation catching up with a same-generation packet correction counted a phantom first finish.");
+        Check(grassman.Hints(null).Single() == "Raidwide x5",
+            "Actual changed CastInfo catching up with a packet failed the source Finish -> Start transition.");
         grassman.Finish(1, 17859);
-        Check(!grassman.Hints(null).Any(), "The actual first finish retained a phantom subsequent thump.");
+        Check(grassman.Hints(null).Single() == "Raidwide x5", "Restarted thump ended before its four effect hits.");
+        for (uint i = 0; i < 4; ++i) grassman.Effect(1, 17863, Start.AddSeconds(10 + i), i + 1);
+        Check(!grassman.Hints(null).Any(), "Restarted thump retained its hint after all real effects.");
     }
 
     private static void FanAil()
@@ -212,7 +214,7 @@ internal static class SimpleHuntComboRegression
     private static IGeometryShape Shape(HuntPendingCast area) => area.Shape!.Resolve(area.Location, area.Rotation, null);
     private static ReplayCast Cast(uint action, double seconds) => new(action, 0, Vector3.Zero, 0, Start, Start.AddSeconds(seconds + .3), false, false);
     private static ReplayActorState Boss(ulong id, uint oid, ReplayCast? cast)
-        => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new Exception(message);

@@ -116,7 +116,7 @@ internal static class SimpleHuntSequenceRegression
     }
 
     private static ReplayActorState Boss(ulong id, uint oid, ReplayCast? cast)
-        => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
 
     private static void Check(bool condition, string message)
     {

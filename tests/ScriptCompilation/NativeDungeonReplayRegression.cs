@@ -1008,6 +1008,67 @@ internal static partial class NativeDungeonReplayRegression
         RunDarkness((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunArrQuests((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunHeavenswardIntro((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalacePlants((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceNybeth((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceGodmother((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceGudanna((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceBlackRider((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceYaquaru((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureGeometry((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasurePredictions((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureDelay((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureLights((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureOubliettes((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureRoster((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureBull((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureGymnasion((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureTritonSampling((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureSphinx((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureAltars((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasurePersistent((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureBaits((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureFuathGargantuan((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureSequences((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureVaultTrio((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureLyhe((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureCanalsLucky((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureAltarWall((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureAltarWater((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureCenoteRooms((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureIceBubble((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureGymnasionTrio((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureVaultFour((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureKeeperDaen((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureCladoTyphon((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureGymnasionHammers((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureNarkissos((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureMolter((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureFlowers((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureFortress((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureYan((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTreasureHexapod((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHeavenswardQuests((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTisiphone((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPalaceSerpents((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDivineIntervention((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunGraoully((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunQuestTargets((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunJobQuests((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPortrait((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunViperSamurai((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBekkoOrcus((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunFallenKuribu((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunSageLife((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunIoSteelNode((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunQuestWinds((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunMainScenario((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunFaded((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunFeast((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunRhalgr((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunEndwalkerQuests((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunQuestParty((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FFXIV_SQPACK")))
+            RunHeavenswardFloor((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunUltimaExtreme((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunGarudaExtreme((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunTitanExtreme((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
@@ -1030,29 +1091,77 @@ internal static partial class NativeDungeonReplayRegression
         RunHuntStack((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunHuntMarch((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunHuntExecution((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntTarchia((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntRecordedTurns((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntForecast((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntKirlirger((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntTyger((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntCatsEye((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntQueenHawk((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntRaintriller((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntKer((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntGunitt((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntAtticus((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntHeshuala((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntIhnuxokiy((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntNeyoozoteel((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntNechuciho((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntOwnerInitialization((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntPedantry((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntIxtab((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntSlippery((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntRebellion((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntSugriva((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntFinalTrio((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHuntAglaope((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunNovice((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunFates((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDaivadipa((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunNoviceTank04((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunFormidable((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunChiMica((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTtokrrone((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTactical((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunSleepOtis((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunSlickshell((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunMax((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHope((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunTime((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHeroesPretenders((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunIseultalonDikaiosyne((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunAlphaCarnivale((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHeavenOnHigh((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHeavenOnHighFloors((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunEurekaFloors((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPilgrimsFloors((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunEurekaOrthos((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunQuantum((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunKefka((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunThordan((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBarPassageP2((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
     }
 
     private static string Header(uint territory)
         => JsonSerializer.Serialize(new { v = 2, territory, startedUtc = Start, pluginVersion = "native-dungeon-synthetic-regression" });
 
     private static string Frame(uint territory, double t, IEnumerable<object> actors, bool full = false, ulong[]? removed = null, object[]? party = null,
-        bool legacyMovement = false, float? cameraAzimuth = null)
+        bool legacyMovement = false, float? cameraAzimuth = null, ulong? sourcePlayerId = null, uint? allowedFateId = null)
         => JsonSerializer.Serialize(new { t, kind = "WorldFrame", data = new { Full = full, Territory = territory, LocalPlayerId = 100,
-            LegacyMovement = legacyMovement, CameraAzimuth = cameraAzimuth,
+            LegacyMovement = legacyMovement, CameraAzimuth = cameraAzimuth, SourcePlayerId = sourcePlayerId, AllowedFateId = allowedFateId,
             Actors = actors.ToArray(), Removed = removed ?? [], Party = party ?? [] } });
 
     private static object Actor(ulong id, uint oid, Vector3 position, bool combat = false, object? cast = null, bool shield = false,
         bool doom = false, int? renderFlags = null, bool invincible = false, uint stackedStatus = 0, float rotation = 0,
         float hitboxRadius = .5f, byte eventState = 0, byte animationState1 = 0, uint? eventAnimation = null, uint classJob = 0, byte modelState = 0,
         bool targetable = true, ulong targetId = 0, object[]? tethers = null, ushort statusParam = 3, bool dead = false, DateTime? statusExpiresAt = null,
-        uint nameId = 0, byte animationState2 = 0, byte subKind = 0)
+        uint nameId = 0, byte animationState2 = 0, byte subKind = 0, ushort? objectIndex = null, bool? isEnemy = null)
     {
         var statuses = new List<object>();
         if (shield) statuses.Add(new { Id = 4175, ExpiresAt = Start.AddSeconds(30) });
         if (doom) statuses.Add(new { Id = 5187, ExpiresAt = Start.AddSeconds(30) });
         if (invincible) statuses.Add(new { Id = 4410, ExpiresAt = Start.AddSeconds(30) });
         if (stackedStatus != 0) statuses.Add(new { Id = stackedStatus, Param = statusParam, ExpiresAt = statusExpiresAt ?? Start.AddSeconds(30) });
-        return new { Id = id, Oid = oid, Kind = oid == 0 ? 1 : 2, SubKind = subKind, Position = Pose(position),
+        return new { Id = id, Oid = oid, Kind = oid == 0 ? 1 : 2, SubKind = subKind, ObjectIndex = objectIndex, IsEnemy = isEnemy, Position = Pose(position),
             Hp = dead ? 0 : 1000, MaxHp = 1000, Dead = dead, Targetable = targetable, TargetId = targetId, InCombat = combat, Hostile = oid != 0, Cast = cast,
             Rotation = rotation, HitboxRadius = hitboxRadius, EventState = eventState, RenderFlags = renderFlags,
             AnimationState1 = animationState1, AnimationState2 = animationState2, EventAnimation = eventAnimation, ClassJob = classJob, ModelState = modelState, NameId = nameId, Statuses = statuses.ToArray(), Tethers = tethers ?? [] };
@@ -1062,9 +1171,9 @@ internal static partial class NativeDungeonReplayRegression
         => new { ActionId = action, TargetId = target, Location = Pose(position), Rotation = rotation, StartedAt = Start.AddSeconds(startedAt),
             FinishAt = Start.AddSeconds(startedAt + seconds + .3) };
 
-    private static string CastEvent(double t, ulong source, uint action, double seconds, Vector3 position, float rotation = 0)
+    private static string CastEvent(double t, ulong source, uint action, double seconds, Vector3 position, float rotation = 0, ulong target = 0)
         => JsonSerializer.Serialize(new { t, kind = "CastStart", type = "PromeRotation.LogSystem.LogSystemCastStartEvent", packetFacing = rotation,
-            data = new { SourceId = source, ActionId = action, CastTime = seconds, EffectPosition = Pose(position), Timestamp = Start.AddSeconds(t) } });
+            data = new { SourceId = source, TargetId = target, ActionId = action, CastTime = seconds, EffectPosition = Pose(position), Timestamp = Start.AddSeconds(t) } });
 
     private static string EffectEvent(double t, ulong source, uint action, uint sequence, Vector3? position = null, float? rotation = null, ulong target = 0)
         => JsonSerializer.Serialize(new { t, kind = "ActionEffect", type = "PromeRotation.LogSystem.LogSystemActionEffectEvent",

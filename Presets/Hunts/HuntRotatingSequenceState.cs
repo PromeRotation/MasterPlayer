@@ -42,14 +42,14 @@ internal sealed class HuntRotatingSequenceState
 
     internal void Correct(HuntPendingCast previous, HuntPendingCast updated)
     {
-        var unadvanced = queue.Any(item => item.Input == previous.Input && item.Stage == 0);
+        var unadvanced = queue.Any(item => item.Order == previous.Order && item.Stage == 0);
         for (var i = 0; i < queue.Count; ++i)
         {
             var item = queue[i];
-            if (item.Input != previous.Input) continue;
+            if (item.Order != previous.Order) continue;
             queue[i] = item with
             {
-                Input = updated.Input, Location = updated.Location, Rotation = item.Rotation + updated.Rotation - previous.Rotation,
+                Input = updated.Input, Order = updated.Order, Location = updated.Location, Rotation = item.Rotation + updated.Rotation - previous.Rotation,
                 Activation = unadvanced ? updated.Activation.AddSeconds((Sugaar(item.Rule.Action) ? (double)1.1f : 0)
                     + Interval(item.Rule.Action) * item.Stage) : item.Activation
             };

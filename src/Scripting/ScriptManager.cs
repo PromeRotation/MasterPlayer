@@ -17,6 +17,9 @@ public sealed class ScriptManager : IDisposable
 
     public IReadOnlyDictionary<string, RunningScript> Running => _running;
 
+    public ScriptTimeline? CurrentTimeline
+        => _running.Values.Select(r => r.Script.GetTimeline()).FirstOrDefault(t => t != null);
+
     public string StatusMessage { get; private set; } = "未加载脚本。";
 
     public string ErrorMessage { get; private set; } = "";
@@ -608,6 +611,7 @@ public sealed class ScriptManager : IDisposable
         => IsGenericDodgeSuppressed(cast.ActionId)
            || _running.Values.Any(r => r.Script is VisualMechanicScript script && script.SuppressesGenericDodge(cast)
                 || r.Script is Mechanics.PalaceOfTheDead.PalaceScript palace && palace.HandlesCast(cast)
+                || r.Script is Mechanics.DeepDungeon.DeepDungeonFloorScript floor && floor.HandlesCast(cast)
                 || r.Script is Mechanics.Hunts.SimpleHuntScript hunt && hunt.HandlesCast(cast)
                  || r.Script is Mechanics.Dungeons.DungeonScript dungeon && dungeon.HandlesCast(cast));
 

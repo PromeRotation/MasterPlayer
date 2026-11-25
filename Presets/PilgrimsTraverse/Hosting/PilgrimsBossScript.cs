@@ -27,6 +27,12 @@ public abstract class PilgrimsBossScript(int floor) : MasterPlayerScript
     private DateTime nextScan;
     private bool suspended;
     public bool EncounterActive => encounter.Active;
+    internal bool ObserveFloorBoss(DateTime now)
+    {
+        Scan(now);
+        Render(now);
+        return EncounterActive;
+    }
     public int DangerCount => output.Values.Count(v => !v.Area.Safe && !v.Area.PreviewOnly && !v.Area.Obstacle);
     public bool TargetControlActive => floor is 10 or 40 or 99 && !suspended && encounter.Active && !IsReplay && ReplayWorld == null
         && CurrentPlayer is { Dead: false } player && encounter.Boundary.Contains(player.Position);

@@ -2,6 +2,8 @@ using System.Runtime.CompilerServices;
 using MasterPlayer.Settings;
 using PromeRotation.Spatial.Drawing;
 using PromeRotation.Spatial.Drawing.Renderers;
+using System.Numerics;
+using MasterPlayer.Spatial.Terrain;
 
 namespace MasterPlayer.Drawing;
 
@@ -12,6 +14,7 @@ internal sealed class WorldDrawing : IDrawRenderer, IDisposable
     private readonly ImGuiRenderer imGui = new();
     private readonly DxRenderer dx;
     private readonly DrawDispatcher dispatcher;
+    private readonly GroundSceneController ground = new(new NativeTerrainSceneSource());
     private bool renderedDirectX;
     private bool disposed;
 
@@ -22,6 +25,17 @@ internal sealed class WorldDrawing : IDrawRenderer, IDisposable
         ? dx.Status + (dx.IsAvailable ? "" : "；当前使用 ImGui 绘制")
         : "ImGui 绘制";
     internal string UiMaskStatus => dx.UiMaskStatus;
+    internal string GroundStatus => PlayerPerspective.IsReplay
+        ? "回放使用录像坐标，不采集当前游戏地表"
+        : $"{ground.Status}；当前贴地 {dx.GroundedItems} 个范围";
+
+    internal void UpdateGround(Vector3? position, ushort territory, (nint Director, byte Floor, byte Layout) layout)
+    {
+        var active = settings.WorldDrawingMode == WorldDrawingMode.DirectX && settings.DxGroundProjection
+            && !PlayerPerspective.IsReplay && DateTime.UtcNow <= dx.GroundRequestedUntil;
+        ground.Update(active ? position : null, territory, layout, DateTime.UtcNow);
+        dx.Ground = ground.Current;
+    }
 
     internal WorldDrawing(MasterPlayerSettings settings)
     {
@@ -81,6 +95,7 @@ internal sealed class WorldDrawing : IDrawRenderer, IDisposable
         disposed = true;
         dispatcher.Dispose();
         Manager.Dispose();
+        ground.Dispose();
         dx.Dispose();
     }
 }

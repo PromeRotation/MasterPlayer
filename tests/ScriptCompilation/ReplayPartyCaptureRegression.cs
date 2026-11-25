@@ -72,6 +72,20 @@ internal static class ReplayPartyCaptureRegression
             Check(Capture().Length == 2, "Small-group alliance was treated as the source's regular 8..23 slots.");
             manager->MainGroup.AllianceFlags = 0;
             Check(Capture().Length == 2, "Non-alliance read stale alliance slots.");
+            manager->MainGroup.MemberCount = 3;
+            manager->MainGroup.PartyMembers[0].EntityId = 100;
+            manager->MainGroup.PartyMembers[1].EntityId = 101;
+            manager->MainGroup.PartyMembers[2].EntityId = 102;
+            Check(Capture().SequenceEqual(new (int, ulong)[] { (0, 100), (2, 101), (1, 102) }),
+                "Roster member without an actor was lost or replaced a resolved PR priority slot.");
+            manager->MainGroup.MemberCount = 2;
+            Check(Capture().Length == 2, "Removed roster member was retained from stale native memory.");
+            manager->ReplayGroup.MemberCount = 1;
+            manager->ReplayGroup.PartyMembers[0].EntityId = 103;
+            replay = true;
+            Check(Capture().SequenceEqual(new (int, ulong)[] { (0, 100), (2, 101), (1, 103), (8, 300) }),
+                "ARR missing-actor roster read MainGroup instead of ReplayGroup.");
+            replay = false;
             address = 0;
             Check(Capture().Length == 2, "Zero GroupManager address lost the own party.");
             Service("Party", null);
@@ -85,7 +99,7 @@ internal static class ReplayPartyCaptureRegression
             adjusted.SetValue(null, oldAdjusted);
             NativeMemory.Free(manager);
         }
-        Console.WriteLine("PASS production party capture: PR priority slots, alliance 8..23/holes/Flags/dedup, no object/name lookup, ARR ReplayGroup, small-group exclusion, zero/null services and restoration");
+        Console.WriteLine("PASS production party capture: PR priority slots, missing-actor native roster/member removal, alliance 8..23/holes/Flags/dedup, no object/name lookup, ARR ReplayGroup, small-group exclusion, zero/null services and restoration");
     }
 
     private static void Check(bool condition, string message)

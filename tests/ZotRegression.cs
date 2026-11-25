@@ -165,6 +165,7 @@ internal static class ZotRegression
                 Solve(f, p => Vector3.Distance(p, f.Actors[101].Position) <= (own ? 2.5f : 5));
                 Check(f.Draw.Previews.Count == 1 && f.Draw.Previews.Single().Value.Safe, "Stack display differs.");
                 f.Engine.Finish(10); f.Render();
+                f.Now = f.Now.AddMilliseconds(100);
                 Cast(f, 10, 25265, 100);
                 Check(f.Engine.AmbientAoes().Any(a => a.Id.StartsWith("party/separate/")) && f.Draw.Previews.Count == 1, "Own spread does not avoid others.");
                 f.Engine.Finish(10); f.Render();

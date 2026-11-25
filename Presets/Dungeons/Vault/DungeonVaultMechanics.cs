@@ -15,8 +15,28 @@ internal sealed partial class DungeonEncounter
     private readonly Dictionary<ulong, ulong> holyChains = [];
     private readonly Dictionary<ulong, DateTime> holyChainEvents = [];
 
-    public void ObjectCreated(ulong source, DateTime timestamp)
+    public void ObjectCreated(ulong source, DateTime timestamp, uint oid = 0, Vector3? position = null, float rotation = 0)
     {
+        if (IsNativeFate && position is { } fatePosition)
+            FateCreated(source, oid, fatePosition, rotation);
+        if ((IsSleep || IsOtis) && MainScenarioQuestCatalog.Owns(territory, oid)) sleepOtisCompleted.Remove(source);
+        SlickshellCreated(source, oid);
+        if (IsMaxQuest && oid == 0x252B) maxQuestCompleted.Remove(source);
+        if (IsHopeOnTheWaves) hopeActors.Remove(source);
+        TreasureRoomCreated(source, oid);
+        TreasureYanCreateEvent(source, oid, position, rotation);
+        if (position is { } minePosition) TreasureHexMineCreated(source, oid, minePosition, createEvent: true);
+        TreasureRotationCreated(source, oid, rotation);
+        if (position is { } hydrospherePosition) TreasureHydrosphereCreated(source, oid, hydrospherePosition);
+        if (position is { } circlePosition) TreasureCreatedCircle(source, oid, circlePosition);
+        if (position is { } beamPosition) TreasureBeamCreated(source, oid, beamPosition, rotation);
+        if (position is { } jobPosition && Active != null && (IsSummoningNode || IsSteel))
+        {
+            var actor = _actors.GetValueOrDefault(source) ?? new DungeonActor(source, oid, jobPosition, Rotation: rotation);
+            NodeCreated(actor);
+            SteelCreated(actor);
+        }
+        PortraitCreated(source, oid, position, rotation);
         WhorlCreated(source, timestamp);
         YojimboCreated(source, timestamp);
         SeiryuCreated(source, timestamp);

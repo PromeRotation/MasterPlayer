@@ -69,7 +69,7 @@ internal static class SimpleHuntPullRegression
                 "Sugaar lost its initial direction, two risky previews, colors or float-derived clock.");
             var firstId = first[0].AreaId;
             encounter.Start(1, cast with { Rotation = .2f }, true);
-            encounter.Synchronize([boss with { Cast = cast with { Rotation = .2f } }], _ => true);
+            encounter.Synchronize([boss], _ => true);
             Check(encounter.Areas.Count(a => a.Shape != null) == 2
                 && encounter.Areas.Any(a => a.AreaId == firstId && Near(a.Rotation, initial + .2f)),
                 "Sugaar packet correction/observation duplicated its sequence or reset identity.");
@@ -149,7 +149,7 @@ internal static class SimpleHuntPullRegression
     private static ReplayCast Cast(uint action, double start = 0)
         => new(action, 1, Vector3.Zero, 0, Start.AddSeconds(start), Start.AddSeconds(start + 5.3), true, false) { TotalTime = 5 };
     private static ReplayActorState Boss(ulong id, uint oid, ReplayCast? cast)
-        => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);

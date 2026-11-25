@@ -9,12 +9,20 @@
   <ItemGroup>
     <Compile Include="../../src/UI/WorldDrawing/*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../src/Core/Settings/WorldDrawingMode.cs" Link="Production/WorldDrawingMode.cs" />
+    <Compile Include="../../src/Spatial/Terrain/ITerrainSceneSource.cs" Link="Production/ITerrainSceneSource.cs" />
+    <Compile Include="../../src/Spatial/Terrain/NativeTerrainSceneSource.cs" Link="Production/NativeTerrainSceneSource.cs" />
+    <Compile Include="../../src/Spatial/Terrain/TerrainSceneSnapshot.cs" Link="Production/TerrainSceneSnapshot.cs" />
+    <Compile Include="../../src/Spatial/Terrain/TerrainMeshAsset.cs" Link="Production/TerrainMeshAsset.cs" />
+    <Compile Include="../../src/Spatial/Terrain/TerrainMesh.cs" Link="Production/TerrainMesh.cs" />
+    <Compile Include="../../src/Spatial/Terrain/TerrainPrimitives.cs" Link="Production/TerrainPrimitives.cs" />
+    <Compile Include="../../src/Spatial/Terrain/TerrainCaptureDiagnostics.cs" Link="Production/TerrainCaptureDiagnostics.cs" />
     <EmbeddedResource Include="../../src/UI/WorldDrawing/DrawPlus.hlsl" LogicalName="MasterPlayer.Drawing.DrawPlus.hlsl" />
     <Reference Include="PromeRotation" HintPath="$(PromeRotationPath)\PromeRotation.dll" />
     <Reference Include="ECommons" HintPath="$(PromeRotationPath)\ECommons.dll" />
     <Reference Include="Dalamud" HintPath="$(DalamudRoot)\Dalamud.dll" />
     <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(DalamudRoot)\Dalamud.Bindings.ImGui.dll" />
     <Reference Include="FFXIVClientStructs" HintPath="$(DalamudRoot)\FFXIVClientStructs.dll" />
+    <Reference Include="InteropGenerator.Runtime" HintPath="$(DalamudRoot)\InteropGenerator.Runtime.dll" />
     <Reference Include="TerraFX.Interop.Windows" HintPath="$(DalamudRoot)\TerraFX.Interop.Windows.dll" />
   </ItemGroup>
 </Project>

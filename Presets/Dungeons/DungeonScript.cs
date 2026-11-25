@@ -12,6 +12,8 @@ using PromeRotation.Helpers;
 using PromeRotation.Updaters;
 using NativeBattleChara = FFXIVClientStructs.FFXIV.Client.Game.Character.BattleChara;
 using NativeGameObject = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
+using NativeActionManager = FFXIVClientStructs.FFXIV.Client.Game.ActionManager;
+using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
 namespace MasterPlayer.Mechanics.Dungeons;
 
@@ -21,9 +23,10 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
     private DungeonOutput? _output;
     private DungeonEventAdapter? _events;
     private readonly Dictionary<string, DateTime> _messages = [];
+    private string? previousPrecombatHint;
     private DateTime _nextScan;
     private bool _suspended;
-    private long _replayVersion;
+    private long _replayVersion = -1;
     private readonly DungeonObjectInteraction fruitInteraction = new();
     private DateTime nextSlimeCleanse;
     private DateTime nextSirenImmunity;
@@ -38,15 +41,54 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
     private readonly CaduceusJumpControl caduceusJump = new();
     private readonly DungeonActionControl twintaniaActions = new();
     public bool EncounterActive => _encounter?.Active != null;
-    public bool PreservesTerritoryMechanics => HeavenswardIntroCatalog.IsTerritory(territory);
+    public override ScriptTimeline? GetTimeline()
+        => !_suspended && _encounter is { IsThordan: true, Active: not null }
+            ? _encounter.Thordan.Timeline.Capture(CurrentTime) : null;
+    internal bool ObservePalaceBoss(DateTime now)
+    {
+        if (!MasterPlayer.Mechanics.PalaceOfTheDead.PalaceCatalog.IsEarlyTerritory(territory)) return false;
+        // The floor layer can observe before this script's scheduled update.
+        // Publish the corresponding output here too; otherwise Scan advances
+        // its throttle and the later update would skip Boss rendering/cleanup.
+        Scan(now);
+        Render(now);
+        return EncounterActive;
+    }
+    internal bool ObserveHeavenOnHighBoss(DateTime now)
+        => ObserveDeepDungeonBoss(now, 2);
+
+    internal bool ObserveDeepDungeonBoss(DateTime now, byte dungeonId)
+    {
+        if (!(dungeonId == 2 ? HeavenOnHighCatalog.IsTerritory(territory)
+            : dungeonId == 3 && EurekaOrthosCatalog.IsTerritory(territory))) return false;
+        Scan(now);
+        Render(now);
+        return EncounterActive;
+    }
+    public bool PreservesTerritoryMechanics => HeavenswardIntroCatalog.IsTerritory(territory) || JobQuestCatalog.IsTerritory(territory) || MainScenarioQuestCatalog.IsTerritory(territory)
+        || NativeTreasureCatalog.IsTerritory(territory) || NoviceCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory) || HeavenOnHighCatalog.IsTerritory(territory) || (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY;
 
     internal bool HandlesCast(LogSystemCastStartEvent cast)
     {
         if (!PreservesTerritoryMechanics || _suspended || _encounter == null) return false;
-        Scan(CurrentTime);
+        var thordanInputScan = _encounter.ThordanInputScan;
+        _encounter.ThordanInputScan = thordanInputScan || _encounter.IsThordan;
+        try { Scan(CurrentTime); }
+        finally { _encounter.ThordanInputScan = thordanInputScan; }
+        if (_encounter.IsThordan)
+            return _encounter.Active != null && _encounter.Actors.TryGetValue(cast.SourceId, out var thordanSource)
+                && !thordanSource.Player && !thordanSource.Buddy
+                && thordanSource.NativeType is not (0x104 or 0x202 or 0x203 or 0x209)
+                && thordanSource.Cast?.IsSpell != false && ThordanCatalog.ACTIONS.Contains(cast.ActionId);
         return _encounter.Active is { } active
-            && _encounter.Actors.TryGetValue(cast.SourceId, out var actor) && !actor.Dead
-            && active.Casts.Any(r => r.Action == cast.ActionId && r.CasterOid == actor.Oid);
+            && _encounter.Actors.TryGetValue(cast.SourceId, out var actor) && (!actor.Dead || _encounter.UsesDeepDungeonCastIdentity || _encounter.IsBarPassage || _encounter.IsCarnivale || NativeFateCatalog.IsTerritory(territory))
+            && (!(NativeTreasureCatalog.IsTerritory(territory) || _encounter.IsCarnivale) || !actor.Player && !actor.Buddy && !actor.FriendlyNpc)
+            && (active.Casts.Any(r => r.Action == cast.ActionId && (r.CasterOid == actor.Oid || r.CasterOid == 0))
+                || active.BossOid == NativeTreasureCatalog.GYMNASIOU_MEGAKANTHA && NativeTreasureCatalog.OdiousEffect(cast.ActionId)
+                || active.BossOid == NativeTreasureCatalog.GWYDDNEU && actor.Oid == 0x48A6 && cast.ActionId == 43655
+                || _encounter.IsCarnivale && CarnivaleCatalog.IgnoredCast(active.BossOid, cast.ActionId)
+                || _encounter.IsBarPassageP2 && cast.ActionId is 40907 or 40908
+                || _encounter.IsBarPassageP1 && cast.ActionId is 41958 or 42026 or 40902);
     }
     public string? PredictedDamageText
     {
@@ -106,13 +148,32 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
     {
         var now = CurrentTime;
         UpdateVanaspatiMisdirection();
-        if (now < _nextScan && (ReplayWorld == null || ReplayWorld.Version == _replayVersion)) return;
+        if (now < _nextScan && (ReplayWorld == null || ReplayWorld.Version == _replayVersion))
+        {
+            if (_encounter?.IsEurekaOrthos == true)
+            {
+                _encounter.UpdateEurekaFrame(now);
+                Render(now);
+                return;
+            }
+            // Uplift's per-AOE risk window advances between object scans.
+            if (_encounter?.IsBarPassage == true
+                || _encounter?.Active?.BossOid == NativeTreasureCatalog.FASTITOCALON && _encounter.TreasureVaultGroups.Count > 0)
+            {
+                _encounter.Tick(now);
+                Render(now);
+            }
+            return;
+        }
         Scan(now);
         Render(now);
     }
 
     protected override void OnStop()
     {
+        if (previousPrecombatHint != null && MasterPlayerPlugin.Instance?.Scripts?.StatusMessage == previousPrecombatHint)
+            MasterPlayerPlugin.Instance.Scripts.SetStatus("");
+        previousPrecombatHint = null;
         caduceusJump.Clear();
         twintaniaActions.Clear();
         vanaspatiMisdirection?.Dispose();
@@ -179,51 +240,109 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
 
     private unsafe void Scan(DateTime now)
     {
-        _nextScan = now.AddSeconds(0.1);
+        // These models consume per-frame actor lifetimes or ordered NPC/bait positions.
+        _nextScan = (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY || territory is MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES
+            or MainScenarioQuestCatalog.TIME_BETWEEN or MainScenarioQuestCatalog.ISEULTALON or MainScenarioQuestCatalog.WARMTH_OF_THE_FAMILY or JobQuestCatalog.BAR_THE_PASSAGE
+            or JobQuestCatalog.TO_HAVE_LOVED_AND_LOST or JobQuestCatalog.HEROES_AND_PRETENDERS && ReplayWorld == null
+            ? now : now.AddSeconds(0.1);
         if (_encounter == null) return;
+        if (territory == JobQuestCatalog.BAR_THE_PASSAGE)
+            _encounter.CurrentCfcId = MasterPlayer.MechanicHost.LiveWorldSampler.ResolveCfc((ushort)territory);
         _encounter.CurrentAssignment = MechanicAssignment;
         _encounter.CurrentPartyAssignments = PartyMechanicAssignments;
         if (ReplayWorld is { } world)
         {
+            // A repeated recorded frame is not a new status or cast observation.
+            if (territory == HeavenswardIntroCatalog.GRAOULLY && _replayVersion == world.Version)
+            {
+                _encounter.Tick(now);
+                return;
+            }
             _replayVersion = world.Version;
             _encounter.LegacyMovement = world.LegacyMovement;
             _encounter.CameraAzimuth = world.CameraAzimuth;
             _encounter.DutyActionPlayerId = world.DutyActionPlayerId;
+            _encounter.SourcePlayerId = world.SourcePlayerId;
+            if (territory == CarnivaleCatalog.TERRITORY)
+                _encounter.CarnivaleSourcePlayerId = world.LocalPlayerId;
+            _encounter.FateSourcePlayerId = world.LocalPlayerId;
+            _encounter.AllowedFateId = world.AllowedFateId;
+            if (NativeTreasureCatalog.IsTerritory(territory))
+                _encounter.TreasurePartyInput = world.Party.Where(p => p.EntityId == world.LocalPlayerId).Take(1)
+                    .Concat(world.Party.Where(p => p.EntityId != world.LocalPlayerId)).Take(8).Select(p => p.EntityId).ToArray();
             _encounter.DutyActions = world.DutyActions;
             var party = world.Party.ToDictionary(p => p.EntityId);
+            _encounter.CurrentPartyMembers = world.Party;
             var replayActors = world.Actors.Values.Select(a =>
             {
                 party.TryGetValue(a.Id, out var member);
-                var cast = a.Cast is { } c ? new DungeonCastObservation(c.ActionId, c.Location, c.Rotation, c.StartedAt, c.FinishAt, c.TargetId) : null;
+                var cast = a.Cast is { } c ? new DungeonCastObservation(c.ActionId, c.Location, c.Rotation, c.StartedAt, c.FinishAt, c.TargetId, TotalTime: c.TotalTime, IsSpell: c.IsSpell) : null;
+                // Source slot diff consumers use native zero remaining time;
+                // generic status lifetimes retain the recording's MaxValue.
+                var rawStatusSlots = a.Statuses.Select(s => s.ZeroRemainingTime == true ? s with { ExpiresAt = now } : s).ToArray();
                 return new DungeonActor(a.Id, a.Oid, a.Position, a.Dead, a.Targetable, a.InCombat, cast, a.TargetId, a.Name,
-                    member?.Slot ?? -1, member?.Role ?? "", a.Statuses.Where(s => s.ExpiresAt > now).Select(s => s.Id).ToArray(), a.Hostile, a.RenderFlags,
-                    a.Statuses.Where(s => s.ExpiresAt > now).GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.Max(s => s.Param)), a.HitboxRadius, a.Rotation,
+                    member?.Slot ?? -1, member?.Role ?? "", a.Statuses.Where(s => s.ExpiresAt > now || NoviceCatalog.IsTerritory(territory)
+                        || territory is JobQuestCatalog.POWER_TO_PROTECT or NativeFateCatalog.FORMIDABLE && s.Id == 1269).Select(s => s.Id).ToArray(), a.Hostile, a.RenderFlags,
+                    a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.Max(s => s.Param)), a.HitboxRadius, a.Rotation,
                     a.EventState, a.Tethers.GroupBy(t => (uint)t.Id).ToDictionary(g => g.Key, g => g.First().TargetId),
                     a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.Max(s => s.ExpiresAt)), a.AnimationState1, a.ModelState, a.ClassJob, a.EventAnimation, a.NameId,
                     a.AnimationState2, a.Kind == 2 && a.SubKind == 9, a.IncomingEffects,
-                    a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.MaxBy(s => s.ExpiresAt)!.SourceId), a.Hp, a.MaxHp, a.AggroPlayer);
+                    a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.MaxBy(s => s.ExpiresAt)!.SourceId), a.Hp, a.MaxHp, a.AggroPlayer,
+                    a.Kind == 2 && a.SubKind == 5 && a.IsEnemy == false, a.IsEnemy, a.ObjectIndex, a.Kind == 1, a.FateId, territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY ? rawStatusSlots : null,
+                    (ushort)((a.Kind << 8) | a.SubKind),
+                    a.Tethers.Any(t => t.SlotIndex != null) ? a.Tethers.FirstOrDefault(t => t.SlotIndex == 0)
+                        : a.Tethers.FirstOrDefault(), a.GameObjectId);
             });
-            _encounter.Synchronize(replayActors, !_suspended && CurrentPlayer is { Dead: false } p ? p.Position : null,
+            _encounter.Synchronize(replayActors, !_suspended && CurrentPlayer is { } p
+                && (!p.Dead || territory == NoviceCatalog.TANK04 || NoviceTacticalCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory)) ? p.Position : null,
                 now, IsMechanismEnabled, CurrentPlayerId);
             return;
         }
         var actors = new List<DungeonActor>();
+        if (territory == CarnivaleCatalog.TERRITORY)
+            _encounter.CarnivaleSourcePlayerId = ReplayWorldCapture.Id(Svc.Objects.LocalPlayer);
+        _encounter.FateSourcePlayerId = NativeFateCatalog.IsTerritory(territory)
+            ? ReplayWorldCapture.Id(Svc.Objects.LocalPlayer) : 0;
+        _encounter.AllowedFateId = NativeTreasureCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory)
+            || territory is MainScenarioQuestCatalog.HIS_FORGOTTEN_HOME or MainScenarioQuestCatalog.MAX_QUEST
+            ? ReplayWorldCapture.CaptureAllowedFate(CurrentPlayer?.Level) : null;
+        if (NativeTreasureCatalog.IsTerritory(territory))
+        {
+            // Match the original live feed: local player first, then PR's UI party order.
+            // Role-priority slots are a separate input and can be reordered by the user.
+            var localId = ReplayWorldCapture.Id(Svc.Objects.LocalPlayer);
+            var sourceParty = new List<ulong>();
+            if (localId is not (0 or 0xE0000000)) sourceParty.Add(localId);
+            foreach (var member in PartyHelper.GetParty())
+            {
+                var id = ReplayWorldCapture.Id(member);
+                if (sourceParty.Count == 8) break;
+                if (id is not (0 or 0xE0000000) && !sourceParty.Contains(id)) sourceParty.Add(id);
+            }
+            _encounter.TreasurePartyInput = sourceParty;
+        }
         var playerEnmity = PreservesTerritoryMechanics ? ReplayWorldCapture.CapturePlayerEnmity() : null;
         _encounter.LegacyMovement = Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1;
         _encounter.CameraAzimuth = ReplayWorldCapture.CaptureCameraAzimuth();
         _encounter.DutyActionPlayerId = CurrentPlayerId;
+        _encounter.SourcePlayerId = territory == JobQuestCatalog.FANGS_OF_THE_VIPER
+            ? ReplayWorldCapture.CaptureSourcePlayerId() : null;
         _encounter.DutyActions = territory == LakshmiCatalog.TERRITORY ? ReplayWorldCapture.CaptureDutyActions(CurrentPlayerId) : null;
         var liveParty = ReplayWorldCapture.CaptureParty().ToDictionary(p => p.EntityId);
+        _encounter.CurrentPartyMembers = liveParty.Values.ToArray();
         foreach (var obj in Svc.Objects)
         {
             if (obj.Address == 0) continue;
             var id = obj.EntityId is not (0 or 0xE0000000) ? obj.EntityId : obj.GameObjectId;
             if (id is 0 or 0xE0000000) continue;
+            if (territory is MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES && (id >> 56) == 0xFF) continue;
             var combat = false;
             var hostile = false;
             uint[] statuses = [];
+            ReplayStatus[]? statusSlots = null;
             Dictionary<uint, ushort> statusParams = [];
             Dictionary<uint, ulong> tethers = [];
+            ReplayTether? firstTether = null;
             Dictionary<uint, DateTime> statusExpirations = [];
             Dictionary<uint, ulong> statusSources = [];
             byte animationState1 = 0;
@@ -236,6 +355,10 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                 combat = (battle.StatusFlags & StatusFlags.InCombat) != 0;
                 hostile = (battle.StatusFlags & StatusFlags.Hostile) != 0;
                 statuses = battle.StatusList.Where(s => s.StatusId != 0).Select(s => s.StatusId).ToArray();
+                if (territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY)
+                    statusSlots = battle.StatusList.Select((s, index) => s == null || s.StatusId == 0 ? null
+                        : new ReplayStatus(s.StatusId, s.Param, s.SourceId, now.AddSeconds(Math.Min(MathF.Abs(s.RemainingTime), 100000f)))
+                            { SlotIndex = index }).OfType<ReplayStatus>().ToArray();
                 statusParams = battle.StatusList.Where(s => s.StatusId != 0).GroupBy(s => (uint)s.StatusId)
                     .ToDictionary(g => g.Key, g => g.Max(s => s.Param));
                 statusSources = battle.StatusList.Where(s => s.StatusId != 0).GroupBy(s => (uint)s.StatusId)
@@ -249,6 +372,9 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                 animationState2 = nativeCharacter->Timeline.AnimationState[1];
                 foreach (var tether in nativeCharacter->Vfx.Tethers)
                     if (tether.Id != 0) tethers[tether.Id] = tether.TargetId;
+                var nativeFirstTether = nativeCharacter->Vfx.Tethers[0];
+                if (nativeFirstTether.Id != 0)
+                    firstTether = new(nativeFirstTether.Id, nativeFirstTether.TargetId, nativeFirstTether.Progress) { SlotIndex = 0 };
                 if (battle.IsCasting && battle.CastActionId != 0)
                 {
                     var native = (NativeBattleChara*)battle.Address;
@@ -256,7 +382,8 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                     var remaining = Math.Max(0, battle.TotalCastTime - battle.CurrentCastTime);
                     cast = new(battle.CastActionId, new(location.X, location.Y, location.Z),
                         float.IsFinite(native->CastRotation) ? native->CastRotation : null,
-                        now.AddSeconds(-battle.CurrentCastTime), now.AddSeconds(remaining + 0.3), battle.CastTargetObjectId);
+                        now.AddSeconds(-battle.CurrentCastTime), now.AddSeconds(remaining + 0.3), battle.CastTargetObjectId,
+                        TotalTime: battle.TotalCastTime, IsSpell: battle.CastActionType == 1);
                 }
             }
             liveParty.TryGetValue(id, out var member);
@@ -267,10 +394,18 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                 obj is IBattleChara character ? character.ClassJob.RowId : 0, null, obj is IBattleChara named ? named.NameId : 0,
                 animationState2, obj.ObjectKind == ObjectKind.BattleNpc && obj.SubKind == 9, incomingEffects, statusSources,
                 obj is IBattleChara health ? health.CurrentHp : null, obj is IBattleChara maximum ? maximum.MaxHp : null,
-                playerEnmity?.Contains(obj.EntityId) == true));
+                playerEnmity?.Contains(obj.EntityId) == true,
+                obj.ObjectKind == ObjectKind.BattleNpc && obj.SubKind == 5
+                    && NativeActionManager.ClassifyTarget((NativeCharacter*)obj.Address) != NativeActionManager.TargetCategory.Enemy,
+                ((NativeGameObject*)obj.Address)->IsCharacter()
+                    && NativeActionManager.ClassifyTarget((NativeCharacter*)obj.Address) == NativeActionManager.TargetCategory.Enemy,
+                ((NativeGameObject*)obj.Address)->ObjectIndex, obj.ObjectKind == ObjectKind.Pc,
+                obj is IBattleChara ? ((NativeBattleChara*)obj.Address)->FateId : null, statusSlots,
+                (ushort)(((byte)obj.ObjectKind << 8) | obj.SubKind), firstTether, obj.GameObjectId));
         }
         var player = CurrentPlayer;
-        _encounter.Synchronize(actors, !_suspended && player is { Dead: false } ? player.Position : null,
+        _encounter.Synchronize(actors, !_suspended && player != null
+            && (!player.Dead || territory == NoviceCatalog.TANK04 || NoviceTacticalCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory)) ? player.Position : null,
             now, IsMechanismEnabled, CurrentPlayerId);
     }
 
@@ -283,6 +418,16 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
             if (!_suspended) Render(CurrentTime);
             return;
         }
+        if (_suspended && ev is LogSystemDirectorUpdateEvent nybethDirector && _encounter.IsPalaceManagedBoss)
+        {
+            _encounter.PalaceGuideDirector(nybethDirector.Command);
+            Render(CurrentTime);
+        }
+        if (_suspended && ev is LogSystemDirectorUpdateEvent eurekaDirector && _encounter.IsEurekaOrthos)
+        {
+            _encounter.EurekaDirector(eurekaDirector.Command);
+            Render(CurrentTime);
+        }
         if (_suspended) return;
         var now = CurrentTime;
         _events?.Handle(ev, now);
@@ -292,6 +437,13 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
     private void Render(DateTime now)
     {
         if (_encounter == null) return;
+        var precombatHint = IsMechanismEnabled("文字提示") ? _encounter.TisiphonePrecombatHint ?? _encounter.CarnivalePrecombatHint ?? _encounter.PalaceGuidePrecombatHint : null;
+        if (precombatHint != null && precombatHint != previousPrecombatHint)
+            _messages.Remove(precombatHint);
+        if (previousPrecombatHint != null && precombatHint != previousPrecombatHint
+            && MasterPlayerPlugin.Instance?.Scripts?.StatusMessage == previousPrecombatHint)
+            MasterPlayerPlugin.Instance.Scripts.SetStatus("");
+        previousPrecombatHint = precombatHint;
         _output?.Apply(_encounter, now, IsMechanismEnabled("水纹预览"));
         var player = CurrentPlayer;
         caduceusJump.Update(_encounter.RequireCaduceusJump, !IsReplay && MasterPlayerSettings.Instance.EnableSmartMovement
@@ -316,7 +468,9 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
             forbiddenTargets: _encounter.ForbiddenTargets);
         Hints.SetMovementHold(allStop || _encounter.RequireSirenMovementHold || _encounter.RequireStigmaMovementHold || _encounter.DohnPulling);
         fruitInteraction.Update(now, player?.Cast != null, DungeonObjectInteraction.Interact);
-        Hints.SetTarget(player == null || allStop ? 0 : _encounter.PriorityTarget(player.TargetId, player.Position));
+        var priorityTarget = player == null || allStop ? 0 : _encounter.PriorityTarget(player.TargetId, player.Position);
+        var clearTarget = player != null && !allStop && priorityTarget == 0 ? _encounter.TargetToClear(player.TargetId) : 0;
+        Hints.SetTarget(priorityTarget, clearTarget);
         Hints.SetFacing(player == null || allStop ? null : _encounter.GazeFacing(player.Position, player.Rotation));
         TryCleanseSlime(now, player);
         TrySirenImmunity(now, player);

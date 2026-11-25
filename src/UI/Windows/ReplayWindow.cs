@@ -328,9 +328,14 @@ public sealed class ReplayWindow : IDisposable
             var origin = ImGui.GetCursorScreenPos() + new Vector2(ImGui.GetScrollX(), 0);
             var viewSize = new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetContentRegionAvail().Y);
             var host = MasterPlayerPlugin.Instance?.MechanicHost;
-            var predictionRows = replay.SessionActive && host?.CurrentTimeline is { } prediction
-                ? MechanicHost.MechanicTimelineView.BuildRows(prediction, host.MechanicClockUtc)
-                : [];
+            IReadOnlyList<MechanicHost.MechanicTimelineRow> predictionRows = [];
+            if (replay.SessionActive)
+            {
+                if (MasterPlayerPlugin.Instance?.Scripts?.CurrentTimeline is { } native)
+                    predictionRows = MechanicHost.MechanicTimelineView.BuildRows(native);
+                else if (host?.CurrentTimeline is { } prediction)
+                    predictionRows = MechanicHost.MechanicTimelineView.BuildRows(prediction, host.MechanicClockUtc);
+            }
             var predictionRowHeight = ImGui.GetFontSize() + 2f;
             var predictionHeight = predictionRows.Count == 0 ? 0f : predictionRows.Count * predictionRowHeight + 4f;
             var contentWidth = gutter + (float)(duration * _pxPerSec) + 40f;

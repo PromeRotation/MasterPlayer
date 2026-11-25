@@ -174,6 +174,7 @@ internal static class TsukuyomiRegression
             End(f, 10, 11379);
             foreach (var action in new[] { 11234u, 11246u, 11440u, 11256u, 11897u, 11243u })
             {
+                f.Now = f.Now.AddSeconds(1);
                 Start(f, 10, action); Check(f.Engine.PredictedDamage.Count() == 3, "Raidwide omitted: " + action);
                 End(f, 10, action);
             }

@@ -24,6 +24,12 @@ public abstract class PilgrimsTraverse30Script : MasterPlayerScript
     private GeometryTemplate? lastGoalTemplate;
     private float lastGoalRotation;
     public bool EncounterActive => encounter.Active;
+    internal bool ObserveFloorBoss(DateTime now)
+    {
+        Scan(now);
+        Render(now);
+        return EncounterActive;
+    }
     public bool NavigationReady => encounter.Active && boundary != null && hole.IsValid;
     public int DangerCount => hazards.Count;
     public int PreviewCount { get; private set; }

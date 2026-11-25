@@ -204,7 +204,8 @@ internal sealed partial class DungeonEncounter
 
     private bool CoilCastActive(DungeonActor actor)
         => _casts.ContainsKey(actor.Id) || actor.Cast is { } cast
-            && (!_finished.TryGetValue(actor.Id, out var end) || end.Action != cast.Action || cast.StartedAt > end.EndedAt);
+            && (!_finished.TryGetValue(actor.Id, out var end) || cast.StartedAt > end.EndedAt
+                || cast.StartedAt == end.EndedAt && !end.ActionsAtEnd.Contains(cast.Action));
 
     private int CoilPriority(DungeonActor actor)
     {

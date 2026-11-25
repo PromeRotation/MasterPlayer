@@ -85,7 +85,7 @@ internal static class SimpleHuntExecutionRegression
     }
 
     private static ReplayActorState Boss(ReplayCast? cast)
-        => new() { Id = 1, Oid = 0x4395, Targetable = true, InCombat = true, Cast = cast };
+        => new() { Hp = 1000, Id = 1, Oid = 0x4395, Targetable = true, InCombat = true, Cast = cast };
     private static HuntPendingCast Pending(uint action, double at)
     {
         var definition = SimpleHuntCatalog.Find(0x4395)!;

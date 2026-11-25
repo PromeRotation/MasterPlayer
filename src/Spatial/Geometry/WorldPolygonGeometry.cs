@@ -8,7 +8,17 @@ namespace MasterPlayer.Spatial.Geometry;
 public sealed class WorldPolygonGeometry : IGeometryShape
 {
     public WorldPolygonGeometry(IEnumerable<Vector3> worldPoints)
+        : this(worldPoints, null)
     {
+    }
+
+    /// <summary>保留世界顶点，并允许场地指定用于雷达取景的中心。</summary>
+    public WorldPolygonGeometry(IEnumerable<Vector3> worldPoints, Vector3? center)
+    {
+        if (center is { } value && (!float.IsFinite(value.X) || !float.IsFinite(value.Y) || !float.IsFinite(value.Z)))
+        {
+            throw new ArgumentException("场地中心必须是有限坐标。", nameof(center));
+        }
         var points = worldPoints.ToList();
         if (points.Any(point =>
                 !float.IsFinite(point.X) ||
@@ -27,7 +37,7 @@ public sealed class WorldPolygonGeometry : IGeometryShape
             : points.AsReadOnly();
 
         PlanePoints = planePoints;
-        Position = PolygonGeometryHelpers.ComputeCentroid(WorldPoints);
+        Position = center ?? PolygonGeometryHelpers.ComputeCentroid(WorldPoints);
     }
 
     public GeometryKind Kind => GeometryKind.WorldPolygon;

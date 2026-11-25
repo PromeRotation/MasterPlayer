@@ -148,7 +148,7 @@ internal sealed partial class DungeonEncounter
 
     private void WhorlStatus(ulong actor, uint status, bool present, DateTime at, DateTime? expiry)
     {
-        if ((IsWhorleater || IsSusano || IsLakshmi || IsShinryu || IsSuzaku || IsSeiryu || IsTitania || IsValigarmanda || IsQueenEternal || IsDoomtrain) && status is 160 or 1209 or 2663 or 3054 or 1722 or 2345)
+        if ((IsWhorleater || IsSusano || IsLakshmi || IsShinryu || IsSuzaku || IsSeiryu || IsTitania || IsValigarmanda || IsQueenEternal || IsDoomtrain || IsGamboling || IsRaisingSword || IsRhalgr || IsDikaiosyne || IsBarPassage || IsNativeTreasure || IsTactical || territory is MainScenarioQuestCatalog.ORACLE_OF_LIGHT or MainScenarioQuestCatalog.FEAST_OF_LIES) && status is 160 or 1209 or 2663 or 3054 or 1722 or 2345)
             whorlImmunity[(actor, status)] = (present, at, expiry ?? DateTime.MaxValue);
     }
 

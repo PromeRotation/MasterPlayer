@@ -43,6 +43,9 @@ public abstract class MasterPlayerScript
     /// </summary>
     public virtual IEnumerable<string> GetMechanisms() => [];
 
+    /// <summary>当前原生机制时间线；不运行或没有时间线时返回 null。</summary>
+    public virtual ScriptTimeline? GetTimeline() => null;
+
     /// <summary>机制是否被用户开启。</summary>
     public bool IsMechanismEnabled(string mechanism) => Host.IsMechanismEnabled(mechanism);
 

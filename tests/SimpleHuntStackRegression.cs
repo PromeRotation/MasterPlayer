@@ -66,13 +66,18 @@ internal static class SimpleHuntStackRegression
         second = second with { Statuses = [Status()] };
         encounter.Synchronize([Boss(cast), target, first, second], _ => true, Start.AddSeconds(1), reordered);
         encounter.Start(1, cast with { Rotation = .2f }, true);
-        encounter.Synchronize([Boss(cast with { Rotation = .2f }), target, first, second], _ => true, Start.AddSeconds(2), reordered);
+        encounter.Synchronize([Boss(cast), target, first, second], _ => true, Start.AddSeconds(2), reordered);
         Check(!Joins(encounter.TargetDangers(first, reordered).Single())
             && Joins(encounter.TargetDangers(second, reordered).Single()),
             "Post-start status changes, slot reordering or packet observation re-froze Forbidden.");
         Check(encounter.PredictedDamage(reordered).Select(d => d.TargetId).Order().SequenceEqual([100UL, 102UL])
             && encounter.PredictedDamage(reordered).All(d => d.DamageType == "Shared" && d.Activation == cast.FinishAt),
             "Shared prediction failed to expand the frozen complement or changed its activation.");
+        encounter.Synchronize([Boss(cast with { Rotation = .2f }), target, first, second], _ => true, Start.AddSeconds(2.1), reordered);
+        Check(Joins(encounter.TargetDangers(first, reordered).Single())
+            && !Joins(encounter.TargetDangers(second, reordered).Single())
+            && encounter.PredictedDamage(reordered).Select(d => d.TargetId).Order().SequenceEqual([100UL, 101UL]),
+            "Actual changed raw CastInfo failed to freeze a new Forbidden mask at its real Start.");
         encounter.Finish(1);
         encounter.Start(1, Cast(10), true);
         Check(Joins(encounter.TargetDangers(first, reordered).Single()) && !Joins(encounter.TargetDangers(second, reordered).Single()),
@@ -142,7 +147,7 @@ internal static class SimpleHuntStackRegression
     private static ReplayCast Cast(double at = 0)
         => new(16971, 100, Vector3.Zero, 0, Start.AddSeconds(at), Start.AddSeconds(at + 5.3), true, false) { TotalTime = 5 };
     private static ReplayActorState Boss(ReplayCast? cast)
-        => new() { Id = 1, Oid = 0x2890, Targetable = true, InCombat = true, Cast = cast };
+        => new() { Hp = 1000, Id = 1, Oid = 0x2890, Targetable = true, InCombat = true, Cast = cast };
     private static bool Joins(HuntPendingCast cast) => cast.Shape is HuntStackJoinTemplate;
 
     private static void Solver()

@@ -16,18 +16,18 @@ internal static class HuntDrawing
 
     internal static IEnumerable<HuntDrawingPrimitive> Collect(SimpleHuntEncounter encounter, ReplayActorState? player)
     {
-        foreach (var enemy in encounter.ActiveActors.Where(a => a.Targetable && !a.Dead))
+        foreach (var enemy in encounter.DrawingActors.Where(a => a.Targetable && !a.Dead))
             yield return new($"enemy/{enemy.Id}", actor.Resolve(enemy.Position, enemy.Rotation, null), false, enemyColor);
         if (player == null) yield break;
         var showArc = false;
         var showInvertedArc = false;
-        foreach (var gaze in encounter.Casts.Where(c => c.Rule.GazeRange > 0))
+        foreach (var gaze in encounter.Gazes(player))
         {
             var dangerous = SimpleHuntEncounter.HitByGaze(gaze, player) != gaze.Rule.InvertedGaze;
             var color = dangerous ? enemyColor : safeColor;
-            yield return new($"gaze/{gaze.Source}/eye", eye.Resolve(gaze.Input.Location, 0, null), !dangerous, color);
-            yield return new($"gaze/{gaze.Source}/pupil", new CircleTemplate(.28f).Resolve(gaze.Input.Location, 0, null),
-                !dangerous, new(.04f, .04f, .04f, 1));
+            yield return new($"gaze/{gaze.AreaId}/eye", eye.Resolve(gaze.Input.Location, 0, null), !dangerous, color);
+            yield return new($"gaze/{gaze.AreaId}/pupil", new CircleTemplate(.28f).Resolve(gaze.Input.Location, 0, null),
+                !dangerous, Vector4.One);
             if (gaze.Rule.InvertedGaze) showInvertedArc |= SimpleHuntEncounter.InGazeRange(gaze, player);
             else showArc |= SimpleHuntEncounter.InGazeRange(gaze, player);
         }

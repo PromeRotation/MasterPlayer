@@ -80,9 +80,14 @@ public sealed class RadarOverlayWindow : IDisposable
         var viewport = RadarViewportLayout.Create(settings.RadarScale, ImGui.GetFontSize(), ImGui.GetIO().DisplaySize);
         var fullSize = viewport.FullSize;
         var bridge = MasterPlayerPlugin.Instance?.MechanicHost;
-        var timelineRows = settings.ShowModuleTimeline && bridge?.CurrentTimeline is { } timeline
-            ? MechanicHost.MechanicTimelineView.BuildRows(timeline, bridge.MechanicClockUtc)
-            : [];
+        IReadOnlyList<MechanicHost.MechanicTimelineRow> timelineRows = [];
+        if (settings.ShowModuleTimeline)
+        {
+            if (MasterPlayerPlugin.Instance?.Scripts?.CurrentTimeline is { } native)
+                timelineRows = MechanicHost.MechanicTimelineView.BuildRows(native);
+            else if (bridge?.CurrentTimeline is { } timeline)
+                timelineRows = MechanicHost.MechanicTimelineView.BuildRows(timeline, bridge.MechanicClockUtc);
+        }
         var rowHeight = ImGui.GetFontSize() + 4f;
         var stripHeight = timelineRows.Count == 0 ? 0f : timelineRows.Count * rowHeight + 6f;
         ImGui.SetNextWindowSize(new Vector2(fullSize, fullSize + stripHeight), ImGuiCond.Always);

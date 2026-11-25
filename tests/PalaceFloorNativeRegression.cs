@@ -19,6 +19,92 @@ internal static class PalaceFloorNativeRegression
         run("Palace floor publishes only walls and traps despite coffers passage hoard full inventory and elapsed time", HazardsOnly);
         run("Palace floor native nearest trap correction preserves floor lifecycle", ManualTraps);
         run("Palace parity gaze avoids unnecessary cancellation and independently cancels forbidden casts", CastControl);
+        run("Palace floor transfer to Boss maps releases isolation without ordinary hazards", BossTransfer);
+        run("Palace all twenty Zone walls and traps match independent source coordinate tables", SourceTables);
+    }
+
+    private static void SourceTables()
+    {
+        Check(PalaceFloorData.Rooms.Count == 40 && PalaceFloorData.Traps.Count == 20,
+            "Some floor sets or territories were omitted.");
+        foreach (var ((set, tileset), nativeRooms) in PalaceFloorData.Rooms)
+        {
+            var source = BossMod.Global.DeepDungeon.LoadedFloors.Walls[$"1.{set}"];
+            var sourceRooms = tileset == 0 ? source.RoomsA : source.RoomsB;
+            for (var i = 0; i < 25; ++i)
+            {
+                var actual = nativeRooms[i];
+                var expected = sourceRooms[i];
+                Check(actual.Center == new Vector2(expected.Center.Position.X, expected.Center.Position.Z),
+                    $"Wrong room center {set}/{tileset}/{i}.");
+                var walls = new[] { actual.North, actual.South, actual.West, actual.East };
+                var sourceWalls = new[] { expected.North, expected.South, expected.West, expected.East };
+                for (var d = 0; d < 4; ++d)
+                    Check(walls[d].Position == new Vector2(sourceWalls[d].Position.X, sourceWalls[d].Position.Z)
+                        && walls[d].Depth == sourceWalls[d].Depth, $"Wrong source wall {set}/{tileset}/{i}/{d}.");
+            }
+        }
+        foreach (var (territory, traps) in PalaceFloorData.Traps)
+        {
+            var expected = BossMod.Global.DeepDungeon.GeneratedTrapData.Traps[territory];
+            Check(traps.SequenceEqual(expected.Select(p => new Vector2(p.X, p.Z))), $"Wrong trap table {territory}.");
+        }
+        foreach (var (territory, set) in PalaceCatalog.Territories.Select((t, i) => ((ushort)t, i + 1)))
+        foreach (var tileset in new byte[] { 0, 1 })
+        {
+            var floor = new PalaceFloorHazards();
+            var rooms = Enumerable.Repeat((ushort)0x80, 25).ToArray();
+            var snapshot = State(tileset) with { Floor = (byte)(set * 10 - 9), Rooms = rooms };
+            floor.Synchronize(snapshot, [], territory);
+            var areas = floor.Collect(Start, Player(new(10000, 0, 10000))).Where(a => a.Obstacle).ToArray();
+            var source = BossMod.Global.DeepDungeon.LoadedFloors.Walls[$"1.{set}"];
+            var sourceRooms = tileset == 0 ? source.RoomsA : source.RoomsB;
+            var count = 0;
+            for (var i = 0; i < 25; ++i)
+            {
+                var sourceWalls = new[] { sourceRooms[i].North, sourceRooms[i].South, sourceRooms[i].West, sourceRooms[i].East };
+                for (var d = 0; d < 4; ++d)
+                {
+                    var wall = sourceWalls[d];
+                    if (wall.Depth <= 0) continue;
+                    ++count;
+                    var area = areas.Single(a => a.Key == $"floor/wall/{i}/{d}");
+                    var shape = new BossMod.SDRect(wall.Position, new BossMod.Angle(d >= 2 ? MathF.PI / 2 : 0),
+                        wall.Depth, wall.Depth, 20);
+                    foreach (var x in new[] { -21f, -19f, -.2f, .2f, 19f, 21f })
+                    foreach (var z in new[] { -3f, -.1f, .1f, 3f })
+                    {
+                        var point = new BossMod.WPos(wall.Position.X + x, wall.Position.Z + z);
+                        Check(area.Geometry.Contains(new(point.X, 0, point.Z)) == (shape.Distance(point) <= 0),
+                            $"Wall adapter differs from real source SDRect {territory}/{tileset}/{i}/{d}.");
+                    }
+                }
+            }
+            Check(areas.Length == count, "A source wall was duplicated or omitted.");
+        }
+    }
+
+    private static void BossTransfer()
+    {
+        foreach (var bossFloor in new byte[] { 10, 50, 100, 150, 160, 170, 180, 190, 200 })
+        {
+            var floor = new PalaceFloorHazards();
+            var before = State() with { Floor = (byte)(bossFloor - 1) };
+            before.Rooms[12] = 0x80;
+            floor.Synchronize(before, [], 603);
+            floor.SystemLog(7248);
+            floor.Synchronize(before, [], 603);
+            Check(floor.BetweenFloors, "Unchanged old map released transfer isolation.");
+            floor.Synchronize(before with { Floor = bossFloor }, [], 603);
+            Check(!floor.BetweenFloors && !floor.HasMap && !floor.Collect(Start, Player(Vector3.Zero)).Any(),
+                "A real Boss map failed to release isolation or invented ordinary-floor hazards.");
+            floor.SystemLog(7248);
+            floor.Synchronize(before with { Floor = bossFloor }, [], 603);
+            Check(floor.BetweenFloors, "The unchanged Boss map released the next transfer isolation.");
+            if (bossFloor == 200) continue;
+            floor.Synchronize(before with { Floor = (byte)(bossFloor + 1) }, [], 603);
+            Check(!floor.BetweenFloors && floor.HasMap, "The next ordinary map did not release Boss-floor transfer isolation.");
+        }
     }
 
     private static void HazardsOnly()
@@ -110,7 +196,8 @@ internal static class PalaceFloorNativeRegression
 
     private static void Traps()
     {
-        Check(PalaceFloorData.Traps.Values.Sum(a => a.Length) == 1445, "Incomplete historical trap migration.");
+        Check(PalaceFloorData.Traps.Where(p => p.Key >= 603).Sum(p => p.Value.Length) == 1445
+            && PalaceFloorData.Traps.Values.Sum(a => a.Length) == 6556, "Incomplete historical trap migration.");
         foreach (var territory in Enumerable.Range(603, 5).Select(t => (ushort)t))
         {
             var floor = new PalaceFloorHazards();
@@ -199,8 +286,11 @@ internal static class PalaceFloorNativeRegression
         encounter.Synchronize([player, eye], Start);
         encounter.StartCast(new(10, 6953, 100, eye.Position, eye.Position, 0, Start, Start.AddSeconds(4)));
         var restrictions = encounter.CastRestrictions(Start.AddSeconds(3.5), 100, true);
-        Check(restrictions.BlockCasts && !restrictions.CancelCast, "A safe gaze facing cancelled a completed-before-hit cast.");
-        encounter.Synchronize([player with { Rotation = 0 }, eye], Start.AddSeconds(3.5));
+        Check(!restrictions.BlockCasts && !restrictions.CancelCast, "A safe gaze facing blocked or cancelled an unrelated cast.");
+        encounter.Synchronize([player with { Rotation = 0 }, eye with
+        {
+            Cast = new(6953, 100, eye.Position, 0, Start, Start.AddSeconds(4), false, false),
+        }], Start.AddSeconds(3.5));
         Check(encounter.CastRestrictions(Start.AddSeconds(3.5), 100, true).CancelCast, "Unsafe gaze did not cancel for a required turn.");
         encounter.Reset();
         eye = eye with { Statuses = [new(197, 0, 10, Start.AddSeconds(10))] };
@@ -208,7 +298,7 @@ internal static class PalaceFloorNativeRegression
         Check(!encounter.CastRestrictions(Start, 100, false).CancelCast
             && !encounter.ForbiddenTargets(Start).Contains(10ul)
             && encounter.ForbiddenAutoAttackTargets(Start).Contains(10ul), "Spikes blocked ordinary actions instead of only autoattacks.");
-        var burstBoss = eye with { Oid = 0x181F, Hp = 15500, MaxHp = 100000, InCombat = true };
+        var burstBoss = eye with { Oid = 0x181F, Hp = 15500, MaxHp = 100000, InCombat = true, Targetable = true };
         encounter.Synchronize([player, burstBoss], Start);
         Check(encounter.CastRestrictions(Start, 100, false).CancelCast, "Forbidden boss cancellation incorrectly depended on a gaze.");
         var eyes = Enumerable.Range(0, 4).Select(i => eye with { Id = (ulong)(20 + i), Statuses = [],

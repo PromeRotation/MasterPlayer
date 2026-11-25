@@ -7,7 +7,8 @@ internal sealed partial class DungeonEncounter
 {
     internal ulong[] ForbiddenDotTargets => Active == null ? [] : _actors.Values
         .Where(a => !a.Dead && a.Targetable && (IsCaduceus && a.Oid == 0x7D8
-            || IsIfritExtreme && IfritExNails && IfritExNextNail != null && a.Oid == 0xD4))
+            || IsIfritExtreme && IfritExNails && IfritExNextNail != null && a.Oid == 0xD4
+            || MaxQuestForbidsDots(a) || IsPalacePlant && a.Oid == PalaceHornetOid || IsGodmother && a.Oid == 0x18E8))
         .Select(a => a.Id).ToArray();
 
     internal IReadOnlyList<DungeonEnemyDirective> EnemyDirectives()

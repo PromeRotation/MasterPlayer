@@ -226,7 +226,7 @@ internal static class SimpleHuntControlsRegression
             "WickedWhim was converted from a pure hint into speculative state or geometry.");
     }
 
-    private static ReplayActorState Boss(ulong id, uint oid, ReplayCast cast) => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+    private static ReplayActorState Boss(ulong id, uint oid, ReplayCast cast) => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
     private static ReplayCast Cast(uint action, Vector3 location) => new(action, 0, location, 0, Start, Start.AddSeconds(3.3), false, false);
     private static void Check(bool condition, string message)
     {

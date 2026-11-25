@@ -200,6 +200,7 @@ internal static class PortaRegression
             CastTarget(f, 12, 29015, 1);
             Check(f.Engine.WantsPortaKnockbackImmunity && f.Engine.Hints(Vector3.Zero).Contains("准备吸收以太球"), "AethericBoom request missing.");
             f.Engine.Finish(12, 29015); f.Render(); Check(!f.Engine.WantsPortaKnockbackImmunity, "Immunity request leaked.");
+            f.Now = f.Now.AddSeconds(1);
             CastTarget(f, 12, 29024, 1, 71);
             Check(f.Engine.PortaCountdown!.Contains("71.3"), "Enrage countdown differs.");
             f.Engine.ResetFight(); f.Render();

@@ -353,6 +353,9 @@ public sealed partial class MainWindow : IDisposable
             var rendererChanged = false;
             if (settings.WorldDrawingMode == WorldDrawingMode.DirectX)
             {
+                rendererChanged |= ImGui.Checkbox("范围贴合地面", ref settings.DxGroundProjection);
+                if (settings.DxGroundProjection)
+                    Md.MutedText(MasterPlayerPlugin.Instance?.WorldDrawing.GroundStatus ?? "等待地表");
                 rendererChanged |= ImGui.Checkbox("场景／角色遮挡", ref settings.DxSceneOcclusion);
                 rendererChanged |= ImGui.Checkbox("游戏 UI 遮挡", ref settings.DxUiMask);
                 ImGui.BeginDisabled(!settings.DxSceneOcclusion);
@@ -707,11 +710,15 @@ public sealed partial class MainWindow : IDisposable
             Md.ValueRow("特殊模式", specialMode, Md.Warning);
         if (bridge.PredictedDamageText is { } predicted)
             Md.ValueRow("预计伤害", predicted);
-        if (bridge.CurrentTimeline is { } timeline)
+        var nativeTimeline = MasterPlayerPlugin.Instance?.Scripts?.CurrentTimeline;
+        if (nativeTimeline != null || bridge.CurrentTimeline != null)
         {
-            var rows = MechanicHost.MechanicTimelineView.BuildRows(timeline, bridge.MechanicClockUtc);
+            var rows = nativeTimeline != null
+                ? MechanicHost.MechanicTimelineView.BuildRows(nativeTimeline)
+                : MechanicHost.MechanicTimelineView.BuildRows(bridge.CurrentTimeline!, bridge.MechanicClockUtc);
             var current = rows.FirstOrDefault(r => r.IsCurrent);
-            Md.ValueRow("阶段", timeline.PhaseName.Length != 0 ? timeline.PhaseName : "—");
+            var phaseName = nativeTimeline?.PhaseName ?? bridge.CurrentTimeline!.PhaseName;
+            Md.ValueRow("阶段", phaseName.Length != 0 ? phaseName : "—");
             Md.ValueRow("当前", current != null ? $"{current.Name}（剩 {current.Seconds:F1}s）" : "—");
             var next = rows.Where(r => !r.IsCurrent).Take(3).Select(r => r.IsBranch ? "分支?" : $"{r.Name} {r.Seconds:F1}s").ToArray();
             if (next.Length != 0)

@@ -64,7 +64,7 @@ internal sealed class HuntComboState
     {
         var corrected = new HuntComboState();
         corrected.Start(updated, actor);
-        foreach (var index in Enumerable.Range(0, queue.Count).Where(i => queue[i].Input == previous.Input).ToArray())
+        foreach (var index in Enumerable.Range(0, queue.Count).Where(i => queue[i].Order == previous.Order).ToArray())
         {
             var old = queue[index];
             if (old.Stage < 0 || old.Stage >= corrected.queue.Count) continue;

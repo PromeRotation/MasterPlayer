@@ -14,7 +14,9 @@ internal static class MeshBuilder
         var offset = Vector3.UnitY * heightOffset;
         if (item.Style.FillColor is { } fill && contours.Count != 0)
         {
-            var vertices = item.Geometry switch
+            var resolved = (item.Geometry as ITriangulatedDrawingGeometry)?.FillPolygons;
+            var vertices = resolved != null ? resolved.SelectMany(p => Convex(p, fill, offset)).ToArray()
+                : item.Geometry switch
             {
                 DonutGeometry when contours.Count >= 2 => Ring(contours[0], contours[1], fill, offset),
                 LocalPolygonGeometry or WorldPolygonGeometry or FanGeometry => Polygon(contours[0], fill, offset),
@@ -32,6 +34,28 @@ internal static class MeshBuilder
             if (vertices.Length != 0)
                 batches.Add(new RenderBatch(DrawPipeline.Stroke, vertices));
         }
+    }
+
+    internal static bool IsGroundArea(DrawRenderItem item)
+    {
+        var contours = item.Geometry.GetContours(64);
+        var points = contours.SelectMany(contour => contour).ToArray();
+        return points.Length >= 3 && points.Max(point => point.Y) - points.Min(point => point.Y) < 0.02f;
+    }
+
+    internal static void AddGroundGeometry(List<RenderBatch> batches, DrawRenderItem item,
+        GroundProjection.Mesh mesh, Vector4 nearPlane, float heightOffset)
+    {
+        // 微小偏移仅用于深度精度；范围自身的起伏来自原始地面三角面。
+        var offset = Vector3.UnitY * (0.015f + heightOffset);
+        if (item.Style.FillColor is { } fill && mesh.Fill.Length != 0)
+            batches.Add(new(DrawPipeline.Solid, mesh.Fill.Select(point => Vertex(point + offset, fill)).ToArray()));
+        if (item.Style.StrokeColor is not { } stroke) return;
+        var vertices = new List<GpuVertex>();
+        for (var i = 0; i < mesh.Lines.Length; i += 2)
+            AddStroke(vertices, mesh.Lines[i] + offset, mesh.Lines[i + 1] + offset,
+                stroke, item.Style.StrokeThickness, nearPlane);
+        if (vertices.Count != 0) batches.Add(new(DrawPipeline.Stroke, vertices.ToArray()));
     }
 
     private static GpuVertex[] Convex(IReadOnlyList<Vector3> contour, Vector4 color, Vector3 offset)
@@ -96,19 +120,21 @@ internal static class MeshBuilder
         List<GpuVertex> list = new List<GpuVertex>(num * 6);
         for (int i = 0; i < num; i++)
         {
-            Vector3 start2 = contour[start + i] + offset;
-            Vector3 end = contour[start + (i + 1) % num] + offset;
-            if (ClipLine(nearPlane, ref start2, ref end))
-            {
-                list.Add(StrokeVertex(start2, end, 0f, -1f, color, thickness));
-                list.Add(StrokeVertex(start2, end, 1f, -1f, color, thickness));
-                list.Add(StrokeVertex(start2, end, 1f, 1f, color, thickness));
-                list.Add(StrokeVertex(start2, end, 0f, -1f, color, thickness));
-                list.Add(StrokeVertex(start2, end, 1f, 1f, color, thickness));
-                list.Add(StrokeVertex(start2, end, 0f, 1f, color, thickness));
-            }
+            AddStroke(list, contour[start + i] + offset, contour[start + (i + 1) % num] + offset,
+                color, thickness, nearPlane);
         }
         return list.ToArray();
+    }
+
+    private static void AddStroke(List<GpuVertex> vertices, Vector3 start, Vector3 end, Vector4 color, float thickness, Vector4 nearPlane)
+    {
+        if (!ClipLine(nearPlane, ref start, ref end)) return;
+        vertices.Add(StrokeVertex(start, end, 0f, -1f, color, thickness));
+        vertices.Add(StrokeVertex(start, end, 1f, -1f, color, thickness));
+        vertices.Add(StrokeVertex(start, end, 1f, 1f, color, thickness));
+        vertices.Add(StrokeVertex(start, end, 0f, -1f, color, thickness));
+        vertices.Add(StrokeVertex(start, end, 1f, 1f, color, thickness));
+        vertices.Add(StrokeVertex(start, end, 0f, 1f, color, thickness));
     }
 
     private static bool ClipLine(Vector4 plane, ref Vector3 start, ref Vector3 end)

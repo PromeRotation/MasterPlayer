@@ -161,7 +161,7 @@ internal static class SimpleHuntRegression
     }
 
     private static ReplayActorState Actor(ulong id, uint oid, ReplayCast cast)
-        => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
 
     private static void Check(bool condition, string reason)
     {

@@ -342,8 +342,12 @@ public sealed partial class MainWindow
             Md.MutedText(running ? "这个脚本没有可调的设置。" : "脚本设置在脚本运行后显示；上面的机制开关现在就能调，进入区域后生效。");
         Md.EndCard();
 
-        if (running && run!.Script is PalaceScript palace && palace.HasFloorMap)
-            DrawPalaceTrapControls(palace);
+        if (running && run!.Script is PalaceScript palace)
+        {
+            if (palace.HasFloorMap) DrawPalaceTrapControls(palace);
+            if (palace.PredictedDamageText is { } palacePrediction) Md.ValueRow("预计伤害", palacePrediction);
+            if (palace.MechanicHintsText is { } palaceHints) Md.ValueRow("机制提示", palaceHints);
+        }
         if (running && run!.Script is PilgrimsBossScript { PredictedDamageText: { } prediction })
             Md.ValueRow("预计伤害", prediction);
         if (running && run!.Script is DungeonScript { PredictedDamageText: { } dungeonPrediction })

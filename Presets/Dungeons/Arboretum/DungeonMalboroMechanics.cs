@@ -11,9 +11,11 @@ internal sealed partial class DungeonEncounter
     private readonly List<DungeonPendingCast> malboroCasts = [];
     private readonly List<DungeonPendingCast> malboroFinished = [];
     private bool IsMalboro => territory == ArboretumCatalog.TERRITORY && Active?.BossOid == 0x141F;
-    internal bool PreserveStageAcrossBattleEnd => IsCaduceus && CaduceusAlive || IsCoilGauntlet && Active != null || IsMalboro || IsThornmarch && _actors.ContainsKey(PrimaryId)
+    internal bool PreserveStageAcrossBattleEnd => IsCaduceus && CaduceusAlive || IsCoilGauntlet && Active != null || IsMalboro || IsThornmarch && _actors.ContainsKey(PrimaryId) || IsPalaceManagedBoss && Active != null
         || IsLabyrinthBone && _actors.ContainsKey(PrimaryId)
-        || IsNativeTrial && _actors.GetValueOrDefault(PrimaryId) is { Dead: false } || InnocencePhaseAlive || HadesPhaseAlive;
+        || IsQuantum || (IsHeavenOnHigh || IsEurekaOrthos || IsBarPassage || IsCarnivale || IsAlphaAlligator || IsSlickshell || IsHopeOnTheWaves || IsTimeBetween) && Active != null
+        || (IsNativeTrial || IsNativeQuestBoss) && _actors.GetValueOrDefault(PrimaryId) is { Dead: false }
+        || DivinePairAlive || JobQuestGroupAlive || TreasureGroupAlive || InnocencePhaseAlive || HadesPhaseAlive;
 
     public void LegacyMapEffect(byte sequence, byte param, byte[]? data)
     {

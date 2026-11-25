@@ -31,7 +31,7 @@ internal sealed partial class DungeonEncounter
 
     private bool GubalBossForbidden(DungeonActor actor) => Active?.BossOid == 0xE83 && HasStatus(actor, 325);
 
-    private static Vector3 QuantizedDungeonPosition(Vector3 position)
+    internal static Vector3 QuantizedDungeonPosition(Vector3 position)
     {
         const float grid = 2000f / 65535f;
         const float inverse = 1f / grid;

@@ -3,7 +3,8 @@ using MasterPlayer.Replay;
 
 namespace MasterPlayer.Mechanics.Hunts;
 
-internal sealed class HuntMarchState
+internal sealed class HuntMarchState(uint forward = 1958, uint backward = 1959, uint left = 1960, uint right = 1961,
+    float duration = 2, float activationLimit = float.MaxValue)
 {
     private readonly Dictionary<(ulong Actor, uint Status), ReplayStatus> known = [];
     private readonly Dictionary<(ulong Actor, uint Status), ReplayStatus?> unconfirmed = [];
@@ -11,16 +12,18 @@ internal sealed class HuntMarchState
     private readonly Dictionary<ulong, List<(uint Status, DateTime At)>> pending = [];
     private readonly Dictionary<ulong, DateTime> forcedEnds = [];
 
-    internal static bool Matches(uint status) => status is >= 1958 and <= 1961 or 1257 or 3629;
+    internal static bool Matches(uint status) => status is >= 1958 and <= 1961 or >= 2161 and <= 2164 or 1257 or 3629;
+    private bool Accepts(uint status) => status == forward || status == backward || status == left || status == right || status is 1257 or 3629;
 
     internal void Status(ulong actor, uint status, DateTime at, ReplayStatus? value)
     {
         var key = (actor, status);
-        if (!Matches(status) || watermarks.TryGetValue(key, out var previous) && at <= previous) return;
+        if (!Accepts(status) || watermarks.TryGetValue(key, out var previous) && at <= previous) return;
         watermarks[key] = at;
         unconfirmed[key] = value;
         var observed = known.GetValueOrDefault(key);
         if (value == null ? observed == null : observed != null
+            && observed.Param == value.Param && observed.SourceId == value.SourceId
             && Math.Abs((observed.ExpiresAt - value.ExpiresAt).TotalSeconds) <= .1) return;
         Apply(actor, status, value);
     }
@@ -31,13 +34,14 @@ internal sealed class HuntMarchState
             .Concat(unconfirmed.Keys.Select(k => k.Actor)).Distinct().Where(id => !actors.ContainsKey(id)).ToArray())
             Remove(id);
         foreach (var actor in actors.Values)
-        foreach (var status in new uint[] { 1958, 1959, 1960, 1961, 1257, 3629 })
+        foreach (var status in new uint[] { forward, backward, left, right, 1257, 3629 })
         {
             var key = (actor.Id, status);
             var observed = actor.Statuses.FirstOrDefault(s => s.Id == status);
             if (unconfirmed.TryGetValue(key, out var expected))
             {
                 if (expected == null ? observed != null : observed == null
+                    || observed.Param != expected.Param || observed.SourceId != expected.SourceId
                     || Math.Abs((observed.ExpiresAt - expected.ExpiresAt).TotalSeconds) > .1) continue;
                 unconfirmed.Remove(key);
                 // Acknowledgement of the event is not a second status gain.
@@ -48,6 +52,7 @@ internal sealed class HuntMarchState
             var previous = known.GetValueOrDefault(key);
             if (previous == null && observed == null) continue;
             if (previous != null && observed != null
+                && previous.Param == observed.Param && previous.SourceId == observed.SourceId
                 && Math.Abs((previous.ExpiresAt - observed.ExpiresAt).TotalSeconds) <= .1) continue;
             Apply(actor.Id, status, observed);
         }
@@ -56,6 +61,8 @@ internal sealed class HuntMarchState
     private void Apply(ulong actor, uint status, ReplayStatus? value)
     {
         var key = (actor, status);
+        if (value != null && known.TryGetValue(key, out var previous) && previous.SourceId != value.SourceId)
+            Apply(actor, status, null);
         if (value == null) known.Remove(key);
         else known[key] = value;
         if (status is 1257 or 3629)
@@ -76,20 +83,41 @@ internal sealed class HuntMarchState
         }
     }
 
-    internal IEnumerable<(Vector3 From, Vector3 To, float Rotation)> Movements(ReplayActorState actor, DateTime now)
+    // Consumers with their own event/raw reconciliation can share movement semantics without
+    // passing already acknowledged transitions through this class's sampling ledger again.
+    internal void ApplyObservedStatus(ulong actor, uint status, ReplayStatus? value) => Apply(actor, status, value);
+
+    internal (float Rotation, DateTime Activation)? FirstPending(ulong actor)
+    {
+        if (!pending.TryGetValue(actor, out var moves) || moves.Count == 0) return null;
+        var move = moves[0];
+        var rotation = 0f;
+        if (move.Status == backward) rotation = MathF.PI;
+        else if (move.Status == left) rotation = MathF.PI / 2;
+        else if (move.Status == right) rotation = 3 * MathF.PI / 2;
+        return (rotation, move.At);
+    }
+
+    internal IEnumerable<(Vector3 From, Vector3 To, float Rotation)> Movements(ReplayActorState actor, DateTime now,
+        Func<Vector3, Vector3, Vector3>? stopAtWall = null)
     {
         var from = actor.Position;
         var rotation = actor.Rotation;
         if (forcedEnds.GetValueOrDefault(actor.Id) > now)
         {
             var to = from + Direction(rotation) * (6.6f * (float)(forcedEnds[actor.Id] - now).TotalSeconds);
+            if (stopAtWall != null) to = stopAtWall(from, to);
             yield return (from, to, rotation);
             from = to;
         }
         foreach (var move in pending.GetValueOrDefault(actor.Id) ?? [])
         {
-            rotation += move.Status switch { 1959 => MathF.PI, 1960 => MathF.PI / 2, 1961 => 3 * MathF.PI / 2, _ => 0 };
-            var to = from + Direction(rotation) * 13.2f;
+            if ((move.At - now).TotalSeconds > activationLimit) yield break;
+            if (move.Status == backward) rotation += MathF.PI;
+            else if (move.Status == left) rotation += MathF.PI / 2;
+            else if (move.Status == right) rotation += 3 * MathF.PI / 2;
+            var to = from + Direction(rotation) * (6.6f * duration);
+            if (stopAtWall != null) to = stopAtWall(from, to);
             yield return (from, to, rotation);
             from = to;
         }

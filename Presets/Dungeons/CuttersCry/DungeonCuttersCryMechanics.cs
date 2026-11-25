@@ -28,6 +28,17 @@ internal sealed partial class DungeonEncounter
 
     public void Icon(ulong target, uint icon, DateTime? timestamp = null, ulong actorId = 0)
     {
+        EurekaIcon(actorId, icon);
+        CarnivalePapaIcon(actorId, target, icon, timestamp ?? _now);
+        FateIcon(actorId, icon, timestamp ?? _now);
+        TacticalIcon(target, icon, timestamp ?? _now, actorId is 0 or 0xE0000000 ? target : actorId);
+        TreasureBaitIcon(actorId, icon);
+        SlickshellIcon(target, actorId, icon);
+        KenkoIcon(target, icon);
+        if (icon == 129) IseultalonIcon(actorId is 0 or 0xE0000000 ? target : actorId);
+        TreasureRotationIcon(actorId is 0 or 0xE0000000 ? target : actorId, icon);
+        TreasureBuffetIconReceived(actorId, icon);
+        FallenIcon(actorId is 0 or 0xE0000000 ? target : actorId, icon, _now);
         SusanoIcon(actorId is 0 or 0xE0000000 ? target : actorId, icon, timestamp ?? _now);
         LakshmiIcon(target, icon, timestamp ?? _now);
         ShinryuIcon(actorId is 0 or 0xE0000000 ? target : actorId, target, icon, timestamp ?? _now);

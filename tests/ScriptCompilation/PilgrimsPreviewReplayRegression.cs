@@ -154,7 +154,10 @@ internal static class PilgrimsPreviewReplayRegression
             var end = JsonSerializer.Serialize(new { t = 3, kind = "WorldFrame", data = new { Territory = territory, LocalPlayerId = 100 } });
             File.WriteAllLines(file, new[] { header, initial }.Concat(events.OrderBy(e => e.Time).Select(e => e.Line)).Append(end));
             object[] Lines() => ((IEnumerable)visibilityType.GetMethod("GetLines")!.Invoke(visibility, null)!).Cast<object>()
-                .Where(l => ((string)l.GetType().GetProperty("Id")!.GetValue(l)!).Contains("knockback/")).ToArray();
+                .Where(l => ((string)l.GetType().GetProperty("Id")!.GetValue(l)!).Contains("knockback/"))
+                // Line registry dictionary slots can be reused by earlier script owners.
+                // Production IDs encode the actual projection sequence.
+                .OrderBy(l => (string)l.GetType().GetProperty("Id")!.GetValue(l)!, StringComparer.Ordinal).ToArray();
             int Markers() => ((IEnumerable)visibilityType.GetMethod("GetPreviews")!.Invoke(visibility, [(object)runtime.CurrentTime])!).Cast<object>()
                 .Count(p => ((string)p.GetType().GetProperty("Id")!.GetValue(p)!).Contains("knockback/"));
             Check(controller.Load(file), (string)controller.StatusMessage);

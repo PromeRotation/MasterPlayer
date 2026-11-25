@@ -5,6 +5,7 @@ public sealed class MasterPlayerSettings
 {
     public WorldDrawingMode WorldDrawingMode;
     public bool DxSceneOcclusion;
+    public bool DxGroundProjection = true;
     public bool DxUiMask;
     public float DxOccludedAlpha;
     public float DxHeightOffset;

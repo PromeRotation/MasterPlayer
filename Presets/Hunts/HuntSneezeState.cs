@@ -43,7 +43,7 @@ internal sealed class HuntSneezeState
 
     internal void Correct(HuntPendingCast previous, HuntPendingCast updated, ReplayActorState actor)
     {
-        if (referenceCast?.Input == previous.Input)
+        if (referenceCast?.Order == previous.Order)
         {
             referenceCast = updated;
             reference = updated.Rotation;
@@ -51,15 +51,15 @@ internal sealed class HuntSneezeState
         for (var i = 0; i < offsets.Count; ++i)
         {
             var item = offsets[i];
-            if (item.Cast.Input == previous.Input || item.Reference?.Input == previous.Input)
+            if (item.Cast.Order == previous.Order || item.Reference?.Order == previous.Order)
             {
-                if (item.Cast.Input == previous.Input) item.Cast = updated;
-                if (item.Reference?.Input == previous.Input) item.Reference = updated;
+                if (item.Cast.Order == previous.Order) item.Cast = updated;
+                if (item.Reference?.Order == previous.Order) item.Reference = updated;
                 item.Offset = item.Cast.Rotation - (item.Reference?.Rotation ?? 0);
             }
             offsets[i] = item;
         }
-        if (sneeze?.Input == previous.Input)
+        if (sneeze?.Order == previous.Order)
         {
             sneeze = updated;
             reference = updated.Rotation;

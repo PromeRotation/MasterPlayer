@@ -13,6 +13,7 @@ using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
+    internal const int BUILT_IN_COUNT = 273;
     public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false, bool dungeonsOnly = false)
     {
         var config = Directory.CreateTempSubdirectory("MasterPlayer-ScriptCatalog-");
@@ -45,14 +46,14 @@ internal static class ScriptCatalogRegression
             dynamic Find(string id) => Scripts().Single(d => d.Metadata.Id == id);
             void ExpectOverride(string id, string source)
             {
-                Check(Scripts().Length == 145, "An override must replace its built-in entry.");
+                Check(Scripts().Length == BUILT_IN_COUNT, "An override must replace its built-in entry.");
                 Check(Find(id).Source.ToString() == source, "The configuration directory must win.");
             }
             void Pass(string name) => Console.WriteLine($"PASS script catalog: {name}");
 
             Refresh();
-            Check(Scripts().Length == 145 && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
-                "An empty configuration must discover all built-in scripts, excluding examples.");
+            Check(Scripts().Length == BUILT_IN_COUNT && Scripts().All(d => d.Source.ToString() == "BuiltIn"),
+                $"An empty configuration must discover {BUILT_IN_COUNT} built-in scripts, excluding examples; found {Scripts().Length}.");
             foreach (var (floor, territory) in new[] { (10, 1281u), (20, 1282u), (30, 1283u), (40, 1284u), (50, 1285u),
                 (60, 1286u), (70, 1287u), (80, 1288u), (90, 1289u), (99, 1290u) })
             {
@@ -63,7 +64,15 @@ internal static class ScriptCatalogRegression
             }
             foreach (var (id, territory) in new[] { ("sastasha", 1036u), ("tamtara", 1037u), ("copperbell", 1038u) })
                 Check(((uint[])Find("masterplayer.dungeon." + id).Metadata.Territorys).SequenceEqual([territory]), "Dungeon territory identity must match the remade duty.");
+            foreach (var (floor, territory) in new[] { (10, 770u), (20, 771u), (30, 772u), (40, 782u), (50, 773u),
+                (60, 783u), (70, 774u), (80, 784u), (90, 775u) })
+                Check(((uint[])Find($"masterplayer.hoh.{floor}").Metadata.Territorys).SequenceEqual([territory])
+                    && (bool)manager.IsScriptEnabled($"masterplayer.hoh.{floor}"),
+                    "HoH scripts must be enabled at their true territories, independently of CFC and ordinary floors.");
             var race = Find("masterplayer.goldsaucer.blunderville");
+            foreach (var (name, territory) in new[] { ("spurge", 562u), ("kirtimukha", 599u), ("nybeth", 597u) })
+                Check(((uint[])Find($"masterplayer.palace.{name}").Metadata.Territorys).SequenceEqual([territory])
+                    && (bool)manager.IsScriptEnabled($"masterplayer.palace.{name}"), "Palace plant true territory/default enabled.");
             Check(((uint[])race.Metadata.Territorys).SequenceEqual([1165u]), "Blunderville must activate in the actual minigame territory.");
             Check(((IEnumerable<string>)race.CreateInstance().GetMechanisms()).Count() == 7, "Expose six obstacle groups and the race controls for the minigame.");
             var castrum = Find("masterplayer.dungeon.castrum-abania");
@@ -123,12 +132,12 @@ internal static class ScriptCatalogRegression
             Check(Find(builtInId).Source.ToString() == "BuiltIn", "A failed external load must leave the built-in available.");
             File.Delete(sourcePath);
             Refresh();
-            Check(Scripts().Length == 145 && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
+            Check(Scripts().Length == BUILT_IN_COUNT && Find(builtInId).Source.ToString() == "BuiltIn", "Removing an override must restore the built-in.");
             Pass("compile failure reports an error; removal restores the built-in");
 
             File.WriteAllText(sourcePath, Source("Independent external script", "external.independent"));
             Refresh();
-            Check(Scripts().Length == 146 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
+            Check(Scripts().Length == BUILT_IN_COUNT + 1 && Find(builtInId).Source.ToString() == "BuiltIn", "Unrelated scripts must coexist.");
             File.Delete(sourcePath);
             Pass("unrelated external scripts coexist with built-ins");
 
@@ -170,7 +179,7 @@ internal static class ScriptCatalogRegression
             visualPreview.Set("preview-marker", 2);
             Check((int)settings.ScriptSettings[visualId]["preview-marker"].GetValue<int>() == 1,
                 "Saving a visual replacement must retire its previous settings preview without a full reload.");
-            Check(Scripts().Length == 146 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
+            Check(Scripts().Length == BUILT_IN_COUNT + 1 && Find(builtInId).Source.ToString() == "BuiltIn", "Renaming away must restore the built-in immediately.");
             definition.Name = builtInName;
             json = (string)save.Invoke((object)manager, [visualPath, (object)definition, json])!;
             ExpectOverride(visualId, "Visual");
@@ -178,7 +187,7 @@ internal static class ScriptCatalogRegression
             delete.Invoke((object)manager, [(object)Find(visualId), json]);
             visualPreview.Set("preview-marker", 3);
             Check(!settings.ScriptSettings.ContainsKey(visualId), "A deleted visual preview must not recreate removed settings.");
-            Check(Scripts().Length == 145 && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
+            Check(Scripts().Length == BUILT_IN_COUNT && Find(builtInId).Source.ToString() == "BuiltIn", "Deleting a visual override must restore the built-in immediately.");
             Check(manager.ErrorMessage == "", (string)manager.ErrorMessage);
             Pass("visual rename and deletion restore built-ins without a full reload");
             CheckLocalSafeZone(assembly, (object)manager);
@@ -290,6 +299,11 @@ internal static class ScriptCatalogRegression
                 throw new InvalidOperationException("Replay accessed live objects: " + name);
             }));
             draw = new PromeRotation.Spatial.Drawing.DrawManager();
+            // Replay exercises registration and owner cleanup without creating a game renderer.
+            var worldDrawingType = assembly.GetType("MasterPlayer.Drawing.WorldDrawing")!;
+            var worldDrawing = RuntimeHelpers.GetUninitializedObject(worldDrawingType);
+            worldDrawingType.GetField("<Manager>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(worldDrawing, draw);
+            plugin.GetType().GetField("worldDrawing", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(plugin, worldDrawing);
             var pr = RuntimeHelpers.GetUninitializedObject(typeof(PromeRotation.Plugin));
             typeof(PromeRotation.Plugin).GetField("_drawManager", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(pr, draw);
             prInstance.SetValue(null, pr);
@@ -391,7 +405,9 @@ internal static class ScriptCatalogRegression
                         """);
                     Check(controller.Load(file), (string)controller.StatusMessage);
                     controller.Play(); controller.Update(2f); controller.Pause();
-                    Check(controller.ReplayScriptCount == 1 && Dangers() == 1 && Previews() == 1, "Production Pilgrims replay must register its own exact AOE and preview.");
+                    Check(controller.ReplayScriptCount == 2 && manager.Running.ContainsKey("masterplayer.pilgrims.floors")
+                        && Dangers() == 1 && Previews() == 1,
+                        $"Production Pilgrims Boss and Floor must coexist with one exact AOE and preview: scripts={controller.ReplayScriptCount}, dangers={Dangers()}, previews={Previews()}.");
                     dynamic danger = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<dynamic>().Single();
                     Check((bool)danger.Geometry.Contains(new Vector3(-300 + radius - .1f, 0, -300), 0f)
                         && !(bool)danger.Geometry.Contains(new Vector3(-300 + radius + .1f, 0, -300), 0f),

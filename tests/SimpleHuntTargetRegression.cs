@@ -173,8 +173,8 @@ internal static class SimpleHuntTargetRegression
         encounter.Start(1, cast with { Rotation = .3f }, true);
         Check(encounter.Areas.Count(a => a.Shape != null) == 1, "A corrected packet resurrected an effect-consumed Slash.");
         encounter.Synchronize([boss with { Position = Vector3.Zero, Cast = cast with { Rotation = .3f } }, target], _ => true);
-        Check(encounter.Areas.Count(a => a.Shape != null) == 1,
-            "An object observation catching up with the corrected packet resurrected Slash.");
+        Check(encounter.Areas.Count(a => a.Shape != null) == 2,
+            "Actual changed raw CastInfo failed to start the source Slash prediction again.");
         encounter.Finish(1);
         encounter.Start(1, Cast(17492, 20), true);
         encounter.Effect(1, 17489, Start.AddSeconds(8), 2);
@@ -231,15 +231,18 @@ internal static class SimpleHuntTargetRegression
         Check(encounter.PredictedDamage(Party).Single().TargetId == 100,
             "A Torpedo clock/pose correction reselected a self-target fallback.");
         encounter.Synchronize([boss with { Cast = torpedo with { Rotation = .2f }, TargetId = 101 }, target, ally], _ => true);
-        Check(encounter.PredictedDamage(Party).Count() == 1 && encounter.PredictedDamage(Party).Single().TargetId == 100,
-            "An observation catching up with the corrected packet duplicated or reselected Torpedo.");
+        Check(encounter.PredictedDamage(Party).Select(d => d.TargetId).Order().SequenceEqual(new ulong[] { 100, 101 }),
+            "Actual changed raw CastInfo failed to append a new Torpedo using the current boss target.");
         encounter.Synchronize([boss with { Cast = torpedo with { Rotation = .2f }, TargetId = 101 }, ally], _ => true);
         encounter.Start(1, torpedo with { Rotation = .3f }, true);
-        Check(encounter.PredictedDamage(Party).Single().TargetId == 100,
-            "An unrelated packet correction discarded a temporarily missing locked Torpedo target.");
+        Check(encounter.PredictedDamage(Party).Select(d => d.TargetId).Order().SequenceEqual(new ulong[] { 100, 101 }),
+            "A packet correction discarded an unresolved historical Torpedo target.");
         encounter.Effect(1, 16964, Start.AddSeconds(6), 6, 100);
         encounter.Synchronize([boss with { Cast = torpedo with { Rotation = .3f }, TargetId = 101 }, target, ally], _ => true);
-        Check(!encounter.PredictedDamage(Party).Any(), "A catching-up observation resurrected an effect-consumed Torpedo.");
+        Check(encounter.PredictedDamage(Party).Count() == 2 && encounter.PredictedDamage(Party).All(d => d.TargetId == 101),
+            "Actual changed raw CastInfo did not append the next target independently of the consumed old target.");
+        encounter.Reset();
+        encounter.Synchronize([boss, target, ally], _ => true);
         encounter.Start(1, Cast(16964, 10), true);
         encounter.Finish(1);
         encounter.Start(1, Cast(16964, 20), true);
@@ -252,7 +255,7 @@ internal static class SimpleHuntTargetRegression
     private static ReplayCast Cast(uint action, double start = 0)
         => new(action, 100, Vector3.Zero, 0, Start.AddSeconds(start), Start.AddSeconds(start + 5.3), true, false) { TotalTime = 5 };
     private static ReplayActorState Boss(ulong id, uint oid, ReplayCast? cast)
-        => new() { Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, InCombat = true, Targetable = true, Cast = cast };
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new Exception(message);

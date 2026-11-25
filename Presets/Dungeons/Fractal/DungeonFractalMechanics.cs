@@ -77,9 +77,23 @@ internal sealed partial class DungeonEncounter
             _casts[cast.Source] = cast with { Location = FractalFloorBoundary.CellCenter(FractalFloorBoundary.CellIndex(cast.Location), cast.Location.Y) };
     }
 
-    public void DirectorUpdate(uint update, uint param1 = 0)
+    public void DirectorUpdate(uint update, uint param1 = 0, uint param2 = 0, uint param3 = 0, uint param4 = 0)
     {
+        TacticalDirector(update, param1, param2, param3, param4);
+        PalaceGuideDirector(update);
+        EurekaDirector(update);
         NecronDirector(update, param1);
+        ViperDirector(update);
+        SlickshellDirector(update);
+        MaxQuestDirector(update);
+        HopeDirector(update);
+        TimeBetweenDirector(update);
+        HeroesPretendersDirector(update);
+        IseultalonDirector(update);
+        AlphaDirector(update);
+        CarnivaleDirector(update);
+        BarPassageDirector(update);
+        DikaiosyneDirector(update);
         ZoraalDirector(update);
         DoomDirector(update);
         CoilDirector(update);

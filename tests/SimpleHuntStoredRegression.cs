@@ -473,7 +473,7 @@ internal static class SimpleHuntStoredRegression
     private static ReplayCast Cast(uint action, double start = 0, double duration = 3)
         => new(action, 100, Vector3.Zero, 0, Start.AddSeconds(start), Start.AddSeconds(start + duration + .3), false, false) { TotalTime = (float)duration };
     private static ReplayActorState Boss(ulong id, uint oid, ReplayCast? cast)
-        => new() { Id = id, Oid = oid, Targetable = true, InCombat = true, Cast = cast };
+        => new() { Hp = 1000, Id = id, Oid = oid, Targetable = true, InCombat = true, Cast = cast };
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new Exception(message);

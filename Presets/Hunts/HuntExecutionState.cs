@@ -49,10 +49,10 @@ internal sealed class HuntExecutionState
         for (var i = 0; i < queue.Count; ++i)
         {
             var item = queue[i];
-            if (item.Input != previous.Input) continue;
+            if (item.Order != previous.Order) continue;
             queue[i] = item with
             {
-                Input = updated.Input, Location = updated.Location,
+                Input = updated.Input, Order = updated.Order, Location = updated.Location,
                 Rotation = item.Rotation + updated.Rotation - previous.Rotation,
                 Activation = updated.Activation.AddTicks((item.Activation - previous.Activation).Ticks)
             };

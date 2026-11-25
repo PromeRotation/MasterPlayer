@@ -112,7 +112,7 @@ internal static class SimpleHuntMarchRegression
     }
 
     private static ReplayActorState Boss(uint oid, ReplayCast? cast, Vector3 position = default)
-        => new() { Id = 1, Oid = oid, Position = position, Targetable = true, InCombat = true, Cast = cast };
+        => new() { Hp = 1000, Id = 1, Oid = oid, Position = position, Targetable = true, InCombat = true, Cast = cast };
     private static ReplayCast Cast(uint action, double at, double duration)
         => new(action, 1, Vector3.Zero, 0, Start.AddSeconds(at), Start.AddSeconds(at + duration + .3), false, false) { TotalTime = (float)duration };
     private static ReplayStatus Status(uint status, double expiry) => new(status, 0, 1, Start.AddSeconds(expiry));

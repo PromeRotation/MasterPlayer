@@ -1,0 +1,58 @@
+请接手并持续执行本项目的 BMR → MP 原生脚本迁移，直到授权范围内的迁移及本机可执行验证全部完成。不要只分析或给计划，不要每完成一批就停止等待我说“继续”。
+
+工作目录：
+C:\Users\xiaos\Documents\GitHub\MasterPlayer
+
+首先完整读取：
+C:\Users\xiaos\Documents\GitHub\MasterPlayer\docs\BMR迁移交接文档.md
+然后读取根AGENTS.md、docs/reference/BMRToMPScripts.spec.md、docs/reference/BMRMigrationInventory.csv、docs/reference/BMRMigrationGroups.csv，以及当前批次规格和生产实现。交接文档有来源、证据、命令和准确中断点；不需要访问旧会话才能开工。
+
+这是执行交接。保留当前main分支工作区的大量未提交及未跟踪代码、规格、备份和验证证据；不能只从HEAD或Git已跟踪文件恢复。旧agent可能留下的任务先检查，避免并发修改及相同输出目录冲突。核心文件修改前备份，保留原编码/换行。
+
+2026-11-25交接时的正式审计：
+- 712个源类型mp_native_offline_verified。
+- 501个bmr_pending。
+- 1个mp_script_needs_parity_review，即死宫DD190灰炸弹的精确禁攻执行缺口。
+- 45个excluded_existing_mp，为已有MP斗兽奇弈，未计入1214个目标。
+- 实际审计--check通过。当前源码BUILT_IN_COUNT已改为272，这是源码预期，不代表272个入口全部通过最新生产DLL验证。
+接手后以当前文件重新核对，不把历史686/528/264当作最新进度，不混用类型数、组件数、入口数和副本数。
+
+第一优先处理当前中断点：
+M4普通Wicked Thunder已在Presets/Raids/WickedThunder/实现并接入DungeonEncounter等公共层，入口是Presets/Dungeons/Entries/WickedThunderNormal.cs，Territory1231、OID0x4263。其审计仍pending，尚缺实际DLL专项runner和模块规格。
+
+.tmp/halatali-verify/native-wickedthunder-20261125-model-01.log为56项PASS、1项FAIL。失败名称：
+WickedThunder native damage dynamic raw NPC clock no invented stack spread predictions
+异常：
+Dynamic capped NPC clock.
+
+从tests/WickedThunderRegression.cs的Damage()开始，交接时第276行要求7个存活成员的预测时刻为当前时间加.3f。核对WickedThunderEncounter.Output.cs的Damage()及WickedThunderEncounter.cs的Activation/Total/Advance，并与真实源NPCRemainingTime运算对照。先区分生产缺陷和夹具错误，不通过加宽容差或降低断言掩盖失败。随后复核全部13组件，尤其普通WatchedAction Finish、炮/追踪颜色与Risky尾项、冷激活/状态槽、两个独立分摊组件、目标转移、原引用和真实Effect消费。
+
+第二优先收尾楼层：
+正统优雷卡10个Zone和朝圣路10个Zone已有生产实现，仍未登记完成。最新native-deepzones-20261125-批次记录生产build-03为0错4既有警告、replay-05为50条PASS、catalog-05为1013条PASS、model-05为29项PASS，均无FAIL。收齐禁桥前授权机制完整性审查，特别是PT通用躲避与楼层输出的实时联合接入，再修改ownership、审计生成器和CSV。通过日志不能代替尚未闭合的独立审查。PT没有源墙/陷阱表，不借用死宫默认数据；EO位图嵌入资源必须保留。
+
+必须保留两项缺口：
+1. Quantum深想战仍pending：缺前置方向Effect的冷激活分支未闭合。保留原零方向模型/判定钟与诊断，不猜方向，不物化源异常巨量AOE。需要真实历史录制或另行明确的输入恢复合同。源WIP和AutoPotion不补造。
+2. DD190仍review：PR MechanicControl.ApplyTarget在有ForbiddenTargets时使普通选敌重评估跳过。换ScriptHintsApi不能消除此限制。保留精确意图，不全停手补偿、不虚构替代目标、不修改PR；等待宿主能力及实机证据。
+它们不能用普通场景或全目录PASS关闭，也不能阻止其他独立模块继续迁移。
+
+范围限制：
+- 深宫只迁Boss和道中敌人的机制保护、AOE、面向/视线、停手禁攻及必要站位。禁止探索、开箱、机关交互、自动前进、道具使用和层间推进。已删除流程类不能恢复，历史Floor/AutoPoms记录不构成授权。
+- 统一寻路传送/固定跳点试点另行推进，不实施寻路重构，不将其作为迁移前置条件。
+- 禁DoT执行继续暂缓，只保留意图/诊断，不扩大整目标禁攻或全停手，不恢复PR已撤回接口。
+- 保留PvP全插件门控、EnableSmartMovement、宿主控制权和owner隔离。
+- ARR和MP回放只规划/绘制，不发送GreenMove、PR面向/ACR、遥控或原生操作。
+
+实施与验收：
+机制状态、来源/目标原引用与代际、位置/方向锁定、准备/判定/实际结束都由MP原生持有。不得包装BossModule或MechanicSession继续消费旧桥来冒充迁移。
+连续队列、隐藏晋升、排序、跨来源/按目标消费、真实状态槽、旧Party顺序、冷激活/热回调、raw/packet补正、取消/死亡/销毁、切人/Seek/owner必须按源组件语义核对，不能统一超时或统一去重。
+模型维护机制，公共输出层适配几何与当前求解器，执行层统一门控和释放。雷达/世界、显示/导航/执行分别验证；仅显示的特殊位移不扩自动执行，提示或落点不能代替已有导航。
+凝视使用PR联合面向并续期；动作限制区分全停手、禁读条、指定实体禁攻和普攻停止。保留治疗/自保及现有诊断消费，不新增治疗策略。
+
+验证按批共用生产构建和同一DLL，失败场景定向重跑；公共修改后覆盖相关消费者。补齐M4实际DLLrunner后再使用对应native-replay筛选，当前没有该runner，不能直接把未知筛选当作有效验证。
+本机根SDK要求11.0.100，当前安装9/10，已有.tmp/halatali-verify/global.json选择10.0.303；在该目录复用验证环境，不改根配置，不宣称.NET11已验。实际命令见交接文档。保留唯一日志名、退出码和DLL哈希，不覆盖历史证据。FFXIV_SQPACK/PALACE_GAME_DATA按本机路径设置，不缺数据静默跳过。
+批次完成更新既有规格、审计生成器及生成CSV，执行rtk proxy python tools/bmr_migration_audit.py --check。不新建平行进度账，不批量把空壳/缺口标成verified。
+
+M4和楼层收尾后，继续按剩余清单推进其他团队/联盟、极幻、多变异闻、零式绝灭、大规模探索、任务战等内容；每批通过后立即进入下一批，不长期只挑简单模块。真正受阻的分支记录证据和解锁条件，继续独立项目。
+全部授权机制完成且无剩余依赖后，才清退对应桥、设置和打包。未迁内容保留桥。离线已验、实机待验、明确禁止/暂缓和客观阻塞分别报告，不能以一批完成或改统计口径冒充全量完成。
+
+现在检查现场，从M4失败与楼层收尾直接执行。除重大不可逆操作或确实缺少关键输入，不重复询问是否继续。如遇工具、额度、上下文或必须人工操作的硬限制，保留准确续作位置、失败证据和下一条命令，如实说明尚未完成。

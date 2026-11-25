@@ -111,6 +111,7 @@ internal static class BabilRegression
                 f.Render(); Check(!f.Engine.AmbientAoes().Any(a => a.Id == "babil/floor/enter"), "Floor status did not turn entry into danger.");
                 f.PlayerId = 101; Scan(f);
                 Check(f.Engine.AmbientAoes().Any(a => a.Id == "babil/floor/enter") == (mode == 2), "Player perspective reused previous status.");
+                f.Now = f.Now.AddMilliseconds(100);
                 Cast(f, 1, 25338); f.Render();
                 Check(!f.Engine.AmbientAoes().Any(a => a.Id == "babil/floor/enter"), "Thermal did not release purple entry.");
                 f.Engine.MapEffect(1, 0x00080004); f.Render(); Check(!f.Engine.AmbientAoes().Any(), "Map did not clear transformation floors.");

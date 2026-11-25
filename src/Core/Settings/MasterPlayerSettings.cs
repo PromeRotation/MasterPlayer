@@ -46,6 +46,7 @@ public sealed class MasterPlayerSettings
 
     public AoeViewSettings WorldAoe = new();
     public WorldDrawingMode WorldDrawingMode = WorldDrawingMode.ImGui;
+    public bool DxGroundProjection = true;
     public bool DxSceneOcclusion = true;
     public bool DxUiMask = true;
     public float DxOccludedAlpha = 0f;

@@ -19,6 +19,7 @@ internal static class LakshmiRegression
             Check(preview.Contains(new(0, 0, 6.9f)) && HostDrawingGeometry.Convert(preview).Contains(new(0, 0, 6.9f))
                 && !preview.Contains(new(7.1f, 0, 0)), "Tail cone size/angle differs.");
             f.Engine.Finish(10, 9612); f.Actors[10] = f.Actors[10] with { Cast = null };
+            f.Now = f.Now.AddSeconds(.1);
             f.Cast(10, 9613, 4); f.Render();
             Check(f.Engine.Gazes.Count() == 1 && Group(f, "lakshmi/gaze").Count() == 3, "Gaze eye/pupil/facing drawing missing.");
             f.Actors[100] = f.Actors[100] with { Rotation = MathF.PI }; f.Scan();

@@ -39,6 +39,7 @@ internal sealed partial class DungeonEncounter
 
     public void Timeline(ulong source, uint timeline, DateTime now)
     {
+        EurekaTimeline(source, timeline);
         UltimaTimeline(source, timeline, now);
         AsuraTimeline(source, timeline, now);
         ZeleniaTimeline(source, timeline, now);

@@ -7,6 +7,152 @@ internal static class SimpleHuntCatalog
     internal const string SCRIPT_ID = "masterplayer.hunts.simple";
     internal static readonly HuntDefinition[] Definitions =
     [
+        new(0x281E, "Aglaope", [
+            new(16819, "FourfoldSuffering", new DonutTemplate(5, 50)),
+            new(16824, "SeductiveSonata", null),
+            new(17074, "DeathlyVerse", new CircleTemplate(6)),
+            new(18040, "Tornado", new CircleTemplate(6)),
+            new(16823, "AncientAero", RayRectangleTemplate.Symmetric(6, 42.4f)),
+            new(16825, "SongOfTorment", null, Hint: "Interrupt! (Raidwide + Bleed)"),
+            new(18056, "AncientAeroIII", null, "Raidwide", "Raidwide")]),
+        new(0x4544, "ArchAethereater", [
+            .. new uint[] { 39840, 39512, 39511, 39839 }.Select(a => new HuntCastRule(a, "Aethermodynamics", null, "Raidwide", "Raidwide")),
+            .. new uint[] { 39829, 39837 }.Select(a => new HuntCastRule(a, "FireIV", new CircleTemplate(15))),
+            .. new uint[] { 39838, 39830 }.Select(a => new HuntCastRule(a, "BlizzardIV", new DonutTemplate(6, 40))),
+            new(39516, "Meltdown", RayRectangleTemplate.Symmetric(10, 40)),
+            new(39515, "Obliterate", null),
+            .. new uint[] { 39509, 39508, 39510, 39507, 39800, 39513, 39802, 39514, 39801, 39803 }
+                .Select(a => new HuntCastRule(a, "SoullessStreamCombo", null))]),
+        new(0x43DD, "Sansheya", [
+            new(39295, "CullingBlade", null, "Raidwide", "Raidwide"),
+            new(39288, "PyreOfRebirth", null, "Raidwide", "Raidwide"),
+            new(39283, "VeilOfHeat", new CircleTemplate(15)), new(39284, "HaloOfHeat", new DonutTemplate(10, 40)),
+            new(39296, "CaptiveBolt", null), new(39285, "FiresDomain", null),
+            .. new uint[] { 39292, 39290, 39289, 39291, 39601, 39602 }.Select(a => new HuntCastRule(a, "Twinscorch", null))]),
+        new(0x416F, "UrnaVariabilis", [
+            new(39108, "Magnetron", null, "Raidwide", "Raidwide"), new(39116, "Electrowave", null, "Raidwide", "Raidwide"),
+            new(39115, "ThunderousShower", null),
+            .. new uint[] { 39106, 39107, 39113, 39114, 39109, 39110, 39111, 39112 }
+                .Select(a => new HuntCastRule(a, "MagnetismCircleDonut", null))]),
+        new(0x43DC, "Keheniheyamewi", [
+            new(40063, "BodyPress1", new CircleTemplate(15)), new(38651, "BodyPress2", new CircleTemplate(15)),
+            new(39807, "Scatterscourge", new DonutTemplate(10, 40)), new(38648, "SlipperyScatterscourge", null),
+            new(38650, "Scatterscourge2", null),
+            new(38652, "PoisonGas", null, "Raidwide", "Raidwide"),
+            new(38653, "MalignantMucus", null, Hint: "Interrupt!"), new(38654, "PoisonMucus", new CircleTemplate(6))]),
+        new(0x2838, "Ixtab", [
+            new(18077, "ArchaicDualcast", null, Hint: "Preparing In/Out or Out/In AOE"),
+            new(17843, "TartareanThunder", null), new(17999, "TartareanFlame", null),
+            new(17848, "TartareanAbyss", null),
+            new(17846, "TartareanFlare", new CircleTemplate(18)),
+            new(17845, "TartareanBlizzard", new FanTemplate(40, MathF.PI / 4)),
+            new(17844, "TartareanMeteor", null),
+            new(17847, "Cryptcall", null, Hint: "Cone reduces health to 1 + applies Doom"),
+            new(17849, "TartareanQuake", null, "Raidwide", "Raidwide"),
+            new(18072, "TartareanTwister", null, Hint: "Interrupt!")]),
+        new(0x298A, "ForgivenPedantry", [
+            new(17446, "LeftCheek", null), new(17448, "RightCheek", null),
+            new(17955, "TerrifyingGlance", null, GazeRange: 10000),
+            new(17443, "TheStake", new CircleTemplate(18)),
+            new(17441, "SecondCircle", RayRectangleTemplate.Symmetric(8, 40)),
+            new(17442, "CleansingFire", null, "Raidwide", "Raidwide"),
+            new(17440, "FeveredFlagellation", null), new(17444, "WitchHunt", null)]),
+        new(0x452C, "Nechuciho", [
+            new(39872, "WordOfTheWood", new FanTemplate(30, MathF.PI)),
+            new(39491, "SentinelRoar", null, "Raidwide", "Raidwide"),
+            new(39492, "Level5DeathSentence", null, Hint: "Interrupt! (Applies Doom!)"),
+            new(39493, "WhisperOfTheWood1", null), new(39494, "WhisperOfTheWood2", null),
+            new(39495, "WhisperOfTheWood3", null)]),
+        new(0x4233, "Neyoozoteel", [
+            new(37377, "WhirlingOmen1", null), new(37376, "WhirlingOmen2", null),
+            new(37378, "WhirlingOmen3", null), new(37379, "WhirlingOmen4", null),
+            new(37308, "NoxiousSap", new FanTemplate(40, 2 * MathF.PI / 3)),
+            new(38331, "Neurotoxify", null, "Raidwide", "Raidwide"),
+            new(37307, "Cocopult", null),
+            new(37373, "RavagingRootsCW", null), new(37374, "RavagingRootsCCW", null)]),
+        new(0x4582, "Ihnuxokiy", [
+            new(39778, "AetherstockThunder", null), new(39779, "AetherstockRing", null),
+            new(39773, "AbyssalSmog", null), new(39828, "AbyssalSmogLong", null),
+            new(39774, "RazorZephyr", RayRectangleTemplate.Symmetric(12, 50)),
+            new(39776, "Blade", null, "Tankbuster", "Tankbuster"),
+            new(39777, "ChaoticStorm", null, "Tankbuster", "Raidwide + forced march debuffs")]),
+        new(0x416E, "Heshuala", [
+            .. Enumerable.Range(39095, 9).Select(action => new HuntCastRule((uint)action, "SpinShockCross", null)),
+            new(39104, "LightningBolt", new CircleTemplate(5)),
+            new(39105, "ElectricalOverload", null, "Raidwide", "Raidwide")]),
+        new(0x416D, "AtticusThePrimogenitor", [
+            new(39003, "BreathSequenceFirstFront", null),
+            new(39004, "BreathSequenceFirstLeft", null),
+            new(39005, "BreathSequenceFirstRight", null),
+            new(39012, "Brutality", null, Hint: "Applies Haste"),
+            new(39014, "Intimidation", null, "Raidwide", "Raidwide"),
+            new(39013, "PyricBlast", null)]),
+        new(0x2852, "Gunitt", [
+            new(17356, "TheDeepSeeks", null, "Tankbuster", "Tankbuster"),
+            new(17357, "TheDeepReaches", RayRectangleTemplate.Symmetric(2, 40)),
+            new(17358, "TheDeepBeckons", null, "Raidwide", "Raidwide"),
+            new(17360, "CoinToss", null, GazeRange: 10000),
+            new(17351, "TheDeepRends", new FanTemplate(20, MathF.PI / 3), Hint: "Targets 5 random players after initial hit"),
+            new(17361, "SwivelGun", null)]),
+        new(0x35CF, "Ker", [
+            new(27635, "MinaxGlare", null, Hint: "Applies temporary misdirection"),
+            new(27636, "Heliovoid", new CircleTemplate(12)),
+            .. new uint[] { 27637, 27652, 27659 }.Select(action => new HuntCastRule(action, "AncientBlizzard", new DonutTemplate(8, 40))),
+            .. new uint[] { 27646, 27639, 27653 }.Select(action => new HuntCastRule(action, "AncientHoly", new CircleTemplate(20))),
+            .. new uint[] { 27641, 27642, 27643, 27644, 27661, 27662, 27663, 27664 }
+                .Select(action => new HuntCastRule(action, "Interment", new FanTemplate(40, MathF.PI))),
+            .. new uint[] { 27647, 27640, 27654 }.Select(action => new HuntCastRule(action, "EternalDamnation", null, GazeRange: 10000)),
+            new(27645, "WhisperedIncantation", null, Hint: "Remembers the next skill and uses it again when casting Whispers Manifest"),
+            new(27927, "MirroredIncantation", null), new(27928, "MirroredIncantation", null),
+            .. new uint[] { 27704, 27638, 27706 }.Select(action => new HuntCastRule(action, "AncientFlare", null))]),
+        new(0x457F, "TheRaintriller", [
+            .. new uint[] { 39758, 39751, 39749, 39750, 39752, 39753 }
+                .Select(action => new HuntCastRule(action, "DoReMisery", null)),
+            new(39754, "DropOfVenom", null)]),
+        new(0x452B, "QueenHawk", [
+            new(39482, "BeeBeGone", null),
+            new(39483, "BeeBeHere", null),
+            new(39486, "ResonantBuzz", null, "Raidwide", "Apply forced march!"),
+            new(39489, "FrenziedSting", null, "Tankbuster", "Tankbuster"),
+            new(39490, "StraightSpindle", RayRectangleTemplate.Symmetric(5, 50))]),
+        new(0x4396, "CatsEye", [
+            new(38510, "CatsEye", null, GazeRange: 10000),
+            new(38511, "CatsEyeInverted", null, GazeRange: 10000, InvertedGaze: true),
+            new(39887, "GravitationalWave", null, "Raidwide", "Raidwide"),
+            new(38515, "BloodshotGaze", null),
+            new(39668, "BloodshotGazeInverted", null)]),
+        new(0x288E, "Tyger", [
+            .. new uint[] { 16957, 16958, 16959 }.Select(action => new HuntCastRule(action, "Breaths", new FanTemplate(30, 2 * MathF.PI / 3))),
+            new(16960, "TheRamsEmbrace", new CircleTemplate(9)),
+            new(16962, "TheRamsVoice", new CircleTemplate(9), Hint: "Interrupt!"),
+            new(16963, "TheDragonsVoice", new DonutTemplate(8, 30), Hint: "Interrupt! (Donut Raidwide)")]),
+        new(0x452A, "KirlirgerTheAbhorrent", [
+            .. new uint[] { 39466, 39477, 39473, 39467, 39538, 39877 }
+                .Select(action => new HuntCastRule(action, "Flourish", new FanTemplate(40, 3 * MathF.PI / 2))),
+            .. new uint[] { 39464, 39459, 39484 }.Select(action => new HuntCastRule(action, "Fullmoon", new CircleTemplate(20))),
+            .. new uint[] { 39463, 39465, 39875 }.Select(action => new HuntCastRule(action, "DiscordantMoon", new DonutTemplate(10, 40))),
+            new(39524, "FlyingFist", RayRectangleTemplate.Symmetric(8, 40)),
+            new(39481, "OdiousUproar", null, "Raidwide", "Raidwide"),
+            new(39480, "EnervatingGloom", null)]),
+        new(0x4580, "Pkuucha", [
+            .. new uint[] { 39863, 39864, 39797, 39755, 39756 }.Select(action => new HuntCastRule(action, "MarchingSamba", null)),
+            new(39757, "GlidingSwoop", RayRectangleTemplate.Symmetric(16, 18)),
+            new(39760, "PeckingFlurry", null, "Raidwide", "Raidwide (3x)")]),
+        new(0x4397, "TheForecaster", [
+            .. new uint[] { 38520, 38521, 38522, 38523, 39125, 39126, 39127, 39128, 38524, 38526, 38528, 38530 }
+                .Select(action => new HuntCastRule(action, "ForecastClimateChange", null)),
+            new(38534, "GaleForceWinds", RayRectangleTemplate.Symmetric(40, 40)),
+            new(38535, "BlizzardConditions", HuntForecastState.Cross),
+            new(38533, "Hyperelectricity", new CircleTemplate(10)),
+            new(38532, "WildfireConditions", new DonutTemplate(5, 40)),
+            new(38536, "FloodConditions", new CircleTemplate(6))]),
+        new(0x43DB, "Yehehetoauapyo", [
+            .. Enumerable.Range(38626, 16).Select(action => new HuntCastRule((uint)action, "WhirlingOmen", null)),
+            new(39878, "WhirlingOmenRaidwide", null, "Raidwide", "Raidwide, no turn buffs this time!")]),
+        new(0x4232, "RraxYitya", [
+            .. new uint[] { 37164, 37165, 37166, 37167, 37170 }
+                .Select(action => new HuntCastRule(action, "Wingblade", null)),
+            new(37372, "LaughingLeap", RayRectangleTemplate.Symmetric(5, 15))]),
         new(0x3672, "KerShroud", [
             new(27725, "AccursedPox", new CircleTemplate(8)),
             new(27724, "EntropicFlame", RayRectangleTemplate.Symmetric(8, 60))]),
@@ -202,6 +348,26 @@ internal static class SimpleHuntCatalog
             new(16970, "OdiousMiasma", new FanTemplate(12, 2 * MathF.PI / 3)),
             new(16972, "AllergenInjection", null, BaitRadius: 6),
             new(16971, "RootsOfAtopy", null)]),
+        new(0x35FC, "Sugriva", [
+            new(27219, "Twister", null),
+            new(27221, "Spark", new DonutTemplate(14, 30)),
+            new(27222, "ScytheTail", new CircleTemplate(17)),
+            new(27223, "Butcher", null),
+            new(27224, "Rip", new FanTemplate(8, 2 * MathF.PI / 3)),
+            new(27225, "RockThrowFirst", new CircleTemplate(6)),
+            new(27226, "RockThrowRest", new CircleTemplate(6)),
+            new(27227, "Crosswind", null, "Raidwide", "Raidwide"),
+            new(27229, "ApplyPrey", null)]),
+        new(0x28B6, "ForgivenRebellion", [
+            new(17600, "HeavenlyScythe", new CircleTemplate(10)),
+            new(17601, "RagingFire", new DonutTemplate(5, 40)),
+            new(17602, "Interference", new FanTemplate(28, MathF.PI)),
+            new(17598, "SanctifiedBlizzard", new FanTemplate(40, MathF.PI / 4)),
+            new(17597, "RoyalDecree", null, "Raidwide", "Raidwide"),
+            new(17628, "SanctifiedBlizzardChain", null, "Raidwide",
+                "Rotation direction undeterminable until start of the 2nd cast"),
+            .. new uint[] { 17629, 18080, 18078, 18079, 18126, 18127, 18128 }
+                .Select(action => new HuntCastRule(action, "RebellionRotation", null))]),
         new(0x35BF, "Yilan", [
             new(27230, "Soundstorm", null, Hint: "Apply march debuffs"),
             new(27231, "MiniLight", null),
@@ -214,6 +380,14 @@ internal static class SimpleHuntCatalog
             .. new uint[] { 27327, 27328, 27329, 27330 }
                 .Select(action => new HuntCastRule(action, "ContinualMeddling", null, Hint: "Apply march debuffs")),
             new(27325, "ContinualMeddlingFA", null)]),
+        new(0x2873, "Tarchia", [
+            new(18026, "WildHorn", new FanTemplate(17, 2 * MathF.PI / 3)),
+            new(18027, "Trounce", new FanTemplate(40, MathF.PI / 3)),
+            new(18023, "Groundstorm", new DonutTemplate(5, 40)),
+            new(18028, "MightySpin", new CircleTemplate(14)),
+            new(18030, "ForestFire", new CircleTemplate(15)),
+            new(18031, "MetamorphicBlast", null, "Raidwide", "Raidwide"),
+            new(18029, "BafflementBulb", null, Hint: "Pull + Temporary Misdirection -> Donut -> Out")]),
         new(0x4395, "SallyTheSweeper", [
             .. new uint[] { 38454, 38455, 38456, 38457, 38458, 38459, 38460 }
                 .Select(action => new HuntCastRule(action, "ExecutionModel", null)),

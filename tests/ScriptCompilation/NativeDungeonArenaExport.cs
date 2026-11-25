@@ -9,6 +9,16 @@ internal static class NativeDungeonArenaExport
         var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(runtimePath));
         var (className, folder) = group switch
         {
+            "thordan" => ("ThordanArenas", ""),
+            "quantum" => ("QuantumArenaData", ""),
+            "eureka" => ("EurekaOrthosArenas", ""),
+            "hoh" => ("HeavenOnHighArenas", ""),
+            "carnivale" => ("CarnivaleArenas", ""),
+            "ttokrrone" => ("TtokrroneArenas", ""),
+            "treasure-cenote-rooms" => ("NativeCenoteRoomArenas", ""),
+            "treasure-canals-lucky" => ("NativeTreasureArenas", ""),
+            "endwalker-quest" => ("EndwalkerQuestArenas", ""),
+            "heavensward-quest" => ("HeavenswardQuestArenas", ""),
             "labyrinth" => ("LabyrinthArenas", ""),
             "doomtrain" => ("DoomtrainArenas", ""),
             "queen" => ("QueenEternalArenas", ""),
@@ -78,6 +88,26 @@ internal static class NativeDungeonArenaExport
         var output = new StringBuilder($"// Generated from resolved runtime polygons using --{group}-arenas.\nusing System.Numerics;\nusing MasterPlayer.Spatial.Geometry;\n\nnamespace MasterPlayer.Mechanics.Dungeons;\n\ninternal static class {className}\n{{\n");
         (string Name, string Type)[] encounters = group switch
         {
+            "thordan" => [("Starting", "BossMod.Heavensward.Extreme.Ex3Thordan.Ex3Thordan"),
+                ("Reduced", "BossMod.Heavensward.Extreme.Ex3Thordan.Ex3Thordan")],
+            "quantum" => [("Initial", "BossMod.Dawntrail.Quantum.Q1FinalVerse.Q1FinalVerse")],
+            "eureka" => [("ProtoKaliya", "BossMod.Endwalker.DeepDungeon.EurekaOrthos.DD80ProtoKaliya.DD80ProtoKaliya")],
+            "hoh" => [("First", "BossMod.Stormblood.DeepDungeon.HeavenOnHigh.HoHArena1"),
+                ("Second", "BossMod.Stormblood.DeepDungeon.HeavenOnHigh.HoHArena2"),
+                ("Ninth", "BossMod.Stormblood.DeepDungeon.HeavenOnHigh.DD90Onra.DD90Onra")],
+            "carnivale" => [("Layout4Quads", "BossMod.Global.MaskedCarnivale.Layouts"),
+                ("Layout2Corners", "BossMod.Global.MaskedCarnivale.Layouts"),
+                ("LayoutBigQuad", "BossMod.Global.MaskedCarnivale.Layouts")],
+            "ttokrrone" => [("Ttokrrone", "BossMod.Dawntrail.FATE.Ttokrrone.Ttokrrone")],
+            "treasure-cenote-rooms" => [("Room1", "BossMod.Dawntrail.TreasureHunt.CenoteJaJaGural.Room1.Room1"),
+                ("Room2", "BossMod.Dawntrail.TreasureHunt.CenoteJaJaGural.Room2.Room2"),
+                ("Room3", "BossMod.Dawntrail.TreasureHunt.CenoteJaJaGural.Room3.Room3"),
+                ("Room4", "BossMod.Dawntrail.TreasureHunt.CenoteJaJaGural.Room4.Room4")],
+            "treasure-canals-lucky" => [("Canals", "BossMod.Stormblood.TreasureHunt.FinalRoomArena"),
+                ("LuckyFace", "BossMod.Endwalker.TreasureHunt.Excitatron6000.LuckyFace.LuckyFace")],
+            "endwalker-quest" => [("Scarmiglione", "WhereEverythingBegins.P1.ScarmiglioneP1"),
+                ("Vergilia", "AFrostyReception.VergiliaVanCorculum"), ("Colibri", "TheGameIsAfoot.GiantColibri")],
+            "heavensward-quest" => [("DivineIntervention", "DivineIntervention.SerGrinnaux")],
             "labyrinth" => [("BoneDragon", "A11BoneDragon.A11BoneDragon")],
             "doomtrain" => new[] { "Car2", "Car3Ground", "Car3Air", "Car4Ground", "Car4Air", "Car5Ground", "Car5Air", "Intermission" }
                 .Select(n => (n, "T07Doomtrain.Doomtrain")).ToArray(),
@@ -304,9 +334,21 @@ internal static class NativeDungeonArenaExport
                 ? "BossMod.Heavensward.Dungeon.D11Antitower.D152DotoliCiloc.D152DotoliCiloc"
                 : $"BossMod.{expansion}.Dungeon.{folder}." + type)!;
             if (group == "labyrinth") encounter = assembly.GetType("BossMod.RealmReborn.Alliance." + type)!;
+            if (group == "heavensward-quest") encounter = assembly.GetType("BossMod.Heavensward.Quest.MSQ." + type)!;
+            if (group == "endwalker-quest") encounter = assembly.GetType("BossMod.Endwalker.Quest.MSQ." + type)!;
+            if (group is "treasure-canals-lucky" or "treasure-cenote-rooms") encounter = assembly.GetType(type)!;
+            if (group is "ttokrrone" or "carnivale" or "hoh" or "eureka" or "quantum" or "thordan") encounter = assembly.GetType(type)!;
             object bounds;
             var fieldName = name switch
             {
+                "Starting" when group == "thordan" => "startingArena",
+                "Reduced" when group == "thordan" => "DefaultBounds",
+                _ when group == "eureka" => "DonutArena",
+                _ when group == "hoh" => "arena",
+                _ when group == "carnivale" => name,
+                _ when group == "ttokrrone" => "arena",
+                _ when group == "treasure-cenote-rooms" => "ArenaBounds",
+                "Scarmiglione" when group == "endwalker-quest" => "ArenaBounds",
                 "X" or "XInsetHalf" or "XInsetOne" when group == "queen" => "XArena",
                 "Split" when group == "queen" => "SplitArena",
                 "SuzakuRing" => "Phase2Arena",
@@ -366,7 +408,22 @@ internal static class NativeDungeonArenaExport
                 _ => "arena",
             };
             var field = encounter.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-            if (group == "doomtrain")
+            if (group == "quantum")
+            {
+                var wpos = assembly.GetType("BossMod.WPos")!;
+                var rectangle = Activator.CreateInstance(assembly.GetType("BossMod.Rectangle")!,
+                    [Activator.CreateInstance(wpos, [-600f, -300f])!, 20f, 15f,
+                        Activator.CreateInstance(assembly.GetType("BossMod.Angle")!)!])!;
+                var shapes = Array.CreateInstance(assembly.GetType("BossMod.Shape")!, 1);
+                shapes.SetValue(rectangle, 0);
+                var ctor = assembly.GetType("BossMod.ArenaBoundsCustom")!.GetConstructors().Single();
+                var parameters = ctor.GetParameters();
+                var values = parameters.Select(p => p.DefaultValue).ToArray();
+                values[0] = shapes;
+                values[Array.FindIndex(parameters, p => p.Name == "AdjustForHitboxOutwards")] = true;
+                bounds = ctor.Invoke(values);
+            }
+            else if (group == "doomtrain")
             {
                 object Point(float x, float z) => Activator.CreateInstance(assembly.GetType("BossMod.WPos")!, [x, z])!;
                 object Rect(float x, float z, float w, float h) => Activator.CreateInstance(assembly.GetType("BossMod.Rectangle")!,
@@ -642,6 +699,31 @@ internal static class NativeDungeonArenaExport
             output.Append("    internal static IGeometryShape Therion(int removedMask, float y) => removedMask switch\n    {\n");
             for (var i = 0; i < 256; ++i) output.Append($"        {i} => Therion{i}(y),\n");
             output.Append("        _ => throw new System.ArgumentOutOfRangeException(nameof(removedMask)),\n    };\n");
+        }
+        if (group == "carnivale")
+        {
+            var layouts = assembly.GetType("BossMod.Global.MaskedCarnivale.Layouts")!;
+            foreach (var layout in new[] { "Layout2Corners", "LayoutBigQuad" })
+            {
+                dynamic polygon = layouts.GetField(layout + "Blockers", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
+                output.Append($"    internal static readonly Vector2[][] {layout}SightContours =\n    [\n");
+                foreach (dynamic part in polygon.Parts)
+                {
+                    var points = new List<(float X, float Z)>();
+                    foreach (dynamic vertex in part.Vertices) points.Add(((float)vertex.X, (float)vertex.Z));
+                    var starts = new List<int> { 0 };
+                    foreach (int start in part.HoleStarts) starts.Add(start);
+                    starts.Add(points.Count);
+                    for (var i = 0; i < starts.Count - 1; ++i)
+                    {
+                        output.Append("        [");
+                        output.Append(string.Join(", ", points.GetRange(starts[i], starts[i + 1] - starts[i])
+                            .Select(p => FormattableString.Invariant($"new({p.X:R}f, {p.Z:R}f)"))));
+                        output.Append("],\n");
+                    }
+                }
+                output.Append("    ];\n\n");
+            }
         }
         output.Append("}\n");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(destination))!);

@@ -276,6 +276,8 @@ internal static class ShinryuRegression
                     && HostDrawingGeometry.Convert(shape).Contains(new(half - .1f, 0, front - .1f))
                     && !shape.Contains(new(half + .1f, 0, front - .1f)), "Exact rectangle dual-view differs: " + action);
                 End(f, 10, action);
+                // Separate actual generations from the just-finished cast's stale-packet barrier.
+                f.Now = f.Now.AddSeconds(1);
             }
             Start(f, 10, 9291, Vector3.Zero);
             Check(f.Engine.PredictedDamage.Count() == 3 && f.Draw.Previews["cast/10"].Geometry.Contains(new(13.9f, 0, 0))

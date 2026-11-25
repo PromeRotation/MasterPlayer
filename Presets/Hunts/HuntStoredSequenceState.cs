@@ -45,8 +45,8 @@ internal sealed class HuntStoredSequenceState
         for (var i = 0; i < queue.Count; ++i)
         {
             var item = queue[i];
-            if (item.Input != previous.Input) continue;
-            queue[i] = item with { Input = updated.Input, Rotation = item.Rotation + updated.Rotation - previous.Rotation };
+            if (item.Order != previous.Order) continue;
+            queue[i] = item with { Input = updated.Input, Order = updated.Order, Rotation = item.Rotation + updated.Rotation - previous.Rotation };
         }
     }
 

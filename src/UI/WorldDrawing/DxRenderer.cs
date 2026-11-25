@@ -140,6 +140,21 @@ internal sealed class DxRenderer : IDrawRenderer, IDisposable
 
     internal bool SceneDepthAvailable { get; private set; }
 
+    private readonly GroundMeshCache groundMeshes = new();
+    private GroundSurface? ground;
+    internal GroundSurface? Ground
+    {
+        get => ground;
+        set
+        {
+            if (ReferenceEquals(ground, value)) return;
+            groundMeshes.Clear();
+            ground = value;
+        }
+    }
+    internal DateTime GroundRequestedUntil { get; private set; }
+    internal int GroundedItems { get; private set; }
+
     internal string Status { get; private set; } = "等待首个绘制帧";
 
     internal string RenderStats { get; private set; } = "尚无绘制统计";
@@ -185,9 +200,22 @@ internal sealed class DxRenderer : IDrawRenderer, IDisposable
             return;
         }
         List<RenderBatch> list = new List<RenderBatch>(items.Count * 3 + 5);
+        GroundedItems = 0;
+        var conform = this.settings.DxGroundProjection && !PlayerPerspective.IsReplay;
         foreach (DrawRenderItem item in items)
         {
-            MeshBuilder.AddGeometry(list, item, frame.NearPlane, this.settings.DxHeightOffset);
+            if (conform && MeshBuilder.IsGroundArea(item))
+            {
+                GroundRequestedUntil = DateTime.UtcNow.AddSeconds(1);
+                if (Ground is { } surface)
+                {
+                    var mesh = groundMeshes.Get(item, surface);
+                    MeshBuilder.AddGroundGeometry(list, item, mesh, frame.NearPlane, this.settings.DxHeightOffset);
+                    if (mesh.Fill.Length != 0 || mesh.Lines.Length != 0) ++GroundedItems;
+                }
+            }
+            else
+                MeshBuilder.AddGeometry(list, item, frame.NearPlane, this.settings.DxHeightOffset);
         }
         this.uiMaskActiveThisFrame = TryPrepareUiMask(num, num2, out var source, out var view);
         if (list.Count == 0)
@@ -961,6 +989,10 @@ internal sealed class DxRenderer : IDrawRenderer, IDisposable
 
     private unsafe void ReleaseDevice()
     {
+        groundMeshes.Clear();
+        Ground = null;
+        GroundedItems = 0;
+        GroundRequestedUntil = default;
         SceneDepthAvailable = false;
         this.uiMaskActiveThisFrame = false;
         ReleaseUiMaskResources();

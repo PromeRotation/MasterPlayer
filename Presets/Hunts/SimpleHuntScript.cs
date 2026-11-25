@@ -32,6 +32,18 @@ public abstract class SimpleHuntScript : MasterPlayerScript
 
     protected override void OnStart()
     {
+        OnTargetIcon(icon =>
+        {
+            Scan();
+            encounter.Icon(icon.SourceId, icon.MarkerId, icon.Timestamp.ToUniversalTime());
+            Render();
+        });
+        OnNpcYell(yell =>
+        {
+            Scan();
+            encounter.NpcYell(yell.SourceId, yell.NpcYellId, yell.Timestamp.ToUniversalTime());
+            Render();
+        });
         OnStartCast(cast =>
         {
             Scan();
@@ -48,19 +60,56 @@ public abstract class SimpleHuntScript : MasterPlayerScript
         OnInterruptCast(cast => { encounter.Finish(cast.SourceId, cast.ActionId, cast.Timestamp.ToUniversalTime()); Render(); });
         OnActionEffect(effect =>
         {
-            if (effect.ActionId == 16964) return;
+            if (effect.ActionId is 16824 or 16964 or 17900 || HuntKerState.Flare(effect.ActionId)) return;
             encounter.Effect(effect.SourceId, effect.ActionId, effect.Timestamp.ToUniversalTime(), effect.GlobalSequence);
             Render();
         });
         OnLogEvent<NativeActionEffectEvent>(effect =>
         {
-            if (effect.ActionId != 16964) return;
+            Scan();
+            encounter.AglaopeEffect(effect.SourceId, effect.ActionId, effect.GlobalSequence,
+                effect.Targets, effect.RawEffects, CurrentTime);
+            if (effect.ActionId == 16824)
+            {
+                Render();
+                return;
+            }
+            if (HuntKerState.Flare(effect.ActionId))
+            {
+                encounter.KerEffect(effect.SourceId, effect.ActionId, effect.Timestamp.ToUniversalTime(), effect.GlobalSequence, effect.Targets);
+                Render();
+                return;
+            }
+            if (effect.ActionId is not (16964 or 17900)) return;
+            Scan();
             encounter.Effect(effect.SourceId, effect.ActionId, effect.Timestamp.ToUniversalTime(), effect.GlobalSequence, effect.MainTargetId);
             Render();
         });
         OnStatusAdd(status =>
         {
             var at = status.Timestamp.ToUniversalTime();
+            if (status.StatusId is 4140 or 4141 or 4142 or 960 or 2540 or 4071 or 4072)
+            {
+                Scan();
+                encounter.FinalHuntStatus(status.TargetId, status.StatusId,
+                    new(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)), status.SourceId, at);
+                Render();
+            }
+            if (status.StatusId is 1769 or 2939)
+            {
+                Scan();
+                var value = new ReplayStatus(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration));
+                if (status.StatusId == 1769) encounter.IxtabStatus(status.TargetId, value, status.SourceId, at);
+                else encounter.SugrivaStatus(status.TargetId, value, status.SourceId, at);
+                Render();
+            }
+            encounter.HeshualaStatus(status.TargetId, status.StatusId,
+                new(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)), at);
+            if (status.StatusId is 3977 or 3978 or 3979) Render();
+            encounter.KerStatus(status.TargetId, status.StatusId, at,
+                new(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)));
+            encounter.BeeStatusGained(status.TargetId,
+                new(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)), at);
             encounter.BossStatus(status.TargetId, status.StatusId, at,
                 new(status.StatusId, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)));
             if (HuntMarchState.Matches(status.StatusId))
@@ -70,6 +119,13 @@ public abstract class SimpleHuntScript : MasterPlayerScript
                 Render();
             }
             if (status.StatusId == 1435) { encounter.StackStatus(status.TargetId, at, true); Render(); }
+            if (status.StatusId == 1138)
+            {
+                encounter.GunittStatus(status.TargetId,
+                    new(1138, status.Param, status.SourceId, ReplayStatus.Expiration(at, status.Duration)), at);
+                Render();
+            }
+            if (status.StatusId == 2848) Render();
             if (HuntMisdirectionState.Matches(status.StatusId))
             {
                 encounter.Misdirection(status.TargetId, status.StatusId, true, party);
@@ -81,23 +137,43 @@ public abstract class SimpleHuntScript : MasterPlayerScript
         });
         OnStatusRemove(status =>
         {
+            if (status.StatusId is 4140 or 4141 or 4142 or 960 or 2540 or 4071 or 4072)
+            {
+                Scan();
+                encounter.FinalHuntStatus(status.TargetId, status.StatusId, null, status.SourceId, status.Timestamp.ToUniversalTime());
+                Render();
+            }
+            if (status.StatusId is 1769 or 2939)
+            {
+                Scan();
+                if (status.StatusId == 1769)
+                    encounter.IxtabStatus(status.TargetId, null, status.SourceId, status.Timestamp.ToUniversalTime());
+                else encounter.SugrivaStatus(status.TargetId, null, status.SourceId, status.Timestamp.ToUniversalTime());
+                Render();
+            }
+            encounter.HeshualaStatus(status.TargetId, status.StatusId, null, status.Timestamp.ToUniversalTime());
+            encounter.KerStatus(status.TargetId, status.StatusId, status.Timestamp.ToUniversalTime(), null);
+            encounter.BeeStatusLost(status.TargetId, status.StatusId, status.Timestamp.ToUniversalTime());
             encounter.BossStatus(status.TargetId, status.StatusId, status.Timestamp.ToUniversalTime(), null);
+            if (status.StatusId is 4147 or 4148) Render();
             if (HuntMarchState.Matches(status.StatusId))
             {
                 encounter.MarchStatus(status.TargetId, status.StatusId, status.Timestamp.ToUniversalTime(), null);
                 Render();
             }
             if (status.StatusId == 1435) { encounter.StackStatus(status.TargetId, status.Timestamp.ToUniversalTime(), false); Render(); }
+            if (status.StatusId == 1138) { encounter.GunittStatus(status.TargetId, null, status.Timestamp.ToUniversalTime()); Render(); }
             if (HuntMisdirectionState.Matches(status.StatusId))
             {
                 encounter.Misdirection(status.TargetId, status.StatusId, false, party);
                 Render();
             }
+            if (status.StatusId is 2848) Render();
             if (status.StatusId != 960) return;
             encounter.Pyretic(status.TargetId, status.Timestamp.ToUniversalTime(), null, status.SourceId);
             Render();
         });
-        OnLogEvent<LogSystemObjectRemoveEvent>(ev => { encounter.Remove(ev.SourceId); Render(); });
+        OnLogEvent<LogSystemObjectRemoveEvent>(ev => { encounter.Remove(ev.SourceId, ev.Timestamp.ToUniversalTime()); Render(); });
         OnTerritoryChanged(_ => Clear());
         Scan();
         Render();
@@ -106,8 +182,7 @@ public abstract class SimpleHuntScript : MasterPlayerScript
     protected override void OnUpdate(float deltaTime)
     {
         UpdateMisdirection();
-        if (ReplayWorld == null && CurrentTime < nextScan) return;
-        Scan();
+        if (ReplayWorld != null || CurrentTime >= nextScan) Scan();
         Render();
     }
 
@@ -125,10 +200,11 @@ public abstract class SimpleHuntScript : MasterPlayerScript
 
     private void Render()
     {
+        encounter.UpdateComponents(CurrentTime);
         var runtime = MasterPlayerPlugin.Instance?.SafeZone;
         if (runtime == null) return;
         var visible = encounter.Areas.Concat(encounter.TargetPreviews(CurrentPlayer)).Where(c => c.Shape != null).ToDictionary(c => c.AreaId);
-        var wanted = encounter.Areas.Concat(encounter.TargetDangers(CurrentPlayer, party))
+        var wanted = encounter.NavigationAreas(CurrentPlayer).Concat(encounter.TargetDangers(CurrentPlayer, party))
             .Where(c => c.Shape != null && c.Risky).ToDictionary(c => c.AreaId);
         foreach (var source in areas.Keys.Where(id => !wanted.ContainsKey(id)).ToArray()) Remove(source);
         foreach (var (source, cast) in wanted)
@@ -140,7 +216,7 @@ public abstract class SimpleHuntScript : MasterPlayerScript
                 Remove(source);
                 // Source default means immediately active; MP timestamps must remain bufferable.
                 var startedAt = cast.StartedAt == default ? DateTime.UnixEpoch : cast.StartedAt;
-                var binding = new StaticTransform(cast.Location, cast.Rotation);
+                var binding = new StaticTransform(cast.Location, cast.NavigationRotation ?? cast.Rotation);
                 var handle = SafeZone.AddDangerSnapshot(cast.Shape!, binding,
                     [new(cast.Activation == default ? startedAt : cast.Activation, null, startedAt)]);
                 SafeZone.SetNavigationOnly(handle, true);

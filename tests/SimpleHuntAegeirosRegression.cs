@@ -96,7 +96,7 @@ internal static class SimpleHuntAegeirosRegression
     private static ReplayCast Cast(uint action, double at, double duration)
         => new(action, 1, Vector3.Zero, 0, Start.AddSeconds(at), Start.AddSeconds(at + duration + .3), true, false);
     private static ReplayActorState Boss(ReplayCast? cast)
-        => new() { Id = 1, Oid = 0x3671, Position = Vector3.Zero, Targetable = true, InCombat = true, Cast = cast };
+        => new() { Hp = 1000, Id = 1, Oid = 0x3671, Position = Vector3.Zero, Targetable = true, InCombat = true, Cast = cast };
     private static void Check(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);

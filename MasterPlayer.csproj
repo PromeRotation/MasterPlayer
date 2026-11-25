@@ -24,6 +24,7 @@
   <ItemGroup>
     <PackageReference Include="DotRecast.Recast" Version="2026.3.1" />
     <EmbeddedResource Include="src\UI\WorldDrawing\DrawPlus.hlsl" LogicalName="MasterPlayer.Drawing.DrawPlus.hlsl" />
+    <EmbeddedResource Include="Presets\EurekaOrthos\Floor\ObstacleMaps\*" LogicalName="MasterPlayer.EurekaLOS.%(Filename)%(Extension)" />
     <ProjectReference Include="MechanicRuntime\MasterPlayer.MechanicRuntime.csproj" />
     <None Update="ThirdPartyNotices\BossModReborn.LICENSE" CopyToOutputDirectory="PreserveNewest" />
     <None Update="ThirdPartyNotices\PromeRotation.LICENSE" CopyToOutputDirectory="PreserveNewest" />

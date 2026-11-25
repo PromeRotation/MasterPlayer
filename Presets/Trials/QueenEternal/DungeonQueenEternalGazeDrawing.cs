@@ -31,7 +31,7 @@ internal sealed partial class DungeonEncounter
                 player.Rotation, Navigate: false, Unclipped: true, Color: new Vector4(1, .15f, .15f, 1));
     }
 
-    private static LocalPolygonTemplate CreateQueenEyeSymbol()
+    internal static LocalPolygonTemplate CreateQueenEyeSymbol()
     {
         // Two intersecting circular arcs retain the source eye silhouette.
         const float radius = (1 + .6f * .6f) / (2 * .6f);
@@ -50,7 +50,7 @@ internal sealed partial class DungeonEncounter
         return new(points);
     }
 
-    private static LocalPolygonTemplate CreateQueenGazeArc()
+    internal static LocalPolygonTemplate CreateQueenGazeArc()
     {
         var points = new List<Vector2>();
         for (var i = 0; i <= 24; ++i)

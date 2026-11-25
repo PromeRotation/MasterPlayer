@@ -1,6 +1,66 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
+if (args.Length == 3 && args[0] == "--thordan-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "thordan");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--quantum-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "quantum");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--eureka-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "eureka");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--hoh-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "hoh");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--carnivale-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "carnivale");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--ttokrrone-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "ttokrrone");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--treasure-cenote-rooms-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "treasure-cenote-rooms");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--treasure-canals-lucky-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "treasure-canals-lucky");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--endwalker-quest-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "endwalker-quest");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--heavensward-quest-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "heavensward-quest");
+    return;
+}
+
 if (args.Length == 3 && args[0] == "--labyrinth-arenas")
 {
     NativeDungeonArenaExport.Run(args[1], args[2], "labyrinth");
@@ -254,7 +314,7 @@ foreach (var file in Directory.EnumerateDirectories(Path.Combine(args[0], "Prese
     if (!result.Success) throw new InvalidOperationException(string.Join(Environment.NewLine, result.Diagnostics));
     Console.WriteLine($"PASS independent script compilation: {Path.GetRelativePath(args[0], file)}");
 }
-var expectedCount = 145;
+var expectedCount = ScriptCatalogRegression.BUILT_IN_COUNT;
 if (pt99Only || palaceOnly) expectedCount = 1;
 if (skipCompilation) expectedCount = 0;
 if (count != expectedCount) throw new InvalidOperationException($"Unexpected built-in script count: {count}.");

@@ -4,12 +4,19 @@ using MasterPlayer.Spatial.SafeZone;
 
 namespace MasterPlayer.Mechanics.PalaceOfTheDead;
 
-internal sealed class PalaceFloorHazards
+internal sealed class PalaceFloorHazards(
+    byte dungeonId = 1,
+    int maximumFloor = 200,
+    IReadOnlyDictionary<(int FloorSet, byte Tileset), PalaceFloorRoom[]>? roomData = null,
+    IReadOnlyDictionary<ushort, Vector2[]>? trapData = null)
 {
+    private readonly IReadOnlyDictionary<(int FloorSet, byte Tileset), PalaceFloorRoom[]> roomsByFloor = roomData ?? PalaceFloorData.Rooms;
+    private readonly IReadOnlyDictionary<ushort, Vector2[]> trapsByTerritory = trapData ?? PalaceFloorData.Traps;
     private readonly List<Vector2> ignoredTraps = [];
     private readonly HashSet<Vector2> manuallyIgnoredTraps = [];
     private readonly HashSet<ulong> seenIndicators = [];
     private ReplayDeepDungeonState? state;
+    private ReplayDeepDungeonState? lastMap;
     private ReplayDeepDungeonState? previousFloor;
     private ushort territory;
     private bool trapsHidden = true;
@@ -19,7 +26,7 @@ internal sealed class PalaceFloorHazards
 
     internal bool IgnoreNearestTrap(Vector3 player)
     {
-        if (state == null || awaitingMap || !PalaceFloorData.Traps.TryGetValue(territory, out var traps)) return false;
+        if (state == null || awaitingMap || !trapsByTerritory.TryGetValue(territory, out var traps)) return false;
         var candidates = traps.Where(p => !manuallyIgnoredTraps.Contains(p)).ToArray();
         if (candidates.Length == 0) return false;
         var position = candidates.MinBy(p => Vector2.DistanceSquared(p, new(player.X, player.Z)));
@@ -30,10 +37,19 @@ internal sealed class PalaceFloorHazards
 
     internal void Synchronize(ReplayDeepDungeonState? snapshot, IEnumerable<ReplayActorState> observations, ushort currentTerritory)
     {
-        if (snapshot is not { DungeonId: 1, Floor: >= 151 and <= 199 } || snapshot.Floor % 10 == 0
-            || snapshot.Rooms.Length != 25)
+        if (snapshot == null || snapshot.DungeonId != dungeonId || snapshot.Floor < 1
+            || snapshot.Floor > maximumFloor || snapshot.Rooms.Length != 25)
         {
-            if (!awaitingMap) Reset();
+            // HoH/EO can observe hot indicator births before their map is ready.
+            // A missing sample is not AutoClear.ClearState. Keep creation history
+            // until a real floor/territory transition or 7248 proves invalidation.
+            if (dungeonId != 1)
+            {
+                if (territory != 0 && territory != currentTerritory) Reset();
+                territory = currentTerritory;
+                state = null;
+            }
+            else if (!awaitingMap) Reset();
             else state = null;
             return;
         }
@@ -43,15 +59,34 @@ internal sealed class PalaceFloorHazards
                 && previousFloor.Tileset == snapshot.Tileset && previousFloor.Rooms.SequenceEqual(snapshot.Rooms)) return;
             awaitingMap = false;
         }
-        if (state != null && (state.Floor != snapshot.Floor || territory != currentTerritory))
+        // A Boss map is also a real map change. Release transfer isolation before
+        // excluding its ordinary-floor hazards so Boss mechanics can render.
+        if (snapshot.Floor % 10 == 0 || dungeonId is 3 or 4 && snapshot.Floor == 99)
+        {
+            Reset();
+            lastMap = snapshot;
+            return;
+        }
+        var prior = state ?? (dungeonId != 1 ? lastMap : null);
+        if (prior != null && (prior.Floor != snapshot.Floor || territory != currentTerritory))
             Reset(preserveManual: territory == currentTerritory);
         if (snapshot.TrapsHidden is { } hidden && (state == null || state.TrapsHidden != snapshot.TrapsHidden))
             trapsHidden = hidden;
         state = snapshot;
+        lastMap = snapshot;
         territory = currentTerritory;
-        foreach (var actor in observations)
-            if (actor.Oid == 0x1EA1F6 && seenIndicators.Add(actor.Id))
-                ignoredTraps.Add(new(actor.Position.X, actor.Position.Z));
+        if (dungeonId == 1)
+            foreach (var actor in observations)
+                if (actor.Oid == 0x1EA1F6 && seenIndicators.Add(actor.Id))
+                    ObserveCreated(actor);
+    }
+
+    // HoH supplies actual Created events from its actor lifetime model. A cold
+    // snapshot must not replay historical indicators, nor suppress same-ID births.
+    internal void ObserveCreated(ReplayActorState actor)
+    {
+        if (actor.Oid == 0x1EA1F6 || dungeonId == 2 && actor.Oid == 0x1EA9A3)
+            ignoredTraps.Add(new(actor.Position.X, actor.Position.Z));
     }
 
     internal void SystemLog(uint id)
@@ -59,7 +94,7 @@ internal sealed class PalaceFloorHazards
         if (id == 7248)
         {
             if (awaitingMap) return;
-            previousFloor = state;
+            previousFloor = lastMap;
             Reset(preserveManual: true);
             awaitingMap = true;
         }
@@ -69,6 +104,7 @@ internal sealed class PalaceFloorHazards
     internal void Reset(bool preserveManual = false)
     {
         state = null;
+        lastMap = null;
         if (!preserveManual) manuallyIgnoredTraps.Clear();
         ignoredTraps.Clear();
         ignoredTraps.AddRange(manuallyIgnoredTraps);
@@ -81,7 +117,7 @@ internal sealed class PalaceFloorHazards
     {
         if (state == null || awaitingMap) yield break;
         var y = player.Position.Y;
-        if (PalaceFloorData.Rooms.TryGetValue((state.Floor / 10 + 1, state.Tileset), out var rooms))
+        if (roomsByFloor.TryGetValue((state.Floor / 10 + 1, state.Tileset), out var rooms))
         {
             for (var i = 0; i < 25; ++i)
             {
@@ -99,7 +135,7 @@ internal sealed class PalaceFloorHazards
                 }
             }
         }
-        if (trapHints && trapsHidden && PalaceFloorData.Traps.TryGetValue(territory, out var traps))
+        if (trapHints && trapsHidden && trapsByTerritory.TryGetValue(territory, out var traps))
         {
             var position = new Vector2(player.Position.X, player.Position.Z);
             for (var i = 0; i < traps.Length; ++i)

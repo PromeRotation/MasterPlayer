@@ -44,7 +44,7 @@ internal sealed class MechanicFacingControl : IDisposable
     }
 
     public void Apply(float? heading, bool holdActions = false, bool blockCasts = false,
-        bool cancelCast = false, ulong[]? forbiddenTargets = null, ulong target = 0)
+        bool cancelCast = false, ulong[]? forbiddenTargets = null, ulong target = 0, ulong clearTarget = 0)
     {
         if (PlayerPerspective.IsReplay)
         {
@@ -54,7 +54,7 @@ internal sealed class MechanicFacingControl : IDisposable
         if (heading is { } angle && !float.IsFinite(angle))
             heading = null;
         if (heading == null && !holdActions && !blockCasts && !cancelCast
-            && forbiddenTargets is not { Length: > 0 } && target == 0)
+            && forbiddenTargets is not { Length: > 0 } && target == 0 && clearTarget == 0)
         {
             Clear();
             return;
@@ -70,7 +70,7 @@ internal sealed class MechanicFacingControl : IDisposable
             return;
         }
         _hasRequest = true;
-        _update(_owner, target, 0, forbiddenTargets ?? [], heading, holdActions, blockCasts, cancelCast);
+        _update(_owner, target, clearTarget, forbiddenTargets ?? [], heading, holdActions, blockCasts, cancelCast);
     }
 
     public void Clear()

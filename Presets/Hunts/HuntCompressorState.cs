@@ -28,10 +28,10 @@ internal sealed class HuntCompressorState
         for (var i = 0; i < sequences.Count; ++i)
         {
             var item = sequences[i];
-            if (item.Cast.Input != previous.Input) continue;
+            if (item.Cast.Order != previous.Order) continue;
             item.Cast = item.Cast with
             {
-                Input = updated.Input, Location = updated.Location,
+                Input = updated.Input, Order = updated.Order, Location = updated.Location,
                 Rotation = item.Cast.Rotation + updated.Rotation - previous.Rotation,
                 Activation = item.Cast.Stage == 0 ? updated.Activation : item.Cast.Activation
             };

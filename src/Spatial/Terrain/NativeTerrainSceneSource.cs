@@ -20,6 +20,13 @@ internal sealed unsafe class NativeTerrainSceneSource : ITerrainSceneSource
     internal long CopiedBytes { get; private set; }
     public TerrainCaptureDiagnostics? Diagnostics { get; private set; }
 
+    internal void ResetCapture()
+    {
+        // 同一原生 Scene 地址可被新楼层复用；不能复用上一轮尚未完成的程序模型快照。
+        pendingProcedural.Clear();
+        pendingScene = 0;
+    }
+
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.U1)]
     private static extern bool TryAcquireSRWLockShared(nint* srwLock);

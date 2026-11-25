@@ -64,6 +64,9 @@ public sealed class MechanicHostController : IDisposable
             _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     private bool ModulesEnabled => !_disposed && MasterPlayerSettings.Instance.EnableMechanics
         && !Mechanics.PalaceOfTheDead.PalaceCatalog.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        && !Mechanics.HeavenOnHigh.HeavenOnHighFloorEncounter.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        && !Mechanics.EurekaOrthos.EurekaFloorEncounter.Territories.Contains(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+        && !Mechanics.PilgrimsTraverse.PilgrimsFloorEncounter.OwnsTerritory(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
         && MasterPlayerSettings.Instance.IsTerritoryEnabled(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType);
     public IReadOnlyList<MechanicTerritoryEntry> Territories { get; private set; } = [];
     public bool NavigationActive => _navBridge?.NavigationActive == true;
@@ -403,6 +406,8 @@ public sealed class MechanicHostController : IDisposable
                 continue;
             if (running.Script is Mechanics.Hunts.SimpleHuntScript)
                 continue; // Hunts own individual instances, not every mechanic in the territory.
+            if (running.Script is Mechanics.Quests.QuestTargetScript)
+                continue; // Target priorities do not replace the territory's other mechanics.
             if (running.Descriptor.Metadata.Territorys.Length != 0)
                 return true;
         }
@@ -413,7 +418,7 @@ public sealed class MechanicHostController : IDisposable
 
     private bool SleepMpOwnedBoss()
     {
-        if (ActiveSession?.BossModules.ActiveModule is { } huntModule && huntModule.StateMachine.ActivePhase != null
+        if (ActiveSession?.BossModules.ActiveModule is { } huntModule && (huntModule.StateMachine.ActivePhase != null || huntModule.PrimaryActor.OID == 0x2873)
             && Mechanics.Hunts.SimpleHuntCatalog.Owns(huntModule.PrimaryActor.OID))
         {
             _navBridge?.Sleep();
@@ -430,7 +435,13 @@ public sealed class MechanicHostController : IDisposable
                     module.PrimaryActor.OID,
                     _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType))) return false;
         // A nearby, loaded ARR boss is not an active encounter; leave hallway/zone output available.
-        if (module.StateMachine.ActivePhase == null && Mechanics.Dungeons.ArrDungeonCatalog.Owns(
+        if (module.StateMachine.ActivePhase == null
+            && !Mechanics.Dungeons.HeavenOnHighCatalog.Owns(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType, module.PrimaryActor.OID)
+            && !Mechanics.Dungeons.CarnivaleCatalog.Owns(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType, module.PrimaryActor.OID)
+            && !Mechanics.Dungeons.NativeFateCatalog.Owns(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType, module.PrimaryActor.OID)
+            && !((_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)
+                == Mechanics.Dungeons.MainScenarioQuestCatalog.MAX_QUEST && module.PrimaryActor.OID == 0x252B)
+            && !Mechanics.Dungeons.NoviceCatalog.Owns(_replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType, module.PrimaryActor.OID) && Mechanics.Dungeons.ArrDungeonCatalog.Owns(
             module.PrimaryActor.OID, _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType)) return false;
         // Migrated bosses are implemented by MP scripts. Never publish BMR previews or navigation,
         // including the first frame before ScriptManager starts it and when a user disables the script.
@@ -493,6 +504,8 @@ public sealed class MechanicHostController : IDisposable
                 && (!dungeon.EncounterActive || dungeon.PreservesTerritoryMechanics))
                 continue;
             if (running.Script is Mechanics.Hunts.SimpleHuntScript)
+                continue;
+            if (running.Script is Mechanics.Quests.QuestTargetScript)
                 continue;
             var territorys = running.Descriptor.Metadata.Territorys;
             if (territorys.Length != 0 && territorys.Contains(territory))

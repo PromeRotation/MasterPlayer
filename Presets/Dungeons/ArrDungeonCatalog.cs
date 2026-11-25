@@ -12,6 +12,29 @@ internal static class ArrDungeonCatalog
 {
     public static DungeonDefinition[] Create(uint territory) => territory switch
     {
+        ThordanCatalog.TERRITORY => ThordanCatalog.Create(),
+        WickedThunderCatalog.TERRITORY => WickedThunderCatalog.Create(),
+        KefkaCatalog.TERRITORY => KefkaCatalog.Create(),
+        QuantumCatalog.TERRITORY => QuantumCatalog.Create(),
+        EurekaOrthosCatalog.GANCANAGH or EurekaOrthosCatalog.CLONING_NODE or EurekaOrthosCatalog.TIAMAT or EurekaOrthosCatalog.TWINTANIA or EurekaOrthosCatalog.CHIMERA or EurekaOrthosCatalog.MINOTAUR or EurekaOrthosCatalog.AETURNA or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.ADMINISTRATOR or EurekaOrthosCatalog.EXCALIBUR => EurekaOrthosCatalog.Create(territory),
+        HeavenOnHighCatalog.FIRST or HeavenOnHighCatalog.SECOND or HeavenOnHighCatalog.THIRD
+            or HeavenOnHighCatalog.FOURTH or HeavenOnHighCatalog.FIFTH or HeavenOnHighCatalog.SIXTH
+            or HeavenOnHighCatalog.SEVENTH or HeavenOnHighCatalog.EIGHTH or HeavenOnHighCatalog.NINTH => HeavenOnHighCatalog.Create(territory),
+        CarnivaleCatalog.TERRITORY => CarnivaleCatalog.Create(),
+        NativeFateCatalog.ARCHAEOTANIA or NativeFateCatalog.DAIVADIPA or NativeFateCatalog.FORMIDABLE or NativeFateCatalog.CHI or NativeFateCatalog.MICA or NativeFateCatalog.TTOKRRONE => NativeFateCatalog.Create(territory),
+        NoviceCatalog.TANK04 or NoviceCatalog.DPS03 or NoviceCatalog.DPS05 or NoviceCatalog.BASIC_FINAL or 1127 or 1128 or 1129 => NoviceCatalog.Create(territory),
+        NativeTreasureCatalog.VAULT_ONEIRON or NativeTreasureCatalog.SHIFTING_ALTARS or NativeTreasureCatalog.SHIFTING_GYMNASION or NativeTreasureCatalog.SHIFTING_OUBLIETTES or NativeTreasureCatalog.CENOTE_JA_JA_GURAL or NativeTreasureCatalog.DUNGEONS_LYHE_GHIAH or NativeTreasureCatalog.EXCITATRON or NativeTreasureCatalog.HIDDEN_CANALS or NativeTreasureCatalog.LOST_CANALS => NativeTreasureCatalog.Create(territory),
+        JobQuestCatalog.BAR_THE_PASSAGE or JobQuestCatalog.TO_HAVE_LOVED_AND_LOST or JobQuestCatalog.HEROES_AND_PRETENDERS or JobQuestCatalog.BLOOD_ON_THE_DECK or JobQuestCatalog.MIND_OVER_MANOR or JobQuestCatalog.SOMEWHERE_ONLY_SHE_KNOWS
+            or JobQuestCatalog.FANGS_OF_THE_VIPER or JobQuestCatalog.FACE_OF_TRUE_EVIL
+            or JobQuestCatalog.SAGES_FOCUS or JobQuestCatalog.ORPHANS_AND_BROKEN_BLADE
+            or JobQuestCatalog.BATTLE_ON_BEKKO
+            or JobQuestCatalog.KILLING_ART
+            or JobQuestCatalog.OUR_UNSUNG_HEROES
+            or JobQuestCatalog.LIFE_EPHEMERAL
+            or JobQuestCatalog.POWER_TO_PROTECT or JobQuestCatalog.ART_FOR_THE_LIVING or JobQuestCatalog.STEEL_AGAINST_STEEL
+            or JobQuestCatalog.RAISING_THE_SWORD or JobQuestCatalog.GAMBOLING_FOR_GIL
+            => JobQuestCatalog.Create(territory),
+        MainScenarioQuestCatalog.WARMTH_OF_THE_FAMILY or MainScenarioQuestCatalog.ISEULTALON or MainScenarioQuestCatalog.MEASURE_OF_HIS_REACH or MainScenarioQuestCatalog.FADED_MEMORIES or MainScenarioQuestCatalog.DEATH_UNTO_DAWN or MainScenarioQuestCatalog.ORACLE_OF_LIGHT or MainScenarioQuestCatalog.FEAST_OF_LIES or MainScenarioQuestCatalog.RHALGRS_BEACON or MainScenarioQuestCatalog.WHERE_EVERYTHING_BEGINS or MainScenarioQuestCatalog.FROSTY_RECEPTION or MainScenarioQuestCatalog.GAME_IS_AFOOT or MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.OTIS_OATHBROKEN or MainScenarioQuestCatalog.HIS_FORGOTTEN_HOME or MainScenarioQuestCatalog.MAX_QUEST or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES or MainScenarioQuestCatalog.TIME_BETWEEN => MainScenarioQuestCatalog.Create(territory),
         1036 => [
             new(0x19B, "Chopper", p => ArrDungeonArenas.Chopper(p.Y), [
                 new(351, 0x19B, "ChargedWhisker", new CircleTemplate(6.15f))], []),
@@ -39,7 +62,12 @@ internal static class ArrDungeonCatalog
                 new(28761, 0x233C, "GiganticBlast", new CircleTemplate(8)),
                 new(28764, 0x38C9, "GrandSlam", null, "死刑"),
                 new(28763, 0x38C9, "ColossalSlam", new FanTemplate(40, MathF.PI / 3))], [])],
-        HeavenswardIntroCatalog.REGULA or HeavenswardIntroCatalog.DEATHGAZE or HeavenswardIntroCatalog.ALICANTO => HeavenswardIntroCatalog.Create(territory),
+        HeavenswardIntroCatalog.REGULA or HeavenswardIntroCatalog.DEATHGAZE or HeavenswardIntroCatalog.ALICANTO or HeavenswardIntroCatalog.EDDA
+            or HeavenswardIntroCatalog.IXTAB or HeavenswardIntroCatalog.AH_PUCH
+            or HeavenswardIntroCatalog.ALDYNN or HeavenswardIntroCatalog.REGULA_VITH or HeavenswardIntroCatalog.TISIPHONE
+            or HeavenswardIntroCatalog.NINGISHZIDA or HeavenswardIntroCatalog.ALFARD
+            or HeavenswardIntroCatalog.DIVINE_INTERVENTION or HeavenswardIntroCatalog.GRAOULLY
+            or HeavenswardIntroCatalog.SPURGE or HeavenswardIntroCatalog.KIRTIMUKHA or HeavenswardIntroCatalog.NYBETH or HeavenswardIntroCatalog.GODMOTHER or HeavenswardIntroCatalog.GUDANNA or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU => HeavenswardIntroCatalog.Create(territory),
         HalataliCatalog.TERRITORY => HalataliCatalog.Create(),
         1039 => [
             new(0x103, "Graffias", p => new CircleGeometry(new(215, p.Y, -145), 20),
@@ -181,9 +209,49 @@ internal static class ArrDungeonCatalog
 
     public static bool Owns(uint oid, uint territory) => territory switch
     {
+        ThordanCatalog.TERRITORY => oid == 0x1453,
+        WickedThunderCatalog.TERRITORY => oid == WickedThunderCatalog.BOSS,
+        KefkaCatalog.TERRITORY => oid == 0x2153,
+        QuantumCatalog.TERRITORY => oid == 0x48EE,
+        HeavenOnHighCatalog.FIRST or HeavenOnHighCatalog.SECOND or HeavenOnHighCatalog.THIRD
+            or HeavenOnHighCatalog.FOURTH or HeavenOnHighCatalog.FIFTH or HeavenOnHighCatalog.SIXTH
+            or HeavenOnHighCatalog.SEVENTH or HeavenOnHighCatalog.EIGHTH or HeavenOnHighCatalog.NINTH => HeavenOnHighCatalog.Owns(territory, oid),
+        EurekaOrthosCatalog.GANCANAGH or EurekaOrthosCatalog.CLONING_NODE or EurekaOrthosCatalog.TIAMAT or EurekaOrthosCatalog.TWINTANIA or EurekaOrthosCatalog.CHIMERA or EurekaOrthosCatalog.MINOTAUR or EurekaOrthosCatalog.AETURNA or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.ADMINISTRATOR or EurekaOrthosCatalog.EXCALIBUR => EurekaOrthosCatalog.Owns(territory, oid),
+        NativeFateCatalog.ARCHAEOTANIA or NativeFateCatalog.DAIVADIPA or NativeFateCatalog.FORMIDABLE or NativeFateCatalog.CHI or NativeFateCatalog.MICA or NativeFateCatalog.TTOKRRONE => NativeFateCatalog.Owns(territory, oid),
+        NoviceCatalog.TANK04 or NoviceCatalog.DPS03 or NoviceCatalog.DPS05 or NoviceCatalog.BASIC_FINAL or 1127 or 1128 or 1129 => NoviceCatalog.Owns(territory, oid),
+        NativeTreasureCatalog.VAULT_ONEIRON or NativeTreasureCatalog.SHIFTING_ALTARS or NativeTreasureCatalog.SHIFTING_GYMNASION or NativeTreasureCatalog.SHIFTING_OUBLIETTES or NativeTreasureCatalog.CENOTE_JA_JA_GURAL or NativeTreasureCatalog.DUNGEONS_LYHE_GHIAH or NativeTreasureCatalog.EXCITATRON or NativeTreasureCatalog.HIDDEN_CANALS or NativeTreasureCatalog.LOST_CANALS => NativeTreasureCatalog.Owns(oid, territory),
+        JobQuestCatalog.BAR_THE_PASSAGE or JobQuestCatalog.TO_HAVE_LOVED_AND_LOST or JobQuestCatalog.HEROES_AND_PRETENDERS or JobQuestCatalog.BLOOD_ON_THE_DECK or JobQuestCatalog.MIND_OVER_MANOR or JobQuestCatalog.SOMEWHERE_ONLY_SHE_KNOWS
+            or JobQuestCatalog.FANGS_OF_THE_VIPER or JobQuestCatalog.FACE_OF_TRUE_EVIL
+            or JobQuestCatalog.SAGES_FOCUS or JobQuestCatalog.ORPHANS_AND_BROKEN_BLADE
+            or JobQuestCatalog.BATTLE_ON_BEKKO
+            or JobQuestCatalog.KILLING_ART
+            or JobQuestCatalog.OUR_UNSUNG_HEROES
+            or JobQuestCatalog.LIFE_EPHEMERAL
+            or JobQuestCatalog.POWER_TO_PROTECT or JobQuestCatalog.ART_FOR_THE_LIVING or JobQuestCatalog.STEEL_AGAINST_STEEL
+            or JobQuestCatalog.RAISING_THE_SWORD or JobQuestCatalog.GAMBOLING_FOR_GIL
+            => JobQuestCatalog.Owns(territory, oid),
+        MainScenarioQuestCatalog.WARMTH_OF_THE_FAMILY or MainScenarioQuestCatalog.ISEULTALON or MainScenarioQuestCatalog.MEASURE_OF_HIS_REACH or MainScenarioQuestCatalog.FADED_MEMORIES or MainScenarioQuestCatalog.DEATH_UNTO_DAWN or MainScenarioQuestCatalog.ORACLE_OF_LIGHT or MainScenarioQuestCatalog.FEAST_OF_LIES or MainScenarioQuestCatalog.RHALGRS_BEACON or MainScenarioQuestCatalog.WHERE_EVERYTHING_BEGINS or MainScenarioQuestCatalog.FROSTY_RECEPTION or MainScenarioQuestCatalog.GAME_IS_AFOOT or MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.OTIS_OATHBROKEN or MainScenarioQuestCatalog.HIS_FORGOTTEN_HOME or MainScenarioQuestCatalog.MAX_QUEST or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES or MainScenarioQuestCatalog.TIME_BETWEEN => MainScenarioQuestCatalog.Owns(territory, oid),
+        CarnivaleCatalog.TERRITORY => CarnivaleCatalog.Owns(territory, oid),
         HeavenswardIntroCatalog.REGULA => oid == 0x161E,
+        HeavenswardIntroCatalog.DIVINE_INTERVENTION => oid is 0x1010 or 0x1011,
+        HeavenswardIntroCatalog.GRAOULLY => oid == 0x10B9,
+        HeavenswardIntroCatalog.EDDA => oid == 0x16C6,
+        HeavenswardIntroCatalog.IXTAB => oid == 0x16B9,
+        HeavenswardIntroCatalog.AH_PUCH => oid == 0x181B,
+        HeavenswardIntroCatalog.ALDYNN => oid == 0x154E,
+        HeavenswardIntroCatalog.REGULA_VITH => oid == 0xF1C,
+        HeavenswardIntroCatalog.TISIPHONE => oid == 0x181C,
+        HeavenswardIntroCatalog.NINGISHZIDA => oid == 0x16AC,
+        HeavenswardIntroCatalog.ALFARD => oid == 0x181A,
         HeavenswardIntroCatalog.DEATHGAZE => oid == 0x1692,
         HeavenswardIntroCatalog.ALICANTO => oid == 0x1818,
+        HeavenswardIntroCatalog.SPURGE => oid == 0x169F,
+        HeavenswardIntroCatalog.KIRTIMUKHA => oid == 0x1819,
+        HeavenswardIntroCatalog.NYBETH => oid == 0x1808,
+        HeavenswardIntroCatalog.GODMOTHER => oid == 0x1817,
+        HeavenswardIntroCatalog.GUDANNA => oid == 0x1816,
+        HeavenswardIntroCatalog.BLACK_RIDER => oid == 0x1814,
+        HeavenswardIntroCatalog.YAQUARU => oid == 0x1815,
         ArrTrialCatalog.IFRIT or ArrTrialCatalog.TITAN or ArrTrialCatalog.GARUDA => ArrTrialCatalog.Owns(oid, territory),
         PortaCatalog.TERRITORY => PortaCatalog.Owns(oid),
         HardTrialCatalog.IFRIT or HardTrialCatalog.TITAN or HardTrialCatalog.GARUDA => HardTrialCatalog.Owns(oid, territory),
@@ -307,7 +375,17 @@ internal static class ArrDungeonCatalog
     };
 
     public static bool IsScript(string id) => id.ToLowerInvariant() is
-        "masterplayer.palace.deathgaze" or "masterplayer.palace.alicanto" or "masterplayer.quest.a-bloody-reunion" or
+        "masterplayer.hoh.10" or "masterplayer.hoh.20" or "masterplayer.hoh.30" or "masterplayer.hoh.40" or "masterplayer.hoh.50"
+        or "masterplayer.hoh.60" or "masterplayer.hoh.70" or "masterplayer.hoh.80" or "masterplayer.hoh.90" or
+        "masterplayer.treasure.vault-oneiron" or "masterplayer.treasure.shifting-altars" or "masterplayer.treasure.shifting-gymnasion" or "masterplayer.treasure.shifting-oubliettes" or "masterplayer.treasure.cenote-ja-ja-gural" or
+        "masterplayer.palace.ixtab" or "masterplayer.palace.ah-puch" or
+        "masterplayer.palace.tisiphone" or
+        "masterplayer.palace.spurge" or "masterplayer.palace.kirtimukha" or "masterplayer.palace.nybeth" or "masterplayer.palace.godmother" or "masterplayer.palace.gudanna" or
+        "masterplayer.palace.blackrider" or
+        "masterplayer.palace.yaquaru" or
+        "masterplayer.palace.ningishzida" or "masterplayer.palace.alfard" or
+        "masterplayer.quest.a-spectacle-for-the-ages" or "masterplayer.quest.close-encounters-of-the-vith-kind" or
+        "masterplayer.palace.edda" or "masterplayer.palace.deathgaze" or "masterplayer.palace.alicanto" or "masterplayer.quest.a-bloody-reunion" or
         "masterplayer.trial.ultima-extreme" or
         "masterplayer.trial.garuda-extreme" or
         "masterplayer.trial.titan-extreme" or

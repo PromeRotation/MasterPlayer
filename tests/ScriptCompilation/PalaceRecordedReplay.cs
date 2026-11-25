@@ -39,18 +39,38 @@ internal static class PalaceRecordedReplay
                     var pos = ev.GetProperty("sourcePos");
                     var loc = ev.GetProperty("loc");
                     static object Point(JsonElement a) => new { X = a[0].GetSingle(), Y = a[1].GetSingle(), Z = a[2].GetSingle() };
+                    var start = new DateTime(2026, 11, 19, 0, 0, 1, DateTimeKind.Utc);
+                    var bossAction = action is 7090 or 7103 or >= 7154 and <= 7172;
+                    object Caster(bool casting) => new
+                    {
+                        Id = id, Oid = oid, Kind = 2, SubKind = 5, Hp = 100000, MaxHp = 100000,
+                        InCombat = true, Hostile = true, IsEnemy = true, Targetable = true, HitboxRadius = 0,
+                        Position = Point(pos), Rotation = ev.GetProperty("sourceRot").GetSingle(),
+                        Cast = casting ? new
+                        {
+                            ActionId = action, TargetId = 99999ul, Location = Point(loc), Rotation = ev.GetProperty("rotation").GetSingle(),
+                            StartedAt = start, FinishAt = start.AddSeconds(ev.GetProperty("seconds").GetSingle() + .3d),
+                            TotalTime = ev.GetProperty("seconds").GetSingle(), IsSpell = true,
+                        } : null,
+                    };
+                    // These raw frames are synthesized from recorded parameters;
+                    // the ARR fixture is not a complete CastInfo recording.
                     var lines = new List<string>
                     {
                         JsonSerializer.Serialize(new { v = 2, territory, startedUtc = "2026-11-19T00:00:00Z", pluginVersion = "palace-recorded-test" }),
                         JsonSerializer.Serialize(new { t = 0, kind = "WorldFrame", data = new { Full = true, Territory = territory, LocalPlayerId = 99999,
                             Actors = new object[] {
-                                new { Id = id, Oid = oid, Hp = 100000, MaxHp = 100000, InCombat = true, Hostile = true, Targetable = true, HitboxRadius = 0, Position = Point(pos) },
+                                Caster(false),
                                 new { Id = 99999, Kind = 1, Hp = 1000, Position = Point(pos) } } } }),
+                        JsonSerializer.Serialize(new { t = 1, kind = "WorldFrame", data = new { Territory = territory,
+                            LocalPlayerId = 99999, Actors = new[] { Caster(true) } } }),
                         JsonSerializer.Serialize(new { t = 1, kind = "CastStart", type = "PromeRotation.LogSystem.LogSystemCastStartEvent",
                             packetFacing = ev.GetProperty("rotation").GetSingle(), data = new { SourceId = id, TargetId = 99999, ActionId = action,
                                 CastTime = ev.GetProperty("seconds").GetSingle(), Timestamp = "2026-11-19T00:00:01Z", SourcePosition = Point(pos), EffectPosition = Point(loc) } }),
                         JsonSerializer.Serialize(new { t = 1.1, kind = "CancelCast", type = "PromeRotation.LogSystem.LogSystemCancelCastEvent",
                             data = new { SourceId = id, ActionId = action, Timestamp = "2026-11-19T00:00:01.1Z" } }),
+                        JsonSerializer.Serialize(new { t = 1.2, kind = "WorldFrame", data = new { Territory = territory,
+                            LocalPlayerId = 99999, Actors = new[] { Caster(false) } } }),
                         JsonSerializer.Serialize(new { t = 2, kind = "WorldFrame", data = new { Territory = territory, LocalPlayerId = 99999, Removed = new[] { id } } }),
                     };
                     var file = Path.Combine(config, "palace-recorded-cast.mpreplay.jsonl");
@@ -84,14 +104,19 @@ internal static class PalaceRecordedReplay
                         }
                     }
                     controller.Seek(1.11d);
-                    Check(!((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Any(), "Production recorded cancel retained danger " + action);
+                    var afterCancel = ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Count();
+                    Check(afterCancel == (expected && !bossAction ? 1 : 0),
+                        "Cancel did not preserve observed ordinary raw cast / release Boss packet " + action);
+                    controller.Seek(1.21d);
+                    Check(!((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).DangerAreas).Cast<object>().Any(),
+                        "Observed raw Finish retained recorded-parameter danger " + action);
                     Check(controller.RouterErrorCount == 0, "Production recorded router error " + action);
                     controller.StopSession();
                     ++count;
                 }
             }
             Check(count == 161, "Production did not route every recorded cast");
-            Console.WriteLine($"PASS production Palace ARR routing: {count} actual recorded casts; {geometryCount} navigation outputs; real Lumina inference, locked packet poses, source-specific cancel, no live object access or movement");
+            Console.WriteLine($"PASS production Palace ARR parameters plus synthesized raw frames: {count} recorded casts; {geometryCount} navigation outputs; real Lumina source shapes, observed Finish and distinct packet Cancel, no live object access or movement");
         }
         finally
         {

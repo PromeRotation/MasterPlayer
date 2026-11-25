@@ -7,6 +7,39 @@ internal static partial class FollowRegression
 {
     internal static void RunScriptControls(Action<string, Action> run)
     {
+        run("script controls spikes stop only native autoattack without ACR restriction and isolate replay", () =>
+        {
+            using var scope = new FollowScope();
+            var replay = false;
+            var stopped = new List<ulong[]>();
+            var forbidden = Array.Empty<ulong>();
+            var hold = false;
+            var control = new MechanicFacingControl((_, _, _, targets, _, holding, _, _) =>
+            {
+                forbidden = targets;
+                hold = holding;
+            }, _ => { });
+            var hints = new ScriptHintsApi(() => replay, control: control,
+                stopAutoAttack: (_, targets) => stopped.Add(targets.ToArray()));
+            try
+            {
+                hints.SetAutoAttackRestrictions(42);
+                Check(stopped.Single().SequenceEqual(new ulong[] { 42 }) && forbidden.Length == 0 && !hold,
+                    "Spikes expanded to ACR target restriction or hold.");
+                hints.SetFacing(1);
+                Check(stopped.Count == 2, "Facing update lost renewed autoattack intent.");
+                hints.SetAutoAttackRestrictions();
+                Check(stopped.Count == 2, "Clearing spikes changed native attack state.");
+                replay = true;
+                hints.SetAutoAttackRestrictions(42);
+                Check(stopped.Count == 2, "Replay executed spikes autoattack control.");
+                replay = false;
+                scope.Settings.EnableSmartMovement = false;
+                hints.SetAutoAttackRestrictions(42);
+                Check(stopped.Count == 2, "Movement disabled executed spikes control.");
+            }
+            finally { hints.Cleanup(); }
+        });
         run("script controls read existing host action restrictions through the optional interface", () =>
         {
             var host = typeof(PromeRotation.Plugin).Assembly.GetType("PromeRotation.Hosting.MechanicControl")
@@ -113,6 +146,47 @@ internal static partial class FollowRegression
                 Check(clears == 1, "Ending the final constraint did not clear the owner.");
                 hints.SetFacing(float.NaN);
                 Check(clears == 1, "Invalid headings created a host request.");
+            }
+            finally
+            {
+                hints.Cleanup();
+            }
+        });
+
+        run("script controls keep empty target selection leased without forbidding incidental AOE", () =>
+        {
+            using var scope = new FollowScope();
+            var calls = 0;
+            var clears = 0;
+            var nativeStops = 0;
+            ulong preferred = 0;
+            ulong cleared = 0;
+            var control = new MechanicFacingControl((_, target, clearTarget, forbidden, _, hold, block, cancel) =>
+            {
+                ++calls;
+                preferred = target;
+                cleared = clearTarget;
+                Check(forbidden.Length == 0 && !hold && !block && !cancel,
+                    "Soft invincibility exclusion became a hard action/target restriction.");
+            }, _ => ++clears);
+            var replay = false;
+            var hints = new ScriptHintsApi(() => replay, control: control, stopAutoAttack: (_, _) => ++nativeStops);
+            try
+            {
+                hints.SetTarget(0, 42);
+                hints.SetTarget(0, 42);
+                Check(calls == 2 && cleared == 42 && preferred == 0 && clears == 0, "Empty selection did not keep renewing PR ownership.");
+                hints.SetFacing(1.2f);
+                Check(cleared == 42 && calls == 3, "Facing erased the clear-target request.");
+                hints.SetTarget(50);
+                Check(preferred == 50 && cleared == 0, "Compatible single-argument target API retained a stale clear request.");
+                hints.ClearFacing();
+                hints.SetTarget(0);
+                Check(clears == 1 && nativeStops == 0, "Clearing selection failed to release owner or touched native autoattack.");
+                hints.SetTarget(0, 42);
+                replay = true;
+                hints.SetTarget(0, 42);
+                Check(clears == 2 && calls == 6, "Replay executed or retained clear-target control.");
             }
             finally
             {

@@ -19,7 +19,7 @@ internal sealed partial class DungeonEncounter
         ? baelCaution.GetValueOrDefault(PlayerId, _now) : null;
     // 对齐上游 PyreticThreshold=1 秒；状态实际移除前持续续期，含取消当前读条和自动攻击。
     public bool RequireAllStop => AllStopActivation is { } activation && activation <= _now.AddSeconds(1)
-        || VanguardRequireAllStop || RequireClyteumStop || RequireWolStop || QueenRequireStop;
+        || VanguardRequireAllStop || RequireClyteumStop || RequireWolStop || QueenRequireStop || IoRequireAllStop;
 
     private void BaelStatus(ulong target, uint status, bool present, DateTime timestamp, DateTime? expiresAt)
     {

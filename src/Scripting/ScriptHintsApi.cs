@@ -21,7 +21,9 @@ public sealed class ScriptHintsApi
     private bool holdActions;
     private bool blockCasts;
     private ulong[] forbiddenTargets = [];
+    private ulong[] autoAttackTargets = [];
     private ulong target;
+    private ulong clearTarget;
 
     internal ScriptHintsApi(Func<bool> isReplay, ScriptMoveApi? move = null,
         MechanicHost.MechanicFacingControl? control = null, Action<bool, ulong[]>? stopAutoAttack = null)
@@ -61,10 +63,25 @@ public sealed class ScriptHintsApi
         SetActionRestrictions();
     }
 
+    /// <summary>仅停止指定目标上的普攻；不限制 ACR 动作、治疗、读条或选敌。有效期间每帧续期。</summary>
+    public void SetAutoAttackRestrictions(params ulong[] targetIds)
+    {
+        autoAttackTargets = targetIds.ToArray();
+        Publish();
+    }
+
     /// <summary>请求 PR 优先攻击指定目标；0 撤销本脚本的选敌请求，不改变其他 owner。</summary>
     public void SetTarget(ulong targetId)
+        => SetTarget(targetId, 0);
+
+    /// <summary>
+    /// 请求优先目标并清除指定的当前目标。clearTargetId 非零时持续接管 PR 自动选敌，
+    /// 可表达没有可攻击候选的机制；不禁止 AOE 顺带命中、不暂停治疗或自保。
+    /// </summary>
+    public void SetTarget(ulong targetId, ulong clearTargetId)
     {
         target = targetId;
+        clearTarget = clearTargetId;
         Publish();
     }
 
@@ -90,7 +107,9 @@ public sealed class ScriptHintsApi
         holdActions = false;
         blockCasts = false;
         forbiddenTargets = [];
+        autoAttackTargets = [];
         target = 0;
+        clearTarget = 0;
         try
         {
             _facing.Clear();
@@ -111,9 +130,11 @@ public sealed class ScriptHintsApi
             Cleanup();
             return;
         }
-        _facing.Apply(heading, holdActions, blockCasts, cancelCast, forbiddenTargets, target);
+        _facing.Apply(heading, holdActions, blockCasts, cancelCast, forbiddenTargets, target, clearTarget);
         if (holdActions || forbiddenTargets.Length != 0)
             stopAutoAttack(holdActions, forbiddenTargets);
+        if (autoAttackTargets.Length != 0)
+            stopAutoAttack(false, autoAttackTargets);
     }
 
     private static unsafe void StopForbiddenAutoAttacks(bool hold, ulong[] forbidden)

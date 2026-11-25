@@ -13,7 +13,17 @@ internal static class Program
 {
     private const BindingFlags PRIVATE_INSTANCE = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    private static unsafe void Main()
+    private static async Task Main(string[] args)
+    {
+        GroundDrawingTests.Run();
+        await GroundSceneTests.RunAsync();
+        if (args.Contains("--ground-benchmark"))
+            GroundDrawingBenchmark.Run();
+        if (!args.Contains("--ground-only"))
+            RunGraphics();
+    }
+
+    private static unsafe void RunGraphics()
     {
         var adapter = new DxRendererAdapter();
         var testRenderer = new TestRenderer();
@@ -96,6 +106,19 @@ internal static class Program
         {
             staging->Release();
         }
+
+        var groundItem = new DrawRenderItem("ground-gpu", circle, new DrawStyle(fill, null));
+        var groundScene = GroundDrawingTests.Scene(GroundDrawingTests.Grid([-1, 0, 1], [-1, 0, 1], (x, _) => 0.5f + 0.2f * x));
+        var groundSurface = GroundSurface.Build(groundScene, Vector3.Zero, 2, default);
+        var groundMesh = GroundProjection.Project(groundItem, groundSurface);
+        batches.Clear();
+        MeshBuilder.AddGroundGeometry(batches, groundItem, groundMesh, new(0, 0, 0, -1), 0);
+        Require(batches.Count == 1, "贴地网格没有生成 GPU 批次");
+        Require((bool)Invoke(renderer, "EnsureVertexBuffer", (uint)(batches[0].Vertices.Length * sizeof(GpuVertex)))!, "贴地顶点缓冲创建失败");
+        Invoke(renderer, "RecordFrame", batches, camera, 64u, 64u, noView, 0u, 0u,
+            Pointer.Box(null, typeof(ID3D11Texture2D*)), noView);
+        Require(ReadCenterAlpha(device, immediate, texture) is >= 125 and <= 130, "真实贴地网格 GPU 合成失败");
+        Console.WriteLine("PASS D3D11 WARP: projected ground mesh submission and pixel readback");
 
         // 合成遮挡使用真正的 GPU SRV，以固定输入核验 Shader 的效果。
         ID3D11Texture2D* maskSource = null;

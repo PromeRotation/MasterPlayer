@@ -30,6 +30,11 @@ internal sealed partial class DungeonEncounter
 
     internal void Tether(ulong target, uint tether, bool present, DateTime now, ulong source = 0)
     {
+        EurekaTether(source, tether, target, present);
+        GuildivainTether(source, target, tether, present);
+        SleepTether(source, target, tether, present, now);
+        AlphaTether(source, target, tether, present);
+        TacticalTetherChanged(source, target, tether, present, now);
         TitanExTether(source, target, tether, present, now);
         ShinryuTether(source, target, tether, present, now);
         YojimboTether(source, target, tether, present);
@@ -74,8 +79,14 @@ internal sealed partial class DungeonEncounter
         else if (target == 0 || target == plagueTarget) plagueTarget = 0;
     }
 
-    internal void EventState(ulong source, byte state)
+    internal void EventState(ulong source, ushort rawState)
     {
+        TreasureMolterEState(source, rawState);
+        // Cenote EState is an event, not the native EventState field used to finish rooms.
+        if (territory == NativeTreasureCatalog.CENOTE_JA_JA_GURAL) return;
+        var state = (byte)rawState;
+        // This entry receives network EventObjectStateChange; Guildivain consumes native EventState frame changes.
+        if (IsGuildivain) return;
         if (_actors.TryGetValue(source, out var actor)) _actors[source] = actor with { EventState = state };
         SirenEventState(source, state);
         GhimlytState(source, state);

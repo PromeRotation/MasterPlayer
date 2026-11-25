@@ -18,8 +18,9 @@ internal static class HostDrawingGeometry
         _ => new CustomGeometry(shape),
     };
 
-    private sealed class CustomGeometry(IGeometryShape shape) : Host.IGeometryShape
+    private sealed class CustomGeometry(IGeometryShape shape) : Host.IGeometryShape, MasterPlayer.Drawing.ITriangulatedDrawingGeometry
     {
+        public IReadOnlyList<IReadOnlyList<Vector3>>? FillPolygons => shape is PolygonRegionGeometry region ? region.FillPolygons : null;
         public Host.GeometryKind Kind => (Host.GeometryKind)shape.Kind;
         public Vector3 Position => shape.Position;
         public float Rotation => shape.Rotation;
