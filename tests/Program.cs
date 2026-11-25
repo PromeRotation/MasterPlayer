@@ -30,6 +30,9 @@ if (args.Contains("--bmr-navigation"))
     if (failures.Count != 0) Environment.ExitCode = 1;
     return;
 }
+Orthos10Regression.Run(Run);
+Orthos20Regression.Run(Run);
+Orthos30Regression.Run(Run);
 PlayerPerspectiveRegression.Run(Run);
 SimpleHuntRegression.Run(Run);
 SimpleHuntControlsRegression.Run(Run);

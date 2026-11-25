@@ -32,7 +32,9 @@ internal sealed partial class SafeZoneRebornMovementSystem
 
     private bool CanHoldSafeRefuge(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {
-        if (!_setting.RuntimePreferSafeRefuge || GoalDirectedTemporalPlanning || _hasControl && _greenMove is { IsRunning: true }
+        if (!_setting.RuntimePreferSafeRefuge
+            || snapshot.DangerAreas.Any(d => d.DangerWindows.Any(w => w.HasExplicitTiming && (w.HasMotionEnvelope || w.RequireOutwardExit)))
+            || GoalDirectedTemporalPlanning || _hasControl && _greenMove is { IsRunning: true }
             || solution.IsLeastDangerFallback || solution.IsArenaMarginRecovery || solution.IsArenaReentry || solution.ReducedDangerStartSafetyTime.HasValue
             || solution.LatestSafeDepartureTime is { } deadline && now.AddSeconds(DepartureReserveSeconds) >= deadline
             || snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(now))))
@@ -42,6 +44,9 @@ internal sealed partial class SafeZoneRebornMovementSystem
         // only while the executable phase also validates with a later departure.
         return IsTemporalPhaseSafe(solution, player, snapshot, now, startDelay: DepartureReserveSeconds);
     }
+
+    private bool PreferTimedRefuge(SafeZoneSnapshot snapshot) => _setting.RuntimePreferSafeRefuge
+        && snapshot.DangerAreas.Any(d => d.DangerWindows.Any(w => w.HasExplicitTiming && (w.HasMotionEnvelope || w.RequireOutwardExit)));
 
     private bool ShouldWaitForEscape(SafeZoneSolution solution, PlayerState player, SafeZoneSnapshot snapshot, DateTime now)
     {

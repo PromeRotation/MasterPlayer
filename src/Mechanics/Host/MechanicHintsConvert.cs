@@ -973,6 +973,7 @@ internal sealed record MechanicNavZoneRequest(string Key, IReadOnlyList<Mechanic
 {
     // true = 补集语义转换出的目标安全区（注册 SafeArea 而非危险区，不外扩）
     public bool IsGoal { get; init; }
+    public DangerWindow? ExplicitWindow { get; init; }
 }
 
 internal sealed class MechanicNavAreaDiffer
@@ -980,6 +981,7 @@ internal sealed class MechanicNavAreaDiffer
     private sealed class Entry
     {
         public string Signature = "";
+        public DangerWindow? ExplicitWindow;
         public List<SafeZoneAreaHandle> Handles = [];
     }
 
@@ -1013,10 +1015,10 @@ internal sealed class MechanicNavAreaDiffer
             seen.Add(request.Key);
             if (book.TryGetValue(request.Key, out var entry))
             {
-                if (entry.Signature == signature && entry.Handles.Count == request.Primitives.Count
+                if (entry.Signature == signature && entry.ExplicitWindow == request.ExplicitWindow && entry.Handles.Count == request.Primitives.Count
                     && entry.Handles.All(manager.ContainsArea))
                     continue;
-                if (entry.Handles.Count == request.Primitives.Count)
+                if (entry.ExplicitWindow == request.ExplicitWindow && entry.Handles.Count == request.Primitives.Count)
                 {
                     var updated = true;
                     for (var i = 0; i < request.Primitives.Count; ++i)
@@ -1035,11 +1037,11 @@ internal sealed class MechanicNavAreaDiffer
                 foreach (var handle in entry.Handles)
                     registry.Remove(handle);
                 entry.Handles.Clear();
-                RegisterZone(registry, request, dangerMargin, marginSuffix, entry, track);
+                RegisterZone(registry, manager, request, dangerMargin, marginSuffix, entry, track);
                 continue;
             }
             var created = new Entry();
-            RegisterZone(registry, request, dangerMargin, marginSuffix, created, track);
+            RegisterZone(registry, manager, request, dangerMargin, marginSuffix, created, track);
             if (created.Handles.Count != 0)
                 book[request.Key] = created;
         }
@@ -1081,6 +1083,26 @@ internal sealed class MechanicNavAreaDiffer
         }
     }
 
+    internal static IEnumerable<MechanicNavZoneRequest> TimedRequests(BossMod.AIHints hints, float y, System.Numerics.Vector3 center, float radius)
+    {
+        for (var i = 0; i < hints.TimedForbiddenZones.Count; ++i)
+        {
+            var z = hints.TimedForbiddenZones[i];
+            var primitives = MechanicHintsConvert.ConvertForbiddenZone(z.Shape, y, center, radius, out _);
+            yield return new($"timed/{z.Source}/{z.From.Ticks}/{i}", primitives, 0, false,
+                MechanicHintsConvert.SignatureOf(z.Shape) + $"|{z.From.Ticks}/{z.Until.Ticks}/{z.Outward}")
+            {
+                ExplicitWindow = new DangerWindow(z.From, z.Until)
+                {
+                    // Motion/chase windows include their own reserves. Static blasts
+                    // keep ordinary cast preparation and hit-tail buffers.
+                    HasExplicitTiming = z.Shape is SDCapsule || z.Outward,
+                    HasMotionEnvelope = z.Shape is SDCapsule, RequireOutwardExit = z.Outward,
+                }
+            };
+        }
+    }
+
     public void Clear(SafeZoneRegistry registry)
     {
         foreach (var entry in _zones.Values)
@@ -1096,7 +1118,7 @@ internal sealed class MechanicNavAreaDiffer
         _obstacles.Clear();
     }
 
-    private static void RegisterZone(SafeZoneRegistry registry, MechanicNavZoneRequest request,
+    private static void RegisterZone(SafeZoneRegistry registry, SafeZoneManager manager, MechanicNavZoneRequest request,
         float dangerMargin, string marginSuffix, Entry entry, Action<SafeZoneAreaHandle>? track)
     {
         foreach (var prim in request.Primitives)
@@ -1111,7 +1133,9 @@ internal sealed class MechanicNavAreaDiffer
             else
             {
                 var template = Dodge.DangerMarginInflator.Inflate(prim.Template, dangerMargin);
-                handle = request.Persistent
+                handle = request.ExplicitWindow is { } window
+                    ? manager.AddDangerArea(template, binding, [window])
+                    : request.Persistent
                     ? registry.AddPersistentDanger(template, binding)
                     // AIHints 从 activation 起持续禁入，由组件撤销输出结束危险。
                     : registry.AddDelayedDanger(template, binding, request.DelaySeconds);
@@ -1122,6 +1146,7 @@ internal sealed class MechanicNavAreaDiffer
                 track?.Invoke(handle);
             }
         }
+        entry.ExplicitWindow = request.ExplicitWindow;
         entry.Signature = request.IsGoal ? request.Signature : request.Signature + "|m" + marginSuffix;
     }
 }

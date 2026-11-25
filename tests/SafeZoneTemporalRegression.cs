@@ -519,6 +519,68 @@ internal static class SafeZoneTemporalRegression
             Check(move.StopCount == stops, "Holding must not resend Stop every frame.");
         });
 
+        run("temporal refuge lock survives repeated solves and releases at its deadline", () =>
+        {
+            var snapshot = Staggered();
+            var route = Solve(snapshot, new Vector3(8, 0, 0), Epoch);
+            var refuge = route.ExecutablePath[^1].Position;
+            var departure = route.ExecutablePath[^1].PlannedDepartureTime;
+            var now = Epoch.AddSeconds(1);
+            var hold = new SafeZoneSolver().Solve(snapshot, Player(refuge), Capability, Options, now, route);
+            Check(hold.ExecutablePath.Count == 1 && hold.ExecutablePath[0].IsWaitPoint,
+                "Arrival must preserve the selected waiting point.");
+            for (var i = 1; i <= 10; ++i)
+            {
+                now = Epoch.AddSeconds(1 + i * .05);
+                hold = new SafeZoneSolver().Solve(snapshot, Player(refuge), Capability, Options, now, hold);
+                Check(hold.ExecutablePath.Count == 1 && hold.ExecutablePath[0].Position == refuge
+                    && hold.ExecutablePath[0].PlannedDepartureTime == departure,
+                    "Re-solving must not move the refuge or extend its departure.");
+            }
+            var follow = new GoalAreaSnapshot(default,
+                new CircleTemplate(25).Resolve(Vector3.Zero, 0, null), [new GoalWindow(now, null, -1, default)]);
+            var withFollow = new SafeZoneSnapshot(snapshot.Version, now, snapshot.ArenaBoundary, [], snapshot.DangerAreas, [follow]);
+            var following = new SafeZoneSolver().Solve(withFollow, Player(refuge), Capability, Options, now, hold);
+            Check(following.ExecutablePath.Count == 1 && following.ExecutablePath[0].Position == refuge,
+                "An optional attack-range goal must not restart movement inside a valid refuge.");
+            var released = new SafeZoneSolver().Solve(snapshot, Player(refuge), Capability, Options, departure.AddSeconds(.05), hold);
+            Check(released.IsSuccess && released.ExecutablePath.Count >= 2,
+                "The hold must end when the earlier AOE clears.");
+        });
+
+        run("temporal refuge lock yields to new danger and player displacement", () =>
+        {
+            var snapshot = Staggered();
+            var route = Solve(snapshot, new Vector3(8, 0, 0), Epoch);
+            var refuge = route.ExecutablePath[^1].Position;
+            var now = Epoch.AddSeconds(1);
+            var solver = new SafeZoneSolver();
+            var hold = solver.Solve(snapshot, Player(refuge), Capability, Options, now, route);
+            var obstacle = new ObstacleSnapshot(default, new CircleTemplate(1).Resolve(refuge, 0, null));
+            var blocked = new SafeZoneSnapshot(2, now, snapshot.ArenaBoundary, [obstacle], snapshot.DangerAreas, []);
+            var escape = solver.Solve(blocked, Player(refuge), Capability, Options, now, hold);
+            Check(escape.ExecutablePath.Count >= 2, "A new obstacle must break the waiting lock.");
+            // Moving geometry can change within one snapshot generation. Recheck
+            // its buffered interval instead of trusting version equality alone.
+            var threat = new DangerAreaSnapshot(default, new CircleTemplate(1).Resolve(refuge, 0, null),
+                [new DangerWindow(now, now.AddSeconds(.5))]);
+            var covered = new SafeZoneSnapshot(snapshot.Version, now, snapshot.ArenaBoundary, [],
+                snapshot.DangerAreas.Concat([threat]).ToArray(), []);
+            escape = solver.Solve(covered, Player(refuge), Capability, Options, now, hold);
+            Check(escape.ExecutablePath.Count != 1 || !escape.ExecutablePath[0].IsWaitPoint,
+                "A changed dangerous footprint must not retain the lock.");
+            var mechanicGoal = new GoalAreaSnapshot(default,
+                new CircleTemplate(1).Resolve(new Vector3(8, 0, 0), 0, null), [new GoalWindow(now, null, 1, default)]);
+            var assigned = new SafeZoneSnapshot(snapshot.Version, now, snapshot.ArenaBoundary, [], snapshot.DangerAreas, [mechanicGoal]);
+            escape = solver.Solve(assigned, Player(refuge), Capability, Options, now, hold);
+            Check(escape.ExecutablePath.Count != 1 || escape.ExecutablePath[0].PlannedArrivalTime != now
+                || escape.ExecutablePath[0].PlannedDepartureTime != hold.ExecutablePath[0].PlannedDepartureTime,
+                "An explicit mechanic goal must go through normal planning instead of reusing a locked refuge.");
+            var displaced = new Vector3(8, 0, 0);
+            escape = solver.Solve(snapshot, Player(displaced), Capability, Options, now, hold);
+            Check(escape.ExecutablePath.Count >= 2, "Displacement must re-plan the approach, not hold or walk back blindly.");
+        });
+
         run("an asynchronously delayed staging route is not dispatched after its departure budget", () =>
         {
             var snapshot = Staggered();

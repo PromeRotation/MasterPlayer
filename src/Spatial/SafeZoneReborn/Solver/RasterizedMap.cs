@@ -532,6 +532,13 @@ public sealed class RasterizedMap
             // separate: exiting one must never permit entering another. Pending
             // windows (including an overlapping cone) retain their own deadlines.
             var (startCol, startRow) = WorldToCell(playerPosition);
+            if (options.PreferSafeRefuge && danger.Geometry.Contains(playerPosition)
+                && danger.DangerWindows.Any(w => w.HasExplicitTiming && w.HasMotionEnvelope && !w.RequireOutwardExit && w.IsActiveAt(solveTime)))
+            {
+                _escapeAreas.Add(footprint);
+                _exitOnlyAreas.Add(footprint);
+                continue;
+            }
             // Only a player actually inside the area must escape it. Standing in its margin ring only
             // (e.g. a tiny "stay inside" knockback landing goal) keeps the ordinary margin handling;
             // treating it as an escape returned NoReachableSafeCell (Crucible Durga ARR staging).

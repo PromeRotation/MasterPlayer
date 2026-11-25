@@ -75,6 +75,7 @@ public sealed record SolveOptions
     public bool EnablePathSmoothing { get; init; } = true;
 
     public bool PreferStraightPaths { get; init; }
+    public bool PreferSafeRefuge { get; init; }
 
     /// <summary>竞速路线允许等待周期机关后继续前往目标；普通战斗维持寻找安全落点的策略。</summary>
     public bool GoalDirectedTemporalPlanning { get; init; }

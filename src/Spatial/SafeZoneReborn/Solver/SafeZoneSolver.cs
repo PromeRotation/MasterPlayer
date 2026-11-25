@@ -78,6 +78,8 @@ public sealed class SafeZoneSolver
         {
             return SafeZoneSolution.Failed(SolutionStatus.SnapshotInvalid, 0, solveTime, solveTime);
         }
+        if (options.PreferSafeRefuge && !snapshot.DangerAreas.Any(d => d.DangerWindows.Any(w => w.HasExplicitTiming && (w.HasMotionEnvelope || w.RequireOutwardExit))))
+            options = options with { PreferSafeRefuge = false };
 
         // Keep the chosen preparation budget while an emergency escape is still
         // leaving pending damage. Restoring the larger cushion on the next frame
@@ -124,6 +126,30 @@ public sealed class SafeZoneSolver
             && TryRecoverArenaMargin(snapshot, map, player.Position, capability, options, solveTime) is { } recovery)
             return recovery;
 
+        // A reached staging point is already the chosen refuge. Preserve its
+        // departure time instead of selecting a neighboring equal-cost cell on
+        // every solve. Revalidate the wait against the current snapshot.
+        if (!options.GoalDirectedTemporalPlanning
+            && !snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(solveTime)))
+            && previousSolution is { IsSuccess: true, UsesTemporalPlanning: true }
+            && (options.PreferSafeRefuge || previousSolution.SourceSnapshotVersion == version)
+            && previousSolution.ExecutablePath.LastOrDefault() is { IsWaitPoint: true } wait
+            && wait.PlannedDepartureTime > solveTime
+            && GeometryHelper.DistanceXZ(player.Position, wait.Position) <= .1f
+            && !map.RequiresEscapeAt(startRow * map.Columns + startCol)
+            && map.PixelMaxGAt(startCol, startRow) >= 0
+            && map.DangerIntervalsAt(startRow * map.Columns + startCol).All(d =>
+                d.From > (wait.PlannedDepartureTime - solveTime).TotalSeconds || d.Until < 0))
+        {
+            return new SafeZoneSolution(SolutionStatus.Success, version, solveTime, solvedAt, player.Position,
+                [wait with { Position = player.Position, PlannedArrivalTime = solveTime }])
+            {
+                UsesTemporalPlanning = true, IsPartialEscape = previousSolution.IsPartialEscape,
+                MaxArrivalTolerance = previousSolution.MaxArrivalTolerance,
+                ReducedDangerStartSafetyTime = previousSolution.ReducedDangerStartSafetyTime,
+            };
+        }
+
         if (!playerInDangerNow &&
             TryReuseSettledGoalLock(snapshot, map, player.Position, previousSolution, solveTime, out var lockedTarget))
         {
@@ -161,7 +187,10 @@ public sealed class SafeZoneSolver
                 snapshot.HardObstacles, snapshot.DangerAreas, []);
             return SolveCore(escapeSnapshot, player, capability, options, solveTime, previousSolution);
         }
-        if ((result.BestScore < BossModStyleAStar.Score.Safe || timedGoal) && map.HasFiniteDanger &&
+        var temporaryRefuge = options.PreferSafeRefuge && result.Destination is { } candidate
+            && snapshot.DangerAreas.Any(d => d.Geometry.Contains(candidate)
+                && d.DangerWindows.Any(w => w.DangerUntil == null || w.DangerUntil >= solveTime));
+        if ((result.BestScore < BossModStyleAStar.Score.Safe || timedGoal || temporaryRefuge) && map.HasFiniteDanger &&
             SafeIntervalPathfinder.Search(map, player.Position, capability.CurrentSpeed, solveTime,
                 capability.MovementStartDelay, options, timedGoal) is { } temporal)
         {

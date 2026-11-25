@@ -15,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\src\Spatial\**\*.cs" Link="Spatial\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\src\UI\Radar\HostDrawingGeometry.cs" Link="HostDrawingGeometry.cs" />
+    <None Update="Fixtures\EurekaOrthos\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Crucible\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\Blunderville\*.json" CopyToOutputDirectory="PreserveNewest" />
     <None Update="Fixtures\PilgrimsTraverse30\*.json" CopyToOutputDirectory="PreserveNewest" />

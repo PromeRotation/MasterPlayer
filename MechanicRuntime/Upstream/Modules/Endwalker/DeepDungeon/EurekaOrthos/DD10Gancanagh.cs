@@ -16,9 +16,48 @@ public enum AID : uint
     Mandrastorm = 31479 // Boss->self, 5.0s cast, range 60 circle, damage fall off AOE
 }
 
-class MandraStorm(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Mandrastorm, 20f);
-class Mandrashock1(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Mandrashock1, 10f);
-class Mandrashock2(BossModule module) : Components.SimpleAOEs(module, (uint)AID.Mandrashock2, 10f, 6);
+class GancanaghAOEs(BossModule module, uint aid, float radius) : Components.SimpleAOEs(module, aid, radius)
+{
+    public override void OnCastStarted(Actor caster, ActorCastInfo spell)
+    {
+        if (spell.Action.ID != WatchedAction)
+            return;
+        Remove(caster.InstanceID);
+        var origin = caster.Position;
+        Casters.Add(new(Shape, origin, spell.Rotation, Module.CastFinishAt(spell), actorID: caster.InstanceID,
+            shapeDistance: Shape.Distance(origin, spell.Rotation)));
+    }
+
+    public override void OnCastFinished(Actor caster, ActorCastInfo spell)
+    {
+        // Native IsCasting can clear before the NPC effect, whose delay is included in Activation.
+        if (spell.Action.ID == WatchedAction && spell.RemainingTime > 0.1f)
+            Remove(caster.InstanceID);
+    }
+
+    public override void OnEventCast(Actor caster, ActorCastEvent spell)
+    {
+        base.OnEventCast(caster, spell);
+        if (spell.Action.ID == WatchedAction)
+            Remove(caster.InstanceID);
+    }
+
+    public override void AddAIHints(int slot, Actor actor, PartyRolesConfig.Assignment assignment, AIHints hints)
+    {
+        foreach (var aoe in Casters)
+            hints.TimedForbiddenZones.Add((aoe.Shape.Distance(aoe.Origin, aoe.Rotation), aoe.Activation,
+                aoe.Activation.AddSeconds(0.6), aoe.ActorID, false));
+    }
+
+    public override void OnActorDestroyed(Actor actor) => Remove(actor.InstanceID);
+    public override void OnActorDeath(Actor actor) => Remove(actor.InstanceID);
+    public override void Update() => Casters.RemoveAll(a => WorldState.CurrentTime > a.Activation.AddSeconds(0.6));
+    private void Remove(ulong id) => Casters.RemoveAll(a => a.ActorID == id);
+}
+
+class MandraStorm(BossModule module) : GancanaghAOEs(module, (uint)AID.Mandrastorm, 20f);
+class Mandrashock1(BossModule module) : GancanaghAOEs(module, (uint)AID.Mandrashock1, 10f);
+class Mandrashock2(BossModule module) : GancanaghAOEs(module, (uint)AID.Mandrashock2, 10f);
 
 class DD10GancanaghStates : StateMachineBuilder
 {

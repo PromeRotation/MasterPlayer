@@ -10,9 +10,9 @@
     "importedSha256": "f29e286d8722bb88228fb4108fd7cc55c90af4f4c4c8a474724b4ef3e4e66322"
   },
   "BossModule/AIHints.cs": {
-    "reason": "寻路引擎与 AI 执行器已移除：删除 InitPathfindMap 及 AIConfig 静态引用；Teleporter 结构体自 Pathfinding/ThetaStar.cs 迁入本文件（BossMod 命名空间，字段原样），Teleporters 列表与 PathfindMapObstacles 数据面保留。",
+    "reason": "寻路引擎与 AI 执行器已移除：删除 InitPathfindMap 及 AIConfig 静态引用；Teleporter 结构体自 Pathfinding/ThetaStar.cs 迁入本文件（BossMod 命名空间，字段原样），Teleporters 列表与 PathfindMapObstacles 数据面保留。 新增明确占用时间窗提示并逐帧清空，由 EO10/EO30 生产，保留原 ForbiddenZones 契约。 增加模块级稳定避难偏好并逐帧清空。",
     "originalSha256": "fb0937a1c69e43acc54eac99fae844e52839e54d222b626bb6ea0a6f4ba1cce7",
-    "importedSha256": "93e8276007902be9694f33e259e709b9efb76d0a59a87b93ead1ac443da3ea11"
+    "importedSha256": "ec3453349fb2e474ea90264747f73cf1f0a9867e59cf04803a6d29b3342f7230"
   },
   "BossModule/ArenaBounds.cs": {
     "reason": "寻路引擎已移除：删除 PathfindMap 抽象方法与 Circle/ABRect/Custom 三处实现及各自 BuildMap/_cachedMap；allowObstacleMap 构造参数与字段保留，模块构造签名不变。",
@@ -123,5 +123,20 @@
     "reason": "动态解析穿山甲，缺失时不构造虚假的连线接取位置。",
     "originalSha256": "98c04d8161d04797dd557faa4056855cfbda4c33ffb7610547aead29d106f2eb",
     "importedSha256": "55933f1518be13becc3d25d14c667ffcf98f3afd7f41c76c3a75a539f89ad7a9"
+  },
+  "Modules/Endwalker/DeepDungeon/EurekaOrthos/DD10Gancanagh.cs": {
+    "reason": "MP 原生读条未保留自身技能网络落点：本战三个圆形技能锁定施法者位置；三批地雷全部参与规划；保留读条结束至效果间危险，按来源去重并在取消、效果、死亡、移除和超时清理。使用独立有限时间窗保留地雷爆炸时序，不改变宿主普通 ForbiddenZones 的持续生效契约。",
+    "originalSha256": "14743b535a6bd9a44d62bee5ba91c830dc898425e292a90a4c510f83e006a38d",
+    "importedSha256": "22dbabd6aac5def7d52ad412cac73a034001c4138c931561a9e8ca2e794021aa"
+  },
+  "Modules/Endwalker/DeepDungeon/EurekaOrthos/DD20CloningNode.cs": {
+    "reason": "EO20 ARR：自身读条使用施法者位置和锁定施法朝向；喷火按三种指令时序预测并由实际 helper 读条校正，接力两波全部导航；按来源去重，实际判定/取消/死亡/销毁/超时清理；导航增加扇形侧边0.5码与0.2秒提前量，保留原始绘制范围。",
+    "originalSha256": "f1d1854c5bd59f0e9e02afea087f7bf7bd59246d0cd9228ad25e8fccb4a09b1b",
+    "importedSha256": "4f5beea58264e6a8b27ad5bd3f23e9df2e51fb09fa03922a95ce854877f2cbcc"
+  },
+  "Modules/Endwalker/DeepDungeon/EurekaOrthos/DD30TiamatsClone.cs": {
+    "reason": "EO30 ARR：自身矩形锁定施法者原点/朝向，保留自然读条结束至效果的危险；追踪五连从实际落点固定12.5码向外撤离；龙头按3码/秒、0.5秒轨迹占用窗预测并校正转向/位置。取消/效果/死亡/销毁/超时清理。 新ARR修正：首圈R6且只在判定窗生效，追踪每轮固定远端引导目标；保留完整15秒龙头轨迹，启用安全避难与完整延后路线读条复核以减少微步。静态爆炸使用有限时间窗并保留公共前后安全余量；移动包络及追踪保留自带余量。 地面圆阶段精细龙头占用窗口；追踪完成后短暂内侧回位。",
+    "originalSha256": "555f271f7b5f4e4c9b8ec1fbd743962fd7e0a6e968d9b7d5861e517cfb3eaf62",
+    "importedSha256": "0c56c987a29f88dd87fec8785655b2b5435696ec3d9fa4410ff1ba93c9cd46d7"
   }
 }

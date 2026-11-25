@@ -1076,6 +1076,7 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         ArenaSafetyMargin = _manager.UsesFallbackBoundary ? 0 : _setting.RuntimeArenaSafetyMargin ?? _options.ArenaSafetyMargin,
         HardSafetyMargin = _setting.RuntimeHardSafetyMargin ?? _options.HardSafetyMargin,
         PreferStraightPaths = _setting.RuntimePreferStraightPaths,
+        PreferSafeRefuge = _setting.RuntimePreferSafeRefuge,
         GoalDirectedTemporalPlanning = GoalDirectedTemporalPlanning,
     };
 
@@ -1266,7 +1267,9 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         var shouldMove = solution.IsSuccess && solution.ExecutablePath.Count >= 2;
 
         // Waiting is allowed only while the delayed route still meets every damage window.
-        if (shouldMove && !solution.IsArenaMarginRecovery && !solution.IsArenaReentry && (!solution.UsesTemporalPlanning || player.CastTimeRemaining <= ShortCastSeconds) && ShouldWaitForCast(solution, player, snapshot, now))
+        if (shouldMove && !solution.IsArenaMarginRecovery && !solution.IsArenaReentry
+            && (PreferTimedRefuge(snapshot) || !solution.UsesTemporalPlanning || player.CastTimeRemaining <= ShortCastSeconds)
+            && ShouldWaitForCast(solution, player, snapshot, now))
         {
             _phase = DispatchPhase.WaitingForCast;
             shouldMove = false;
@@ -1462,6 +1465,13 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
                     foreach (var window in danger.DangerWindows)
                         if (window.IsActiveAt(now)) { escaping.Add(danger.Geometry); break; }
         }
+        else if (_setting.RuntimePreferSafeRefuge)
+        {
+            foreach (var danger in snapshot.DangerAreas)
+                if (danger.Geometry.Contains(position)
+                    && danger.DangerWindows.Any(w => w.HasExplicitTiming && w.HasMotionEnvelope && !w.RequireOutwardExit && w.IsActiveAt(now)))
+                    (escaping ??= []).Add(danger.Geometry);
+        }
         for (var i = nextIndex; i < path.Count; i++)
         {
             var arrival = time.AddSeconds(GeometryHelper.DistanceXZ(position, path[i].Position) / MathF.Max(0.1f, player.CurrentSpeed));
@@ -1483,6 +1493,12 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         // Standing there must remain safe until the original arrival, otherwise
         // removing a detour turns a timed escape into an early hit.
         var holdUntil = solution.UsesTemporalPlanning && end.PlannedArrivalTime > time ? end.PlannedArrivalTime : time;
+        // Moving-hazard refuges also need a full second of safe standing time.
+        if (_setting.RuntimePreferSafeRefuge && !solution.IsLeastDangerFallback
+            && snapshot.DangerAreas.Any(d => d.DangerWindows.Any(w => w.HasExplicitTiming && w.HasMotionEnvelope))
+            && !snapshot.GoalAreas.Any(g => g.GoalWindows.Any(w => w.Priority >= 0 && w.IsActiveAt(now)))
+            && holdUntil < time.AddSeconds(1))
+            holdUntil = time.AddSeconds(1);
         return IsTemporalSegmentSafe(snapshot, position, position, time, holdUntil, startSafety);
     }
 
@@ -1847,6 +1863,10 @@ internal sealed partial class SafeZoneRebornMovementSystem : ISafeZoneRebornMove
         if (!player.IsCasting || player.CastTimeRemaining <= _options.CastSlideWindow)
             return false;
         var delay = player.CastTimeRemaining - _options.CastSlideWindow + DepartureReserveSeconds;
+        if (PreferTimedRefuge(snapshot) && solution.IsSuccess && !solution.ReducedDangerStartSafetyTime.HasValue
+            && !solution.IsLeastDangerFallback && solution.ExecutablePath.Count >= 2
+            && IsTemporalPhaseSafe(solution, player, snapshot, now, startDelay: delay + .35))
+            return true;
         return CanDelayEscape(solution, player, snapshot, now, delay) || CanFinishShortCast(solution, player, snapshot, now, delay);
     }
 

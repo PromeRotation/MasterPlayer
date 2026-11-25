@@ -121,6 +121,11 @@ public sealed class AIHints
     // AI will try to move in such a way to avoid standing in any forbidden zone after its activation or outside of some restricted zone after its activation, even at the cost of uptime
     public readonly List<(ShapeDistance shapeDistance, DateTime activation, ulong Source)> ForbiddenZones = [];
 
+    // MP navigation: preserve the full occupancy interval for moving bodies and
+    // chasing attacks, rather than reducing them to a 0.6s one-shot hit.
+    public readonly List<(ShapeDistance Shape, DateTime From, DateTime Until, ulong Source, bool Outward)> TimedForbiddenZones = [];
+    public bool PreferSafeRefuge;
+
     // positioning: list of goal functions
     // AI will try to move to reach non-forbidden point with highest goal value (sum of values returned by all functions)
     // guideline: rotation modules should return 1 if it would use single-target action from that spot, 2 if it is also a positional, 3 if it would use aoe that would hit minimal viable number of targets, +1 for each extra target
@@ -203,6 +208,8 @@ public sealed class AIHints
         SpinDirection = null;
         InteractWithTarget = null;
         ForbiddenZones.Clear();
+        TimedForbiddenZones.Clear();
+        PreferSafeRefuge = false;
         GoalZones.Clear();
         TemporaryObstacles.Clear();
         Teleporters.Clear();
