@@ -11,7 +11,7 @@ internal static class NativeActionEffectRegression
 {
     private delegate void CaptureEffect(ulong source, uint action, ulong mainTarget, uint sequence, ReadOnlySpan<ulong> targets, DateTime? at,
         Vector3? targetPosition = null, ulong[][]? rawEffects = null, byte? actionType = null,
-        uint? sourceOid = null, int? sourceObjectIndex = null);
+        uint? sourceOid = null, int? sourceObjectIndex = null, ushort? rotationInt = null);
 
     internal static void Run(Assembly assembly, string config)
     {
@@ -39,7 +39,7 @@ internal static class NativeActionEffectRegression
         var location = new Vector3(12, 4, -37);
         ulong[][] payload = [new ulong[8], new ulong[8]];
         payload[0][3] = 14ul | (991ul << 48);
-        emit(1, 16964, 100, 5, targets, now, location, payload, 1, 0x3E13, 10);
+        emit(1, 16964, 100, 5, targets, now, location, payload, 1, 0x3E13, 10, 12345);
         targets[0] = 999;
         payload[0][3] = 0;
         Check(received.Count == 0, "Native capture published on the producer thread.");
@@ -56,6 +56,12 @@ internal static class NativeActionEffectRegression
         Check((uint?)eventType.GetProperty("SourceOid")!.GetValue(received[0]) == 0x3E13
             && (int?)eventType.GetProperty("SourceObjectIndex")!.GetValue(received[0]) == 10,
             "Native capture lost the producer's source identity.");
+        Check((ushort?)eventType.GetProperty("RotationInt")!.GetValue(received[0]) == 12345,
+            "Native capture lost the producer packet rotation.");
+        var header = typeof(FFXIVClientStructs.FFXIV.Client.Game.Character.ActionEffectHandler.Header);
+        Check(header.GetField("RotationInt")!.FieldType == typeof(ushort)
+            && System.Runtime.InteropServices.Marshal.OffsetOf(header, "RotationInt").ToInt32() == 0x1A,
+            "Referenced FFCS Header.RotationInt differs from the reviewed local f76f33bd source layout.");
         emit(1, 16964, 100, 6, [], now); Clear(); Drain();
         emit(1, 16964, 100, 7, [], now); Replay(true); Drain();
         emit(1, 16964, 100, 8, [], now); Replay(false); Drain();
@@ -131,12 +137,19 @@ internal static class NativeActionEffectRegression
             var frameType = assembly.GetType("MasterPlayer.Replay.ReplayWorldFrame", true)!;
             var frame = Activator.CreateInstance(frameType)!;
             frameType.GetProperty("Full")!.SetValue(frame, true);
+            var fateType = assembly.GetType("MasterPlayer.Replay.ReplayActiveFate", true)!;
+            object Fate(uint id, Vector3 center, float radius) => Activator.CreateInstance(fateType, [id, center, radius])!;
+            var initialFate = Fate(2073, new(100, 10, 100), 40);
+            var movedFate = Fate(2073, new(120, 15, 100), 55);
+            frameType.GetProperty("ActiveFate")!.SetValue(frame, initialFate);
+            frameType.GetProperty("AllowedFateId")!.SetValue(frame, (uint?)0);
             var world = typeof(NativeActionEffectRegression).GetMethod(nameof(World), BindingFlags.Static | BindingFlags.NonPublic)!
                 .MakeGenericMethod(frameType).Invoke(null, [frame])!;
             dynamic recorder = Activator.CreateInstance(recorderType, hidden, null, [world], null)!;
             using var lifetime = (IDisposable)recorder;
             emit(1, 16964, 100, 1, [101, 100], DateTime.UtcNow);
             Check((bool)recorder.StartRecording(false), (string)recorder.StatusMessage);
+            frameType.GetProperty("ActiveFate")!.SetValue(frame, movedFate);
             var start = ((DateTime)recorderType.GetField("_startLocal", hidden)!.GetValue(recorder)!).ToUniversalTime();
             recorderType.GetField("_playerSourceCacheAt", hidden)!.SetValue(recorder, DateTime.UtcNow.AddHours(1));
             var players = (HashSet<uint>)recorderType.GetField("_playerSourceIds", hidden)!.GetValue(recorder)!;
@@ -148,7 +161,7 @@ internal static class NativeActionEffectRegression
             emit(1, 16964, 100, 5, [101, 100], start);
             ulong[][] payload = [new ulong[8], new ulong[8]];
             payload[1][7] = 15ul | (991ul << 48) | (1ul << 45);
-            emit(1, 16964, 101, 6, [100, 101], start.AddTicks(2), new Vector3(13, 5, -38), payload, 1, 0x3E13, 10);
+            emit(1, 16964, 101, 6, [100, 101], start.AddTicks(2), new Vector3(13, 5, -38), payload, 1, 0x3E13, 10, 54321);
             var status = new LogSystemStatusAddEvent { SourceId = 1, TargetId = 100, StatusId = 1, Timestamp = start.AddTicks(1).ToLocalTime() };
             foreach (var callback in callbacks) callback.DynamicInvoke(status);
             var path = (string)recorder.CurrentFilePath;
@@ -157,6 +170,14 @@ internal static class NativeActionEffectRegression
                 && !((string)recorder.StatusMessage).Contains("中止"), "Native recorder boundaries/filter/queued stop flush failed.");
             var reader = assembly.GetType("MasterPlayer.Replay.ReplayRecordingReader", true)!;
             var recording = reader.GetMethod("Load", [typeof(string)])!.Invoke(null, [path])!;
+            object[] Frames(object value) => ((IEnumerable)value.GetType().GetProperty("WorldFrames")!.GetValue(value)!)
+                .Cast<object>().Select(e => e.GetType().GetProperty("Frame")!.GetValue(e)!).ToArray();
+            var frames = Frames(recording);
+            Check(frames.Length >= 2 && Equals(frameType.GetProperty("ActiveFate")!.GetValue(frames[0]), initialFate)
+                && Equals(frameType.GetProperty("ActiveFate")!.GetValue(frames[^1]), movedFate)
+                && !(bool)frameType.GetProperty("Full")!.GetValue(frames[^1])!
+                && (uint?)frameType.GetProperty("AllowedFateId")!.GetValue(frames[^1]) == 0,
+                "Production recorder/reader lost raw FATE center/radius delta or confused attack qualification.");
             var entries = ((IEnumerable)recording.GetType().GetProperty("Events")!.GetValue(recording)!).Cast<object>()
                 .Select(e => e.GetType().GetProperty("Event")!.GetValue(e)!).ToArray();
             Check(entries.Length == 3 && entries[0].GetType() == eventType && entries[1] is LogSystemStatusAddEvent
@@ -179,15 +200,23 @@ internal static class NativeActionEffectRegression
                 && (uint?)eventType.GetProperty("SourceOid")!.GetValue(entries[2]) == 0x3E13
                 && (int?)eventType.GetProperty("SourceObjectIndex")!.GetValue(entries[2]) == 10,
                 "Optional producer identity failed old-data compatibility or production recording/readback.");
+            Check(eventType.GetProperty("RotationInt")!.GetValue(entries[0]) == null
+                && (ushort?)eventType.GetProperty("RotationInt")!.GetValue(entries[2]) == 54321,
+                "Optional packet rotation failed old-data compatibility or production recording/readback.");
+            var noFate = Fate(0, default, 0);
+            frameType.GetProperty("ActiveFate")!.SetValue(frame, noFate);
             Check((bool)recorder.StartRecording(false), (string)recorder.StatusMessage);
             path = (string)recorder.CurrentFilePath;
             emit(1, 16964, 100, 7, [101, 100], DateTime.UtcNow);
             pluginType.GetField("_replayRecorder", hidden)!.SetValue(plugin, (object)recorder);
             pluginType.GetMethod("DisposeRuntime", hidden)!.Invoke(plugin, null);
             recording = reader.GetMethod("Load", [typeof(string)])!.Invoke(null, [path])!;
+            Check(Frames(recording).All(f => Equals(frameType.GetProperty("ActiveFate")!.GetValue(f), noFate)),
+                "Production recorder/reader confused known no FATE with missing legacy input.");
             entries = ((IEnumerable)recording.GetType().GetProperty("Events")!.GetValue(recording)!).Cast<object>().ToArray();
             Check(entries.Length == 1 && !(bool)recorder.IsRecording,
                 "Runtime disposal cleared the capture queue before flushing the recording tail.");
+            Console.WriteLine("PASS production active FATE recorder/readback: initial identity circle full frame changed center radius delta explicit none independent attack qualification");
         }
         finally
         {

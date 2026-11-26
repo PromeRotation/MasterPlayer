@@ -175,6 +175,16 @@ internal sealed partial class DungeonEncounter
 
     public IEnumerable<DungeonAmbientAoe> AmbientAoes()
     {
+        if (IsAlteRoite)
+        {
+            foreach (var aoe in AlteRoiteAoes()) yield return aoe;
+            yield break;
+        }
+        if (IsHalicarnassus)
+        {
+            foreach (var aoe in HalicarnassusAoes()) yield return aoe;
+            yield break;
+        }
         if (IsThordan)
         {
             foreach (var aoe in ThordanAoes()) yield return aoe;

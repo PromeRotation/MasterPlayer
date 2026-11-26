@@ -1,6 +1,24 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
+if (args.Length == 3 && args[0] == "--dalriada-spirals")
+{
+    NativeDungeonArenaExport.RunDalriadaSpirals(args[1], args[2]);
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--castrum-lacus-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "castrum-lacus");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--dalriada-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "dalriada");
+    return;
+}
+
 if (args.Length == 3 && args[0] == "--thordan-arenas")
 {
     NativeDungeonArenaExport.Run(args[1], args[2], "thordan");
@@ -273,6 +291,11 @@ if (args.Length == 3 && args[0] == "--aurum-arenas")
     return;
 }
 
+if (args.Length == 3 && args[0] == "--delubrum-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "delubrum");
+    return;
+}
 if (args.Length == 3 && args[0] == "--bmr-inventory")
 {
     BmrSourceInventory.Run(args[1], args[2]);

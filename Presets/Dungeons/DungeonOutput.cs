@@ -20,6 +20,10 @@ internal sealed class DungeonOutput(ScriptSafeZoneApi safeZone, ScriptDrawApi dr
     {
         var navigationBoundary = encounter.Arena;
         if (encounter.IsQuantum && (!encounter.Quantum.Active || encounter.Quantum.CurrentSlot < 0)
+            || encounter.IsAlteRoite && (!encounter.AlteRoite.Active || encounter.AlteRoite.Slot < 0
+                || encounter.AlteRoite.SourcePlayer == null || !encounter.AlteRoite.Actors.ContainsKey(encounter.PlayerId))
+            || encounter.IsHalicarnassus && (!encounter.Halicarnassus.Active || encounter.Halicarnassus.Slot < 0
+                || encounter.Halicarnassus.SourcePlayer == null || !encounter.Halicarnassus.Actors.ContainsKey(encounter.PlayerId))
             || encounter.IsWickedThunder && (!encounter.WickedThunder.Active || encounter.WickedThunder.Slot < 0)
             || encounter.IsKefka && (!encounter.Kefka.Active || encounter.Kefka.Slot < 0)
             || encounter.IsThordan && (!encounter.Thordan.Active || encounter.Thordan.Slot < 0))

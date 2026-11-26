@@ -14,6 +14,8 @@ public sealed record NativeActionEffectEvent : LogSystemEvent
     public uint ActionId { get; init; }
     /// <summary>原始效果包动作类型；旧录像缺失为 null，1 表示 Spell。</summary>
     public byte? ActionType { get; init; }
+    /// <summary>效果包原始0..65535朝向；旧录像缺失为null，不等同于对象当前朝向。</summary>
+    public ushort? RotationInt { get; init; }
     public ulong MainTargetId { get; init; }
     public uint GlobalSequence { get; init; }
     public ulong[] Targets { get; init; } = [];

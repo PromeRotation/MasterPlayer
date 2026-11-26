@@ -66,15 +66,32 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
         return EncounterActive;
     }
     public bool PreservesTerritoryMechanics => HeavenswardIntroCatalog.IsTerritory(territory) || JobQuestCatalog.IsTerritory(territory) || MainScenarioQuestCatalog.IsTerritory(territory)
-        || NativeTreasureCatalog.IsTerritory(territory) || NoviceCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory) || HeavenOnHighCatalog.IsTerritory(territory) || (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY;
+        || NativeTreasureCatalog.IsTerritory(territory) || NoviceCatalog.IsTerritory(territory) || NativeFateCatalog.IsTerritory(territory) || HeavenOnHighCatalog.IsTerritory(territory) || (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or HalicarnassusCatalog.TERRITORY or AlteRoiteCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY;
 
     internal bool HandlesCast(LogSystemCastStartEvent cast)
     {
         if (!PreservesTerritoryMechanics || _suspended || _encounter == null) return false;
         var thordanInputScan = _encounter.ThordanInputScan;
+        var halicarnassusInputScan = _encounter.HalicarnassusInputScan;
+        var alteRoiteInputScan = _encounter.AlteRoiteInputScan;
         _encounter.ThordanInputScan = thordanInputScan || _encounter.IsThordan;
+        _encounter.HalicarnassusInputScan = halicarnassusInputScan || _encounter.IsHalicarnassus;
+        _encounter.AlteRoiteInputScan = alteRoiteInputScan || _encounter.IsAlteRoite;
         try { Scan(CurrentTime); }
-        finally { _encounter.ThordanInputScan = thordanInputScan; }
+        finally
+        {
+            _encounter.ThordanInputScan = thordanInputScan;
+            _encounter.HalicarnassusInputScan = halicarnassusInputScan;
+            _encounter.AlteRoiteInputScan = alteRoiteInputScan;
+        }
+        if (_encounter.IsAlteRoite)
+            return _encounter.Active != null && _encounter.AlteRoite.Actors.TryGetValue(cast.SourceId, out var alteRoiteSource)
+                && alteRoiteSource.NativeNpc && alteRoiteSource.Cast?.IsSpell != false
+                && AlteRoiteCatalog.ACTIONS.Contains(cast.ActionId);
+        if (_encounter.IsHalicarnassus)
+            return _encounter.Active != null && _encounter.Halicarnassus.Actors.TryGetValue(cast.SourceId, out var halicarnassusSource)
+                && halicarnassusSource.NativeNpc && halicarnassusSource.Cast?.IsSpell != false
+                && HalicarnassusCatalog.ACTIONS.Contains(cast.ActionId);
         if (_encounter.IsThordan)
             return _encounter.Active != null && _encounter.Actors.TryGetValue(cast.SourceId, out var thordanSource)
                 && !thordanSource.Player && !thordanSource.Buddy
@@ -241,7 +258,7 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
     private unsafe void Scan(DateTime now)
     {
         // These models consume per-frame actor lifetimes or ordered NPC/bait positions.
-        _nextScan = (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY || territory is MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES
+        _nextScan = (EurekaOrthosCatalog.IsTerritory(territory) || territory is QuantumCatalog.TERRITORY or HalicarnassusCatalog.TERRITORY or AlteRoiteCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY) || territory == CarnivaleCatalog.TERRITORY || territory is MainScenarioQuestCatalog.SLEEP_DISTURBED or MainScenarioQuestCatalog.HOPE_ON_THE_WAVES
             or MainScenarioQuestCatalog.TIME_BETWEEN or MainScenarioQuestCatalog.ISEULTALON or MainScenarioQuestCatalog.WARMTH_OF_THE_FAMILY or JobQuestCatalog.BAR_THE_PASSAGE
             or JobQuestCatalog.TO_HAVE_LOVED_AND_LOST or JobQuestCatalog.HEROES_AND_PRETENDERS && ReplayWorld == null
             ? now : now.AddSeconds(0.1);
@@ -288,7 +305,7 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                     a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.Max(s => s.ExpiresAt)), a.AnimationState1, a.ModelState, a.ClassJob, a.EventAnimation, a.NameId,
                     a.AnimationState2, a.Kind == 2 && a.SubKind == 9, a.IncomingEffects,
                     a.Statuses.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.MaxBy(s => s.ExpiresAt)!.SourceId), a.Hp, a.MaxHp, a.AggroPlayer,
-                    a.Kind == 2 && a.SubKind == 5 && a.IsEnemy == false, a.IsEnemy, a.ObjectIndex, a.Kind == 1, a.FateId, territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY ? rawStatusSlots : null,
+                    a.Kind == 2 && a.SubKind == 5 && a.IsEnemy == false, a.IsEnemy, a.ObjectIndex, a.Kind == 1, a.FateId, territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or HalicarnassusCatalog.TERRITORY or AlteRoiteCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY ? rawStatusSlots : null,
                     (ushort)((a.Kind << 8) | a.SubKind),
                     a.Tethers.Any(t => t.SlotIndex != null) ? a.Tethers.FirstOrDefault(t => t.SlotIndex == 0)
                         : a.Tethers.FirstOrDefault(), a.GameObjectId);
@@ -355,7 +372,7 @@ public abstract class DungeonScript(uint territory) : MasterPlayerScript
                 combat = (battle.StatusFlags & StatusFlags.InCombat) != 0;
                 hostile = (battle.StatusFlags & StatusFlags.Hostile) != 0;
                 statuses = battle.StatusList.Where(s => s.StatusId != 0).Select(s => s.StatusId).ToArray();
-                if (territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY)
+                if (territory is CarnivaleCatalog.TERRITORY or HeavenswardIntroCatalog.BLACK_RIDER or HeavenswardIntroCatalog.YAQUARU or EurekaOrthosCatalog.PROTO_KALIYA or EurekaOrthosCatalog.EXCALIBUR or QuantumCatalog.TERRITORY or HalicarnassusCatalog.TERRITORY or AlteRoiteCatalog.TERRITORY or WickedThunderCatalog.TERRITORY or KefkaCatalog.TERRITORY or ThordanCatalog.TERRITORY)
                     statusSlots = battle.StatusList.Select((s, index) => s == null || s.StatusId == 0 ? null
                         : new ReplayStatus(s.StatusId, s.Param, s.SourceId, now.AddSeconds(Math.Min(MathF.Abs(s.RemainingTime), 100000f)))
                             { SlotIndex = index }).OfType<ReplayStatus>().ToArray();

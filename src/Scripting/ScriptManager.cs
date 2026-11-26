@@ -468,6 +468,9 @@ public sealed class ScriptManager : IDisposable
                 || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id)
                 || Mechanics.Dungeons.CastrumAbaniaCatalog.IsScript(id)
                  || Mechanics.Dungeons.ArrDungeonCatalog.IsScript(id)
+                 || id is "masterplayer.hoh.floors" or "masterplayer.eureka.floors" or "masterplayer.pilgrims.floors" or "masterplayer.foray.hydatos"
+                     or "masterplayer.foray.bozja.south" or "masterplayer.foray.zadnor" or "masterplayer.foray.delubrum.normal" or "masterplayer.foray.delubrum.savage"
+                 || Mechanics.Fates.CrescentFateCatalog.Definitions.Any(d => id == $"masterplayer.fate.{d.Name.ToLowerInvariant()}")
                  || id == Mechanics.Hunts.SimpleHuntCatalog.SCRIPT_ID;
 
     public void SetScriptEnabled(string id, bool enabled)
@@ -613,6 +616,9 @@ public sealed class ScriptManager : IDisposable
                 || r.Script is Mechanics.PalaceOfTheDead.PalaceScript palace && palace.HandlesCast(cast)
                 || r.Script is Mechanics.DeepDungeon.DeepDungeonFloorScript floor && floor.HandlesCast(cast)
                 || r.Script is Mechanics.Hunts.SimpleHuntScript hunt && hunt.HandlesCast(cast)
+                || r.Script is Mechanics.Fates.CrescentFateScript fate && fate.HandlesCast(cast)
+                || r.Script is Mechanics.Bozja.BozjaScript bozja && bozja.HandlesCast(cast)
+                || r.Script is Mechanics.Hydatos.HydatosScript hydatos && hydatos.HandlesCast(cast)
                  || r.Script is Mechanics.Dungeons.DungeonScript dungeon && dungeon.HandlesCast(cast));
 
     private static Type[] GetAssemblyTypes(Assembly assembly)

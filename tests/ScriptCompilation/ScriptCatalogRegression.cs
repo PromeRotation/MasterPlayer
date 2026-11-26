@@ -13,7 +13,7 @@ using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
-    internal const int BUILT_IN_COUNT = 273;
+    internal const int BUILT_IN_COUNT = 296;
     public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false, bool dungeonsOnly = false)
     {
         var config = Directory.CreateTempSubdirectory("MasterPlayer-ScriptCatalog-");
@@ -69,7 +69,48 @@ internal static class ScriptCatalogRegression
                 Check(((uint[])Find($"masterplayer.hoh.{floor}").Metadata.Territorys).SequenceEqual([territory])
                     && (bool)manager.IsScriptEnabled($"masterplayer.hoh.{floor}"),
                     "HoH scripts must be enabled at their true territories, independently of CFC and ordinary floors.");
+            foreach (var id in new[] { "masterplayer.hoh.floors", "masterplayer.eureka.floors", "masterplayer.pilgrims.floors" })
+            {
+                Check((bool)manager.IsScriptEnabled(id), $"Native floor protection must start with an empty configuration: {id}.");
+                manager.SetScriptEnabled(id, false);
+                Refresh();
+                Check(!(bool)manager.IsScriptEnabled(id), $"Explicit user disable must survive catalog refresh: {id}.");
+                manager.SetScriptEnabled(id, true);
+            }
+            foreach (var (name, territory) in new[] { ("thewingedterror", 1252u), ("crescentgremlin", 1346u),
+                ("crescentfan", 1346u), ("eyetoeye", 1346u), ("demimedusa", 1346u),
+                ("arottenaffair", 1346u), ("adelicatebalance", 1252u), ("kingofthecrescent", 1252u),
+                ("madmudarch", 1252u), ("allureoftheoccult", 1346u), ("anunendingduty", 1252u),
+                ("galeforceencounter", 1346u), ("relicicewolf", 1346u), ("thunderregnum", 1346u),
+                ("apryingeye", 1252u), ("servingdarkness", 1252u) })
+            {
+                var id = $"masterplayer.fate.{name}";
+                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual([territory])
+                    && (bool)manager.IsScriptEnabled(id), $"Crescent FATE default and metadata: {id}.");
+                manager.SetScriptEnabled(id, false);
+                Refresh();
+                Check(!(bool)manager.IsScriptEnabled(id), $"Crescent explicit disable survives refresh: {id}.");
+                manager.SetScriptEnabled(id, true);
+            }
             var race = Find("masterplayer.goldsaucer.blunderville");
+            Check(((uint[])Find("masterplayer.foray.hydatos").Metadata.Territorys).SequenceEqual([827u])
+                && (bool)manager.IsScriptEnabled("masterplayer.foray.hydatos"), "Hydatos metadata/default enable.");
+            foreach (var (id, territory, other) in new[]
+            {
+                ("masterplayer.foray.bozja.south", 920u, "masterplayer.foray.zadnor"),
+                ("masterplayer.foray.zadnor", 975u, "masterplayer.foray.bozja.south"),
+                ("masterplayer.foray.delubrum.normal", 936u, "masterplayer.foray.zadnor"),
+                ("masterplayer.foray.delubrum.savage", 937u, "masterplayer.foray.delubrum.normal"),
+            })
+            {
+                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual([territory])
+                    && (bool)manager.IsScriptEnabled(id), "Bozja/Zadnor empty configuration default and exact territory: " + id);
+                manager.SetScriptEnabled(id, false);
+                Refresh();
+                Check(!(bool)manager.IsScriptEnabled(id) && (bool)manager.IsScriptEnabled(other),
+                    "Bozja/Zadnor independent explicit disable survives refresh: " + id);
+                manager.SetScriptEnabled(id, true);
+            }
             foreach (var (name, territory) in new[] { ("spurge", 562u), ("kirtimukha", 599u), ("nybeth", 597u) })
                 Check(((uint[])Find($"masterplayer.palace.{name}").Metadata.Territorys).SequenceEqual([territory])
                     && (bool)manager.IsScriptEnabled($"masterplayer.palace.{name}"), "Palace plant true territory/default enabled.");

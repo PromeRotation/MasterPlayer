@@ -19,6 +19,9 @@
     <Compile Include="..\Presets\HeavenOnHigh\Floor\*.cs" Exclude="..\Presets\HeavenOnHigh\Floor\HeavenOnHighFloorScript.cs" Link="HeavenOnHigh\Floor\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\MaskedCarnivale\*.cs" Link="MaskedCarnivale\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Fates\*.cs" Link="Fates\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Fates\Crescent\*.cs" Exclude="..\Presets\Fates\Crescent\CrescentFateScript.cs" Link="Fates\Crescent\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Foray\Hydatos\*.cs" Exclude="..\Presets\Foray\Hydatos\HydatosScript.cs" Link="Foray\Hydatos\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Foray\Bozja\*.cs" Exclude="..\Presets\Foray\Bozja\BozjaScript.cs" Link="Foray\Bozja\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\HallOfTheNovice\*.cs" Link="HallOfTheNovice\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\TreasureHunt\*.cs" Link="TreasureHunt\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Hunts\*.cs" Exclude="..\Presets\Hunts\SimpleHuntScript.cs" Link="Hunts\%(Filename)%(Extension)" />
@@ -80,6 +83,7 @@
     <Compile Include="..\src\Scripting\LegacyMapEffectCapture.cs" Link="LegacyMapEffectCapture.cs" />
     <Compile Include="..\src\Replay\ReplayRecording.cs" Link="Replay\ReplayRecording.cs" />
     <Compile Include="..\src\Replay\ReplayWorldState.cs" Link="Replay\ReplayWorldState.cs" />
+    <Compile Include="..\src\Replay\ReplayActiveFate.cs" Link="Replay\ReplayActiveFate.cs" />
     <Compile Include="..\src\Replay\ReplayIncomingEffect.cs" Link="Replay\ReplayIncomingEffect.cs" />
     <Compile Include="..\src\Replay\ReplayDutyAction.cs" Link="Replay\ReplayDutyAction.cs" />
     <Compile Include="..\src\Replay\ReplayDeepDungeonState.cs" Link="Replay\ReplayDeepDungeonState.cs" />

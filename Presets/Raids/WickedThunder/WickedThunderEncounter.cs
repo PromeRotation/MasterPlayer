@@ -137,9 +137,9 @@ internal sealed partial class WickedThunderEncounter
         else if (cast.Action == 37561)
             Sides.Add(Make(RayRectangleTemplate.Symmetric(16, 40), hit));
         else if (cast.Action == 37557)
-            Hunts.Add(Make(new CircleTemplate(6), hit.AddSeconds(6.3d)) with { Rotation = 0, Risky = false });
+            Hunts.Add(Make(new CircleTemplate(6), Activation(actor, 6.3d)) with { Rotation = 0, Risky = false });
         else if (cast.Action is 37553 or 37554 && Center.X is 85 or 115)
-            Hyper = Make(RayRectangleTemplate.Symmetric(20, 40), hit.AddSeconds(.6d)) with
+            Hyper = Make(RayRectangleTemplate.Symmetric(20, 40), Activation(actor, .6d)) with
             { Origin = new(Center.X, 0, 80), Rotation = 0, Risky = false };
         else if (cast.Action == 37576 && target != null)
             Baits.Add(Make(RayRectangleTemplate.Symmetric(5, 60), hit));
@@ -270,13 +270,20 @@ internal sealed partial class WickedThunderEncounter
     private void Gain(ReplayStatus status)
     {
         if (status.Id != 2970 || cannonDelays.Length <= Cannons.Count || Primary == null) return;
+        var rotation = status.Param switch
+        {
+            0x2D3 => MathF.PI,
+            // Upstream AnglesCardinals[1] deliberately retains this offset.
+            0x2D4 => -.003f * (MathF.PI / 180f),
+            _ => 0,
+        };
         Cannons.Add(new(++generation, Primary, 20032, RayRectangleTemplate.Symmetric(10, 40),
-            Primary.Actor.Position, status.Param == 0x2D3 ? MathF.PI : 0,
+            Primary.Actor.Position, rotation,
             now.AddSeconds(cannonDelays[Cannons.Count]), Risky: false));
     }
 
-    internal DateTime Activation(WickedThunderActor actor)
-        => actor.Cast == null ? now : now.AddSeconds(Total(actor.Cast) + .3f - actor.Elapsed);
+    internal DateTime Activation(WickedThunderActor actor, double extraDelay = 0)
+        => actor.Cast == null ? now : now.AddSeconds(Total(actor.Cast) + .3f - actor.Elapsed + extraDelay);
     private static float Total(DungeonCastObservation cast)
         => cast.TotalTime ?? (float)Math.Max(0, (cast.FinishAt - cast.StartedAt).TotalSeconds - .3d);
     private static void Advance(WickedThunderActor actor, DateTime time)

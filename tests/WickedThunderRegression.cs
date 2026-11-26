@@ -1,12 +1,14 @@
 using System.Numerics;
 using MasterPlayer.Mechanics.Dungeons;
 using MasterPlayer.Replay;
+using MasterPlayer.Scripting;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
 
 internal static class WickedThunderRegression
 {
     private static readonly DateTime START = new(2026, 11, 25, 10, 0, 0, DateTimeKind.Utc);
+    private static Lumina.GameData? oracleData;
     private sealed class Fixture
     {
         internal readonly DungeonEncounter E = new(1231);
@@ -60,6 +62,7 @@ internal static class WickedThunderRegression
         run("WickedThunder native Jolt dynamic original targets Finish retained effect FIFO no target reacquire", Baits);
         run("WickedThunder native spread R6 display R7 navigation target Finish and missing source identity", Spreads);
         run("WickedThunder native damage dynamic raw NPC clock no invented stack spread predictions", Damage);
+        run("WickedThunder native source component event differential queues clocks geometry colors risk promotion", SourceDifferential);
         run("WickedThunder native output exact stack complement Jolt full length owner and nonparty gates", Output);
         run("WickedThunder native lifecycle no view death wipe switch and same-ID source generation", Lifecycle);
     }
@@ -121,7 +124,8 @@ internal static class WickedThunderRegression
         f.Status(102, 59, 2970, 0);
         Check(f.M.Cannons.Count == 3 && f.M.Cannons[0].Activation == START.AddSeconds(9.5f)
             && f.M.Cannons[1].Activation == START.AddSeconds(8.3f)
-            && f.M.Cannons[0].Rotation == MathF.PI && f.M.Cannons[1].Rotation == 0, "Slot/delay/angle.");
+            && f.M.Cannons[0].Rotation == MathF.PI && f.M.Cannons[1].Rotation == BossMod.Angle.AnglesCardinals[1].Rad
+            && f.M.Cannons[2].Rotation == 0, "Slot/delay/angle.");
         var visible = f.M.VisibleCannons().ToArray();
         Check(visible.Length == 2 && visible[0].Danger && visible[0].Risky && !visible[1].Risky, "Front2.");
         f.M.Effect(3, 20032, 0);
@@ -179,8 +183,9 @@ internal static class WickedThunderRegression
         f.M.Map(0, 0x00020001);
         f.Cast(37554);
         var hyper = f.M.Hyper!;
+        var sourceClock = new BossMod.ActorCastInfo { TotalTime = 3 };
         Check(hyper.Origin == new Vector3(85, 0, 80) && !hyper.Risky
-            && hyper.Activation == f.Now.AddSeconds(3.3f).AddSeconds(.6d), "Hyper lock and clock.");
+            && hyper.Activation == f.Now.AddSeconds(sourceClock.NPCRemainingTime + .6d), "Hyper lock and clock.");
         f.End(); f.Step(30);
         for (var i = 0; i < 9; ++i) f.M.Effect(3, 37555, 0);
         Check(f.M.Hyper != null && f.M.Damage().Count() == 8, "Hyper premature clear/damage.");
@@ -273,7 +278,30 @@ internal static class WickedThunderRegression
         f.Cast(37575);
         f.Set(101, a => a with { Dead = true }); f.Step(20);
         var damage = f.M.Damage().ToArray();
-        Check(damage.Length == 7 && damage.All(d => d.Activation == f.Now.AddSeconds(.3f)), "Dynamic capped NPC clock.");
+        var sourceClock = new BossMod.ActorCastInfo { TotalTime = 3, ElapsedTime = 3 };
+        Console.WriteLine($"INFO WickedThunder damage: targets={string.Join(",", damage.Select(d => d.TargetId))}; "
+            + $"actualTicks={string.Join(",", damage.Select(d => (d.Activation - f.Now).Ticks))}; "
+            + $"sourceRemaining={sourceClock.NPCRemainingTime:R}; sourceTicks={f.Now.AddSeconds(sourceClock.NPCRemainingTime).Ticks - f.Now.Ticks}; "
+            + $"literalTicks={f.Now.AddSeconds(.3f).Ticks - f.Now.Ticks}");
+        Check(damage.Select(d => d.TargetId).SequenceEqual(new ulong[] { 100, 102, 103, 104, 105, 106, 107 })
+            && damage.All(d => d.Activation == f.Now.AddSeconds(sourceClock.NPCRemainingTime)),
+            "Dynamic capped NPC clock must equal source ActorCastInfo.NPCRemainingTime exactly.");
+        foreach (var total in new[] { 1f, 3f, 8.3f, 12f })
+        {
+            f.End();
+            f.Cast(37575, duration: total);
+            sourceClock.TotalTime = total;
+            sourceClock.ElapsedTime = 0;
+            foreach (var step in new[] { .1d, .6d, 20d })
+            {
+                // Preserve the source float accumulation and operation order.
+                sourceClock.ElapsedTime = MathF.Min(sourceClock.ElapsedTime + (float)step, total);
+                f.Step(step);
+                damage = f.M.Damage().ToArray();
+                Check(damage.Length == 7 && damage.All(d => d.Activation == f.Now.AddSeconds(sourceClock.NPCRemainingTime)),
+                    $"Source NPC clock total={total:R}, elapsed={sourceClock.ElapsedTime:R}.");
+            }
+        }
         f.End();
         Check(!f.M.Damage().Any(), "Raidwide finish.");
     }
@@ -292,6 +320,134 @@ internal static class WickedThunderRegression
             "Jolt must keep full60 instead of target length.");
         f.Sync(999);
         Check(!f.E.AmbientAoes().Any(a => a.Navigate), "Missing view navigation.");
+    }
+
+    private static void SourceDifferential()
+    {
+        if (!MasterPlayer.MechanicRuntime.MechanicRuntimeEnvironment.IsInitialized)
+        {
+            var sqpack = Environment.GetEnvironmentVariable("FFXIV_SQPACK");
+            Check(Directory.Exists(sqpack), "Set FFXIV_SQPACK for the actual BMR component oracle.");
+            oracleData = new(sqpack!, new Lumina.LuminaOptions { DefaultExcelLanguage = Lumina.Data.Language.ChineseSimplified });
+            MasterPlayer.MechanicRuntime.MechanicRuntimeEnvironment.Initialize(oracleData,
+                ScriptServiceProxy.Create<Dalamud.Plugin.Services.IPluginLog>((_, _) => null));
+        }
+        // These source components use only WorldState/PrimaryActor. Leave the
+        // unrelated renderer and host constructor out of this isolated oracle.
+        var world = new BossMod.WorldState(1, "wicked-component-oracle");
+        var sourceActor = new BossMod.Actor(1, 0x4263, 0, 0, "", 0, BossMod.ActorType.Enemy,
+            default, 100, new Vector4(100, 0, 100, 0));
+        var moduleType = typeof(BossMod.Dawntrail.Raid.M04NWickedThunder.M04NWickedThunder);
+        var module = (BossMod.BossModule)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(moduleType);
+        typeof(BossMod.BossModule).GetField("WorldState")!.SetValue(module, world);
+        module.PrimaryActor = sourceActor;
+        var caster = new BossMod.Actor(2, 0x233C, 2, 0, "", 0, BossMod.ActorType.Helper,
+            default, 100, new Vector4(100, 0, 80, 0));
+        BossMod.Components.GenericAOEs Component(string name)
+            => (BossMod.Components.GenericAOEs)Activator.CreateInstance(
+                moduleType.Assembly.GetType(moduleType.Namespace + "." + name)!,
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+                null, [module], null)!;
+        var f = new Fixture();
+        var events = 0;
+        BossMod.ActorCastInfo Spell(uint action)
+            => new() { Action = new BossMod.ActionID(BossMod.ActionType.Spell, action), TotalTime = 3,
+                Location = new(100, 0, 80), Rotation = new(.4f) };
+        void Clock() => world.Frame.Timestamp = f.Now;
+        void Compare(string step, BossMod.Components.GenericAOEs source, IEnumerable<WickedThunderAoe> native)
+        {
+            var expected = source.ActiveAOEs(0, sourceActor).ToArray();
+            var actual = native.ToArray();
+            Check(expected.Length == actual.Length, $"First differential at {step}: count {expected.Length}/{actual.Length}.");
+            for (var i = 0; i < expected.Length; ++i)
+            {
+                var a = actual[i];
+                var e = expected[i];
+                Check(e.Activation == a.Activation, $"First differential at {step}[{i}]: clock {e.Activation:O}/{a.Activation:O}.");
+                Check(e.Origin.X == a.Origin.X && e.Origin.Z == a.Origin.Z && e.Rotation.Rad == a.Rotation,
+                    $"First differential at {step}[{i}]: origin {e.Origin.X:R},{e.Origin.Z:R}/{a.Origin.X:R},{a.Origin.Z:R}; "
+                    + $"rotation {e.Rotation.Rad:R}/{a.Rotation:R}.");
+                Check(e.Risky == a.Risky && (e.Color == BossMod.Colors.Danger) == a.Danger,
+                    $"First differential at {step}[{i}]: risk/color.");
+                var parametersMatch = (e.Shape, a.Shape) switch
+                {
+                    (BossMod.AOEShapeCircle sourceShape, CircleTemplate nativeShape) => sourceShape.Radius == nativeShape.Radius,
+                    (BossMod.AOEShapeCone sourceShape, FanTemplate nativeShape) => sourceShape.Radius == nativeShape.Radius
+                        && sourceShape.HalfAngle.Rad * 2 == nativeShape.AngleRadians && sourceShape.DirectionOffset.Rad == 0,
+                    (BossMod.AOEShapeRect sourceShape, RayRectangleTemplate nativeShape) => sourceShape.LengthFront == nativeShape.Length
+                        && sourceShape.LengthBack == 0 && -sourceShape.HalfWidth == nativeShape.MinLocalX
+                        && sourceShape.HalfWidth == nativeShape.MaxLocalX && sourceShape.DirectionOffset.Rad == 0,
+                    _ => false,
+                };
+                Check(parametersMatch, $"First differential at {step}[{i}]: shape type/parameters.");
+                foreach (var offset in new[] { new Vector2(0, 0), new(1, 2), new(-4, 5), new(0, 5.5f),
+                    new(0, 6.01f), new(30, 12), new(-40, -40) })
+                {
+                    var point = a.Origin + new Vector3(offset.X, 0, offset.Y);
+                    Check(e.Check(new(point.X, point.Z)) == DungeonSourceGeometry.Contains(a.Shape!, a.Origin, a.Rotation, point),
+                        $"First differential at {step}[{i}]: shape at {point}.");
+                }
+            }
+            ++events;
+        }
+        var hunts = Component("WitchHunt");
+        for (var i = 0; i < 14; ++i)
+        {
+            f.Step(.1);
+            Clock();
+            f.Cast(37557, rotation: .4f);
+            hunts.OnCastStarted(caster, Spell(37557));
+            Compare($"Hunt Start {i}", hunts, f.M.VisibleHunts());
+            f.End();
+        }
+        var hit = new BossMod.ActorCastEvent(new BossMod.ActionID(BossMod.ActionType.Spell, 37558), 0, 0, 0, default, 0, 0, default);
+        for (var i = 0; i < 14; ++i)
+        {
+            f.M.Effect(2, 37558, 0);
+            hunts.OnEventCast(caster, hit);
+            Compare($"Hunt Effect {i}", hunts, f.M.VisibleHunts());
+        }
+        var sides = Component("SidewiseSpark");
+        var sideActors = new[] { caster,
+            new BossMod.Actor(3, 0x4264, 3, 0, "", 0, BossMod.ActorType.Enemy, default, 100, new Vector4(100, 0, 80, 0)),
+            new BossMod.Actor(4, 0x233C, 4, 0, "", 0, BossMod.ActorType.Helper, default, 100, new Vector4(100, 0, 80, 0)) };
+        f.Set(3, a => a with { Position = new(100, 0, 80) });
+        f.Actors.Add(new(4, 0x233C, new(100, 0, 80)));
+        var sideActions = new uint[] { 37564, 37561, 37565 };
+        for (var i = 0; i < sideActions.Length; ++i)
+        {
+            if (i != 1) f.Step(.1);
+            Clock();
+            f.Cast(sideActions[i], source: sideActors[i].InstanceID, rotation: .4f);
+            sides.OnCastStarted(sideActors[i], Spell(sideActions[i]));
+            Compare($"Side simultaneous/hidden Start {i}", sides, f.M.VisibleSides());
+        }
+        foreach (var i in new[] { 1, 0, 2 })
+        {
+            f.End(sideActors[i].InstanceID);
+            sides.OnCastFinished(sideActors[i], Spell(sideActions[i]));
+            Compare($"Side cross-source FIFO Finish {i}", sides, f.M.VisibleSides());
+        }
+        var cannons = Component("WickedCannon");
+        f.Cast(37549);
+        Clock();
+        cannons.OnCastStarted(caster, Spell(37549));
+        for (var i = 0; i < 3; ++i)
+        {
+            var param = (ushort)(i == 0 ? 0x2D3 : 0x2D4);
+            f.Status((ulong)(100 + i), 59, 2970, param);
+            var status = new BossMod.ActorStatus(2970, param, f.Now.AddSeconds(30), 1);
+            cannons.OnStatusGain(sourceActor, ref status);
+            Compare($"Cannon Gain {i}", cannons, f.M.VisibleCannons());
+        }
+        hit = new(new BossMod.ActionID(BossMod.ActionType.Spell, 20032), 0, 0, 0, default, 0, 0, default);
+        for (var i = 0; i < 3; ++i)
+        {
+            f.M.Effect(2, 20032, 0);
+            cannons.OnEventCast(caster, hit);
+            Compare($"Cannon Effect {i}", cannons, f.M.VisibleCannons());
+        }
+        Console.WriteLine($"INFO WickedThunder source event differential: {events} boundaries, exact fields, first mismatch diagnostics.");
     }
 
     private static void Lifecycle()

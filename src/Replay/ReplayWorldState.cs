@@ -82,6 +82,7 @@ public sealed record ReplayWorldFrame
     public bool LegacyMovement { get; init; }
     public float? CameraAzimuth { get; init; }
     public uint? AllowedFateId { get; init; }
+    public ReplayActiveFate? ActiveFate { get; init; }
     public ulong DutyActionPlayerId { get; init; }
     public ReplayDutyAction[]? DutyActions { get; init; }
     public ReplayDeepDungeonState? DeepDungeon { get; init; }
@@ -119,6 +120,7 @@ public sealed class ReplayWorldState
     public bool LegacyMovement { get; private set; }
     public float? CameraAzimuth { get; private set; }
     public uint? AllowedFateId { get; private set; }
+    public ReplayActiveFate? ActiveFate { get; private set; }
     public ulong DutyActionPlayerId { get; private set; }
     public IReadOnlyList<ReplayDutyAction>? DutyActions { get; private set; }
     public ReplayDeepDungeonState? DeepDungeon { get; private set; }
@@ -140,6 +142,7 @@ public sealed class ReplayWorldState
         LegacyMovement = frame.LegacyMovement;
         CameraAzimuth = frame.CameraAzimuth;
         AllowedFateId = frame.AllowedFateId;
+        ActiveFate = frame.ActiveFate;
         DutyActionPlayerId = frame.DutyActionPlayerId;
         DutyActions = frame.DutyActions;
         DeepDungeon = frame.DeepDungeon;

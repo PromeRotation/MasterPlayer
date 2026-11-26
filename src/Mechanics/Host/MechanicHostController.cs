@@ -406,6 +406,12 @@ public sealed class MechanicHostController : IDisposable
                 continue;
             if (running.Script is Mechanics.Hunts.SimpleHuntScript)
                 continue; // Hunts own individual instances, not every mechanic in the territory.
+            if (running.Script is Mechanics.Fates.CrescentFateScript)
+                continue; // Each FATE owns its primary OID; other island modules keep running.
+            if (running.Script is Mechanics.Bozja.BozjaScript)
+                continue; // Only migrated CE primaries are suppressed individually.
+            if (running.Script is Mechanics.Hydatos.HydatosScript)
+                continue; // Baldesion Arsenal and other Hydatos modules keep their bridge.
             if (running.Script is Mechanics.Quests.QuestTargetScript)
                 continue; // Target priorities do not replace the territory's other mechanics.
             if (running.Descriptor.Metadata.Territorys.Length != 0)
@@ -418,6 +424,37 @@ public sealed class MechanicHostController : IDisposable
 
     private bool SleepMpOwnedBoss()
     {
+        if (ActiveSession?.BossModules.ActiveModule is { } bozjaModule
+            && (bozjaModule.StateMachine.ActivePhase != null || ActiveSession.ZoneModules.ActiveModule == null)
+            && Mechanics.Bozja.BozjaCatalog.Owns(
+                _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType,
+                bozjaModule.PrimaryActor.OID))
+        {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
+            return true;
+        }
+        if (ActiveSession?.BossModules.ActiveModule is { } hydatosModule
+            && Mechanics.Hydatos.HydatosCatalog.Owns(
+                _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType,
+                hydatosModule.PrimaryActor.OID))
+        {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
+            return true;
+        }
+        if (ActiveSession?.BossModules.ActiveModule is { } fateModule
+            && Mechanics.Fates.CrescentFateCatalog.Owns(
+                _replaySession != null ? _replayTerritory : Svc.ClientState.TerritoryType,
+                fateModule.PrimaryActor.OID))
+        {
+            _navBridge?.Sleep();
+            _drawBridge?.Sleep();
+            CurrentTimeline = null;
+            return true;
+        }
         if (ActiveSession?.BossModules.ActiveModule is { } huntModule && (huntModule.StateMachine.ActivePhase != null || huntModule.PrimaryActor.OID == 0x2873)
             && Mechanics.Hunts.SimpleHuntCatalog.Owns(huntModule.PrimaryActor.OID))
         {
@@ -504,6 +541,12 @@ public sealed class MechanicHostController : IDisposable
                 && (!dungeon.EncounterActive || dungeon.PreservesTerritoryMechanics))
                 continue;
             if (running.Script is Mechanics.Hunts.SimpleHuntScript)
+                continue;
+            if (running.Script is Mechanics.Fates.CrescentFateScript)
+                continue;
+            if (running.Script is Mechanics.Bozja.BozjaScript)
+                continue; // Only migrated CE primaries are suppressed individually.
+            if (running.Script is Mechanics.Hydatos.HydatosScript)
                 continue;
             if (running.Script is Mechanics.Quests.QuestTargetScript)
                 continue;

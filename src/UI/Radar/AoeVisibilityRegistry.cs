@@ -42,10 +42,38 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 
     public void AddLine(string id, Vector3 start, Vector3 end, bool safe, string key, string name)
         => _lines[id] = new(id, start, end, safe, GetRule(key, name));
-    public IEnumerable<AoeLinePreview> GetLines() => _lines.Values;
+    public IEnumerable<AoeLinePreview> GetLines()
+    {
+        var lines = _lines.Values.ToArray();
+        var ordered = lines.Where(p => p.OrderOwner != null).GroupBy(p => p.OrderOwner!)
+            .ToDictionary(g => g.Key, g => new Queue<AoeLinePreview>(g.OrderBy(p => p.Order)));
+        foreach (var line in lines)
+            yield return line.OrderOwner is { } owner ? ordered[owner].Dequeue() : line;
+    }
+
+    public void SetPreviewOrder(string owner, IEnumerable<string> ids)
+    {
+        var order = 0;
+        foreach (var id in ids)
+        {
+            if (_previews.TryGetValue(id, out var preview))
+                _previews[id] = preview with { OrderOwner = owner, Order = order };
+            if (_lines.TryGetValue(id, out var line))
+                _lines[id] = line with { OrderOwner = owner, Order = order };
+            ++order;
+        }
+    }
 
     public IEnumerable<AoePreview> GetPreviews(DateTime now)
-        => _previews.Values.Where(p => now < p.ExpiresUtc);
+    {
+        var previews = _previews.Values.Where(p => now < p.ExpiresUtc).ToArray();
+        // Explicit order only permutes that owner's occupied output positions.
+        // Other consumers retain their existing enumeration and layering.
+        var ordered = previews.Where(p => p.OrderOwner != null).GroupBy(p => p.OrderOwner!)
+            .ToDictionary(g => g.Key, g => new Queue<AoePreview>(g.OrderBy(p => p.Order)));
+        foreach (var preview in previews)
+            yield return preview.OrderOwner is { } owner ? ordered[owner].Dequeue() : preview;
+    }
 
     public bool RemovePreview(string id) => _previews.Remove(id) | _lines.Remove(id);
 
@@ -85,6 +113,9 @@ internal sealed class AoeVisibilityRegistry(Dictionary<string, AoeVisibility> ru
 
 internal sealed record AoePreview(string Id, IGeometryShape Geometry, bool Safe, AoeVisibility Visibility, DateTime ExpiresUtc, bool OutlineOnly = false, float Progress = 1f, bool Unclipped = false, Vector4? Color = null)
 {
+    internal string? OrderOwner { get; init; }
+    internal int Order { get; init; }
+
     public DrawStyle Style(AoeViewSettings settings)
     {
         var style = Safe ? settings.GetSafeStyle() : settings.GetDangerStyle(Progress);
@@ -93,4 +124,8 @@ internal sealed record AoePreview(string Id, IGeometryShape Geometry, bool Safe,
         return OutlineOnly ? style with { FillColor = Vector4.Zero } : style;
     }
 }
-internal sealed record AoeLinePreview(string Id, Vector3 Start, Vector3 End, bool Safe, AoeVisibility Visibility);
+internal sealed record AoeLinePreview(string Id, Vector3 Start, Vector3 End, bool Safe, AoeVisibility Visibility)
+{
+    internal string? OrderOwner { get; init; }
+    internal int Order { get; init; }
+}

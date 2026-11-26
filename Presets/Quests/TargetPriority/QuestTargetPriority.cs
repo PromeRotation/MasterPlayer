@@ -10,8 +10,8 @@ internal static class QuestTargetPriority
         151, 198, 325, 328, 385, 394, 469, 529, 592, 656, 671, 775, 776, 895, 969, 981, 1240, 1302,
         1303, 1567, 1570, 1697, 1829, 1936, 2413, 2654, 3012, 3039, 3052, 3054, 4410, 4175
     ];
-    internal static bool OwnsTerritory(uint territory) => territory is 1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 476 or 488 or 484 or 466 or 233 or 252 or 260 or 275 or 315 or 461 or 414 or 669 or 673 or 251 or 304 or 309 or 410 or 273 or 317 or 314 or 323 or 307 or 498 or 267 or 1127 or 1128 or 1129;
-    internal static bool PartialOverride(uint territory) => territory is 1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 476 or 488 or 484 or 466 or 273 or 317 or 314 or 323 or 307 or 498 or 267 or 1127 or 1128 or 1129;
+    internal static bool OwnsTerritory(uint territory) => territory is 827 or 1252 or 1346 or 1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 476 or 488 or 484 or 466 or 233 or 252 or 260 or 275 or 315 or 461 or 414 or 669 or 673 or 251 or 304 or 309 or 410 or 273 or 317 or 314 or 323 or 307 or 498 or 267 or 1127 or 1128 or 1129;
+    internal static bool PartialOverride(uint territory) => territory is 827 or 1252 or 1346 or 1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 476 or 488 or 484 or 466 or 273 or 317 or 314 or 323 or 307 or 498 or 267 or 1127 or 1128 or 1129;
 
     internal static int Priority(uint territory, ReplayActorState actor)
         => AssignedPriority(territory, actor) ?? 0;
@@ -57,13 +57,37 @@ internal static class QuestTargetPriority
     }
 
     internal static ulong Select(uint territory, IEnumerable<ReplayActorState> actors, ulong current, Vector3 position,
-        IReadOnlySet<ulong>? party = null, uint? allowedFateId = null, Func<ReplayActorState, int?>? assignedPriority = null)
-        => actors.Where(a => OwnsTerritory(territory) && LegalTarget(a)
+        IReadOnlySet<ulong>? party = null, uint? allowedFateId = null, Func<ReplayActorState, int?>? assignedPriority = null, float? playerHeight = null)
+    {
+        if (territory is 827 or 1252 or 1346 || territory == 920 && assignedPriority != null)
+        {
+            // Native foray modules use the active module path: normalize all candidates
+            // before selecting the nearest highest-priority target in X/Z.
+            var candidates = actors.Where(LegalTarget).Select(a => (Actor: a,
+                Priority: EffectivePriority(territory, a, position with { Y = playerHeight ?? position.Y }, party, allowedFateId, assignedPriority))).ToList();
+            candidates.Sort(static (a, b) => b.Priority.CompareTo(a.Priority));
+            var priority = candidates.Count > 0 ? candidates[0].Priority : -1;
+            var bestDistance = float.MaxValue;
+            var best = 0UL;
+            foreach (var candidate in candidates)
+            {
+                if (priority < 0 || candidate.Priority != priority) break;
+                if (candidate.Actor.Id == current) return current;
+                var delta = candidate.Actor.Position - position;
+                var distance = delta.X * delta.X + delta.Z * delta.Z;
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = candidate.Actor.Id;
+            }
+            return best;
+        }
+        return actors.Where(a => OwnsTerritory(territory) && LegalTarget(a)
                 && EffectivePriority(territory, a, position, party, allowedFateId, assignedPriority) >= 0)
             .OrderByDescending(a => EffectivePriority(territory, a, position, party, allowedFateId, assignedPriority))
             .ThenByDescending(a => a.Id == current)
             .ThenBy(a => Vector3.DistanceSquared(a.Position, position))
             .ThenBy(a => a.Id).FirstOrDefault()?.Id ?? 0;
+    }
 
     internal static IEnumerable<ulong> ForbiddenTargets(uint territory, IEnumerable<ReplayActorState> actors, Vector3 position,
         IReadOnlySet<ulong>? party = null, uint? allowedFateId = null)
@@ -86,7 +110,7 @@ internal static class QuestTargetPriority
         else if (actor.AggroPlayer || actor.InCombat && party?.Contains(actor.TargetId) == true)
             priority = 0;
         if (priority == -1) return priority;
-        if (territory is not (1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 1127 or 1128 or 1129) && actor.Statuses.Any(s => invincibleStatuses.Contains(s.Id))) priority = -2;
+        if (territory is not (827 or 1252 or 1346 or 1190 or 960 or 1192 or 814 or 540 or 957 or 818 or 545 or 547 or 552 or 1127 or 1128 or 1129) && actor.Statuses.Any(s => invincibleStatuses.Contains(s.Id))) priority = -2;
         var assigned = assignedPriority?.Invoke(actor) ?? AssignedPriority(territory, actor);
         return PartialOverride(territory) ? assigned ?? priority : assigned ?? 0;
     }

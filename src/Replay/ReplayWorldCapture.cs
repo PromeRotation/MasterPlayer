@@ -92,13 +92,15 @@ internal sealed class ReplayWorldCapture
         }
         var seen = actors.Select(a => a.Id).ToHashSet();
         foreach (var id in _animations.Keys.Where(id => !seen.Contains(id)).ToArray()) _animations.Remove(id);
+        var activeFate = CaptureActiveFate();
         return new()
         {
             Full = true, Territory = territory, LocalPlayerId = currentPlayerId, TargetId = Id(Svc.Targets.Target),
             SourcePlayerId = CaptureSourcePlayerId(),
             LegacyMovement = Svc.GameConfig.UiControl.TryGetUInt("MoveMode", out var mode) && mode == 1,
             CameraAzimuth = CaptureCameraAzimuth(),
-            AllowedFateId = CaptureAllowedFate(actors.FirstOrDefault(a => a.Id == currentPlayerId)?.Level),
+            ActiveFate = activeFate,
+            AllowedFateId = CaptureAllowedFate(actors.FirstOrDefault(a => a.Id == currentPlayerId)?.Level, activeFate),
             DutyActionPlayerId = currentPlayerId, DutyActions = CaptureDutyActions(currentPlayerId),
             DeepDungeon = CaptureDeepDungeon(),
             LocalTimelineRole = TimelineRoleManager.CurrentRole.ToString(), Party = CaptureParty(), Actors = actors.ToArray()
@@ -118,11 +120,20 @@ internal sealed class ReplayWorldCapture
         return ui != null ? ui->PlayerState.EntityId : null;
     }
 
-    internal static unsafe uint CaptureAllowedFate(byte? playerLevel)
+    internal static unsafe ReplayActiveFate CaptureActiveFate()
     {
         var manager = FFXIVClientStructs.FFXIV.Client.Game.Fate.FateManager.Instance();
-        if (manager == null || manager->CurrentFate == null) return 0;
-        var id = manager->CurrentFate->FateId;
+        var current = manager == null ? null : manager->CurrentFate;
+        return current == null ? new(0, default, 0) : new(current->FateId, current->Location, current->Radius);
+    }
+
+    internal static uint CaptureAllowedFate(byte? playerLevel)
+        => CaptureAllowedFate(playerLevel, CaptureActiveFate());
+
+    internal static unsafe uint CaptureAllowedFate(byte? playerLevel, ReplayActiveFate activeFate)
+    {
+        var id = activeFate.Id;
+        if (id == 0) return 0;
         var fate = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Fate>()?.GetRowOrDefault(id);
         if (fate == null) return 0;
         if (fate.Value.EurekaFate != 1)

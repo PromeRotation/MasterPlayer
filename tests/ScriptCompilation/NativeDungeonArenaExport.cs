@@ -4,11 +4,38 @@ using System.Text;
 
 internal static class NativeDungeonArenaExport
 {
+    public static void RunDalriadaSpirals(string runtimePath, string destination)
+    {
+        var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(runtimePath));
+        var type = assembly.GetType("BossMod.Shadowbringers.Foray.TheDalriada.DAL3SaunionDawon.SpiralScourge", true)!;
+        var patterns = (Array)type.GetField("patterns", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var output = new StringBuilder("// Generated from source SpiralScourge patterns using --dalriada-spirals.\nusing System.Numerics;\n\nnamespace MasterPlayer.Mechanics.Bozja;\n\ninternal static class DalriadaSpirals\n{\n    internal static readonly Vector3[][] Patterns =\n    [\n");
+        var count = 0;
+        foreach (Array pattern in patterns)
+        {
+            output.Append("        [\n");
+            foreach (var point in pattern)
+            {
+                var x = (float)point!.GetType().GetField("X")!.GetValue(point)!;
+                var z = (float)point.GetType().GetField("Z")!.GetValue(point)!;
+                output.Append(FormattableString.Invariant($"            new({x:R}f, 0, {z:R}f),\n"));
+                ++count;
+            }
+            output.Append("        ],\n");
+        }
+        output.Append("    ];\n}\n");
+        File.WriteAllText(destination, output.ToString(), new UTF8Encoding(false));
+        Console.WriteLine($"Exported {patterns.Length} SpiralScourge patterns, {count} exact points.");
+    }
+
     public static void Run(string runtimePath, string destination, string group = "brayflox")
     {
         var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(runtimePath));
         var (className, folder) = group switch
         {
+            "delubrum" => ("DelubrumArenas", ""),
+            "dalriada" => ("DalriadaArenas", ""),
+            "castrum-lacus" => ("CastrumLacusArenas", ""),
             "thordan" => ("ThordanArenas", ""),
             "quantum" => ("QuantumArenaData", ""),
             "eureka" => ("EurekaOrthosArenas", ""),
@@ -88,6 +115,22 @@ internal static class NativeDungeonArenaExport
         var output = new StringBuilder($"// Generated from resolved runtime polygons using --{group}-arenas.\nusing System.Numerics;\nusing MasterPlayer.Spatial.Geometry;\n\nnamespace MasterPlayer.Mechanics.Dungeons;\n\ninternal static class {className}\n{{\n");
         (string Name, string Type)[] encounters = group switch
         {
+            "delubrum" => [("Dahu", "BossMod.Shadowbringers.Foray.DelubrumReginae.Dahu"),
+                ("PhantomHazard", "BossMod.Shadowbringers.Foray.DelubrumReginae.Phantom"),
+                ("SeekerStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("SeekerDefault", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("SeekerBladeOuter", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("SeekerBladeInner", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("SeekerBladeOuterStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("SeekerBladeInnerStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
+                ("GuardStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.QueensGuard"),
+                ("GuardDefault", "BossMod.Shadowbringers.Foray.DelubrumReginae.QueensGuard"),
+                ("QueenDefault", "BossMod.Shadowbringers.Foray.DelubrumReginae.Queen")],
+            "castrum-lacus" => [("Albeleo", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL2AlbeleoTheMaleficient.CLL2AlbeleoTheMaleficent")],
+            "dalriada" => [("Colossus", "BossMod.Shadowbringers.Foray.TheDalriada.DAL04thLegionColossusRubricatus.DAL04thLegionColossusRubricatus"),
+                ("Cuchulainn", "BossMod.Shadowbringers.Foray.TheDalriada.DAL2Cuchulainn.DAL2Cuchulainn"),
+                ("Diablo", "BossMod.Shadowbringers.Foray.TheDalriada.DAL4DiabloArmament.DAL4DiabloArmament"),
+                ("GauntletHazard", "BossMod.Shadowbringers.Foray.TheDalriada.DAL1Gauntlet.ArenaChange")],
             "thordan" => [("Starting", "BossMod.Heavensward.Extreme.Ex3Thordan.Ex3Thordan"),
                 ("Reduced", "BossMod.Heavensward.Extreme.Ex3Thordan.Ex3Thordan")],
             "quantum" => [("Initial", "BossMod.Dawntrail.Quantum.Q1FinalVerse.Q1FinalVerse")],
@@ -337,10 +380,20 @@ internal static class NativeDungeonArenaExport
             if (group == "heavensward-quest") encounter = assembly.GetType("BossMod.Heavensward.Quest.MSQ." + type)!;
             if (group == "endwalker-quest") encounter = assembly.GetType("BossMod.Endwalker.Quest.MSQ." + type)!;
             if (group is "treasure-canals-lucky" or "treasure-cenote-rooms") encounter = assembly.GetType(type)!;
-            if (group is "ttokrrone" or "carnivale" or "hoh" or "eureka" or "quantum" or "thordan") encounter = assembly.GetType(type)!;
+            if (group is "ttokrrone" or "carnivale" or "hoh" or "eureka" or "quantum" or "thordan" or "delubrum" or "dalriada" or "castrum-lacus") encounter = assembly.GetType(type)!;
             object bounds;
+            object? customPolygon = null;
+            object? customCenter = null;
             var fieldName = name switch
             {
+                "Dahu" when group == "delubrum" => "arena",
+                "Diablo" when group == "dalriada" => "DefaultArena",
+                _ when group is "dalriada" or "castrum-lacus" => "arena",
+                "SeekerStarting" when group == "delubrum" => "StartingArena",
+                "SeekerDefault" when group == "delubrum" => "DefaultArena",
+                "GuardStarting" when group == "delubrum" => "startingArena",
+                "GuardDefault" when group == "delubrum" => "DefaultArena",
+                "QueenDefault" when group == "delubrum" => "DefaultArena",
                 "Starting" when group == "thordan" => "startingArena",
                 "Reduced" when group == "thordan" => "DefaultBounds",
                 _ when group == "eureka" => "DonutArena",
@@ -477,10 +530,47 @@ internal static class NativeDungeonArenaExport
                 args[Array.FindIndex(parameters, p => p.Name == "Offset")] = 0f;
                 bounds = ctor.Invoke(args);
             }
-            else if (group == "tender-valley" && name.StartsWith("Labyrinth"))
+            else if (group == "delubrum" && name.StartsWith("SeekerBlade"))
             {
-                var shape = ((Array)encounter.GetField("forbiddenShapes", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!)
-                    .GetValue(int.Parse(name["Labyrinth".Length..]))!;
+                var center = encounter.GetField("ArenaCenter", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+                if (name.EndsWith("Starting"))
+                {
+                    dynamic starting = encounter.GetField("StartingArena", BindingFlags.Static | BindingFlags.Public)!.GetValue(null)!;
+                    center = starting.Center;
+                }
+                var shapes = Array.CreateInstance(assembly.GetType("BossMod.Shape")!, 4);
+                var angleType = assembly.GetType("BossMod.Angle")!;
+                for (var i = 0; i < 4; ++i)
+                {
+                    var direction = Activator.CreateInstance(angleType, [(45f + i * 90f) * (MathF.PI / 180f)])!;
+                    var halfAngle = Activator.CreateInstance(angleType, [22.5f * (MathF.PI / 180f)])!;
+                    var shape = name.Contains("Outer")
+                        ? Activator.CreateInstance(assembly.GetType("BossMod.DonutSegmentV")!, [center, 20f, 30f, direction, halfAngle, 6])
+                        : Activator.CreateInstance(assembly.GetType("BossMod.ConeV")!, [center, 20f, direction, halfAngle, 6]);
+                    shapes.SetValue(shape, i);
+                }
+                var ctor = assembly.GetType("BossMod.ArenaBoundsCustom")!.GetConstructors().Single();
+                var parameters = ctor.GetParameters();
+                var values = parameters.Select(p => p.DefaultValue).ToArray();
+                values[0] = shapes;
+                values[Array.FindIndex(parameters, p => p.Name == "Offset")] = 0f;
+                bounds = ctor.Invoke(values);
+                var customCtor = assembly.GetType("BossMod.AOEShapeCustom")!.GetConstructors().Single();
+                var customArgs = customCtor.GetParameters().Select(p => p.DefaultValue).ToArray();
+                customArgs[0] = shapes;
+                var customShape = customCtor.Invoke(customArgs);
+                customPolygon = customShape.GetType().GetMethod("GetCombinedPolygon")!.Invoke(customShape, [center]);
+                customCenter = center;
+            }
+            else if (group == "tender-valley" && name.StartsWith("Labyrinth") || group == "delubrum" && name == "PhantomHazard"
+                || group == "dalriada" && name == "GauntletHazard")
+            {
+                var shape = group == "dalriada"
+                    ? encounter.GetField("square", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!
+                    : group == "delubrum"
+                    ? encounter.GetField("ArenaChange", BindingFlags.Static | BindingFlags.Public)!.GetValue(null)!
+                    : ((Array)encounter.GetField("forbiddenShapes", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!)
+                        .GetValue(int.Parse(name["Labyrinth".Length..]))!;
                 var ctor = assembly.GetType("BossMod.ArenaBoundsCustom")!.GetConstructors().Single();
                 var parameters = ctor.GetParameters();
                 var args = parameters.Select(p => p.DefaultValue).ToArray();
@@ -649,7 +739,12 @@ internal static class NativeDungeonArenaExport
             }
             else bounds = field.GetValue(null)!;
             dynamic arena = bounds;
-            dynamic resolvedPolygon = arena.Polygon;
+            dynamic resolvedPolygon = customPolygon ?? arena.Polygon;
+            dynamic resolvedCenter = customCenter ?? arena.Center;
+            if (group == "delubrum" && name is "SeekerStarting" or "SeekerDefault" or "GuardStarting" or "GuardDefault")
+                output.Append(FormattableString.Invariant($"    internal const float {name}Radius = {(float)arena.Radius:R}f;\n"));
+            if (group is "dalriada" or "castrum-lacus")
+                output.Append(FormattableString.Invariant($"    internal const float {name}Radius = {(float)arena.Radius:R}f;\n"));
             if (group == "queen" && name == "XInsetHalf") resolvedPolygon = resolvedPolygon.Offset(-.5f);
             if (group == "queen" && name == "XInsetOne") resolvedPolygon = resolvedPolygon.Offset(-1f);
             if (group == "heroes" && name == "BerserkerLanding") resolvedPolygon = resolvedPolygon.Offset(-1f);
@@ -672,7 +767,14 @@ internal static class NativeDungeonArenaExport
                 foreach (dynamic triangle in resolvedPolygon.Triangulate())
                     triangles.Add([((float)triangle.A.X, (float)triangle.A.Z), ((float)triangle.B.X, (float)triangle.B.Z),
                         ((float)triangle.C.X, (float)triangle.C.Z)]);
-                output.Append(FormattableString.Invariant($"    internal static IGeometryShape {name}(float y) => new PolygonRegionGeometry(new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f),\n"));
+                var position = FormattableString.Invariant($"new({(float)resolvedCenter.X:R}f, y, {(float)resolvedCenter.Z:R}f)");
+                var argument = "float y";
+                if (group == "delubrum" && name.StartsWith("SeekerBlade"))
+                {
+                    argument += ", Vector3? drawCenter = null";
+                    position = "drawCenter ?? " + position;
+                }
+                output.Append($"    internal static IGeometryShape {name}({argument}) => new PolygonRegionGeometry({position},\n");
                 void AppendPolygons(List<List<(float X, float Z)>> polygons, bool last)
                 {
                     output.Append("    [\n");
@@ -689,6 +791,15 @@ internal static class NativeDungeonArenaExport
             }
             Check((int)resolvedPolygon.Parts.Count == 1 && (int)resolvedPolygon.Parts[0].HoleStarts.Count == 0,
                 "Arena topology requires an explicit multi-part export.");
+            if (group == "castrum-lacus")
+            {
+                // Match ConvertBounds world-coordinate arithmetic at corridor edges.
+                output.Append($"    internal static IGeometryShape {name}(float y) => new WorldPolygonGeometry([\n");
+                foreach (dynamic vertex in resolvedPolygon.Parts[0].Vertices)
+                    output.Append(FormattableString.Invariant($"        new({(float)((float)arena.Center.X + (float)vertex.X):R}f, y, {(float)((float)arena.Center.Z + (float)vertex.Z):R}f),\n"));
+                output.Append(FormattableString.Invariant($"    ], new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f));\n\n"));
+                continue;
+            }
             output.Append(FormattableString.Invariant($"    internal static IGeometryShape {name}(float y) => new LocalPolygonGeometry(new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f), 0, [\n"));
             foreach (dynamic vertex in resolvedPolygon.Parts[0].Vertices)
                 output.Append(FormattableString.Invariant($"        new({-(float)vertex.X:R}f, {-(float)vertex.Z:R}f),\n"));

@@ -14,7 +14,7 @@ public sealed partial class DodgeController
     private readonly IDisposable _pilgrimsFollowUpSubscription;
     private readonly Dictionary<ulong, (uint FirstAction, uint FollowAction, GeometryTemplate Shape, TransformBinding Binding,
         float Delay, SafeZoneAreaHandle FirstHandle, SafeZoneAreaHandle FollowHandle, DateTime Expires, bool Resolved,
-        uint Territory, int RemainingHits, HashSet<uint> SeenEffects)> _pilgrimsFollowUps = [];
+        uint Territory, int RemainingHits, HashSet<(uint Sequence, long ZeroSequenceTime)> SeenEffects)> _pilgrimsFollowUps = [];
 
     private void TrackPilgrimsFollowUpCast(LogSystemCastStartEvent cast, SafeZoneAreaHandle firstHandle,
         TransformBinding binding, uint territory)
@@ -88,7 +88,11 @@ public sealed partial class DodgeController
             return;
         if (hit.ActionId == sequence.FollowAction)
         {
-            if (!sequence.Resolved || !sequence.SeenEffects.Add(hit.GlobalSequence))
+            // PR captures one timestamp before expanding a packet into targets.
+            // Sequence zero is valid on successive heel packets, so only those
+            // packets use that shared timestamp as their receipt identity.
+            var receipt = (hit.GlobalSequence, hit.GlobalSequence == 0 ? hit.Timestamp.ToUniversalTime().Ticks : 0L);
+            if (!sequence.Resolved || !sequence.SeenEffects.Add(receipt))
                 return;
             if (--sequence.RemainingHits == 0)
                 RemovePilgrimsFollowUp(source);

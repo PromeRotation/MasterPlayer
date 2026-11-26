@@ -12,6 +12,8 @@ internal static class ArrDungeonCatalog
 {
     public static DungeonDefinition[] Create(uint territory) => territory switch
     {
+        AlteRoiteCatalog.TERRITORY => AlteRoiteCatalog.Create(),
+        HalicarnassusCatalog.TERRITORY => HalicarnassusCatalog.Create(),
         ThordanCatalog.TERRITORY => ThordanCatalog.Create(),
         WickedThunderCatalog.TERRITORY => WickedThunderCatalog.Create(),
         KefkaCatalog.TERRITORY => KefkaCatalog.Create(),
@@ -210,6 +212,8 @@ internal static class ArrDungeonCatalog
     public static bool Owns(uint oid, uint territory) => territory switch
     {
         ThordanCatalog.TERRITORY => oid == 0x1453,
+        AlteRoiteCatalog.TERRITORY => oid == AlteRoiteCatalog.BOSS,
+        HalicarnassusCatalog.TERRITORY => oid == HalicarnassusCatalog.BOSS,
         WickedThunderCatalog.TERRITORY => oid == WickedThunderCatalog.BOSS,
         KefkaCatalog.TERRITORY => oid == 0x2153,
         QuantumCatalog.TERRITORY => oid == 0x48EE,
@@ -375,6 +379,7 @@ internal static class ArrDungeonCatalog
     };
 
     public static bool IsScript(string id) => id.ToLowerInvariant() is
+        "masterplayer.raid.alteroite.normal" or "masterplayer.raid.halicarnassus.normal" or
         "masterplayer.hoh.10" or "masterplayer.hoh.20" or "masterplayer.hoh.30" or "masterplayer.hoh.40" or "masterplayer.hoh.50"
         or "masterplayer.hoh.60" or "masterplayer.hoh.70" or "masterplayer.hoh.80" or "masterplayer.hoh.90" or
         "masterplayer.treasure.vault-oneiron" or "masterplayer.treasure.shifting-altars" or "masterplayer.treasure.shifting-gymnasion" or "masterplayer.treasure.shifting-oubliettes" or "masterplayer.treasure.cenote-ja-ja-gural" or

@@ -59,7 +59,8 @@ internal sealed unsafe class NativeActionEffectCapture : IDisposable
                     Capture(casterId, header->ActionId, header->AnimationTargetId, header->GlobalSequence, ids,
                         targetPosition: targetPos == null ? null : *targetPos, rawEffects: rawEffects, actionType: header->ActionType,
                         sourceOid: casterObj == null ? null : ((NativeGameObject*)casterObj)->BaseId,
-                        sourceObjectIndex: casterObj == null ? null : ((NativeGameObject*)casterObj)->ObjectIndex);
+                        sourceObjectIndex: casterObj == null ? null : ((NativeGameObject*)casterObj)->ObjectIndex,
+                        rotationInt: header->RotationInt);
                 }
                 catch (Exception ex) { Interlocked.Exchange(ref pendingError, ex.Message); }
             }
@@ -69,7 +70,7 @@ internal sealed unsafe class NativeActionEffectCapture : IDisposable
 
     internal void Capture(ulong source, uint action, ulong mainTarget, uint sequence, ReadOnlySpan<ulong> targets, DateTime? at = null,
         Vector3? targetPosition = null, ulong[][]? rawEffects = null, byte? actionType = null,
-        uint? sourceOid = null, int? sourceObjectIndex = null)
+        uint? sourceOid = null, int? sourceObjectIndex = null, ushort? rotationInt = null)
     {
         lock (hookLock)
         {
@@ -83,6 +84,7 @@ internal sealed unsafe class NativeActionEffectCapture : IDisposable
                 Targets = targets.ToArray(), Timestamp = (at ?? DateTime.UtcNow).ToUniversalTime(),
                 TargetPosition = targetPosition, RawEffects = rawEffects?.Select(slots => slots.ToArray()).ToArray(),
                 ActionType = actionType, SourceOid = sourceOid, SourceObjectIndex = sourceObjectIndex,
+                RotationInt = rotationInt,
             }));
         }
     }

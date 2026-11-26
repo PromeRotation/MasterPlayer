@@ -43,6 +43,181 @@ def csv_text(rows, fields):
 def mp_ownership(row):
     source = row["source"]
     module = row["module"].rsplit(".", 1)[-1]
+    if module == "PyromancerSupreme" and source.endswith(
+        "/Modules/Shadowbringers/Foray/Skirmish/PyromancerSupreme.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "七实际组件；T920/CFC735、FATE1616最强的火焰法师与源AID核表；每个Pending独立构造ThermalShock R20原点原钟/无导航，原历史晋升及phase局部停用，六标准组件八动作/任意Finish99项排序；HP0保留与不可选退场/同帧重绑、wipe仅卸载Loaded保Pending且冻结场地、Destroyed远距释放；498相关模型、生产0错4既有警告、同DLL168相关/12专项加3公共、1860全目录行首PASS(1851测试及9汇总)/296入口，全部exit0；真实solver/计划选敌/开关/逆Seek/owner/回放禁执行，真实旧Zone桥与预战显示互补门控；旧ReplayFeedAdapter丢FateId/IsSpell的oracle边界与SHA见NativeBozjaSouth.spec.md，实机待验"
+    if module in {"ConflictingWithTheFirstLaw", "HeavyBootsOfLead"} and source.endswith(
+        f"/Modules/Shadowbringers/Foray/Skirmish/{module}.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "两遭遇战十六实际组件；T920/CFC735与FATE1605/1612名称及全部源AID extra核表；确定性指纹manifest生成、R30默认/FATE缓存逐轴阈值/创建代FateID，真实Party0门控与旧Party Created、同帧reset重建正序尾部/Selected；原目标分摊FIFO/异钟/换代/少于二人导航，普通watched Finish与Effect保留；483相关模型、生产0错4既有警告、同DLL156相关及22专项、1848全目录行首PASS(1839测试及9汇总)/296入口，全部exit0；实际solver/选敌/开关/逆Seek/owner/回放禁执行；源oracle显式补FATE输入，旧桥缺字段未改，SHA及适配见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CLL2AlbeleoTheMaleficent" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CastrumLacusLitore/CLL2AlbeleoTheMaleficient/CLL2AlbeleoTheMaleficient.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "六实际组件；CFC735/T920与BNpcName9433/全源AID extra核表；四标准AOE、有限35凝视及打断原引用/固定hint，HP恰1冷/热退场与HP0存活保留，不规则世界多边形及全部转角ULP；457相关及最终13定向真实源差分、生产0错4既有警告、同DLL271相关/10专项加3公共、1826全目录行首PASS/296入口独立编译，全部exit0；真实solver/计划选敌/濒死回退/开关/Seek/owner/回放禁执行；Actor marker未消费、Ray原始边界与旧桥浮点舍入差异及SHA见NativeBozjaSouth.spec.md，实机待验"
+    if module in {"CE14VigilForLost", "CE21FinalFurlong"} and source.endswith(
+        f"/Modules/Shadowbringers/Foray/CriticalEngagement/{module}.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "两CE十四实际组件；CFC735/T920及16动作extra本机核表；开放世界原Actor塔、NPC动态钟、原目标分摊、手缓存/连线及首手提示；99项源排序/隐藏Risky晋升/跨CE超距Pending新序号；真实组件与管理器差分24相关模型、生产0错4既有警告、同DLL24专项及无筛选1441PASS场景行/0FAIL、293入口独立编译，全部exit0；显式owner预览顺序兼容既有消费者，实际solver脱险及入分摊无fallback，Seek/owner/回放禁执行；SHA256、旧桥raw/转换边界和全局阶段结构限制见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE12BayingOfHounds" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE12BayingOfHounds.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "八实际组件/十三动作extra核零；R24.5/pull25真实Manager；两跳单项覆盖及Finish+3.7镜像、三段地震全局FIFO、纯CastHint、NPC动态钟；真实组件差分33相关及最终9定向模型，生产0错4既有警告，同DLL35专项/1452全目录PASS场景行与293入口独立编译，全部exit0；冷枚举双顺序、空历史、零长raw/绘图拒绝/真实导航转换、真实solver脱险、Seek/owner/回放隔离已验；指纹及失败历史见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE13KillItWithFire" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE13KillItWithFire.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "七实际组件/七动作extra核零；真实60槽旧Party冷热Pet与双色历史bit、首次输出惰性敌人缓存、移动胶囊平方Check/raw投影Distance/四钟及独立障碍；源Normalize顺序、min8提示和两人buddy真实转换、NPC动态伤害钟；41相关模型、生产0错4既有警告、同DLL42专项及1459全目录PASS场景行/0FAIL、293入口独立编译，全部exit0；Seek/owner/回放隔离已验；MaxValue绝对钟适配、稳定句柄与旧桥索引键差别及最终SHA256见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE11ShadowOfDeathHand" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE11ShadowOfDeathHand.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "十一实际组件；31源AID及extra核零；墙Created逐Actor冷顺序与当前量化中心、Wind锁点锁向/三类免疫旧Party真实60槽/四真实Effect清理，72方向实际导航转换及线逐字段；中断原目标仅诊断、胶囊四钟障碍、min8及动态伤害钟；49相关模型、生产0错4既有警告、同DLL57专项及1474全目录行首PASS场景/0FAIL、293入口独立编译，全部exit0；Seek/owner/回放隔离，SHA256及失败历史见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE24PatriotGames" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE24PatriotGames.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "七实际组件；T920/CFC735-DynamicEvent10及全AID extra本机核表；方形场地与pull、普通watched Finish、两原caster动态单体、每塔R4/R8/前8含死Forbidden与64存活人数/默认钟；真实Feed冷热连线/同值真实包/零目标/原Actor顺序及帧快照-按序事件-Update，四位置半充能/Effect仅清AOE/首塔条件导航；59相关模型、生产0错4既有警告、同DLL67专项与1484全目录行首PASS/0FAIL、293入口独立编译，全部exit0；实际转换/Seek/owner/回放禁执行，SHA256与失败见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE31MetalFoxChaos" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE31MetalFoxChaos.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "五实际组件；T920/CFC735-DynamicEvent13及全AID extra本机核表；29.5正方形/pull30、原caster动态raidwide、普通watched Finish；Bit惰性原Actor缓存/三模式严格gate/默认色仍Risky/任意NPC Effect恰14重置及全禁区RefSort；Rush原source/target、Update长度动态方向/首ID Finish/Effect保留/同ID新代显示按ID导航按引用/聚合mask与首原钟；67相关模型、生产0错4既有警告、同DLL74专项及1491全目录行首PASS/0FAIL、293入口独立编译，全部exit0；180度实际采样/NaN空转换、真实solver/跨组件绘制顺序/Seek/owner/回放禁执行，SHA256与失败见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE34TrampledUnderHoof" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE34TrampledUnderHoof.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "七实际组件；T920/CFC735-DynamicEvent11及全AID extra本机核表；Finish原NPC钟缩场环/墙Created量化冷顺序、BullHorn原target槽钟/跨source MainTarget首项消费、Glimmer锁点无限队列/逐轴首项十计数、R8分摊R4 buddy、凝视翻转全眼与任意Finish全清；Party0高度等级归一化选敌、精确32边形及全禁区RefSort；92相关模型、生产0错4既有警告、同DLL99专项及1507全目录行首PASS/0FAIL、293入口独立编译，全部exit0；面向与选敌为MP原生消费适配，回放仅规划/Seek/owner清理，SHA256及失败见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE33WhereStrodeTheBehemoth" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE33WhereStrodeTheBehemoth.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "六实际组件；T920/CFC735-DynamicEvent15及全部源AID extra本机核表；LoS原caster当前剩余最小/FIFO安全区/原corpse锁点与实际hitbox/精确Clipper及SIMD-FMA-行X范围；Juice真实nullable包点/重复包/惰性原Actor/一次Update一项，固定延迟Raidwide、原引用Horn/真实Effect及corpse首圈全矩形Finish预告；105相关模型、生产0错4既有警告、同DLL88专项和1514全目录行首PASS/0FAIL、293入口独立编译，全部exit0；实际Feed/solver/双视图/空预览拒绝/Seek/owner/回放隔离，原始距离幅值与仅消费符号采样边界、SHA256及失败见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE23FiresOfWar" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE23FiresOfWar.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "八实际组件；T920/CFC735-DynamicEvent9及全部源AID extra本机核表；NPC60槽原引用分摊/原Effect、R4开放塔、动态NPC钟、Concentric独立原始与发布缓存、R24、九圆锁Mater和重复最远部分绘制、TimedEnrage、常驻动态Cleave；特殊Trash与cached原Mater完成、每Framework生命周期/AI与切视角单次消费、源索引异常整导航撤销和恢复、弱goal不扩移动；123相关模型、生产0错4既有警告、同DLL97专项和1523全目录行首PASS/0FAIL、293入口独立编译，全部exit0，真实Feed/solver/双视图/Seek/owner/回放隔离，SHA256及失败见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE51ThereWouldBeBlood" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE51ThereWouldBeBlood.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十实际组件；T975/CFC778-DynamicEvent24及全部源AID extra本机核表；七标准AOE锁点锁向/原始watched Finish与RefSort导航，原caster动态单体/全屏诊断和全局提示，普通CastGaze按ID删首且无CE34选敌；独立区域/GUID/机制设置与精确ownership，源完整Feed冷激活/无scan下一Framework/Finish，135相关模型、生产0错4既有警告、同DLL南方和札杜诺109专项/1536全目录行首PASS/0FAIL、294入口独立编译，全部exit0；真实solver/Seek/owner/回放禁执行，面向联合求解适配与失败及SHA256见NativeZadnor.spec.md，实机待验"
+    if module == "CE63WornToShadow" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE63WornToShadow.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "五实际组件；T975/CFC778-DE28及16源AID extra本机核表；Stormcall真实60状态槽、恰3 RefSort/前2/按ID首项修正与Finish、零方向与倒数乘法ULP边界，Foreshadowing原Actor引用/触发回调NPC钟+11.1f/四记录重复初始化/恰5隐藏/不同Finish清状态，三标准组件复用；独立审查、真实Feed冷顺序异钟与5→4→9和代际、150相关模型、生产0错4既有警告、同DLL119联合专项/1546全目录PASS行含1537测试行与9汇总行/294独立入口，全部exit0；真实solver R20多边形脱险/Seek/owner/回放隔离，失败与SHA256见NativeZadnor.spec.md，实机待验"
+    if module == "CE52TimeToBurn" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE52TimeToBurn.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "四实际组件；T975/CFC778-DE26及13源AID extra核表；三组互斥含空Bomb/独立safe背景/原Bomb1缓存/Effect FIFO，Clock原位置/恰9 ListSort/隐藏两项/按caster轴1删首，真实动画与快照独立队列/冷丢失，OnlyLoadIfTargetable pending、空FIFO保历史撤整个Region输出恢复，原生Ray保持源精确边界并记录旧桥舍入差；160相关模型、生产0错4既有警告、同DLL130联合专项/1557全目录PASS行含1548测试与9汇总/294独立入口，全部exit0；真实solver/Seek/owner/回放禁执行；失败与SHA256见NativeZadnor.spec.md，实机待验"
+    if module == "CE41WithDiremiteAndMain" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE41WithDiremiteAndMain.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十实际组件；T975/CFC778-DE21与21源AID extra核表；两独立LoS原引用/冻结R60 polygon/活typed晶体/错Finish FIFO、Earth按阶段轴1匹配与Update缓存、Shardstrike原target/raw首钟/单Union先Normalize后展开、Hailfire原source-target图标ListSort/Effect FIFO/死亡与代际及绘图ID导航引用；独立审查后乱序Party反例先失败再局部修槽顺序，真实DrawConvert证明Actor marker未消费不扩展；175相关模型、生产0错4既有警告、同DLL143联合专项/1570全目录PASS行含1561测试与9汇总/294独立入口，全部exit0；真实Feed十组件冷激活/图标、真实solver/Seek/owner/回放隔离；证据与SHA256见NativeZadnor.spec.md，实机待验"
+    if module == "CE44FamiliarFace" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE44FamiliarFace.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "九实际组件；T975/CFC778-DE29和22源AID extra本机核表；标准AOE/99项分组、冻结原target槽钟的延迟单体、.8f提升double全屏、普通分散R6/R7；塔Loc去重/Actor洞/首项Finish与布尔模型洞、MiniArena固定中心和Bounds重心分离、旧Nav最多顶点外环及Draw孔洞未消费；地火原位置包方向/真实TargetPos逐轴首匹配/Update缓存future与current、Created锤队列前2全Risky；独立审查修归一化禁区与合并伤害顺序、CE34/41重复槽反例及实时每Framework采样接线；192相关模型、生产0错4既有警告、同DLL155联合专项/1582全目录PASS行含1573测试与9汇总/294独立入口，全部exit0；真实Feed九组件、实际solver/精确ownership/Seek/owner/回放隔离；证据与SHA256见NativeZadnor.spec.md，实机待验"
+    if module == "CE62LooksToDieFor" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE62LooksToDieFor.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十一实际组件；T975/CFC778-DE30及24源AID extra本机核表、两个真实空名；Lightning重复原点首项原位替换donut/真实TargetPos与caster位置分别消费，Cloud步长5四爆最多2双Effect均取原caster/真实Update发布缓存；Burn完整ModelState三字段热回调仅排Pet、冷激活不补历史、严格头钟连续前缀/全局Effect FIFO空抛保整批/缺source成功恢复；标准射线半圆分组、三全屏/单体动态原NPC钟、普通分散和纯CastHint；203相关模型、生产0错4既有警告、同DLL170联合专项/1597全目录PASS行含1588测试与9汇总/294独立入口，全部exit0；真实Feed十一组件、实际solver/ownership/Seek/owner/回放隔离；独立核验修preScan正式快照先于冷激活和整批错误恢复，CE52手工JSON坐标保真补验；证据与SHA见NativeZadnor.spec.md，实机待验"
+    if module == "CE53HereComesTheCavalry" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE53HereComesTheCavalry.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十四实际组件；T975/CFC778-DE22与24源AID本机核表；未选中主怪仍pull、Charge原位置再量化、两击退仅线、FireShot三列表；RawSteel旧Party/Created-Dead原引用两侧、真实Op先Untether再Tether/重复callback、原目标5秒缓存/非TTL、跨source MainTarget首消费/动态几何和合并mask原头钟；Framework统一提交世界与全局出生序/采样source gate，真实Feed多preScan异钟/晚创建target/同帧Party/跨CE选择；221相关模型、生产0错4既有警告、同DLL186联合专项/1613全目录PASS行含1604测试与9汇总/294独立入口，全部exit0；solver、ownership、Seek/owner/回放隔离；分摊buddy反向有限采样丢弃与他人R8目标分验，证据及SHA见NativeZadnor.spec.md；实机待验"
+    if module == "CE54NeverCryWolf" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE54NeverCryWolf.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十一实际组件；T975/CFC778-DE25与28源AID本机核表；LunarCry私有原Actor柱/冷逐Actor Created-Start/最小Remaining/FIFO安全区，Bracing真实免疫槽/成功移动max1与全部caster AI分流；六旋转序列共同末点钟/每序列future-current缓存/普通Finish首位置角匹配，Thermal Created锁点及snapshot Finish空FIFO失败保旧cast/Destroyed-untether副作用和跨CE逐Actor Finish屏障；239相关模型及最终两种Loaded顺序2定向，生产全量0错4既有警告且增量exit0同hash，同DLL197联合专项/1624全目录PASS行含1615测试与9汇总/294独立入口，全部测试exit0；solver、精确ownership、owner/Seek/回放无执行；证据、适配边界与SHA见NativeZadnor.spec.md，实机待验"
+    if module == "DRN1TrinitySeeker" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeNormal/DRN1TrinitySeeker/DRN1.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumNormal.cs", "十三实际组件；T936/CFC760-NameID9834及44唯一AID客户端核表；真实场地/Blade多环导出与Map低高字、普通watched Finish、Mercy隐藏晋升及真实60槽/冷Pet/raw Primary朝向、两图标独立FIFO/原引用、Chains冷热旧Party、动态线分摊文字/AI分流与斜角精确Check、Moon锁点/实际Effect均有源对照；293相关模型、生产0错4既有警告、同DLL240联合专项/1669全目录PASS行含1660测试加9汇总/296独立入口，全部exit0；真实solver、ownership、Seek/owner/回放禁执行已验；Blade仅承诺符号及旧桥采样消费，不宣称正距离幅值等价；证据与SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DAL1Sartauvoir" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL1Sartauvoir/DAL1Sartauvoir.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十三实际组件；T975/CFC778及NameID9384本机核表，全40唯一AID存在且extra0；标准锁点AOE/普通与Grouped Finish、TimeEruption四阈值RefSort与隐藏二晋升、Created塔R4/current+8.7/冷延迟与热Player过滤/首caster空间Effect/原Actor惰性资格缓存、min8分摊及分散原target代际；364相关及最终13定向源差分，生产0错4既有警告，同DLL312联合专项/1732全目录行首PASS/296独立入口，全部exit0；完整Feed十三组件Normalize/实际solver/机制开关/Seek/owner/回放禁执行，失败/适配及SHA见NativeDalriada.spec.md，实机待验"
+    if module == "DAL1Gauntlet" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL1Gauntlet/DAL1Gauntlet.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十六实际组件三阶段；T975/CFC778、NameID10212及源全AID客户端核表/extra0；组件优先冷回补、原Boss引用/同帧连续阶段、十剑恰10少数方向与Unseen状态先后/真实60槽/原Actor动态raw钟、塔+9/独立图标FIFO与Donut原target/无共享伤害、Storm前二swap和North/Pain导航优先/免疫/真实Effect均有源差分；446相关模型及最终26定向PASS，生产0错4既有警告，同DLL387联合专项/13专项加3公共/1816全目录行首PASS/296独立入口，全部exit0；缩场23真实采样保留偏心KB/大面积原有拒绝，Arena源安全孔保留并显式修复旧桥丢孔；实际solver/绘图/面向计划/开关/Seek/owner/回放禁执行；失败/适配及SHA见NativeDalriada.spec.md，实机待验"
+    if module == "DAL4DiabloArmament" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL4DiabloArmament/DAL4DiabloArmament.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十六实际组件；T975/CFC778、NameID10007/51唯一AID本机核表/extra0；原门缓存/异常副作用/FIFO与Risky历史、Nox发布、Orb原Actor矩形反向交集、双矩形bait/line、KB真实墙与Bomb60槽冷Pet/raw Ability均有源对照；统一Feed committed差分及全部Finish后跨模型Cast安装，热失败/旧输入恢复/clear不重复消费CE54；420相关模型、生产0错4既有警告、同DLL374联合/最终24专项加3公共/1803全目录行首PASS/296独立入口，全部exit0；solver/开关/Seek/owner/回放禁执行；适配、失败和SHA见NativeDalriada.spec.md，实机待验"
+    if module == "DAL3SaunionDawon" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL3SaunionDawon/DAL3SaunionDawon.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十七实际组件双阶段；T975/CFC778、NameID10192与41唯一AID本机核表/extra0；五Keep原实例/激活顺序、惰性Dawon列表与原Actor代际、8套272点螺旋/查询染色/缺视角不查询、Obey热动画FIFO/弹首后追加、冷Pet60槽与热过滤、R5原target/真实Party槽序/死亡raw首钟、KB倒数乘/墙ULP/零线/匹配Finish、MaxValue真实绝对窗口均有源对照；402相关模型PASS、生产0错4既有警告、同DLL349联合专项/最终20个DAL3专项加3公共/1770全目录行首PASS/296独立入口，全部exit0；真实solver、双Boss完成全输出撤销、开关/Seek/owner/回放禁执行；适配、失败及SHA见NativeDalriada.spec.md，实机待验"
+    if module == "DAL2Cuchulainn" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL2Cuchulainn/DAL2Cuchulainn.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十实际组件；T975/CFC778、NameID10004及19唯一AID本机核表/extra0；真实48边形减双矩形场地、四个40边形常驻变形区/原始5码cell Distance、恰五Jump且Start不重置/真实TargetXZ与仅23684清、Icon40重复FIFO/原target代际/R100、60槽冷Pet与热排除/旧Party、墙行军逐段raw float及方向RefSort、重复23695动态NPC预测均有真实源对照；382相关及最终12定向PASS，墙查询AVX512/AVX2-FMA/scalar均精确源差分；生产0错4既有警告，同DLL330联合专项/1750全目录行首PASS/296独立入口，全部exit0；真实solver、反转采样拒绝不造Goal、开关/Seek/owner/回放禁执行；适配、失败及SHA见NativeDalriada.spec.md，实机待验"
+    if module == "DAL04thLegionColossusRubricatus" and source.endswith(
+        "/Modules/Shadowbringers/Foray/TheDalriada/DAL04thLegionColossusRubricatus.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "两实际组件；T975/CFC778、NameID9432与6唯一AID客户端核表/extra0；源三矩形union真实polygon、动态原NPC全屏诊断、两旋向六击原LocXZ锁点、跨source Effect仅消费index0/空队列计数、独立发布缓存和live R5 goal/末次Future色仍Risky/Update前后空导航边界；370相关及最终6定向真实源差分，生产0错4既有警告，同DLL316联合专项/1736全目录行首PASS/296独立入口及最终移动caster专项，全部exit0；真实Feed、solver、机制开关、Seek/owner/回放隔离；失败/适配及SHA见NativeDalriada.spec.md，实机待验"
+    if module == "CE32RiseOfTheRobots" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE32RiseOfTheRobots.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/BozjaSouth.cs", "五实际组件；T920/CFC735-DE14及20唯一AID extra本机核表；Finish环与冷Created顺序、MaxHP旧Party八槽数学/20边形双规范化及顶点ULP、反转polygon原始Distance与实际旧桥采样消费、60槽冷Pet行军与独立计数、恰二Start双旋转/前Effect全序列推进/发布缓存；352相关及最终11定向真实源差分，生产0错4既有警告，同DLL294联合专项/1714全目录行首PASS/296独立入口，全部exit0；真实Feed源异常明确撤销导航且保留绘图并恢复、无Party睡眠、solver/owner/Seek/回放禁执行；适配、失败及SHA见NativeBozjaSouth.spec.md，实机待验"
+    if module == "CE42FromBeyondTheGrave" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE42FromBeyondTheGrave.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "十五实际组件；T975/CFC778-DE20与32源AID extra核表；六标准AOE/安全圈、动态诊断和分散、双独立中断复用；冷死亡墙顺序、行军真实60槽/重复状态/float分段/全部圈交集仅提示和线、全类型OID原Actor球体障碍与SoulPurge双色风险FIFO；339相关及最终15定向源差分，生产0错4既有警告，同DLL285联合专项/1714全目录PASS含1705测试与9汇总/296独立入口，全部exit0；线owner显式排序及跨owner位置、solver/Seek/释放/回放禁执行，适配/失败/SHA见NativeZadnor.spec.md，实机待验"
+    if module == "CE64FeelingTheBurn" and source.endswith(
+        "/Modules/Shadowbringers/Foray/CriticalEngagement/CE64FeelingTheBurn.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Zadnor.cs", "八实际组件；T975/CFC778-DE18及18源AID extra核表；Icon前二FIFO/动态原Actor追踪与六击独立炮/四击Boss炮、弱点原引用残项及真实raw非Spell时钟和60槽；324相关及最终11定向源差分，生产0错4既有警告，同DLL270联合专项/1699全目录行首PASS含1690测试与9汇总/296独立入口，全部exit0；Framework唯一缓存/锁点先绘/真实solver/面向计划/owner/Seek/回放禁执行，短Total原始Feed边界及适配/失败/SHA见NativeZadnor.spec.md，实机待验"
+    if module == "DRN6Queen" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeNormal/DRN6Queen/DRN6.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumNormal.cs", "十四实际组件；T936/CFC760-NameID9863及47唯一AID客户端核表；真实方场/48边Map、普通与Grouped Finish、AboveBoard冷热原钟/实际Effect、Turrets半数门槛/原引用/ID首Effect、Chess真实24槽/60状态槽/唯一准备格/实体格采样拒绝、MeansEnds共享风险原地晋升/22与11.7冷顺序、KB冷免疫分离及保留三角Goal、Doom原Actor/重复Lose/冷Pet/Destroy/角色提示均有真实源对照；314相关模型及最终8Queen定向、生产0错4既有警告、同DLL260联合专项/1689全目录PASS行含1680测试与9汇总/296独立入口，全部exit0；真实solver/ownership/Seek/owner/回放执行隔离已验；raw斜矩形与公共消费者回归通过，两轮独立复核无剩余确定差异；证据和SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DRN3QueensGuard" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeNormal/DRN3QueensGuard/DRN3.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumNormal.cs", "十实际组件；T936/CFC760-NameID9838及47唯一AID客户端核表；真实起始凹场/缩圈Map、原Actor动态NPC钟及四动作倒计时、AboveBoard逐Actor冷热Created-Start-Untargetable、Turrets整数半数触发/窄矩形最近/ID首Effect/旧炮台代际、CoatOfArms预测实际位/真实60槽/重复Lose/冷Pet热过滤/ID继承/方向阈值/原DrawSink弧均有真实源对照；306相关模型、生产0错4既有警告、同DLL247联合专项/1676全目录PASS行含1667测试加9汇总/296独立入口，全部exit0；真实solver/ownership/Seek/owner/回放执行隔离已验；目标禁攻优先级只保源意图诊断，旧桥未执行，不新增PR控制；两轮独立复核无确定可达差异，证据与SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DRN2Dahu" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeNormal/DRN2Dahu/DRN2.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumNormal.cs", "十一实际组件；T936/CFC760-NameID9751大兀及全部源AID本机核表；真实44点凹场地、两Charge宽度、Shockwave全局Finish FIFO原地颜色/Risky晋升、五旋转Icon/非零角/最后回调量化原点与缓存/R5补集，HotCharge查询与Effect共计数weight5只诊断；Howl原caster链式墙距含共线0命中/真实hitbox及claws单Union直接拆或整采样/NaN忽略，Heat原source-target代际/Dead-Update边界/Effect首source及raw头钟；253相关模型、生产0错4既有警告、同DLL211联合专项/1639全目录PASS行含1630测试与9汇总/295独立入口，全部exit0；实际solver/精确ownership/owner/Seek/回放隔离；证据和SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DRN4Phantom" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeNormal/DRN4Phantom/DRN4.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumNormal.cs", "六实际组件；T936/CFC760-NameID9755及全部源AID本机核表；Arena双岛/缩场与静态Polygon-Distance独立惰性原点、普通Finish/动态原NPC伤害钟、八次Loc地火及发布缓存；向前30不贴墙、危险落点只读缓存Danger圈；无线raw端点/WDir reciprocal/真实桥二次归一化及有线Intersection采样拒绝分流；262相关模型、生产0错4既有警告、同DLL218联合专项/1646全目录PASS行含1637测试与9汇总/295独立入口，全部exit0；真实solver/精确ownership/owner/Seek/回放隔离；证据和SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DRS5Phantom" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeSavage/DRS5Phantom/DRS5.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumSavage.cs", "八实际组件阶段启停；T937/CFC761-NameID9755及全部源AID本机核表；真实raw Ability/Spell状态边界、CastEnd冷激活/两轮独立实例、Creeping精确Loc三Finish、两地火独立Count/version缓存、Miasma合计八条/overdue、Agony只Effect；Adds原引用/Dead-Targetable/销毁同ID新代及ActorMarker旧桥未消费；真实16项时间轴所有名称钟flags、43秒Timeout与永久???尾段不补TODO；269相关模型、生产0错4既有警告、同DLL223联合专项/1652全目录PASS行含1643测试与9汇总/296独立入口，全部exit0；实际solver/ownership/owner/Seek/回放无执行请求；证据与SHA见NativeDelubrum.spec.md，实机待验"
+    if module == "DRS3Dahu" and source.endswith(
+        "/Modules/Shadowbringers/Foray/DelubrumReginaeSavage/DRS3Dahu/DRS3.cs"
+    ):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/DelubrumSavage.cs", "十一实际组件阶段启停；T937/CFC761-NameID9751及全部源AID本机核表；五标准AOE与Charge/普通Finish、Shockwave FIFO颜色、旋转回调量化原点与缓存复用；Spit原Actor图标/顺序槽与重复/Dead Update前后/ID全消费、Burn原Primary-target/8.2f首钟/FIFO/R30本人导航和诊断；两KB单项覆盖/锁原位置/2.1d与.9d/普通Finish保留/真实Effect独立计数/墙线无额外危险提示/当前Primary爪Union；完整源状态及16项时间轴差分、HeadDown六秒overdue、raw Ability、冷激活顺序/永久TODO尾段不补造；277相关模型、生产0错4既有警告、同DLL228联合专项/1657全目录PASS行含1648测试与9汇总/296独立入口，全部exit0；实际solver/精确ownership/owner/Seek/回放无执行请求，独立复核无新可达差异；证据与SHA见NativeDelubrum.spec.md，实机待验"
+    hydatos = {name: name for name in ("Ceto", "Daphne", "Molech", "Ovni", "ProvenanceWatcher", "Tristitia")}
+    hydatos["Phuabo"] = "Tristitia"
+    if module in hydatos and source.endswith(f"/Modules/Stormblood/Foray/Hydatos/{hydatos[module]}.cs"):
+        return "mp_native_offline_verified", "Presets/Foray/Entries/Hydatos.cs", "七源50唯一组件/51激活；T827/CFC639与51动作extra本机核表；Loaded/Pending/原Actor/60真实槽/冷Pet热过滤/旧Party免疫/单体动态NPC钟；真实RotationInt录制读回/图标主目标FIFO/DualCast隐藏晋升/凝视切视角；按七OID精确禁桥不吞BA，分摊稳定句柄/真实solver/回放禁执行/owner；32相关模型、生产0错4既有警告、同DLL21专项和无筛选全目录1356PASS/0FAIL、279入口独立编译，SHA256及FFCS来源限制见NativeHydatos.spec.md；二值goal与驱散仅诊断，拉拽仅显示，不新增治疗或位移执行，实机待验"
+    crescent = {
+        "TheWingedTerror": "TheWingedTerror", "CrescentGremlin": "CrescentGremlin",
+        "CrescentFan": "CrescentFan", "EyeToEye": "EyeToEye", "DemiMedusa": "ScaleModel",
+    }
+    if module in crescent and source.endswith(
+        f"/Modules/Dawntrail/Foray/FATE/{crescent[module]}.cs"
+    ):
+        return "mp_native_offline_verified", f"Presets/Fates/Crescent/Entries/{module}.cs", "五源十三实际组件固定manifest；T1252/1346-CFC1018/1093及五FATE本机核表；原始ActiveFate完整/增量/旧null诊断、保护罐4D8C与BigFan真实消失、原NPC/代际/raw watched Finish/99分组排序/30与50凝视/旧Party动态预测；首帧pending逆序、同ID重绑/Party0换代/500码远距退回已模型及真Manager差分；用户余量只应用一次/真实solver/默认启用/精确禁桥/Seek/owner；26相关模型加7下一批模型、生产0错4既有警告、同DLL全目录1337条PASS/0FAIL且278入口独立编译，指纹与历史失败见NativeCrescentFates.spec.md；实机待验，无新增动作/治疗/位移执行"
+    crescent_variants = {name: name for name in (
+        "ARottenAffair", "ADelicateBalance", "KingOfTheCrescent", "AllureOfTheOccult",
+        "AnUnendingDuty", "GaleForceEncounter", "Thunderregnum", "APryingEye", "ServingDarkness",
+    )}
+    crescent_variants.update(MadMudarch="SwornToSoil", RelicIcewolf="NH110RelicIcewolf")
+    if module in crescent_variants and source.endswith(
+        f"/Modules/Dawntrail/Foray/FATE/{crescent_variants[module]}.cs"
+    ):
+        return "mp_native_offline_verified", f"Presets/Fates/Crescent/Entries/{module}.cs", "十一源56激活组件(44普通/12变体)；95规则动作及142源AID/两组CFC-Territory/FATE名称本机核表；2247普通事件边界/150984几何点与真实组件差分，Created/Growth真60槽冷热/Concentric跨来源Finish/Freefall非危险FIFO/Storm响应历史/时窗风险三态颜色/动态双cone/Charge原参数；事件扫描不退休晋升，同cast EffectSeen累积不重启钟；弱goal5按旧桥100门槛不扩导航；56相关模型、生产0错4既有警告、72专项及最终同DLL无筛选1396PASS/0FAIL、290入口独立编译；真实solver/稳定句柄/Seek/owner/回放禁执行，最终指纹见NativeCrescentFates.spec.md；实机待验，不新增动作治疗或位移执行"
+    if source.endswith("/Modules/Stormblood/Raid/O1NAlteRoite/O1NAlteRoite.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/AlteRoiteNormal.cs", "十二实际组件；CFC252/T691双向本机核表；普通AOE和三独立20码击退、911冰面精确墙裁剪、火球driver优先级/实际锁钟/5秒显示/原Actor惰性缓存顺序、龙卷风raw主怪及未量化中心过滤、重复Source图标/独立计数/死亡spread Update；真实源组件逐事件差分含18冰面Convert边界和18伤害时钟身份边界，补冷激活外圈和非施法首次缓存反例；35相关模型及最终8定向、生产0错4既有警告、同DLL13专项及无筛选1428PASS/0FAIL、292入口独立编译，全部exit0；自己stack R3与ThinIce保留实际旧转换拒绝边界，未点名R6真实solver无fallback，Seek/owner/回放禁执行；指纹与失败证据见NativeAlteRoiteNormal.spec.md，实机待验"
+    if source.endswith("/Modules/Stormblood/Raid/O3NHalicarnassus/O3NHalicarnassus.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/HalicarnassusNormal.cs", "八实际组件；CFC254/T693双向本机核表；六普通watched raw Finish与两独立绝对棋盘，真实ClassJob动态Role/前16/重复追加/Native Spell跨来源清全；原Actor代际/旧Party0/Pending逆序/500三维/缺源玩家冻结，未开场HP0与即时Dead加载、Director0005至0011屏障；85真实源事件职业边界/851550几何点精确差分，52相关模型及最终5定向，生产0错4既有警告，同DLL无筛选1408PASS/0FAIL、291入口独立编译exit0；真实即时solver/非Party撤导航/逆Seek/owner/回放禁执行，指纹及中间失败见NativeHalicarnassusNormal.spec.md；实机待验"
+    if source.endswith("/Modules/Dawntrail/Raid/M04NWickedThunder/M04NWickedThunder.cs"):
+        return "mp_native_offline_verified", "Presets/Dungeons/Entries/WickedThunderNormal.cs", "十三实际组件；T1231/CFC991双向本机核表；真实60槽/旧Party/冷热激活/原Actor引用、两独立分摊/完整Effect FIFO、Hunt14与Side三来源隐藏晋升/颜色Risky、raw watched Finish及实际BattleEnded/Director；真实源组件40边界精确尺寸/时钟/微角差分，58相关模型、生产0错4既有警告、同DLL64专项及1028全目录PASS/0FAIL且exit0，指纹见NativeWickedThunderNormal.spec.md和native-wickedthunder-deepzones-20261126-*；无新增治疗/位移执行，实机待验"
+    if source.endswith("/Modules/Endwalker/DeepDungeon/EurekaOrthos/EOFloorModule.cs") and module in {f"EO{n}" for n in range(10, 101, 10)}:
+        return "mp_native_offline_verified", "Presets/EurekaOrthos/Entries/EurekaFloors.cs", "仅十Zone授权战斗机制：七动态凝视/四独立donut/逃离/两位移模型与真实Finish Spikes；原Actor/60槽/旧Party/跨动作替换/完整Native及legacy双向收据；24源LOS位图331688点oracle和十组墙陷阱索引，保留MasterPlayer.EurekaLOS资源；首次默认启用/显式关闭/十区禁桥/Boss交接/联合面向/真实solver/Seek/owner；58相关模型、生产0错4既有警告、同DLL64专项与1028全目录PASS/0FAIL且exit0，指纹见NativeEurekaOrthosBosses.spec.md；旧槽复用Spikes源缺陷不复制，不新增探索/箱/机关/道具/推进或自动技能，实机待验"
+    if source.endswith("/Modules/Dawntrail/DeepDungeon/PilgrimsTraverse/PTFloorModule.cs") and module in {f"PT{n}" for n in range(10, 101, 10)}:
+        return "mp_native_offline_verified", "Presets/PilgrimsTraverse/Entries/PilgrimsFloors.cs", "仅十Zone授权战斗机制：精确270环扇/独立donut/持续效果与三Heel计数/Turtle末秒硬导航/拉近逃离/真实Finish Spikes及原60槽免疫；无源墙陷阱表不借死宫表；九首击保留通用Dodge，实际DLL实时订阅经Manager/Host门控与Native先行效果同时注册两路，三零序号Heel包及目标去重/功能门控/owner已验；默认启用和十区禁桥/Boss交接，58相关模型/生产0错4既有警告/64专项/1028全目录PASS且exit0，见PilgrimsTraverseBosses.spec.md及native-wickedthunder-deepzones-20261126-*；联合夹具仅替代世界采样，无流程自动化，实机待验"
     if source.endswith("/Modules/Stormblood/DeepDungeon/HeavenOnHigh/HoHFloorModule.cs") and module in {f"HoH{n}" for n in range(10, 101, 10)}:
         return "mp_native_offline_verified", "Presets/HeavenOnHigh/Entries/HeavenOnHighFloors.cs", "仅十Zone授权机制：七动态凝视/两独立donut/普通VFX25原目标引用与NPC钟/Source0 HintDisabled、真实raw结束及非空替换、packet首见nullable初始化/冷启与热Created/7248保收据；500房间4432陷阱源表与墙符号oracle、双视图同状态/联合PR面向/真实solver脱陷阱/九Boss即时交接/十区禁桥。38相关模型、生产0错4既有警告、16条专项含2公共与988全目录PASS/0FAIL且exit0，见NativeHeavenOnHighBosses.spec.md及native-hoh-zones-20261125-*。interrupt/stun只意图，不新增动作；无探索/主动清怪/箱/机关/道具/层间推进，真实宿主及像素待实机"
     if source.endswith("/Modules/Heavensward/Extreme/Ext3Thordan/Ex3Thordan.cs"):

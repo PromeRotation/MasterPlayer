@@ -45,6 +45,9 @@ public sealed class ScriptDrawApi
         MasterPlayerPlugin.Instance?.AoeVisibility?.AddLine(Id(id), start, end, safe, key, name);
     }
 
+    internal void SetPreviewOrder(IEnumerable<string> ids)
+        => MasterPlayerPlugin.Instance?.AoeVisibility?.SetPreviewOrder(_idPrefix, ids.Select(Id));
+
     /// <summary>静态几何绘制（世界坐标）。</summary>
     public DrawHandle Add(
         string id,

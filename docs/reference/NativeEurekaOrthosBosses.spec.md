@@ -1,6 +1,22 @@
 # 正统优雷卡 Boss 原生机制
 
-本规格只覆盖 Boss 战斗机制。禁止迁移深宫道中探索、开箱、机关交互、自动前进、道具使用和楼层推进；楼层 Zone 共存不计作 Zone 已迁。统一寻路试点不在此实现。
+本规格覆盖 Boss 及下述楼层 Zone 的授权战斗机制。禁止迁移深宫道中探索、开箱、机关交互、自动前进、道具使用和楼层推进；楼层 Zone 共存不计作 Zone 已迁。统一寻路试点不在此实现。
+
+## 楼层 Zone 授权机制
+
+EO10～EO100十个类型共用源`EOFloorModule`，原生入口`masterplayer.eureka.floors`，实现为`DeepDungeonFloorScript`及`EurekaFloorEncounter`。七种动态凝视、四种独立月环、Catharsis逃离、六种位图LOS、两类击退/拉近和真实Finish后十秒Spikes逐分支对应；打断/眩晕仅提示和意图，不新增自动技能。
+
+普通读条使用客户端表，保留原目标、60物理状态槽、旧Party提交顺序、raw真实结束和跨动作替换；网络Cancel不能伪造Spikes Finish。原Source引用冻结，持续效果按来源首项删除，不统一按动作配对或超时删除。Boss出现后即时撤销楼层输出，Boss与普通楼层分别输出。EO资源包含24张真实源位图及十组索引，嵌入名必须保留`MasterPlayer.EurekaLOS.*`，不能以死宫或其他深宫表替代。
+
+独立审查确认24图逐字节一致、10组清单一致；现有源LOS oracle覆盖331688点，另有真实DLL/solver/Seek/owner证据。空配置默认启动缺陷已修：EO、PT及HoH楼层入口在`ScriptManager.IsScriptEnabled`默认启用，同时优先保留显式用户设置；目录回归直接覆盖空配置和关闭后Refresh，不以专项Load先强制开启掩盖默认分支。
+
+明确的源缺陷适配：源`AutoClear`对历史Spikes调用`AIHints.FindEnemy(oldActor)`，后者只用`CharacterSpawnIndex`查询当前敌人槽，销毁后复用槽可能错误停止新目标普攻。原生要求当前Source仍为原shell；旧记录仍按原钟保留，但不约束无关新目标。此处保留既有原生身份隔离，不复制源的槽别名错误；不能把“旧代不回绑”测试写成源逐字段等价。只停止指定目标上的原生普攻，不扩大ACR目标禁攻或全停手。
+
+楼层首次默认启用与显式关闭后Refresh保留均有真实目录断言。本批同DLL证据为`native-wickedthunder-deepzones-20261126-build-02.log`（退出0、0错4既有警告）、`native-wickedthunder-20261126-model-final-11.log`（58相关模型PASS/0FAIL）和`native-wickedthunder-deepzones-20261126-replay-02.log`（64条PASS/0FAIL，含三组楼层及M4、PT联合链/三旧追击）。EO LOS独立源oracle覆盖24图331688个像素内部点；EO实际DLL含十区、原状态/旧Party、零完整包/legacy配对、位图影区及真实solver。SHA256为`67bfe785916068325338b9ecb2fb149d90877378c42f853b379f8e043e839884`。SDK使用隔离目录已有10.0.303，根SDK11未验。
+
+旧Boss批次累计数字均为对应时点的历史统计。源没有提供的探索、箱、机关、道具和层间流程不属于验收范围；原生采样、宿主执行与最终像素仍需实机。
+
+同DLL全目录`--catalog-replay`见`native-wickedthunder-deepzones-20261126-catalog-03.log`，退出0、1028条PASS/0FAIL；入口独立编译的既有FATE内部常量失败单独保留，不混计。
 
 ## 入口与来源
 

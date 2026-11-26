@@ -18,6 +18,7 @@ internal static partial class NativeDungeonReplayRegression
         int Goals() => ((IEnumerable)runtime.Manager.BuildSnapshot(runtime.CurrentTime).GoalAreas).Cast<object>().Count();
         void Load(string id, IEnumerable<string> lines)
         {
+            Check((int)controller.RouterErrorCount == 0, $"Replay callback error before replacing session: {controller.StatusMessage}");
             File.WriteAllLines(path, lines);
             manager.SetScriptEnabled(id, true);
             Check(controller.Load(path), (string)controller.StatusMessage);
@@ -26,6 +27,7 @@ internal static partial class NativeDungeonReplayRegression
         }
         void Stop()
         {
+            Check((int)controller.RouterErrorCount == 0, $"Replay callback error before stop: {controller.StatusMessage}");
             controller.StopSession();
             Check(Dangers() == 0 && Goals() == 0 && Previews().Length == 0, "Production dungeon stop leaked output.");
         }
@@ -1137,8 +1139,42 @@ internal static partial class NativeDungeonReplayRegression
         RunEurekaOrthos((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunQuantum((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunKefka((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunWickedThunder((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHalicarnassus((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunAlteRoite((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCrescentFates((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCrescentVariants((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunHydatos((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBozja((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBozjaRobots((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDal1((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDal0((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDal2((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDal3((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDAL4DiabloArmament((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDAL1Gauntlet((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCLL2Albeleo((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBozjaSkirmishes((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBozjaPyromancer((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnor((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorBurn((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorGrave((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorTime((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorCrystals((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorHashmal((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorAida((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorCavalry((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunZadnorFrost((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumDahu((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumPhantom((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumPhantomSavage((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumDahuSavage((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumSeeker((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumGuard((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunDelubrumQueen((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunThordan((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunBarPassageP2((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunPilgrimsLiveJoint((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
     }
 
     private static string Header(uint territory)

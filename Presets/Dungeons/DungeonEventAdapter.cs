@@ -8,6 +8,22 @@ internal sealed class DungeonEventAdapter(DungeonEncounter encounter, Action sca
 {
     public void Handle(LogSystemEvent ev, DateTime now)
     {
+        if (encounter.IsAlteRoite)
+        {
+            encounter.AlteRoiteInputScan = true;
+            try { scan(); }
+            finally { encounter.AlteRoiteInputScan = false; }
+            encounter.AlteRoiteEvent(ev);
+            return;
+        }
+        if (encounter.IsHalicarnassus)
+        {
+            encounter.HalicarnassusInputScan = true;
+            try { scan(); }
+            finally { encounter.HalicarnassusInputScan = false; }
+            encounter.HalicarnassusEvent(ev);
+            return;
+        }
         if (encounter.IsWickedThunder)
         {
             encounter.WickedThunderInputScan = true;

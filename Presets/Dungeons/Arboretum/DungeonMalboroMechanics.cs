@@ -13,7 +13,7 @@ internal sealed partial class DungeonEncounter
     private bool IsMalboro => territory == ArboretumCatalog.TERRITORY && Active?.BossOid == 0x141F;
     internal bool PreserveStageAcrossBattleEnd => IsCaduceus && CaduceusAlive || IsCoilGauntlet && Active != null || IsMalboro || IsThornmarch && _actors.ContainsKey(PrimaryId) || IsPalaceManagedBoss && Active != null
         || IsLabyrinthBone && _actors.ContainsKey(PrimaryId)
-        || IsQuantum || (IsHeavenOnHigh || IsEurekaOrthos || IsBarPassage || IsCarnivale || IsAlphaAlligator || IsSlickshell || IsHopeOnTheWaves || IsTimeBetween) && Active != null
+        || IsQuantum || (IsHalicarnassus || IsAlteRoite || IsWickedThunder || IsHeavenOnHigh || IsEurekaOrthos || IsBarPassage || IsCarnivale || IsAlphaAlligator || IsSlickshell || IsHopeOnTheWaves || IsTimeBetween) && Active != null
         || (IsNativeTrial || IsNativeQuestBoss) && _actors.GetValueOrDefault(PrimaryId) is { Dead: false }
         || DivinePairAlive || JobQuestGroupAlive || TreasureGroupAlive || InnocencePhaseAlive || HadesPhaseAlive;
 

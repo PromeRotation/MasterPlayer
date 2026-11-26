@@ -22,7 +22,19 @@
 
 区域使用真实 TerritoryType 1281–1290；ContentFinderCondition 1032–1041 仅用于核验，不能作为脚本区域。脚本 ID 为 `promeradar.pt<层数>`。首次默认启用，显式保存的关闭设置继续生效；仍服从机制总开关和区域开关。
 
-宿主按 Boss OID 与区域组合撤销对应 BMR 输出，避免启用切换或第一帧重复注册。普通楼层保留 BMR。其他区域复用相同 OID 不受影响；明确关闭 MP Boss 脚本后不自动回退该 Boss 的 BMR 导航。
+宿主按 Boss OID 与区域组合撤销对应 BMR 输出，避免启用切换或第一帧重复注册。普通楼层授权机制由下述原生楼层入口接管；独立核验与最终登记见该节。其他区域复用相同 OID 不受影响；明确关闭 MP Boss 脚本后不自动回退该 Boss 的 BMR 导航。
+
+## 普通楼层授权机制与通用躲避
+
+源PT10～PT100十个Zone均继承`PTFloorModule`；入口`masterplayer.pilgrims.floors`，由`DeepDungeonFloorScript`、`PilgrimsFloorScript`和`PilgrimsFloorEncounter`维护战斗机制。R3～30/270度环扇、两个独立月环、六种后续持续范围、三次Heel独立计数、Turtle末一秒硬导航、R15拉近、R45/R46逃离、Spikes及真实槽免疫均保留。无源墙/陷阱表，显式传空字典，不能用null回落到死宫表。
+
+通用首击与录像测量追击继续由`DodgeController`消费；九种精确首击不被楼层`HandlesCast`压制，其余楼层专属Action精确接管。楼层同时用Native完整Effect消费源机制；逐目标PR Effect不冒充完整包。纯回放中通用Dodge按原门控停止，由楼层保留可还原的首击几何。
+
+`NativeDungeonReplayPilgrimsLiveJoint.cs`补充实际DLL实时路由联合验证：正常构造Dodge/ScriptContext，真实实时订阅派发，经过`HandleStartCast → ProcessCast → ScriptManager/MechanicHost`，并以完整Native捕获先于expanded效果驱动楼层`Scan/HandleEvent/Render`；共同注册表上核验两路R30反侧几何、首击/追击、42091精确压制、异来源、多目标、功能全关与回放门控、owner退订和清理。仅世界采样替换为受控DTO，未覆盖游戏原生对象表/深宫director采样；不把此夹具称作完整实机。
+
+联合链复现并修复通用追击以`HashSet<uint>`将三个零GlobalSequence连踢包合并的问题。PR源`LogSystem/Capture/ActionEffectCapture.cs`在扩展目标前采同一Timestamp；零序号以该包Timestamp区分，非零仍按Sequence去重。同包多目标不多消费，三个独立包恰第三击清除。失败证据`native-deepzones-20261126-joint-04.log`，修后`native-wickedthunder-deepzones-20261126-replay-02.log`共64条PASS/0FAIL、退出0，含联合链与四/三/十三组旧追击及M4/三深宫消费者；相关模型58项通过，生产0错4既有警告与DLL指纹同[正统规格](NativeEurekaOrthosBosses.spec.md)。
+
+楼层入口首次默认启用，显式关闭仍优先；已补目录空配置/Refresh断言。Spikes记录保持原Source引用，不将销毁后对象槽复用解释为新目标反伤；源`FindEnemy`只查槽的缺陷与原生适配理由同[正统规格](NativeEurekaOrthosBosses.spec.md)。只限制指定目标的原生普攻，不增加ACR禁攻或全停手。授权范围不含探索、交互、开箱、道具、主动前进或层间推进，源TODO不从枚举补造。
 
 ## 场地与尺寸
 

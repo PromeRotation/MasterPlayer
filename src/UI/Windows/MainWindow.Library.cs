@@ -357,6 +357,21 @@ public sealed partial class MainWindow
             if (hunt.PredictedDamageText is { } huntPrediction) Md.ValueRow("预计伤害", huntPrediction);
             if (hunt.MechanicHintsText is { } huntHints) Md.ValueRow("机制提示", huntHints);
         }
+        if (running && run!.Script is Mechanics.Fates.CrescentFateScript fate)
+        {
+            if (fate.PredictedDamageText is { } fatePrediction) Md.ValueRow("预计伤害", fatePrediction);
+            if (fate.MechanicHintsText is { } fateHints) Md.ValueRow("机制提示", fateHints);
+        }
+        if (running && run!.Script is Mechanics.Bozja.BozjaScript bozja)
+        {
+            if (bozja.PredictedDamageText is { } bozjaPrediction) Md.ValueRow("预计伤害", bozjaPrediction);
+            if (bozja.MechanicHintsText is { } bozjaHints) Md.ValueRow("机制提示", bozjaHints);
+        }
+        if (running && run!.Script is Mechanics.Hydatos.HydatosScript hydatos)
+        {
+            if (hydatos.PredictedDamageText is { } hydatosPrediction) Md.ValueRow("预计伤害", hydatosPrediction);
+            if (hydatos.MechanicHintsText is { } hydatosHints) Md.ValueRow("机制提示", hydatosHints);
+        }
 
         if (ImGui.TreeNode("文件信息"))
         {

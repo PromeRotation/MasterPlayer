@@ -36,7 +36,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     public IReadOnlyDictionary<ulong, DungeonPendingCast> Casts => _casts;
     public IReadOnlyDictionary<ulong, DungeonActor> Actors => _actors;
     internal uint? AllowedFateId { get; set; }
-    internal bool PreserveFightAcrossPlayerDeath => Active != null && (IsHades || IsInnocence || IsWarriorOfLight || IsHydaelyn || IsAsura || IsZelenia || IsValigarmanda || IsArkveld || IsEnuo || IsNecron || IsQueenEternal || IsZoraalJa || IsDoomtrain || IsCoilNodes || IsCoilGauntlet || IsCaduceus || IsTwintania || IsLabyrinth || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsNativeQuestBoss || IsCarnivale || IsNativeTreasure || IsHeavenOnHigh || IsEurekaOrthos || IsQuantum || IsKefka || IsThordan || IsWickedThunder);
+    internal bool PreserveFightAcrossPlayerDeath => Active != null && (IsHades || IsInnocence || IsWarriorOfLight || IsHydaelyn || IsAsura || IsZelenia || IsValigarmanda || IsArkveld || IsEnuo || IsNecron || IsQueenEternal || IsZoraalJa || IsDoomtrain || IsCoilNodes || IsCoilGauntlet || IsCaduceus || IsTwintania || IsLabyrinth || IsSyrcus || IsDarkness || IsArrQuest || IsUltimaExtreme || IsGarudaExtreme || IsTitanExtreme || IsIfritExtreme || IsNativeQuestBoss || IsCarnivale || IsNativeTreasure || IsHeavenOnHigh || IsEurekaOrthos || IsQuantum || IsKefka || IsThordan || IsWickedThunder || IsHalicarnassus || IsAlteRoite);
     public ulong[] ForbiddenTargets => _actors.Values.Where(a => a.Hostile && !a.Dead && a.Targetable
         && (Active?.BossOid == 0x4645 && HasStatus(a, HalataliCatalog.BURNING_WARD)
             || Active?.BossOid == 0x4A8D && a.Id == PrimaryId && HasStatus(a, DzemaelCatalog.INVINCIBILITY)
@@ -53,7 +53,7 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     {
         get
         {
-            if (IsQuantum || IsKefka || IsThordan || IsWickedThunder) yield break;
+            if (IsQuantum || IsKefka || IsThordan || IsWickedThunder || IsHalicarnassus || IsAlteRoite) yield break;
             var fireflows = _casts.Values.Where(c => c.Rule.Action is 40588 or 40589)
                 .OrderBy(c => c.FinishAt).ThenBy(c => c.Source).Take(4).Select(c => c.Source).ToHashSet();
             var bursts = _casts.Values.Where(c => c.Rule.Action == 28658).Take(4).Select(c => c.Source).ToHashSet();
@@ -162,6 +162,11 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     {
         get
         {
+            if (IsAlteRoite)
+            {
+                foreach (var prediction in AlteRoite.Damage()) yield return prediction;
+                yield break;
+            }
             if (IsThordan)
             {
                 foreach (var prediction in Thordan.Damage()) yield return prediction;
@@ -319,6 +324,16 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public void Synchronize(IEnumerable<DungeonActor> actors, Vector3? player, DateTime now, Func<string, bool>? enabled = null, ulong playerId = 0)
     {
+        if (IsAlteRoite)
+        {
+            AlteRoiteSynchronize(actors, now, enabled, playerId);
+            return;
+        }
+        if (IsHalicarnassus)
+        {
+            HalicarnassusSynchronize(actors, now, enabled, playerId);
+            return;
+        }
         if (IsThordan)
         {
             ThordanSynchronize(actors, now, enabled, playerId);
@@ -2254,6 +2269,20 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public void Tick(DateTime now)
     {
+        if (IsAlteRoite)
+        {
+            _now = now;
+            AlteRoite.Update(now);
+            AlteRoitePublish();
+            return;
+        }
+        if (IsHalicarnassus)
+        {
+            _now = now;
+            Halicarnassus.Update(now);
+            HalicarnassusPublish();
+            return;
+        }
         if (IsThordan)
         {
             _now = now;
@@ -2329,6 +2358,19 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
 
     public IEnumerable<string> Hints(Vector3? player)
     {
+        if (IsAlteRoite)
+        {
+            foreach (var hint in AlteRoite.Hints()) yield return hint;
+            yield break;
+        }
+        if (IsHalicarnassus)
+        {
+            if (Halicarnassus.Actors.GetValueOrDefault(PlayerId) is { } viewer
+                && Halicarnassus.Visible().Any(a => DungeonSourceGeometry.Contains(a.Shape, a.Origin,
+                    a.Rotation, viewer.Actor.Position)))
+                yield return "GTFO from aoe!";
+            yield break;
+        }
         if (IsThordan)
         {
             foreach (var hint in Thordan.Hints()) yield return hint;
@@ -2639,6 +2681,8 @@ internal sealed partial class DungeonEncounter(uint territory, Action<string>? w
     public void ResetFight()
     {
         if (IsThordan) Thordan.Clear();
+        if (IsHalicarnassus) Halicarnassus.Clear();
+        if (IsAlteRoite) AlteRoite.Clear();
         if (IsWickedThunder) WickedThunder.Clear();
         if (IsKefka) Kefka.Clear();
         if (IsQuantum) Quantum.Clear();
