@@ -38,39 +38,53 @@ internal static class PlayerPerspectiveRegression
             race.ResetPerspective();
             Check(!race.IsRacing, "Switching perspective restarted an ended round.");
         });
-        run("ARR perspective follows A/B/A, rejects missing objects and restores the local player", () =>
+        run("ARR perspective follows the spectator in and out of combat without following their target", () =>
         {
             using var scope = new Scope();
             scope.Target->TargetObjectId = 2;
             scope.Selected = 2;
+            scope.Spectator->FocusObjectId = 2;
             Check(PlayerPerspective.GetId() == 1, "A normal hard target changed the local perspective.");
             scope.Playback = true;
-            scope.Target->TargetObjectId = 1;
-            Check(PlayerPerspective.GetId() == 2 && PlayerPerspective.LivePlayer!.Position.X == 12, "ARR did not select B.");
-            scope.Selected = 1;
-            Check(PlayerPerspective.GetId() == 1, "ARR party-list selection did not return to A.");
+            foreach (var inCombat in new[] { false, true })
+            {
+                scope.InCombat = inCombat;
+                // In spectator mode SetHardTarget writes FocusObjectId, leaving
+                // TargetSystem's hard target / derived TargetObjectId independent.
+                foreach (var viewed in new uint[] { 1, 2, 1 })
+                {
+                    scope.Spectator->FocusObjectId = viewed;
+                    foreach (var target in new uint[] { 1, 2, 99, 0 })
+                    {
+                        scope.Selected = target;
+                        scope.Target->TargetObjectId = target;
+                        Check(PlayerPerspective.GetId() == viewed,
+                            $"ARR followed target {target} instead of spectator {viewed} (combat={inCombat}).");
+                        Check(PlayerPerspective.LivePlayer!.Position.X == (viewed == 2 ? 12 : 0),
+                            "The route origin did not switch with the spectator.");
+                    }
+                }
+            }
             scope.Selected = 2;
-            Check(PlayerPerspective.GetId() == 2, "ARR kept A's camera subject after selecting B in the party list.");
             scope.Target->TargetObjectId = 2;
-            scope.Selected = 99;
-            Check(PlayerPerspective.GetId() == 2, "An enemy target replaced the ARR player perspective.");
-            scope.Selected = 0;
-            scope.Target->TargetObjectId = 1;
-            Check(PlayerPerspective.GetId() == 1, "ARR did not return to A.");
             foreach (var id in new uint[] { 0, 0xE0000000, 99 })
             {
-                scope.Target->TargetObjectId = id;
-                Check(PlayerPerspective.GetId() == 0 && PlayerPerspective.LivePlayer == null, "Invalid ARR object fell back to the local player.");
+                scope.Spectator->FocusObjectId = id;
+                Check(PlayerPerspective.GetId() == 0 && PlayerPerspective.LivePlayer == null,
+                    "Missing or non-player spectator fell back to a target or the local player.");
             }
+            scope.ControlSystem->SpectatorSystem = null;
+            Check(PlayerPerspective.GetId() == 0, "An unavailable spectator system fell back to the hard target.");
             scope.Playback = false;
             Check(PlayerPerspective.GetId() == 1 && !PlayerPerspective.IsReplay, "Leaving ARR did not restore the local player.");
-            Check(Marshal.OffsetOf<TargetSystem>(nameof(TargetSystem.TargetObjectId)).ToInt32() == 0x140,
-                "Review the installed CN struct against Kodakku's perspective field.");
+            Check(Marshal.OffsetOf<Control>(nameof(Control.SpectatorSystem)).ToInt32() == 0x7688
+                && Marshal.OffsetOf<SpectatorSystem>(nameof(SpectatorSystem.FocusObjectId)).ToInt32() == 0xAC,
+                "Review the installed CN spectator layout against the client's selection path.");
         });
         run("ARR perspective keeps offline world isolation even when its player is missing", () =>
         {
             using var scope = new Scope { Playback = true };
-            scope.Target->TargetObjectId = 2;
+            scope.Spectator->FocusObjectId = 2;
             var world = new ReplayWorldState();
             world.Apply(new() { Full = true, LocalPlayerId = 42, Actors = [new() { Id = 42, Position = new(7, 0, 9) }] });
             scope.RejectLiveReads = true;
@@ -83,7 +97,7 @@ internal static class PlayerPerspectiveRegression
         run("ARR perspective still solves routes but never dispatches movement", () =>
         {
             using var scope = new Scope { Playback = true };
-            scope.Target->TargetObjectId = 1;
+            scope.Spectator->FocusObjectId = 1;
             var calls = 0;
             var movement = ScriptServiceProxy.Create<IGreenMoveSystem>((name, _) => name switch
             {
@@ -99,10 +113,14 @@ internal static class PlayerPerspectiveRegression
             for (var i = 0; i < 100 && runtime.MovementStatus.LatestSolution == null; ++i)
             { runtime.Update(1, true); Thread.Sleep(10); }
             Check(runtime.MovementStatus.LatestSolution?.IsSuccess == true && calls == 0, "ARR did not produce a preview-only solution.");
-            scope.Target->TargetObjectId = 0;
+            var previous = runtime.MovementStatus.LatestSolution;
+            scope.Spectator->FocusObjectId = 2;
+            runtime.Update(1, true);
+            Check(!ReferenceEquals(previous, runtime.MovementStatus.LatestSolution), "Switching the spectator retained the previous route.");
+            scope.Spectator->FocusObjectId = 0;
             runtime.Update(1, true);
             Check(runtime.MovementStatus.LatestSolution == null, "Missing perspective retained the previous route.");
-            scope.Target->TargetObjectId = 2;
+            scope.Spectator->FocusObjectId = 2;
             runtime.Update(1, true);
             Check(!runtime.MovementStatus.HasControl && calls == 0, "Switching perspective acquired control.");
         });
@@ -116,16 +134,22 @@ internal static class PlayerPerspectiveRegression
         private readonly ICondition _condition = Svc.Condition;
         private readonly ITargetManager _targets = Svc.Targets;
         private readonly nint _targetAddress = TargetSystem.Addresses.Instance.Value;
-        public TargetSystem* Target { get; } = (TargetSystem*)NativeMemory.AllocZeroed((nuint)sizeof(TargetSystem));
-        public bool Playback, RejectLiveReads;
+        private readonly nint _controlAddress = Control.Addresses.Instance.Value;
+        public Control* ControlSystem { get; } = (Control*)NativeMemory.AllocZeroed((nuint)sizeof(Control));
+        public SpectatorSystem* Spectator { get; } = (SpectatorSystem*)NativeMemory.AllocZeroed((nuint)sizeof(SpectatorSystem));
+        public TargetSystem* Target => &ControlSystem->TargetSystem;
+        public bool Playback, InCombat, RejectLiveReads;
         public uint Selected;
         public Scope()
         {
             var a = Player(1, 0); var b = Player(2, 12);
             var enemy = ScriptServiceProxy.Create<IGameObject>((_, _) => throw new InvalidOperationException("Enemy target was used as a player."));
+            ControlSystem->SpectatorSystem = Spectator;
+            Control.Addresses.Instance.Value = (nint)ControlSystem;
             TargetSystem.Addresses.Instance.Value = (nint)Target;
             Set(nameof(Svc.Condition), ScriptServiceProxy.Create<ICondition>((name, args) =>
-                name == "get_Item" && (ConditionFlag)args[0]! == ConditionFlag.DutyRecorderPlayback && Playback));
+                name == "get_Item" && (ConditionFlag)args[0]! switch
+                { ConditionFlag.DutyRecorderPlayback => Playback, ConditionFlag.InCombat => InCombat, _ => false }));
             Set(nameof(Svc.Targets), ScriptServiceProxy.Create<ITargetManager>((name, _) =>
             {
                 if (RejectLiveReads) throw new InvalidOperationException("Offline touched live targets.");
@@ -138,7 +162,7 @@ internal static class PlayerPerspectiveRegression
                 return name switch
                 {
                     "get_LocalPlayer" => a,
-                    "SearchByEntityId" => (uint)args[0]! switch { 1 => a, 2 => b, _ => null },
+                    "SearchByEntityId" => (uint)args[0]! switch { 1 => a, 2 => b, 99 => enemy, _ => null },
                     _ => throw new NotSupportedException(name)
                 };
             }));
@@ -157,7 +181,9 @@ internal static class PlayerPerspectiveRegression
             Set(nameof(Svc.Objects), _objects); Set(nameof(Svc.Condition), _condition);
             Set(nameof(Svc.Targets), _targets);
             TargetSystem.Addresses.Instance.Value = _targetAddress;
-            NativeMemory.Free(Target);
+            Control.Addresses.Instance.Value = _controlAddress;
+            NativeMemory.Free(Spectator);
+            NativeMemory.Free(ControlSystem);
         }
     }
 }

@@ -12,7 +12,7 @@ public interface IScriptHostContext
 {
     DateTime CurrentTime => DateTime.UtcNow;
     Replay.ReplayWorldState? ReplayWorld => null;
-    /// <summary>当前机制视角的玩家快照；ARR 优先跟随点选的玩家，否则跟随观看角色；离线回放只读录制世界。缺失时为 null。</summary>
+    /// <summary>当前机制视角的玩家快照；ARR 跟随观战系统的观看角色，独立于攻击/治疗目标且不受战斗状态影响；离线回放只读录制世界。缺失时为 null。</summary>
     Replay.ReplayActorState? CurrentPlayer => PlayerPerspective.Capture(ReplayWorld, CurrentTime);
     /// <summary>当前视角玩家 ID；不可用时为 0，不回退为其他角色。</summary>
     ulong CurrentPlayerId => PlayerPerspective.GetId(ReplayWorld);

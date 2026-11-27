@@ -272,7 +272,7 @@ PR 共享程序集规则见 `Managers/PromeExAssemblyLoader.cs` 的 `IsSharedAss
 ### 5.6.2 脚本当前玩家与回放视角
 
 - `MasterPlayerScript` / `IScriptHostContext` 提供 `ReplayActorState? CurrentPlayer`、`ulong CurrentPlayerId`。快照含身份、位置、朝向、职业、血量、读条、状态和连线；缺失返回 null / 0。队伍分工按该 ID 从原队伍表查找。
-- 正常游戏取本人；ARR 优先取当前选中玩家（含队伍列表点选），否则取观看角色；MP 离线回放只取 `ReplayWorld.LocalPlayer`。解析集中在 `src/Core/DutyReplayState.cs` / `PlayerPerspective.cs`，脚本消费统一入口，不另行读取本地玩家或判断 ARR。
+- 正常游戏取本人；ARR 统一取 `Control.SpectatorSystem.FocusObjectId` 对应的观战玩家，游戏队伍列表点选及播放界面切人都以该字段为准，战斗内外一致。不可使用 `Svc.Targets.Target`、目标的目标或 `TargetSystem.TargetObjectId` 推断观战玩家；这些是独立的目标状态，可能仍指向攻击/治疗目标。观战系统或玩家缺失时返回 null / 0，不回退其他角色。MP 离线回放只取 `ReplayWorld.LocalPlayer`。解析集中在 `src/Core/DutyReplayState.cs` / `PlayerPerspective.cs`，脚本消费统一入口，不另行读取本地玩家或判断 ARR。
 - 切人先调用 `OnCurrentPlayerChanged`，再调用当帧 `OnUpdate`，无效对象以 ID 0 通知。清理个人输出及缓存，保留战斗事件和按角色维护的历史；模块提示按观看角色槽位计算，解算撤销旧路径。
 - `IsReplay` 表示 ARR 或 MP 回放，`ReplayWorld != null` 仅表示 MP 离线回放。ARR 保留实时事件采样、绘制和规划；MP 使用录制世界及 `CurrentTime`，暂停冻结、Seek 重建。两种模式都由宿主阻止实际移动、朝向、自动动作和遥控。
 - ARR 不转发录制者的 `OnPlayerDied` / `OnPlayerRevived`；观看角色生死取 `CurrentPlayer.Dead`。`ScriptManager.ReplayModeActive` 专用于 MP 离线会话。
