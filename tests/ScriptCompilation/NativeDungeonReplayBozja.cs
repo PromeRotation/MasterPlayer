@@ -67,7 +67,7 @@ internal static partial class NativeDungeonReplayRegression
         var registry = Read(pluginInstance, "AoeVisibility");
         registry.GetType().GetMethod("AddPreview")!.Invoke(registry, ["external-before-bozja",
             Activator.CreateInstance(assembly.GetType("MasterPlayer.Spatial.Geometry.CircleGeometry")!, [center, 1f]),
-            false, 0f, "external-order-test", "external-order-test", false, 1f, false, null]);
+            false, 0f, "external-order-test", "external-order-test", false, 1f, false, null, null]);
         load(id, [Header(920), World(0, Initial(Spell(21268, center)), true), World(10, [])]);
         Seek(.1);
         registry.GetType().GetMethod("RemovePreview")!.Invoke(registry, ["external-before-bozja"]);

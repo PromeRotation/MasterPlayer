@@ -37,16 +37,33 @@ internal sealed partial class BozjaEncounter
     private void StartHashmal(BozjaActor actor, BozjaRule rule)
     {
         var spell = actor.Cast!;
+        if (IsRaiden && rule.Kind == BozjaRuleKind.Exaflare && spell.ActionId == 14449)
+        {
+            var (sin, cos) = Math.SinCos(spell.Rotation ?? 0);
+            var delta = spell.Location - Center;
+            var along = delta.X * (float)sin + delta.Z * (float)cos;
+            var side = delta.X * (float)cos - delta.Z * (float)sin;
+            var count = 4;
+            if (MathF.Abs(along) <= 35 && MathF.Abs(side) <= 15) count = 8;
+            else if (MathF.Abs(along) <= 35 && MathF.Abs(side) <= 20) count = 6;
+            Exaflares.Add(new(new(++serial, rule, actor, actor.Actor.Position, 0, Activation(actor)),
+                new(8 * (float)sin, 0, 8 * (float)cos), count, 10, 1.1d));
+            return;
+        }
         if (rule.Kind == BozjaRuleKind.ControlTower && spell.ActionId == 23830
             && !Casts.Any(c => c.Rule == rule && c.Origin.X == spell.Location.X && c.Origin.Z == spell.Location.Z))
             Casts.Add(new(++serial, rule, actor, spell.Location, 0, Activation(actor)));
-        if (rule.Kind == BozjaRuleKind.Exaflare && spell.ActionId is 23819 or 23972)
+        if (rule.Kind == BozjaRuleKind.Exaflare && spell.ActionId is 23819 or 23972 or 20831)
         {
             var (sin, cos) = Math.SinCos(spell.Rotation ?? 0);
-            var cloud = spell.ActionId == 23972;
-            var distance = cloud ? 5 : 8;
+            var (distance, count, shown, interval) = spell.ActionId switch
+            {
+                23972 => (5f, 4, 2, 1.1d),
+                20831 => (6f, 7, 3, 1.1d),
+                _ => (8f, 8, 4, .8d),
+            };
             Exaflares.Add(new(new(++serial, rule, actor, actor.Actor.Position, 0, Activation(actor)),
-                new(distance * (float)sin, 0, distance * (float)cos), cloud ? 4 : 8, cloud ? 2 : 4, cloud ? 1.1d : .8d));
+                new(distance * (float)sin, 0, distance * (float)cos), count, shown, interval));
         }
     }
 
@@ -91,7 +108,7 @@ internal sealed partial class BozjaEncounter
         var index = Exaflares.FindIndex(l => AlmostEqual(l.Cast.Origin, point.Value));
         if (index < 0)
         {
-            ++ExaflareErrors;
+            if (!IsCll4 && !IsRaiden) ++ExaflareErrors;
             return;
         }
         var line = Exaflares[index];

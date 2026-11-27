@@ -71,6 +71,7 @@ internal sealed partial class BozjaEncounter
 
     private bool PrimaryPhaseComplete(BozjaActor primary)
     {
+        if (IsCll1) return Cll1Complete(primary);
         if (primary.Destroyed || primary.Actor.Dead) return true;
         if (IsPyromancer) return !primary.Actor.Targetable;
         if (Definition.PrimaryOid == 0x2F06) return primary.Actor.Hp == 1;

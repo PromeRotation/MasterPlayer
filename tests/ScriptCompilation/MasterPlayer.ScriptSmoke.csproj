@@ -46,6 +46,23 @@
     <Compile Include="NativeDungeonReplayAlbeleo.cs" />
     <Compile Include="NativeDungeonReplaySkirmishes.cs" />
     <Compile Include="NativeDungeonReplayPyromancer.cs" />
+    <Compile Include="NativeDungeonReplayCll1.cs" />
+    <Compile Include="NativeDungeonReplayCll3.cs" />
+    <Compile Include="NativeDungeonReplayCll4.cs" />
+    <Compile Include="NativeDungeonReplayArt.cs" />
+    <Compile Include="NativeDungeonReplayOwain.cs" />
+    <Compile Include="NativeDungeonReplayRaiden.cs" />
+    <Compile Include="NativeDungeonReplayVirtue.cs" />
+    <Compile Include="NativeDungeonReplayOzma.cs" />
+    <Compile Include="NativeDungeonReplayIrminsul.cs" />
+    <Compile Include="NativeDungeonReplayArachne.cs" />
+    <Compile Include="NativeDungeonReplayDeathgaze.cs" />
+    <Compile Include="NativeDungeonArenaExport.Arachne.cs" />
+    <Compile Include="NativeDungeonReplayAllianceTrash.cs" />
+    <Compile Include="NativeDungeonReplayAllianceRhalgr.cs" />
+    <Compile Include="NativeDungeonReplayAllianceArtillery.cs" />
+    <Compile Include="NativeDungeonReplayLightArtillery.cs" />
+    <Compile Include="NativeDungeonReplayAllianceStandard.cs" />
     <Compile Include="NativeDungeonReplayZadnor.cs" />
     <Compile Include="NativeDungeonReplayZadnorBurn.cs" />
     <Compile Include="NativeDungeonReplayZadnorGrave.cs" />
@@ -299,6 +316,7 @@
     <Compile Include="NativeDungeonReplayCrescentFates.cs" />
     <Compile Include="ReplayPartyCaptureRegression.cs" />
     <Compile Include="NativeDungeonArenaExport.cs" />
+    <Compile Include="NativeDungeonArenaExport.Ozma.cs" />
     <None Include="../Fixtures/CastrumAbania/abania-224618.json" Link="Fixtures/CastrumAbania/abania-224618.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" Link="Fixtures/PilgrimsTraverse/pt99-blaze-215425.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" Link="Fixtures/PilgrimsTraverse/pt10-leafmash-114707.json" CopyToOutputDirectory="PreserveNewest" />

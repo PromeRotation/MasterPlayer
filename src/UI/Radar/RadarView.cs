@@ -7,6 +7,7 @@ using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using MasterPlayer.Settings;
 using MasterPlayer.Mechanics.Crucible;
+using MasterPlayer.Mechanics.Dungeons;
 using PromeRotation.Helpers;
 using MasterPlayer.Spatial.Geometry;
 using MasterPlayer.Spatial.SafeZone;
@@ -379,9 +380,15 @@ public sealed class RadarView
         }
 
         var fillColor = ImGui.GetColorU32(fill);
-        if (geometry is PolygonRegionGeometry region)
+        var triangles = geometry switch
         {
-            foreach (var triangle in region.FillPolygons)
+            PolygonRegionGeometry region => region.FillPolygons,
+            AllianceArenaGeometry alliance => alliance.FillPolygons,
+            _ => null,
+        };
+        if (triangles != null)
+        {
+            foreach (var triangle in triangles)
             {
                 ProjectInto(triangle, _projectedA);
                 canvas.FillPolygon(_projectedA, fillColor, unclipped);

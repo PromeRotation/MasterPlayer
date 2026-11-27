@@ -385,3 +385,146 @@ CE32最终验证前缀 `native-bozja-robots-20261125-`：model07为352相关场�
 - 真实源Feed oracle显式补ReplayFeedAdapter旧转换丢失的FateId/IsSpell；Ability不得被夹具强制改成Spell。不修改旧桥，不宣称旧桥输入链等价。伤害预测无虚构输出，回放不持PR执行请求。
 
 证据前缀`.tmp/halatali-verify/native-pyromancer-20261125-`：model06=498 PASS，build02=0错4既有Crucible警告，replay03=15 PASS，replay04=168 PASS，catalog01=1860行首PASS，均exit0。实际DLL包含六组件八动作、真实solver、计划选敌、机制开关、逆Seek、owner、回放禁执行及Host Zone互补显示。失败历史保留：model02同帧重绑夹具漏OpCombat；model03静态Settings缺Svc服务；model04真实wipe更新差异后修生产；model05旧adapter强制Spell后修oracle。replay01跨Seek持有已清字典、replay02源Config缺默认节点，均按真实生命周期补夹具而未降断言。build01本次nullable警告已修，最终仅4既有警告。备份`.tmp/bozja-20261125-backup/pyromancer/start/`及`registration/`。
+
+
+## CLL1 布里欧纳克／第四军团飞行魔导装甲
+
+源目录 `MechanicRuntime/Upstream/Modules/Shadowbringers/Foray/CastrumLacusLitore/CLL1Brionac4thLegionHelldiver/`，生产 `BozjaCll1Catalog`、`BozjaCll1State`、`BozjaEncounter.Cll1*`，复用南方入口。客户端 BNpcName9436「布里欧纳克」、CFC735↔T920、46枚举动作的实际行及 CastTimeExtra 全零已核；20950/20952空客户端名称保留，不推断缺表。13 OID 的BNpcBase行存在不等于独立证明OID到名称映射。
+
+构造 DetermineArena 加十四阶段组件顺序：BossHealths、ChainCannon、OrbsAOE、Magnetism、ElectricAnvil、Voltstream、FalseThunder、WildCharges、LightningShower、CommandSuppressiveFormation、SurfaceMissile、MRVMissile、MagitekMissiles、InfraredBlast。源每组件独立Created→当前Spell→Tether→60槽冷重演，热Player/Pet过滤与原Party提交保持既有输入合同，不补造已丢失Icon或历史Effect。
+
+- Bottom中心(80,-179.41)，半宽29.58/半高24.59；Top中心(80,-222)，半宽29.5/半高14.5。DetermineArena只在绘图切场。Framework先缓存旧场地的导航、边界与伤害，再由实际打开的视图切场，显示及公开文字使用新场地；额外事件Render不再推进。缓存带Encounter/LoadVersion/Viewer身份，禁用、无导航、换owner时完整失效。全视图关闭不切，任一世界/Overlay打开可切；构造期只画场地、不导航。
+- 输入不按上下场过滤。上场只输出Orbs、ElectricAnvil、Voltstream、FalseThunder、LightningShower；下场只输出Chain、Wild、Command、Surface、MRV、Magitek、Infrared。HP0本身不结束；SkyArmor全部Dead/Destroyed、原主BossDead/Destroyed且缓存原HellDiver为空或Dead/Destroyed才结束。HellDiver在阶段完成检查后UpdateModule首次缓存，不能由底Boss独自拉起。主Boss同ID缺失一帧后重绑保留state与原HellDiver引用。
+- Enemies按首次查询才建立原Actor列表，BossHealths/Infrared构造分别先取HellDiver/Tunnel；Created追加、Destroyed移除。Dictionary空槽复用后的首次顺序有真实反例，不能构造期统一提前缓存。
+- Chain20985锁Loc/rot/钟，60×5；20985/20986实际Effect按当前位置逐轴≤.1找首项，累计七次才删。Finish、超时和caster身份不替代实际消费。
+- Orb早期Created产生Now+11秒预告；EnergyGeneration计数超过2后的Created只留原Actor，后续20949/20953/FalseThunder取当时位置产生11秒预告；PoleShift11.9秒交换R12与5–20环。20945/20946任意Finish清AOE及存Orb列表。锁点、原引用移动及重复历史保留。
+- Magnet124只置位/关联原目标，Icon162/163与231/232或Tether21才初始化；八槽数组保留源越界合同。换极连线交换出生锁点，Now+8.2秒，已初始化不被后Icon重算；仅有bit时20950/20952 Effect清Sources/Poles。冷Target0仍置bit；冷Actor先于Orb时不追补关联。忽略真实免疫1209；向内min(30,length)，向外30，零向量无位移。
+- Magnet向内SDInvertedCircle35、向外SDInvertedRect均按真实旧Host直接Goal转换，不能走网格补集。专用模板分离raw SDF与Host二次归一化居中矩形；两者分别逐点对照真实源/ConvertForbiddenZone。
+- Wild20971/20977分别全宽6/10、未量化delta算长度和方向、量化原点；显示Safe但Risky=true，提示任一安全矩形满足即可。导航是倒置矩形Intersection，任一相关Finish删除全局首项，不按caster。实际DLL用三条并行矩形得到真实采样及solver；窄安全线的密补集可被既有采样65%覆盖率门槛拒绝，不补造Goal或宣称总有Danger。
+- FalseThunder20943/20942严格输出首钟+1秒以内前缀，遇首个失败停止；99项源排序/任意Finish按casterID删首。普通组件保watch Finish，Voltstream只显示前3项。单体/全屏诊断钟、原caster及活Party mask复用公共层。
+- Infrared121首回调先父类分边，再缓存Bottom的OID0原玩家，故首线可能反向；重复tuple保留，Untether按回调当时重新分边删首并直接清bit。冷Target0仍缓存玩家并锁Now+3.7秒。1255真实状态槽维护Fire位；20974仅清Activation，保tethers/players/fire。取首原Tunnel边缘到敌人半宽.5倒置矩形Intersection；Effect后的default钟、线仍保留，真实Host密补集采样空输出有分层断言。
+- 模块精确目标优先级仅诊断，旧Host无PotentialTargets到PR执行消费者，不扩自动目标控制。ARR/MP回放不发PR/GreenMove/朝向/ACR；停止、开关、完成及逆Seek释放本owner全部AOE、线、Goal、危险区和边界。
+
+### CLL1 验证证据
+
+唯一日志前缀 `.tmp/halatali-verify/native-cll1-20261125-`：
+
+| 日志 | 结果 |
+|---|---|
+| model06 | 519相关场景PASS/0FAIL，含21个CLL1专项；exit0 |
+| build02 | 0错误、4既有Crucible警告，10.69秒；exit0 |
+| replay02 | 17个CLL1专项加3公共PASS；exit0 |
+| replay03 | 南方/Hydatos/CLL2/CLL1共185 PASS；exit0 |
+| catalog01 | 无筛选1877行首PASS（1868测试加9汇总），296独立脚本编译；exit0 |
+
+DLL SHA256 `8d556306e1787f076a9d308ed0ebd49958f29b924d91f66f3b7812f79d34665f`。模型使用真实MechanicSession/Feed及组件作测试oracle；生产无旧桥消费。最终三方只读复核确认Goal转换、懒缓存、冷Target0与prepared失效修补闭合。
+
+失败日志保留：model01揭示Wild的Risky真实差异后修生产；model02为冷Player先于Orb的夹具假设错误，改成源实际不追补并增加后续真实事件；replay01为把Line当AOE的注册表错误，改查GetLines并保留Goal断言。导航密补集按真实采样限制分开验证，不降低raw oracle断言。未部署，SDK11与游戏实时采样/像素/实际执行仍待验。
+
+源文件SHA256：
+
+- `ChainCannon.cs`：`5f068d9bb74dcefb05aab9df2420480d7e91096ea9684b77ca7c2d457646bab1`
+- `CLL1Brionac4thLegionHelldiver.cs`：`fae6380477bce5cb31b83b477c8d9dee8a2679a3adc354482ad50c9f56def3ce`
+- `CLL1Brionac4thLegionHelldiverEnums.cs`：`7ea55eddb620748fca58332f486ed26b251a237c278e420f140cec46e4cde6de`
+- `CLL1Brionac4thLegionHelldiverStates.cs`：`eb5a43e9672f93ff79a341c4364223ab5a09b85690362bccd08559d7f533bfe3`
+- `InfraredBlast.cs`：`7d57aefbc2f5faaa9173451ed6bf6d2aa754da90d238df4ad77293ffb7ce822d`
+- `OrbMagnetism.cs`：`782ee59b115cb55e7f5a4ef913c0a0a6937d27b8b80bc286ff1fcdf97bc27144`
+- `WildCharges.cs`：`134047d775a1c91036727b2734c16d0d842308fde1e5a10b85b9fcf9020747cc`
+
+
+## CLL3 阿德拉梅里克
+
+源目录 `MechanicRuntime/Upstream/Modules/Shadowbringers/Foray/CastrumLacusLitore/CLL3Adrammelech/`，生产 `BozjaCll3Catalog`、`BozjaEncounter.Cll3`，复用南方入口1.15.0及公共输入/输出。客户端BNpcName9442「阿德拉梅里克」、CFC735↔T920、43唯一AID存在及CastTimeExtra全零已核；20372空名和21464客户端日文名保留。11个BNpcBase及3个EObj行不等于OID到名称的独立映射。
+
+单TrivialPhase十四组件依次为ArenaChange、HolyIV、WaterIV1、WaterIV3、BlizzardIV、FireIV、Flare、BurstIITornado、Shock、WarpedLight、ThunderIV、AeroIV、Twister、StoneIV。原主Boss可选中且战斗即拉起，无距离门槛，HP0/Dead/Destroyed结束。保留组件优先Created→当前Spell→真实60槽冷输入、热Player/Pet过滤、原Actor代际及旧Party提交顺序。
+
+- 初始R29.5的48边减两门，真实bbox中心(80,-606.1005)；缩场R25中心(80,-606)。场地由源运行库导出，不用名义中心覆盖真实中心。Holy20374未缩场时替换25–30环，锁原中心及Finish+1.2；Created墙只缩场、不清环。缩场后Holy不新建也不清旧预告；冷墙在施法者前后保留不同结果。Holy普通伤害诊断仍由独立组件实际Finish消费。
+- Water20556/20356分两个独立原caster列表，重复Start追加，watched Finish按ID删首。各列表首caster的SDInvertedCircle13直接Goal不检查免疫；位移Away12、逐列表顺序、零向量不动、不止墙。免疫Expiry严格大于Activation才有效，真实状态槽Gain/Lose顺序维护历史，slot59→0先Gain后Lose会清历史；不按物理剩余状态补算。提示只检查落点越场，不扩大为查危险AOE。
+- Fire21596/20554填全部64槽，钟Finish，窗口3；Ice21595/20555填独立Move槽，钟Finish+2，窗口4。Ice只在Activation<Now清、等钟保留；Fire无Update/Finish清。两者只对960 Pyretic Lose清当前原Party槽。保留源PrevPosition自比较及Y前帧比较，有限XZ移动不会改变风险；Feed前保存old position、无新输入Framework更新previous。Fire风险读取原Player Actor.Cast，不借NativeNpc过滤结果。
+- 诊断最早钟优先，同钟保先激活Blizzard。Framework在Hint清死槽前缓存完整mode文字和Encounter/LoadVersion/Viewer身份；普通事件Render保留该次发布及倒计时，下一Framework更新。旧DrawHost捕获Hint后再次取公开Hint，死槽首次查询产出后清除；公开二次查询已无该Hint。双视图关闭不消费Hint，死亡后复活再绘制可恢复保留槽；非Party视角不发布水线/提示/Goal/边界。诊断不新增停手或移动策略。
+- Warped六动作锁量化原点，以未量化delta算长度/方向，全宽3；第99项排序、第100项不重排；始终显示，Activation-1<=Now才Risky。任一该组watched Finish按casterID删首；保留raw普通AOE列表顺序与危险钟。
+- Stone两组三阶段共用现有Concentric缓存：20353–55/20359–61映射stage0/1/2；首Start锁Loc及Finish，Finish按stage和逐轴≤1首位置匹配，可跨caster，已知错stage仍计数，下一钟Now+2；Update才刷新发布缓存。重复序列、跨caster、(1,1)边界及ULP超界均对照源。
+- Twister lazy原Actor列表包括Dead/不可选中，Destroyed删除，动态位置/朝向；显示R6.5 L5胶囊，导航L2.5/5/10/15对应Now+1.1/3/10/MaxValue，另R6.5硬障碍。公共Pheromones输出从模板实际Radius/Length取值，原CE13/Whirlwind消费者保持原参数。
+- ArcaneSphere marker没有旧Host执行消费者，本次不新增选敌。显示、导航、诊断及执行分别验证；回放不发PR/GreenMove/面向/ACR，停止/开关/完成/逆Seek撤本owner全部输出。
+
+### CLL3 验证证据
+
+唯一日志前缀 `.tmp/halatali-verify/native-cll3-20261125-`：
+
+| 日志 | 结果 |
+|---|---|
+| model07 | 545相关场景PASS/0FAIL，含26个CLL3专项，exit0 |
+| build03 | 0错误、4既有Crucible警告，12.05秒，exit0 |
+| replay05 | 23个CLL3专项加3公共PASS，含同实例真实ReplayWorld Apply/Framework/普通Render，exit0 |
+| replay04 | CLL3/CLL1/南方/Hydatos/CLL2/札杜诺水晶及骑兵237 PASS，exit0 |
+| catalog01 | 无筛选1900行首PASS（1891测试及9汇总），296入口独立编译，exit0 |
+
+最终DLL SHA256 `08af2620a2609e0958a34795f0a0d81f6f07b39cfa3ba044a047daf1fdd1dbc8`。三个只读复核确认前帧高度、状态槽oracle、死槽两次查询、非Party及Framework诊断发布修补；最后普通Render场景跨F1倒计时舍入边界仍保原字符串。真实solver不接受least-danger fallback；ShockR35覆盖场地时不宣称脱险，实际Finish撤区后验证solver。
+
+失败日志保留：export01传错主DLL，export02用MechanicRuntime DLL成功；model01状态构造参数顺序错误，model02–03客户端名字/Player SubKind及南方数量夹具错误，model06在Move窗口开启前断言，改时间入窗口并保风险断言；replay01误读AoePreview.Shape，改真实Geometry；replay02缺生产JSON选项变量，补实际ReplayJson.Options。上述均保留失败证据；没有放宽时钟容差、raw形状/SDF或风险断言。生产修补由源运算和真实执行反例支撑。根SDK11与游戏实时采样/像素/执行仍未验，未部署。
+
+源文件SHA256：
+
+- `ArenaChange.cs`：`03596eca9da807194995e386dece9b0b2aebc23021eeb9e380824c2c93dc8ee1`
+- `BlizzardIVFireIV.cs`：`3c56208933304cf989c7d83b1d7e8f8151c395584be0a191ccab2da46050c3de`
+- `CLL3AdramelechEnums.cs`：`b5fe5d51ff152b3d48422c0fb1167a49f0ebd7f55978f0ab5eabd647c538e6b0`
+- `CLL3Adrammelech.cs`：`a2ee94264dadbd107514b785536ee533c8cc3655d82a6c16cb5a6888393ca323`
+- `CLL3AdrammelechStates.cs`：`15137d39b00cd3551589b18272401356e421a7998cef09d3f9ace613366ec0a0`
+- `StoneIV.cs`：`356fc71905cdea8c3d053028e2d6abab1effab79bbe71709f28fad2843cef363`
+
+
+## CLL4 达温原生迁移（2026-11-25）
+
+源类型为 `CLL4Dawon`，目录内主类/枚举/状态文件仍名 CLL3Dawon；精确ownership只覆盖该类型，不接管Bozja Zone。CFC735双向对应Territory920，BNpcName9452为达温，主OID2EBD、Lyon2EBB。45个唯一AID均在本机客户端存在且ExtraCastTimeMS=0；17个源OID中9个BNpcBase存在，8个EventObj仅在EObj存在，不把它们断言为BNpcBase或OID到NameID映射。枚举及Lumina程序集哈希记录于下文。单TrivialPhase激活21组件，普通主Boss死亡/Destroyed/HP0完成，不等待Lyon，不补造目标优先级的执行消费者。
+
+生产入口沿用BozjaSouth 1.16.0，十一CE、四攻城战与三Skirmish共157实际组件。Catalog index40；新 `BozjaEncounter.Cll4.cs` 只保存机制语义，公共BozjaScript负责几何、诊断与solver/owner接入。源BMR仅用于测试oracle。
+
+- 激活顺序为ArenaChange、Pentagust、FervidPulse、FrigidPulse、SwoopingFrenzy、MoltingPlumage、Scratch、CrackleHiss、RipperClaw、SpikeFlail、LeftRightHammer、VerdantScarletPlume、Obey、TasteOfBlood、NaturesBlood、NaturesPulse、TwinAgonies、TheKingsNotice、HeartOfNature、WindsPeak、WindsPeakKB。冷热均逐组件、逐Actor回放Created→Start→真实状态槽；真实Finish不会被Effect或预测到期替代。
+- Dawon/Lyon四个真实场地由既有arena exporter确定性导出，保留旧Albeleo/Adrammelech数据。Dawon初始96边R34.5减门，默认R30；Lyon初始48边R24.5，默认R20。场地切换是背景绘图副作用：Framework先保存旧Navigation、Damage、Facing、Boundary及Encounter/LoadVersion/Viewer，再按当前视角切换显示；下一Framework才采用新AI场地。普通Render不切场，双视图关闭不切场，非Party不发布输出；禁用/换代/切人/Stop清缓存。实际DLL同实例Apply验证双向凝视首帧旧Facing/新眼睛、下一帧更新，并从非空Facing状态验证禁用和重新启用。
+- Dawon墙0x1EB03C强制Dawon默认Bounds/Center，却不改Dawon/Lyon flag；Lyon墙0x1EB02F只在Lyon gate时换Bounds。Molting20858未墙时显示30–35环，Finish+.2；Lyon20836未墙时显示20–25环，Finish+1.2；任一墙Created清预告。返回Dawon直接默认场地，不恢复初始场地。
+- 标准AOE锁定原点/方向并保普通watched Finish；Frigid两场可见。Molting/Scratch/TwinAgonies/HeartOfNature保原NPC动态钟/真实Party mask，公开damage按源Normalize的Activation排序。源仅记录诊断，不新增治疗或选敌策略。
+- Hammer四动作20874/20879/20877/20876保插入顺序与原casterID删首。首钟+1.9为严格门槛：只有Activation<deadline才Risky，尾钟>deadline才把前组染Danger，颜色不恢复。查询先更新整组再返回任何项，短路取First仍保同组后项颜色；Effect不删，普通Finish仅删对应首项。
+- Plumes早期Created绿3–12环/红R10，位置量化、Now+10.5。Flutter20880首次惰性建立Verdant后Scarlet的原Actor列表，不筛Dead；以spell方向和源double SinCos转float投影判断30×15矩形，命中后沿方向推28、量化、Now+8.5追加，不清旧项。真实CLR边界点与ULP外点差分通过。任意Burn20865或Explosion20866 Finish清全部预测且first永久false；Effect/Destroyed不清已锁预测，后续Flutter仍使用原列表并接纳晚Created。
+- Obey由Created十字1EB03E/环1EB03D入队：首轮空首Now+11.5、出队后空首Now+13.8、后项首钟+5.1*count；十字方向取量化新点减Boss/前队尾。20863/20864任意NPC真实Effect弹首，Destroy不删。显示一十字，导航拆两矩形；公共BozjaZone补齐原始SDCross距离，保double三角转float和比较运算序。
+- Blood20831按caster当前位置及spell方向创建R4、步6、7击、显示3、1.1秒序列；20831/20832 Effect使用实际来源位置逐轴≤1首匹配推进，不能使用包TargetPosition，也不要求同caster。Finish不推进。发布缓存future全体先于imminent，不因纯时间流逝重建。实际DLL同时验证raw next、Left=6及量化发布位置顺序。
+- Pulse20833/34/35分别stage0/1/2，Finish按Loc首匹配，已知错stage仍计数、下一钟Now+1.5、Update发布缓存；与CLL3共享实现只参数化下一钟，不统一不同消费语义。
+- WindsPeakKB实际消费20847而非枚举另列20848：Away10、可免疫、无墙停，首caster倒置Circle10直接Goal不查免疫；个人提示只检落点越场。真实slot59 Gain/Lose、严格Expiry及线/Goal分离已验。TheKingsNotice采用父类默认10000范围，普通watched Finish按原规则清眼，回放仅输出面向规划。
+
+### CLL4 验证证据
+
+唯一日志前缀 `.tmp/halatali-verify/native-cll4-20261125-`：
+
+| 日志 | 结果 |
+|---|---|
+| export01 | 真实MechanicRuntime DLL导出四场地，exit0 |
+| model04 | 586相关真实场景PASS/0FAIL，含41个CLL4专项，exit0 |
+| build02 | 0错误、4既有Crucible警告，12.89秒，exit0 |
+| replay06 | 35个CLL4专项加3公共PASS，最终同实例非空Facing禁用缓存补验，exit0 |
+| replay05 | CLL4/CLL3/CLL1/南方/Hydatos/CLL2/札杜诺水晶及Hashmal/DAL3联合288 PASS，exit0 |
+| catalog01 | 无筛选1935行首PASS（1926测试及9汇总），296入口独立编译，exit0 |
+
+最终DLL SHA256 `3175ca18391cec1fec151e5136b941fa1f2c6ae857deb9e8d4cd50f63c056e7c`。源差分按事件比较原始几何/SDF、激活钟、列表、颜色/risk、damage、Hints、位移与场地；源oracle显式恢复录制IsSpell和真实SlotIndex，生产不使用BossModule/MechanicSession。真实solver拒绝least-danger fallback；ARR/MP回放无PR面向/选敌/ACR/GreenMove，机制停用/完成/逆Seek/Stop释放本owner。三个独立只读审查闭合Hammer短路更新、Flutter边界、旧AI面向和damage排序。公共Cross/Earth/Exaflare及preparedArena消费者通过联合和全目录验证。
+
+失败历史保留：model01/02含源Draw调用ImGui、Cross原始SDF缺分支、Flutter同cast未重新Start、同ID改Expiry不发Gain及分步AddSeconds夹具；model03先通过583项后新增独立反例修Hammer/Flutter，再由model04验证。replay01/02的Blood显示预期漏坐标量化，诊断确认Left/原始位置正确；replay03用未来StartedAt制造异钟但raw NPC时钟会钳零，两个预测同钟，改为在下一真实Frame追加第二cast后保严格先后断言。没有放宽时钟/几何容差、数量、风险或生命周期断言。build01早于最后生产修补，不作为最终DLL证据。SDK10.0.303隔离，根SDK11和游戏实时采样/像素/执行待验，未部署。
+
+客户端核表程序集SHA256：Lumina `67da75cefa468277972c8c8c27264b1d276fe2047213c223d1ecdced435d4e05`，Lumina.Excel `af1ac061ed0b5378a180113cf91969cd40c3b90a25e526d1fc3d35fc0b3ca5fa`。
+
+源文件SHA256：
+
+- `Adds.cs`：`3d54dc649cd564089297623c9f4b40b15ae550ab9f9c60973bc3baf55dc086b2`
+
+- `ArenaChange.cs`：`7d2169d63ce729be303a8c9746abb8920687b3ec9c571cf873f6163bbb352173`
+
+- `CLL3Dawon.cs`：`216295cad88f1626bd60b85b96f95d64f7d9aeb9ed015c579c381c71e381f7d9`
+
+- `CLL3DawonEnums.cs`：`0e1e5700396d08e1d3b1303442fbc9ef7a059d1451df1887434c668aca38695f`
+
+- `CLL3DawonStates.cs`：`25efcd956011a65c28419bfc93ca98555ab36e9def950f94653e7f8aaedc7b6c`
+
+- `NaturesBlood.cs`：`c7aaf759b941bc1490bdb6bca8bcc2d72b9d43be7f6e2f0edd6054e31674ca35`
+
+- `NaturesPulse.cs`：`bc6c271322beb486fb479ed4ff7e8f166a56f3da9b88a8fbf184cb8c2d0e0d9c`
+
+- `Obey.cs`：`5973b108c7d81d1a837a296abf5d458934218c728c9b1eadca77e04a90900478`
+
+- `Plumes.cs`：`c88f326047e8441871d9cefe3e08db78b38089a896985e86cfa0ea2b174b6f1f`

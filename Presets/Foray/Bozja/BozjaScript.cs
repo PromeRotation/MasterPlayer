@@ -1,6 +1,7 @@
 using System.Numerics;
 using ECommons.DalamudServices;
 using MasterPlayer.Mechanics.Dungeons;
+using MasterPlayer.MechanicHost;
 using MasterPlayer.Mechanics.Quests;
 using MasterPlayer.Replay;
 using MasterPlayer.Scripting;
@@ -14,7 +15,12 @@ namespace MasterPlayer.Mechanics.Bozja;
 public abstract class BozjaScript : MasterPlayerScript
 {
     public override ScriptTimeline? GetTimeline()
-        => encounter?.PhantomTimeline?.Capture() ?? encounter?.DahuTimeline?.Capture();
+        => encounter?.ArtTimeline?.Capture() ?? encounter?.OwainTimeline?.Capture()
+            ?? encounter?.RaidenTimeline?.Capture()
+            ?? encounter?.VirtueTimeline?.Capture()
+            ?? encounter?.LionsTimeline?.Capture()
+            ?? encounter?.RhalgrTimeline?.Capture()
+            ?? encounter?.PhantomTimeline?.Capture() ?? encounter?.DahuTimeline?.Capture();
     private readonly BozjaRegion region;
     private BozjaEncounter? encounter => region.Selected;
     private BozjaZone[] preparedBurnNavigation = [];
@@ -30,6 +36,16 @@ public abstract class BozjaScript : MasterPlayerScript
     private IGeometryShape? boundarySource;
     private DateTime nextScan;
     private bool needsFrameworkScan;
+    private bool frameworkDrawing;
+    private BozjaZone[] preparedArenaNavigation = [];
+    private BozjaDamage[] preparedArenaDamage = [];
+    private float? preparedArenaFacing;
+    private IGeometryShape? preparedArenaBoundary;
+    private Vector3 preparedArenaCenter;
+    private float preparedArenaRadius;
+    private (BozjaEncounter Encounter, long Version, ulong Viewer)? preparedArenaOwner;
+    private string? preparedStayModeText;
+    private (BozjaEncounter Encounter, long Version, ulong Viewer)? preparedStayModeOwner;
     private ReplayActorState[] sampledActors = [];
     private long observedVersion = -1;
     public bool EncounterActive => encounter?.Active == true;
@@ -40,9 +56,13 @@ public abstract class BozjaScript : MasterPlayerScript
     internal float? PlannedFacing { get; private set; }
     internal ulong PlannedTargetId { get; private set; }
 
-    protected BozjaScript(uint territory = BozjaCatalog.TERRITORY)
+    protected BozjaScript(uint territory = BozjaCatalog.TERRITORY) : this(territory, null)
     {
-        region = new(territory);
+    }
+
+    protected BozjaScript(uint territory, string? encounterKey)
+    {
+        region = new(territory, encounterKey);
     }
 
     public override IEnumerable<string> GetMechanisms() => region.Encounters.Select(e => e.Definition.Name).Append("面向控制");
@@ -92,11 +112,26 @@ public abstract class BozjaScript : MasterPlayerScript
         }
         reportedTimeError = null;
         PrepareNavigation();
-        Render();
+        frameworkDrawing = true;
+        try { Render(); }
+        finally { frameworkDrawing = false; }
     }
 
     private void PrepareNavigation()
     {
+        preparedStayModeText = null;
+        preparedStayModeOwner = null;
+        if (encounter is { Active: true } cll3 && (cll3.IsCll3 || cll3.IsArt || cll3.IsOzma) && CurrentPlayer is { } perspective
+            && IsMechanismEnabled(cll3.Definition.Name)
+            && cll3.Party.Any(p => p.EntityId == perspective.Id)
+            && cll3.Actors.TryGetValue(perspective.Id, out var cll3Viewer))
+        {
+            preparedStayModeOwner = (cll3, cll3.LoadVersion, perspective.Id);
+            if ((cll3.Cll3SpecialMode(cll3Viewer) ?? cll3.ArtSpecialMode(cll3Viewer) ?? cll3.OzmaSpecialMode(cll3Viewer)) is { } mode)
+                preparedStayModeText = mode.Activation > CurrentTime
+                    ? $"{mode.Mode}：{(mode.Activation - CurrentTime).TotalSeconds:F1}s 后生效"
+                    : $"{mode.Mode}：生效中";
+        }
         if (encounter is { Active: true } model && CurrentPlayer is { Dead: false } player
             && IsMechanismEnabled(model.Definition.Name) && model.Party.Any(p => p.EntityId == player.Id)
             && model.Actors.ContainsKey(model.SourcePlayerId) && model.Actors.TryGetValue(player.Id, out var viewer))
@@ -183,7 +218,9 @@ public abstract class BozjaScript : MasterPlayerScript
         }
         if (!update) needsFrameworkScan = true;
         sampledActors = actors;
-        region.Synchronize(actors, party, source, now, update, update ? FlushEvents : null, fate);
+        var cfc = region.Encounters.Any(e => e.IsOzma)
+            ? LiveWorldSampler.ResolveCfc((ushort)(ReplayWorld?.Territory ?? Svc.ClientState.TerritoryType)) : (ushort)0;
+        region.Synchronize(actors, party, source, now, update, update ? FlushEvents : null, fate, cfc);
         // Event sampling must not move the Framework deadline forward. A busy
         // zone can deliver events more frequently than the sampling interval.
         if (update)
@@ -208,19 +245,37 @@ public abstract class BozjaScript : MasterPlayerScript
         var player = CurrentPlayer;
         var viewer = player == null ? null : encounter?.Actors.GetValueOrDefault(player.Id);
         if (viewer != null) encounter!.PrepareRobotOutputs(viewer);
-        var constructionDrawing = encounter?.HasConstructionDrawing == true && viewer != null
+        var constructionDrawing = (encounter?.HasConstructionDrawing == true || encounter?.Cll1 != null) && viewer != null
             && encounter.Party.Any(p => p.EntityId == viewer.Actor.Id)
             && MasterPlayerPlugin.Instance?.MechanicHost?.ActiveZoneModuleName == null;
         var enabled = encounter != null && (encounter.Active || constructionDrawing) && IsMechanismEnabled(encounter.Definition.Name)
             && timeError == null && (!encounter.IsRobots
                 || viewer != null && encounter.Party.Any(p => p.EntityId == viewer.Actor.Id))
             && (!encounter.IsSaunion || viewer != null
-                && encounter.Party.Any(p => p.Slot is >= 0 and < 64 && p.EntityId == viewer.Actor.Id));
+                && encounter.Party.Any(p => p.Slot is >= 0 and < 64 && p.EntityId == viewer.Actor.Id))
+            && (!(encounter.IsCll3 || encounter.IsCll4 || encounter.IsBaldesion || encounter.IsOzma) || viewer != null && encounter.Party.Any(p => p.EntityId == viewer.Actor.Id));
         var navigating = enabled && encounter!.Active && player is { Dead: false } && viewer != null
             && encounter!.Party.Any(p => p.EntityId == player.Id)
             && encounter.Actors.ContainsKey(encounter.SourcePlayerId);
         if (navigating && encounter!.FireNavigationError != null) navigating = false;
         if (navigating && encounter!.RobotNavigationError != null) navigating = false;
+        if (encounter?.UsesDrawnArena != true || !navigating) ClearPreparedArena();
+        if (encounter?.UsesDrawnArena == true && navigating && frameworkDrawing)
+        {
+            preparedArenaNavigation = encounter.NavigationForHost(viewer!);
+            preparedArenaDamage = encounter.DamageForHost(viewer!);
+            preparedArenaFacing = encounter.Facing(player!);
+            preparedArenaBoundary = encounter.HostArena;
+            preparedArenaCenter = encounter.Center;
+            preparedArenaRadius = encounter.SampleRadius;
+            preparedArenaOwner = (encounter, encounter.LoadVersion, viewer!.Actor.Id);
+        }
+        if (encounter?.UsesDrawnArena == true && (preparedArenaBoundary == null
+            || preparedArenaOwner is not { } preparedOwner || preparedOwner.Encounter != encounter
+            || preparedOwner.Version != encounter.LoadVersion || preparedOwner.Viewer != viewer?.Actor.Id)) navigating = false;
+        var navigationArena = encounter?.UsesDrawnArena == true ? preparedArenaBoundary : encounter?.HostArena;
+        var navigationCenter = encounter?.UsesDrawnArena == true ? preparedArenaCenter : encounter?.Center ?? default;
+        var navigationRadius = encounter?.UsesDrawnArena == true ? preparedArenaRadius : encounter?.SampleRadius ?? 0;
         var wanted = new HashSet<string>();
         var order = new List<string>();
         var publish = new List<Action>();
@@ -232,17 +287,21 @@ public abstract class BozjaScript : MasterPlayerScript
         }
         if (navigating)
         {
-            var center = encounter!.Center with { Y = player!.Position.Y };
-            if (boundary == null || boundary.Position != center || !ReferenceEquals(boundarySource, encounter.HostArena))
+            var center = navigationCenter with { Y = player!.Position.Y };
+            if (boundary == null || boundary.Position != center || !ReferenceEquals(boundarySource, navigationArena))
             {
-                boundarySource = encounter.HostArena;
-                boundary = boundarySource is CircleGeometry circle
-                    ? new CircleGeometry(center, circle.Radius)
-                    : new WorldPolygonGeometry(boundarySource.GetContours().Single()
-                        .Select(p => p with { Y = player.Position.Y }), center);
+                boundarySource = navigationArena!;
+                boundary = boundarySource switch
+                {
+                    CircleGeometry circle => new CircleGeometry(center, circle.Radius),
+                    AllianceArenaGeometry alliance => alliance.AtHeight(player.Position.Y),
+                    PolygonRegionGeometry region => region.AtHeight(player.Position.Y),
+                    _ => new WorldPolygonGeometry(boundarySource.GetContours().Single()
+                        .Select(p => p with { Y = player.Position.Y }), center),
+                };
             }
             runtime.Manager.SetArenaBoundary(boundary);
-            Preview("bozja/arena", boundary, outline: true);
+            if (!encounter!.UsesDrawnArena) Preview("bozja/arena", boundary, outline: true);
         }
         else
         {
@@ -258,7 +317,10 @@ public abstract class BozjaScript : MasterPlayerScript
         }
         BozjaZone[] navigation = [];
         if (navigating)
-            navigation = encounter!.IsBurn ? preparedBurnNavigation : encounter.NavigationForHost(viewer!);
+        {
+            if (encounter!.UsesDrawnArena) navigation = preparedArenaNavigation;
+            else navigation = encounter.IsBurn ? preparedBurnNavigation : encounter.NavigationForHost(viewer!);
+        }
         var keys = navigation.Select(z => z.Key).ToHashSet();
         foreach (var old in areas.Keys.Where(k => !keys.Contains(k)).ToArray())
         {
@@ -280,14 +342,16 @@ public abstract class BozjaScript : MasterPlayerScript
             }
             using var group = SafeZone.BeginDrawingGroup(zone.Component);
             var handles = new List<SafeZoneAreaHandle>();
-            foreach (var shape in zone.Convert(encounter!.Center with { Y = player!.Position.Y }, encounter.SampleRadius))
+            foreach (var shape in encounter!.ConvertNavigation(zone, navigationCenter with { Y = player!.Position.Y }, navigationRadius))
             {
                 var template = new DungeonShapeTemplate(shape);
                 SafeZoneAreaHandle handle;
                 if (zone.Obstacle) handle = SafeZone.AddObstacle(template, new StaticTransform(default, 0));
                 else if (zone.Goal) handle = SafeZone.AddPersistentSafeArea(template, new StaticTransform(default, 0), 1);
                 else handle = SafeZone.AddExactDangerSnapshot(template,
-                    new StaticTransform(default, 0), [new(zone.Activation, null, default)]);
+                    // BMR's default clock means immediate. A real publication
+                    // clock also permits the solver's preparation-time buffer.
+                    new StaticTransform(default, 0), [new(zone.Activation == default ? CurrentTime : zone.Activation, null, default)]);
                 if (!zone.Obstacle) SafeZone.SetNavigationOnly(handle, true);
                 handles.Add(handle);
             }
@@ -300,7 +364,38 @@ public abstract class BozjaScript : MasterPlayerScript
         MechanicHintsText = PredictedDamageText = null;
         if (enabled && encounter != null)
         {
-            var globalHints = encounter.GlobalHints().ToArray();
+            // Capture AI before DetermineArena's draw side effect. The old
+            // DrawHost queries its public text again after the drawing pass.
+            if (encounter.UsesDrawnArena && frameworkDrawing && viewer != null
+                && encounter.Party.Any(p => p.EntityId == viewer.Actor.Id)
+                && (MasterPlayerSettings.Instance.EnableRadar || MasterPlayerSettings.Instance.EnableRadarOverlay))
+            {
+                if (encounter.IsOzma)
+                {
+                    _ = encounter.Hints(viewer).ToArray();
+                    encounter.ObserveOzmaDrawing(viewer);
+                }
+                else if (encounter.IsCll1) encounter.ObserveCll1Drawing(viewer);
+                else if (encounter.IsOwain) encounter.ObserveOwainDrawing(viewer);
+                else if (encounter.IsArachne) encounter.ObserveArachneDrawing(viewer);
+                else encounter.ObserveCll4Drawing(viewer);
+            }
+            if (encounter.UsesDrawnArena && player != null)
+            {
+                var displayCenter = encounter.Center with { Y = player.Position.Y };
+                var displayArena = encounter.HostArena switch
+                {
+                    AllianceArenaGeometry alliance => (IGeometryShape)alliance.AtHeight(player.Position.Y),
+                    PolygonRegionGeometry region => region.AtHeight(player.Position.Y),
+                    _ => new WorldPolygonGeometry(encounter.HostArena.GetContours().Single()
+                        .Select(p => p with { Y = player.Position.Y }), displayCenter),
+                };
+                Preview("bozja/arena", displayArena, outline: true);
+            }
+            var cll3Drawing = !(encounter.IsCll3 || encounter.IsBaldesion || encounter.IsOzma)
+                || MasterPlayerSettings.Instance.EnableRadar || MasterPlayerSettings.Instance.EnableRadarOverlay;
+            var globalHints = cll3Drawing
+                ? encounter.GlobalHints().Concat(viewer == null ? [] : encounter.VirtueDiagnostics(viewer)).ToArray() : [];
             MechanicHintsText = globalHints.Length == 0 ? null : string.Join("；", globalHints);
             var visible = encounter.Visible(viewer).ToArray();
             var towerViews = viewer == null ? [] : encounter.TowerViews(viewer).ToArray();
@@ -347,13 +442,18 @@ public abstract class BozjaScript : MasterPlayerScript
                         if (cast.Drawable) Preview($"bozja/steel/{bait.Generation}/background",
                             cast.Shape.Resolve(cast.Origin with { Y = player!.Position.Y }, cast.Rotation, null));
                     }
+                if (rule.Kind == BozjaRuleKind.CircleBait && viewer != null)
+                    foreach (var (cast, outline) in encounter.CircleBaitViews(viewer, rule).Where(v => !v.Outline))
+                        Preview($"bozja/virtue/wind/{cast.Generation}/background",
+                            cast.Shape.Resolve(cast.Origin with { Y = player!.Position.Y }, 0, null));
                 foreach (var aoe in visible.Where(a => a.Cast.Rule == rule))
                 {
                     var cast = aoe.Cast;
+                    if (cast.Shape == null && encounter.IsVirtue) continue;
                     if (!cast.Drawable) continue;
                     var shape = cast.Rule.Kind == BozjaRuleKind.SeekerBlade
                         ? encounter.SeekerBladeDrawing(cast, player?.Position.Y ?? 0)
-                        : cast.Shape.Resolve(cast.Origin with { Y = player?.Position.Y ?? 0 }, cast.Rotation, null);
+                        : cast.Shape!.Resolve(cast.Origin with { Y = player?.Position.Y ?? 0 }, cast.Rotation, null);
                     Preview($"bozja/aoe/{cast.Generation}", shape,
                         safe: cast.Rule.Safe || aoe.SafeColor, color: aoe.Danger ? new(1, 0, 0, 1) : null);
                 }
@@ -362,7 +462,7 @@ public abstract class BozjaScript : MasterPlayerScript
                         Preview($"bozja/burn/tracking/{cast.Generation}/background",
                             cast.Shape.Resolve(cast.Origin with { Y = player!.Position.Y }, cast.Rotation, null));
                 if (rule.Kind == BozjaRuleKind.Tower)
-                    foreach (var tower in towerViews.Where(t => t.Background))
+                    foreach (var tower in towerViews.Where(t => t.Background && (!encounter.IsVirtue || t.Cast.Rule == rule)))
                         Preview($"bozja/tower/{tower.Cast.Generation}/background", new CircleGeometry(tower.Cast.Origin with { Y = player?.Position.Y ?? 0 }, BozjaEncounter.TowerRadius(tower.Cast)));
                 if (rule.Kind == BozjaRuleKind.LightningRod)
                     foreach (var mine in mineViews.Where(m => m.Background))
@@ -401,7 +501,17 @@ public abstract class BozjaScript : MasterPlayerScript
             {
                 // The old host captures AI diagnostics before AddHints clears a dead slot.
                 var bombActivation = encounter.DiabloBombActivation(viewer);
-                var hints = encounter.Hints(viewer).ToArray();
+                // Ordinary event renders retain the Framework AI publication,
+                // including its countdown, after drawing has cleared dead slots.
+                var cll3ModeText = preparedStayModeOwner is { } modeOwner
+                    && modeOwner.Encounter == encounter && modeOwner.Version == encounter.LoadVersion
+                    && modeOwner.Viewer == viewer.Actor.Id ? preparedStayModeText : null;
+                // Capture queries StayMove before DrawHost queries its public
+                // hints again. With both views asleep neither query runs.
+                if ((encounter.IsCll3 || encounter.IsArt) && cll3Drawing) _ = encounter.Hints(viewer).ToArray();
+                // Event redraws must not consume Ozma's dead slot before the
+                // next Framework AI capture and its two source draw queries.
+                var hints = cll3Drawing ? encounter.Hints(viewer, consumeOzmaState: frameworkDrawing).ToArray() : [];
                 var texts = globalHints.Concat(hints.Select(h => h.Risky ? h.Text : $"{h.Text}（已满足）")).ToArray();
                 MechanicHintsText = texts.Length == 0 ? null : string.Join("；", texts);
                 if (bombActivation != default)
@@ -409,8 +519,86 @@ public abstract class BozjaScript : MasterPlayerScript
                         bombActivation > CurrentTime ? $"Pyretic：{(bombActivation - CurrentTime).TotalSeconds:F1}s 后生效" : "Pyretic：生效中" }.Where(t => t != null));
                 if (encounter.CuchMisdirection(viewer))
                     MechanicHintsText = string.Join("；", new[] { MechanicHintsText, "Misdirection：生效中" }.Where(t => t != null));
+                if (cll3ModeText != null)
+                    MechanicHintsText = string.Join("；", new[] { MechanicHintsText, cll3ModeText }.Where(t => t != null));
+                if (encounter.IsArt)
+                    foreach (var chaser in encounter.ArtChasers)
+                    {
+                        var key = $"bozja/art/chase/{chaser.Generation}";
+                        wanted.Add(key);
+                        order.Add(key);
+                        publish.Add(() => Draw.AddLinePreview(key, chaser.Previous with { Y = player!.Position.Y },
+                            chaser.Target.Actor.Position with { Y = player.Position.Y }, false));
+                    }
+                var cll1LineIndex = 0;
+                foreach (var line in encounter.Cll1InfraredLines())
+                {
+                    var key = $"bozja/cll1/infrared/{cll1LineIndex++}";
+                    wanted.Add(key); order.Add(key);
+                    publish.Add(() => Draw.AddLinePreview(key, line.From, line.To, line.Safe));
+                }
+                foreach (var movement in encounter.Cll1MagnetMovements(viewer))
+                {
+                    const string key = "bozja/cll1/magnet/line";
+                    wanted.Add(key); order.Add(key);
+                    publish.Add(() => Draw.AddLinePreview(key, movement.From, movement.To, false));
+                }
+                foreach (var (slot, target) in encounter.DeathgazeGreenPlayers())
+                {
+                    var point = target.Actor.Position with { Y = player!.Position.Y };
+                    var key = $"bozja/deathgaze/green/{slot}";
+                    wanted.Add(key); order.Add(key);
+                    publish.Add(() => Draw.AddAoePreview(key, new CircleGeometry(point, 5), true, true, 1,
+                        unclipped: true, color: new Vector4(0, 1, 0, 1), strokeThickness: target.Actor.Id == viewer.Actor.Id ? 2 : 1));
+                    if (target.Actor.Id == viewer.Actor.Id || target.Destroyed || !target.Actor.Targetable) continue;
+                    // MP renders actor priority as a point marker. Keep the
+                    // source's own-player exclusion, actor filter and wall clamp.
+                    var markerPoint = new Vector3(Math.Clamp(point.X, encounter.Center.X - 30, encounter.Center.X + 30),
+                        point.Y, Math.Clamp(point.Z, encounter.Center.Z - 15, encounter.Center.Z + 15));
+                    var markerKey = $"bozja/deathgaze/interesting/{slot}";
+                    wanted.Add(markerKey); order.Add(markerKey);
+                    publish.Add(() => Draw.AddAoePreview(markerKey, new CircleGeometry(markerPoint, .5f), true, false, 1,
+                        color: new Vector4(192 / 255f, 192 / 255f, 192 / 255f, 1)));
+                }
                 foreach (var rule in encounter.ActiveRules)
                 {
+                    if (rule.Kind == BozjaRuleKind.AllianceKnockback)
+                        foreach (var movement in encounter.AllianceSimpleMovements(viewer, rule))
+                        {
+                            if (movement.From == movement.To) continue;
+                            var key = $"bozja/alliance/knockback/{movement.Cast.Generation}";
+                            wanted.Add(key);
+                            order.Add(key);
+                            publish.Add(() => Draw.AddLinePreview(key, movement.From, movement.To, false));
+                        }
+                    if (rule.Kind == BozjaRuleKind.AlliancePull)
+                        foreach (var movement in encounter.AlliancePullMovements(viewer))
+                        {
+                            var key = $"bozja/alliance/pull/{movement.Cast.Generation}";
+                            wanted.Add(key);
+                            order.Add(key);
+                            publish.Add(() => Draw.AddLinePreview(key, movement.From, movement.To, false));
+                        }
+                    if (rule.Kind == BozjaRuleKind.CircleBait)
+                        foreach (var (cast, outline) in encounter.CircleBaitViews(viewer, rule).Where(v => v.Outline))
+                            Preview($"bozja/virtue/wind/{cast.Generation}/outline",
+                                cast.Shape.Resolve(cast.Origin with { Y = player!.Position.Y }, 0, null), outline: true);
+                    if (rule.Kind == BozjaRuleKind.Cll3Water && cll3Drawing)
+                        foreach (var movement in encounter.Cll3WaterMovements(viewer, rule))
+                        {
+                            var key = $"bozja/cll3/water/{movement.Cast.Generation}";
+                            wanted.Add(key);
+                            order.Add(key);
+                            publish.Add(() => Draw.AddLinePreview(key, movement.From, movement.To, false));
+                        }
+                    if (rule.Kind == BozjaRuleKind.Cll4Wind)
+                        foreach (var movement in encounter.Cll4Movements(viewer))
+                        {
+                            var key = $"bozja/cll4/wind/{movement.Cast.Generation}";
+                            wanted.Add(key);
+                            order.Add(key);
+                            publish.Add(() => Draw.AddLinePreview(key, movement.From, movement.To, false));
+                        }
                     if (rule.Kind is BozjaRuleKind.GauntletTurbine or BozjaRuleKind.GauntletWind)
                         foreach (var movement in encounter.GauntletMovements(viewer, rule))
                         {
@@ -475,7 +663,7 @@ public abstract class BozjaScript : MasterPlayerScript
                         publish.Add(() => Draw.AddLinePreview(key, viewer.Actor.Position with { Y = player!.Position.Y },
                             partner.Actor.Position with { Y = player!.Position.Y }, false));
                     }
-                    if (rule.Kind is BozjaRuleKind.CrystalSpread or BozjaRuleKind.Spread or BozjaRuleKind.DahuSpit)
+                    if (rule.Kind is BozjaRuleKind.CrystalSpread or BozjaRuleKind.Spread or BozjaRuleKind.RaidenSpread or BozjaRuleKind.DahuSpit)
                     {
                         foreach (var spread in encounter.Spreads(rule))
                             Preview($"bozja/spread/{spread.Generation}/outline", spread.Shape.Resolve(
@@ -600,11 +788,20 @@ public abstract class BozjaScript : MasterPlayerScript
                             }
                     }
                     if (rule.Kind == BozjaRuleKind.Tower)
-                        foreach (var tower in towerViews)
+                        foreach (var tower in towerViews.Where(t => !encounter.IsVirtue || t.Cast.Rule == rule))
                         {
                             var shape = new CircleGeometry(tower.Cast.Origin with { Y = player?.Position.Y ?? 0 }, BozjaEncounter.TowerRadius(tower.Cast));
                             if (tower.Outline) Preview($"bozja/tower/{tower.Cast.Generation}/outline", shape, tower.Safe, true);
                         }
+                    if (encounter.VirtueTowerSource(viewer, rule) is { } virtueSource)
+                    {
+                        var key = $"bozja/virtue/tower/{rule.Component}/line";
+                        wanted.Add(key);
+                        order.Add(key);
+                        publish.Add(() => Draw.AddLinePreview(key, virtueSource.Actor.Position, player!.Position, false));
+                        Preview($"bozja/virtue/tower/{rule.Component}/source",
+                            new CircleGeometry(virtueSource.Actor.Position with { Y = player!.Position.Y }, 2), outline: true);
+                    }
                     if (rule.Kind == BozjaRuleKind.LightningRod)
                         foreach (var mine in mineViews.Where(m => m.Outline))
                             Preview($"bozja/mine/{mine.Mine.Generation}/outline",
@@ -617,7 +814,7 @@ public abstract class BozjaScript : MasterPlayerScript
                                 cast.Shape.Resolve(cast.Origin with { Y = player!.Position.Y }, cast.Rotation, null),
                                 outline: true, color: new(1, 0, 0, 1));
                         }
-                    if (rule.Kind is BozjaRuleKind.Gaze or BozjaRuleKind.CastGaze or BozjaRuleKind.SeekerMoon or BozjaRuleKind.BurnWeakpoint or BozjaRuleKind.GauntletUnseen)
+                    if (rule.Kind is BozjaRuleKind.Gaze or BozjaRuleKind.CastGaze or BozjaRuleKind.SeekerMoon or BozjaRuleKind.BurnWeakpoint or BozjaRuleKind.GauntletUnseen or BozjaRuleKind.OwainGaze)
                         foreach (var eye in encounter.EyesFor(viewer))
                         {
                             var danger = BozjaEncounter.EyeDanger(eye, player!);
@@ -665,9 +862,24 @@ public abstract class BozjaScript : MasterPlayerScript
                             Preview($"bozja/cleave/{cleave.Generation}/outline",
                                 cleave.Shape.Resolve(DungeonEncounter.QuantizedDungeonPosition(cleave.Origin)
                                     with { Y = player!.Position.Y }, cleave.Rotation, null), outline: true);
+                    if (rule.Kind == BozjaRuleKind.OwainCleave)
+                        foreach (var cleave in encounter.OwainCleaves())
+                            Preview($"bozja/owain/cleave/{cleave.Generation}/outline", cleave.Shape.Resolve(
+                                cleave.Origin with { Y = player!.Position.Y }, cleave.Rotation, null), outline: true);
+                    if (rule.Kind == BozjaRuleKind.RaidenChains && encounter.RaidenPartner(viewer) is { } raidenPartner)
+                    {
+                        var key = $"bozja/raiden/chain/{viewer.Actor.Id}";
+                        wanted.Add(key);
+                        publish.Add(() => Draw.AddLinePreview(key, player!.Position, raidenPartner.Actor.Position, false));
+                    }
+                    if (rule.Kind == BozjaRuleKind.OwainSpirit && encounter.OwainSpiritTargets.Contains(viewer)
+                        && encounter.OwainSpiritStack is { Target: { Actor.Dead: false } } spiritStack)
+                        Preview($"bozja/owain/spirit/{spiritStack.Generation}/outline", spiritStack.Shape.Resolve(
+                            BozjaEncounter.StackCenter(spiritStack) with { Y = player!.Position.Y }, 0, null),
+                            safe: encounter.OwainSpiritSafe(viewer), outline: true);
                 }
-                if (navigating) PredictedDamage = encounter.DamageForHost(viewer).ToArray();
-                if (navigating && IsMechanismEnabled("面向控制")) PlannedFacing = encounter.Facing(player!);
+                if (navigating) PredictedDamage = encounter.UsesDrawnArena ? preparedArenaDamage : encounter.DamageForHost(viewer).ToArray();
+                if (navigating && IsMechanismEnabled("面向控制")) PlannedFacing = encounter.UsesDrawnArena ? preparedArenaFacing : encounter.Facing(player!);
                 if (navigating && (encounter.IsAlbeleo || encounter.IsSkirmish || encounter.Definition.Rules.Any(r => r.Kind is BozjaRuleKind.Gaze or BozjaRuleKind.TooHot)))
                 {
                     var partyPlayer = encounter.Party.FirstOrDefault(p => p.Slot == 0);
@@ -693,6 +905,17 @@ public abstract class BozjaScript : MasterPlayerScript
             hardSafetyMargin: MasterPlayerSettings.Instance.DodgeDangerMargin, arenaSafetyMargin: 0);
     }
 
+    private void ClearPreparedArena()
+    {
+        preparedArenaNavigation = [];
+        preparedArenaDamage = [];
+        preparedArenaFacing = null;
+        preparedArenaBoundary = null;
+        preparedArenaCenter = default;
+        preparedArenaRadius = 0;
+        preparedArenaOwner = null;
+    }
+
     private void ReleaseBoundary()
     {
         var manager = MasterPlayerPlugin.Instance?.SafeZone.Manager;
@@ -712,10 +935,14 @@ public abstract class BozjaScript : MasterPlayerScript
         ReleaseBoundary();
         region.Clear();
         preparedBurnNavigation = [];
+        ClearPreparedArena();
+        frameworkDrawing = false;
         pendingEvents.Clear();
         lastAnimation.Clear();
         frameAnimations.Clear();
         sampledActors = [];
+        preparedStayModeText = null;
+        preparedStayModeOwner = null;
         reportedTimeError = null;
         PredictedDamage = [];
         InterruptTargetIds = [];

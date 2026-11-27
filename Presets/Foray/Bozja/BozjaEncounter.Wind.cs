@@ -9,6 +9,9 @@ internal sealed partial class BozjaEncounter
 {
     private void Created(BozjaActor actor)
     {
+        HeavyCreated(actor);
+        LightCreated(actor);
+        RaidenCreated(actor);
         GraveCreated(actor);
         RobotCreated(actor);
         foreach (var rule in ActiveRules.Where(r => r.Kind == BozjaRuleKind.Tower && r.EnemyOid != 0))
@@ -31,6 +34,13 @@ internal sealed partial class BozjaEncounter
         MetalFoxEffect(source, action);
         if (Active && Actors.GetValueOrDefault(source) is { NativeNpc: true } caster)
         {
+            DeathgazeEffect(action, target);
+            Cll1Effect(caster, action);
+            Cll4Effect(action);
+            ArtEffect(caster, action, target, position);
+            OwainEffect(action);
+            RaidenEffect(action, target);
+            VirtueEffect(action);
             HoofEffect(caster, action, target);
             BehemothEffect(caster, action, target, position);
             FireEffect(caster, action);
@@ -47,6 +57,9 @@ internal sealed partial class BozjaEncounter
             HashmalEffect(caster, action, position);
             AidaEffect(caster, action, position);
             CavalryEffect(action, target);
+            if (IsHeavyArtillery && action == 20658) HeavyEnergy.Remove(caster);
+            LightEffect(action);
+            RhalgrEffect(action);
             DahuEffect(caster, action);
             PhantomSavageEffect(action);
             DahuSavageEffect(action, target);
@@ -63,6 +76,11 @@ internal sealed partial class BozjaEncounter
 
     private void UpdateInterruptHint(BozjaRule rule)
     {
+        if (IsAllianceTrash && rule.Hint != null)
+        {
+            interruptHints[rule] = rule.Hint;
+            return;
+        }
         var casters = Casts.Where(c => c.Rule == rule).ToArray();
         interruptHints[rule] = !IsAlbeleo && casters.Length == 1 ? $"Interrupt {casters[0].Source.Actor.Name}!" : "Interrupt!";
     }

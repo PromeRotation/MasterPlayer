@@ -1,5 +1,43 @@
 # BMR 至 MP 原生脚本迁移交接
 
+虚空死亡凝视9实际组件已完成原生迁移并登记。model05为23专项PASS，model06为354相关PASS/0FAIL，model07补同帧Party事件1PASS；build01为0错4既有Crucible警告/9.23秒。同DLL无筛选catalog02为2304行首PASS（2295测试+9汇总）/328独立入口，其中19本批实际专项，全exit0。DLL SHA256 `a3500d4f891e26b45ee5f7ad4abf9f22703e62728bbc5b306992e4f27989a3c0`。正式831 verified /382 pending /1 review，另45 excluded。修复Deathgaze队伍被截到8槽及Effect错放行Player；绿色Hint24/绘图64、死亡留bit/同槽换人/新Party事件顺序、独立五击退、矩形世界ULP、公开提示/线宽、Director和双owner均验。灰R.5点为MP优先级显示适配，非源Actor箭头；实时采集0..23，显式24..63源组件输入仅离线已验。catalog01因旧反射AddPreview少参数退出，修正调用方后catalog02通过；replay01双owner视角超500码夹具错误已修，保留失败日志。下一批Scathach/DiabolosHollow源26实际组件与27唯一AID已核表，候选源码已接公共追踪参数，尚未模型/实际DLL验收，不计完成。CE22、DRN5、Quantum、DD190和Zone决斗农场缺口保留；SDK10.0.303验证，SDK11及游戏实机待验，未部署。
+
+阿剌克涅10实际组件完成原生离线验收并登记。model05为345相关PASS/0FAIL（18专项），build01为0错4既有Crucible警告/8.54秒；同DLL无筛选catalog01为2275行首PASS（2266测试+9汇总）/327独立入口，最终加强后的replay05为20本批加3公共PASS，全部exit0。DLL SHA256 `04864146a5271022022540f0d075b7b28931dc731bac9fd6a7603fa77f6118f1`。正式830 verified /383 pending /1 review，另45 excluded。真实Ground1轮廓84三角形/Web18轮廓467三角形、24槽共享绘图历史/同槽换人/死亡viewer、首帧旧AI新KB、Director新Load冷回补及Tremblor精确缓存均已验。修复horizontal小行Y下界ULP漏交，AVX512/AVX2-FMA/scalar实际分支均有源差分；真实solver逐路径段不穿孔，未扩KB导航或执行。继续A31DeathgazeHollow虚空死亡凝视：已审9实际组件并核T627/CFC220、NameID5507和9唯一AID extra0，下一步局部slot-mask图标及左右KB/矩形求交，尚未实现登记。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保持。SDK10.0.303已验；SDK11与实机采样/像素/执行待验，未部署。
+
+天柱树8实际组件完成原生离线验收。model07为457相关PASS/0FAIL（18专项），model08补充线段0/0.3/0.5余量通过；build03为0错4既有警告/8.95秒；同DLL replay04为12天柱树专项及3公共PASS，无筛选catalog01为2263行首PASS（2254测试+9汇总）/326独立入口，均exit0。DLL SHA256 `616b8f1d8979baf1d7d97e262bca3747c92795e84e9d50ed723515394bdc7718`。正式829 verified /384 pending /1 review，另45 excluded。源圆环2轮廓90三角形、精确wall ray三CPU分支、LOS原引用双队列/非Spell残留/冻结快照/5码索引SDF、独立KB和动态NPC钟均已验证。实际测试发现旧65%采样丢失LOS导航，已限定直接补集保源分类，真实solver成功绕孔逃入影区，未扩位移执行。AVX2禁FMA尝试未实际关闭FMA，不计该分支覆盖。继续A21ArachneEve：源码已审、T556/CFC168/中文阿剌克涅及11AID核表；需24槽绘图场地及10.5/20.5/30.5地震推进，尚未登记。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。SDK10.0.303已验；SDK11、实时采样/像素/执行待验，未部署。
+
+奥兹玛六实际组件完成原生离线验收并登记。最终model05为391相关PASS/0FAIL（16奥兹玛专项）；build03为0错4既有Crucible警告/8.75秒，replay09实际命中AllianceTrash、CLL1Brionac、CLL3Adrammelech、CLL4Dawon和BaldesionOwain，共311 PASS（10奥兹玛）。同DLL无筛选catalog01为2250行首PASS（2241测试+9汇总）/325独立入口，全部exit0。DLL SHA256 `3d8aca4b48490ab17958771c12619e84255d5333cb6a37026235dffe82ebb7ab`。正式828 verified /385 pending /1 review，另45 excluded。三套真实多轮廓/孔洞三角形、24槽共享Arena历史、当前Primary重绑、自定义完成、真实状态槽与冷热Pet、死亡两查询先采AI、双视图休眠和事件重绘不消费、同T556双owner双向释放均已验证；CFC由既有客户端表解析，未宣称录像记录独立CFC变化。继续Irminsul/Sawtooth双首领及定制机制；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。SDK10.0.303验证，SDK11、游戏实时采样/像素/执行待验，未部署。
+
+联盟三个击退变体（Cetus/Echidna/Calofisteri）29实际组件已原生离线验收并登记。最终model06为55本批专项PASS/0FAIL；build01为0错4既有Crucible警告（8.31秒），同DLL replay01为38本批、68标准及104既有联盟加3公共共213 PASS；无筛选catalog01为2239行首PASS（2230测试+9汇总）/324入口独立编译，全部exit0。DLL SHA256 `04473bffa66e1146cc3c4d77016d220ce4d5ac730dc4ee8171c6338f5e7bc69d`。正式827 verified /386 pending /1 review，另45 excluded；324为已验独立入口数。冷激活免疫白名单遗漏已修；原Actor/同ID异实例Finish、真实60槽与旧Party提交顺序、严格过期、双来源动态raw钟和精确位移端点均已源差分，未新增源没有的KB导航。十模块79组件试点已闭合，继续动态场地及自定义机制；CE22、DRN5、Quantum、DD190和Zone决斗农场缺口保留。SDK10.0.303验证，SDK11及游戏实时采样/像素/执行待验，未部署。
+
+联盟七模块（Cuchulainn/Forgall/Headstone/FerdiadHollow/ProtoUltima/Diabolos/A30Trash）50实际组件已原生离线验收并登记。model06为873相关PASS/0FAIL（81本批）；build02为0错4既有警告，replay05为68本批实际专项加104既有联盟及3公共PASS；同DLL无筛选catalog01为2198行首PASS（2189测试+9汇总）/321入口独立编译，全部exit0。DLL SHA256 `4750326503f1cd2d11bb711fa25805925f0c47f5af792ee0420a8f8b32b5b3a7`。正式824 verified /389 pending /1 review，另45 excluded；321为已验独立入口数。真实CLR反例修复场地row hull/EPS候选边，scalar/AVX2-FMA实际分支通过；ownStack原SDF补集复用精确几何，解决旧65%采样丢失，未放宽断言。后续继续Cetus/Echidna/Calofisteri三击退变体，尚未登记；CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。SDK10.0.303验证，SDK11及游戏实时采样/像素/执行待验，未部署。
+
+轻型陆战装置七实际组件已原生离线验收并登记。model04为792相关PASS/0FAIL（15本模块）；build02为0错4既有警告，replay03包含10轻型、94既有联盟和17美德专项加3公共；同DLL无筛选catalog01为2123行首PASS（2114测试+9汇总）/314入口独立编译，全部exit0。DLL SHA256 `f61602bf095ade261782ba1b84d77c80606eb9449bf3485aba8979fc5b1276a1`。正式817 verified /396 pending /1 review，另45 excluded；314为已验独立入口数。Fire缓存顺序曾真实失败并修复；四次Effect夹具按真实路由同批提交修正，未放宽精确三次合同。下一批联盟7模块50实际组件已审源，客户端核表已完成，准备两处真实场地导出及标准配置。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。SDK10.0.303验证；SDK11和游戏实时采样/像素/执行待验，未部署。
+
+重型陆战装置三实际组件已完成原生离线验收并登记。model07为777相关PASS/0FAIL（16个本模块专项），build02为0错4既有Crucible警告，同DLL replay02为94联盟专项加3公共PASS，无筛选catalog01为2112行首PASS/0FAIL（2103测试加9汇总）/313入口独立编译，全部exit0。DLL SHA256 `551873c4705bc6ac04314a42df6bc4003397484abb71878e922cbbcddafaf155`。三段精确场地、Map保原Center、pending构造冻结/重构/原代际重绑、Energy原Actor双union动态钟、严格窗口和隐藏晋升已源差分；实际solver捕获立即默认钟的DateTime下溢，输出适配修复并经全目录验收。正式审计816 verified /397 pending /1 review，另45 excluded；313为独立入口数，1214目标不变。继续同T917轻型陆战装置七组件，已核客户端，尚未实现登记。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。SDK10.0.303验证；SDK11和游戏实时采样/像素/执行待验，未部署。
+
+阿格莱亚拉尔戈神使六实际组件及32状态完成原生离线验收并登记。最终model05为761相关PASS/0FAIL（12个Rhalgr专项），build01为0错4既有Crucible警告（8.77秒），同DLL replay04为85联盟专项加3公共PASS，catalog01无筛选2102行首PASS/0FAIL（2093测试加9汇总）/312入口独立编译，全部.exit=0。DLL SHA256 `baacbc6767fdf8489c3fb478a482e35e88e174cfad62b46c55ff73f90766cff2`。Map双锥、三段同心圈缓存、原目标Strike、纯Counter Blue、完整正常技能链/提前条件/overdue/Reset冷重播及顺序、HP0/Director在Reset出口清理均有真实源差分；实际solver、轮廓/填充、双owner双向释放、逆Seek与回放禁执行已验。正式审计815 verified /398 pending /1 review，另45 excluded，1214目标不变；312为独立入口数。下一批重型/轻型陆战装置已审源并核CFC736→T917及24个唯一AID，均extra0，尚未实现登记。CE22、DRN5、Quantum、DD190和Zone决斗农场缺口保持原状态。SDK10.0.303验证，SDK11及游戏实时采样/像素/执行待验，未部署。
+
+阿格莱亚双狮三个实际组件完成原生离线验收并登记。model03为749相关PASS/0FAIL（80联盟模型专项），build01为0错4既有Crucible警告（9.35秒），同DLL replay01为76联盟专项加3公共PASS，catalog01无筛选2092行首PASS/0FAIL（2083测试加9汇总）、311入口独立编译，全部.exit=0。DLL SHA256 `de7993bb588038c7d30051871f022d98a1fd24cac9aa7be375ed0c11d9501af7`。Slash全局首项消费、Roar按ID消费隐藏项与原代际残项、全队列非稳定排序、原母狮缓存/同ID新生/首次pull先完成、HP0保活、永久状态和raw/default预测均有真实源差分；实际solver/开关/逆Seek/owner/回放禁执行已验。正式审计814 verified /399 pending /1 review，另45 excluded，1214目标不变；311为独立入口数。继续拉尔戈神使六组件及完整状态链，尚未实现登记。CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保持原状态。SDK10.0.303验证，SDK11及游戏实时采样/像素/执行待验，未部署。
+
+桑多利亚三项杂兵（探测器、锯耳 杰克、克拉肯）已完成原生离线验收并登记。model05为734相关PASS/0FAIL（65联盟专项），build02为0错4既有Crucible警告（8.80秒）；同DLL replay02为61联盟专项加3公共PASS，catalog02无筛选2067行首PASS/0FAIL，310入口独立编译，全部.exit=0。DLL SHA256 `e1df87c6671d58bc58c3cc14638bcde916e99470d556370980fb0b5d39388e9f`。Flood唯一覆盖/跨source Finish无TTL、P1销毁与P2死亡分流、真实免疫首source导航、Raidwide原Actor当前raw非Spell/default诊断及双caster后发先至排序均已源差分和实际DLL验证。独立复核排序反例先在model04真实FAIL后修复，catalog01主动中止不算通过。正式审计813 verified /400 pending /1 review，另45 excluded，1214目标不变；310为独立入口数。继续双狮和拉尔戈神使，两者已核客户端身份及真实状态/队列，仍pending；CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。详见NativeAllianceTrash.spec.md；隔离SDK10.0.303，根SDK11及游戏实时采样、像素与执行待实机验收，未部署。
+
+七项Alliance Trash（朱诺四项、塔利亚三项）已完成原生离线验收并登记。model08为716相关场景PASS/0FAIL（含47联盟专项），build03为0错4既有Crucible警告（11.18秒）；同DLL replay08为42专项加3公共PASS，最终catalog01无筛选2045行首PASS/0FAIL，307入口独立编译、42联盟专项实际命中，全部.exit=0。DLL SHA256 `45b6adc889aae2ab53f74ec82e8a0ab58df169edb547f887633486c97ce6af9c`。原Actor/pending与完整阶段完成、普通/Grouped Finish、跨source FIFO、自定义pull、精确raw非Spell时钟、多轮廓孔洞高度/真实solver及双owner双向释放均已验。正式审计810 verified /403 pending /1 review，另45 excluded，1214目标不变；307为独立入口数。下一批五项为Lions、RhalgrEmissary、Detector、JaggedyEaredJack、Kraken，客户端身份和50唯一AID已核；Boltloop visual extra为1000ms，其余extra0，尚未实现登记。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。完整合同及失败历史见NativeAllianceTrash.spec.md；隔离SDK10.0.303验证，根SDK11及游戏实时采样、像素与执行待实机验收，未部署。
+
+BA3AbsoluteVirtue「绝对的美德」十常驻及两个动态Counter已完成原生离线验收并登记。最终model09为669相关场景PASS/0FAIL（含21个美德专项），build06为0错4既有Crucible警告（8.63秒）；同DLL catalog02无筛选2005行首PASS（1996测试及9汇总），300入口独立编译，17个美德专项实际命中，全部.exit=0。DLL SHA256 `0c9b6d11880696dda1a224cf32c9e46f88ebcdfa4c7e44c4e4d8e546c4303b14`。Wind原target/raw钟/首死caster预测、Aurora跨source Bright FIFO/Dark保留、Rays主Boss状态、Explosion任意tether/default空尾、两独立塔原引用集合/精确动画/无TTL及92状态精确Counter均有真实Feed差分。实际DLL暴露旧采样器丢塔补集；独立复核再复现重叠圈内部假边界，均保留失败日志后修复并补真实注册表及solver验证。源null/default异常适配、owner/开关/非Party/逆Seek/回放禁执行和同T827莱丁双owner双向释放已验。正式审计803 verified /410 pending /1 review，另45 excluded，1214目标不变；300为独立入口数。继续七项Alliance Trash（朱诺四项、塔利亚三项）；已核CFC1015→T1248、962→T1178及36唯一AID的extra均0，真实五场地已导出，尚未实现登记。CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。完整合同和失败历史见NativeBaldesionArsenal.spec.md；SDK10.0.303隔离验证，根SDK11与游戏实时采样/像素/执行未验，未部署。
+
+BA2Raiden莱丁十六实际组件双阶段已完成原生离线验收并登记。model06为648相关场景PASS/0FAIL（含23个莱丁专项）；build01为0错4既有Crucible警告（8.94秒）；同DLL replay06为355相关PASS，最终replay07为20莱丁专项加3公共PASS；catalog01无筛选1987行首PASS（1978测试及9汇总），299入口独立编译，全部.exit=0。DLL SHA256 `abfee7c5c83a849d50b2e6fc0c7a0b5161ad6e9588b67921b509a2bf82e18a17`。真实缩场Bounds不改Center、P1 HP0保留与四Keep原实例、P2逐组件冷Created/Spell/tether、Icon原引用重复/跨来源Effect按ID首项回退和伤害mask按ID、Cloud完整内部line与缓存/8六四/双矩形边界、Chains旧Party槽原partner和Assigned、Silent真实Effect计数/111状态早条件与顺序Reset/Stop/永久尾均有源差分。实际DLL补验真实solver、非Party全缓存、逆Seek、活跃链线owner双向释放、回放禁执行及不扩大选敌。正式审计802 verified /411 pending /1 review，另45 excluded，1214目标不变；299为独立入口数。继续BA3AbsoluteVirtue绝对之德十二种实际组件：十常驻及两个时间线动态计数器，仍pending；CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。合同和失败历史见NativeBaldesionArsenal.spec.md；SDK10.0.303隔离验证，根SDK11、游戏实时采样/像素/执行未验，未部署。
+
+BA1Owain欧文十常驻加临时LegendaryImbas已完成原生离线验收并登记。model10为625相关场景PASS/0FAIL（含20个欧文专项）；build02为0错4既有Crucible警告（10.47秒）；同DLL replay06为125相关PASS（含13欧文专项及16亚特专项）；catalog01无筛选1966行首PASS（1957测试及9汇总），298入口独立编译，全部.exit=0。DLL SHA256 `2779bbd0acd0435ccd772419e9a261ce0427eeec69011a706002ddb3a79ee863`。真实60槽元素FIFO/跨来源Effect、Spirit原Icon和前景改目标/旧AI新显示/双视图休眠、冷热tether与null目标原引用、raw cleave提示/量化导航、临时Imbas冷回补/重激活/overdue、全部457状态及永久尾均有真实源差分；实际DLL补验真实solver、非Party、逆Seek、回放禁执行，Art/Owain/Ceto同T827三活跃owner双向释放及预览GUID归属。正式审计801 verified /412 pending /1 review，另45 excluded，1214目标不变；298为独立入口数。继续BA2Raiden两阶段Keep四组件、动态重建与完整状态链，仍pending；CE22、DRN5、Quantum、DD190及Zone决斗农场缺口保留。合同和失败历史见NativeBaldesionArsenal.spec.md；SDK10.0.303隔离验证，根SDK11、游戏实时采样/像素/执行未验，未部署。
+
+BA1Art亚特十实际组件已完成原生离线验收并登记。model06为605相关场景PASS/0FAIL（含19个Art专项）；build01为0错4既有Crucible警告（14.33秒）；同DLL replay03为16专项加3公共PASS；catalog01无筛选1952行首PASS（1943测试及9汇总），297入口独立编译，全部.exit=0。DLL SHA256 `041ba9eed3e7ec3f26e9cb11a8b24419ebe59b80be54aa583c3619cf7de12d0a`。真实减形场地、幻枪五项sticky队列/跨来源Effect、Geas双Cross持久/仅Start清、Stay2双Hint/双视图休眠/Framework诊断寿命、追踪原Actor/旧PartyMask/严格最近/三路Effect/五发与独立Update、333状态raw Cast/提前条件/overdue/永久尾均有真实Feed源差分；实际DLL已验真实solver、R10显示与16.5/11导航、前景原引用/首发与续发、开关/逆Seek/owner/回放禁执行和Hydatos同T827精确OID共存。正式审计800 verified /413 pending /1 review，另45 excluded，1214目标不变；297为入口数。继续BA1Owain十常驻加临时LegendaryImbas、Spiritcull绘图改目标的真实状态链，仍pending；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。合同及失败历史见NativeBaldesionArsenal.spec.md；隔离SDK10.0.303，根SDK11及游戏实时采样/像素/执行未验，未部署。
+
+CLL4达温二十一实际组件已完成原生离线验收并登记。model04为586相关场景PASS/0FAIL（含41个CLL4专项）；build02为0错4既有Crucible警告（12.89秒）；同DLL replay06为35专项加3公共PASS，replay05相关288 PASS；catalog01无筛选1935行首PASS（1926测试及9汇总），296入口独立编译，全部.exit=0。DLL SHA256 `3175ca18391cec1fec151e5136b941fa1f2c6ae857deb9e8d4cd50f63c056e7c`。双场绘图副作用/旧AI导航伤害面向与新显示gate、两独立墙预告、Hammer整组sticky风险与普通Finish、Plumes原Actor懒列表/源double三角ULP/追加与任意Burn或Explosion Finish、Obey跨来源Effect FIFO、Blood来源位置七发/缓存与Pulse阶段首位置/计数均有真实源差分与实际DLL验证；WindsPeak消费20847、真实60槽免疫与直接Goal、凝视10000范围和动态伤害排序已验。真实solver、双视图休眠/非Party、非空面向禁用缓存失效、逆Seek/owner/回放禁执行已验。正式审计799 verified /414 pending /1 review，另45 excluded，1214目标不变；296为入口数。继续BA1Art/BA1Owain真实状态链与追踪机制，仍pending；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。合同及失败历史见NativeBozjaSouth.spec.md；隔离SDK10.0.303，根SDK11及游戏实时采样/像素/执行未验，未部署。
+
+CLL3阿德拉梅里克十四实际组件已完成原生离线验收并登记。model07为545相关场景PASS/0FAIL（含26个CLL3专项）；build03为0错4既有警告（12.05秒）；同DLL replay05为23专项加3公共PASS，replay04相关237 PASS；catalog01无筛选1900行首PASS（1891测试及9汇总），296入口独立编译，全部.exit=0。DLL SHA256 `08af2620a2609e0958a34795f0a0d81f6f07b39cfa3ba044a047daf1fdd1dbc8`。持久Holy环/真实两中心、双水独立Goal与严格免疫60槽、冰火独立槽/真实Player读条/前帧高度/双绘图查询/睡眠不消费与Framework诊断寿命、Stone跨caster首位置匹配/缓存、Warped第99排序及1秒风险、Twister原Actor四时钟与障碍均有源差分与实际DLL验证；真实solver、开关/逆Seek/owner/回放禁执行已验。正式审计798 verified /415 pending /1 review，另45 excluded，1214目标不变；296为入口数。继续CLL4Dawon二十一组件；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。合同及失败历史见NativeBozjaSouth.spec.md；隔离SDK10.0.303，根SDK11及游戏实时采样/像素/执行未验，未部署。
+
+CLL1布里欧纳克十五实际组件（构造DetermineArena加十四阶段组件）已完成原生离线验收并登记。最终model06为519相关场景PASS/0FAIL；build02为0错4既有警告（10.69秒）；同DLL replay02为17专项加3公共PASS，replay03相关185 PASS；catalog01无筛选1877行首PASS（1868测试及9汇总），296入口独立编译，全部.exit=0。DLL SHA256 `8d556306e1787f076a9d308ed0ebd49958f29b924d91f66f3b7812f79d34665f`。上下场绘制副作用与旧导航/新显示时序、双Boss原引用/SkyArmor完成及HP0保留、七次空间Effect、Orb早晚Created/PoleShift、磁力八槽/冷零Target/直接Goal、Wild FIFO及红外首分边/重复/免疫状态均有真实源差分；真实solver、禁用后Finish重启缓存失效、逆Seek/owner/回放禁执行已验。正式审计797 verified /416 pending /1 review，另45 excluded，1214目标不变；296为入口数。继续CLL3Adrammelech十四组件及CLL4Dawon二十一组件，尚未登记；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。完整合同及失败证据见NativeBozjaSouth.spec.md；隔离SDK10.0.303，根SDK11与游戏实时采样/像素/执行未验，未部署。
+
 最强的火焰法师（PyromancerSupreme）七实际组件已完成原生离线验收并登记。model06为498相关PASS/0FAIL；build02为0错4既有警告（7.62秒），同DLL replay03为12专项加3公共PASS，replay04相关168 PASS；catalog01无筛选1860行首PASS（1851测试及9汇总），296入口独立编译，各.exit=0。DLL SHA256 `606a5c9fbe4e8dc1143e1f51770ae02eca9c9b23669b1f2ea2d01f6e845f7ecd`。每个Pending独立构造ThermalShock R20，保留冷热列表及晋升历史；构造期无导航/选敌/通用接管，phase局部停用；真实旧Zone桥优先与脚本显示互补、wipe只卸载Loaded保Pending/冻结场地、Destroyed远距释放、HP0与不可选退场、同帧相同ID重绑及六组件八动作均已源差分和实际DLL验证。正式审计796 verified /417 pending /1 review，另45 excluded，1214目标不变，296为入口数。下一批继续CLL1双场地/磁力/接线；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。隔离SDK10.0.303，根SDK11与游戏实机采样/像素/执行未验，未部署。
 
 两个标准Skirmish（破坏劳动十号／破坏魔导劳工）十六实际组件完成原生离线验收并登记：model07为483相关场景PASS/0FAIL，最终build02为0错4既有警告（7.50秒）；同DLL replay05为156条相关PASS（含22个遭遇战专项及3公共），catalog02无筛选1848条行首PASS（1839测试及9汇总）、296入口独立编译，全部exit0。DLL SHA256 `4b6b2780011fc64be4616ba7a7e5d6698cd3195030bedfd2548afe87f13b34cb`。真实Manager/Feed差分覆盖创建代FateID、旧Party0创建／新Party0更新与选择、同帧reset重建／双模块Loaded正序尾部与Selected、R+10收敛；十六规则冷热、原目标分摊FIFO／换代／异钟／少于二人导航及实际solver、计划选敌、开关、逆Seek、owner、回放禁执行均已验。源oracle显式补ActiveFate及创建FateID，不宣称旧桥完整输入链消费。正式审计795 verified /418 pending /1 review，另45 excluded，1214目标不变；296为入口数。继续PyromancerSupreme的每个Pending独立构造ThermalShock／六组件阶段变体，尚未实现登记；CE22、DRN5、Quantum、DD190与Zone决斗农场缺口保留。SDK11与游戏实时采样/像素/执行未验，未部署。
@@ -68,7 +106,7 @@ CE34耶鲁七个实际组件已完成离线验收并登记：model06为92相关�
 
 工作目录：`C:\Users\xiaos\Documents\GitHub\MasterPlayer`。下文仓库内路径均相对于该目录。当前分支为 `main`，HEAD 为 `be2cce0`；大量迁移实现、测试和规格尚未提交，必须接着现有工作区继续。
 
-**当前正式审计为791个源类型离线已验、422个待迁、1个待补齐，另45 excluded，1214目标口径不变；296为独立入口数。最新DAL4证据及下一模块见顶部，以下各批数字为当时历史。**
+**当前正式审计为829个源类型离线已验、384个待迁、1个待补齐，另45 excluded，1214目标口径不变；326为独立入口数。最新天柱树证据及下一批见顶部，以下各批数字为当时历史。**
 
 CE12八组件已完成并登记：最终model-07为9定向PASS（model-06为33相关），build-01为0错4既有警告，同DLLreplay-02为35PASS、catalog-01无筛选1461PASS/0FAIL及293入口独立编译，均exit0；SHA256 14c9278bd01507d3caf8bab612a1983a1b50e0034989ed6ae1bd6e554a3b47fb。确定的两种冷枚举顺序、无历史空档、零长冲锋raw/显示拒绝/实际导航转换及真实Manager pull25均已补证。继续CE13皮里福尔七组件：状态槽历史/旧Party、移动胶囊四钟与障碍、8人分摊，尚未实现登记。
 
@@ -124,7 +162,7 @@ CE24爱国者七个实际组件已完成离线验收并登记：model07为59相�
 ```text
 rtk proxy python tools/bmr_migration_audit.py --check
 
-States: {'bmr_pending': 501, 'mp_native_offline_verified': 712,
+States: {'bmr_pending': 384, 'mp_native_offline_verified': 829,
          'excluded_existing_mp': 45, 'mp_script_needs_parity_review': 1}
 Included: {'BossModule': 1060, 'ZoneModule': 154}
 Metadata groups: 525 (not a verified unique-duty/territory count)
@@ -135,34 +173,34 @@ Reports verified.
 
 | 状态 | 源类型数 | 含义 |
 |---|---:|---|
-| `mp_native_offline_verified` | 712 | 已登记原生实现及相应离线证据，真实执行和最终像素仍按各规格待验 |
-| `bmr_pending` | 501 | 包含尚未实现、已有实现未闭合，以及已有通过日志但尚未完成复核登记的项目 |
+| `mp_native_offline_verified` | 829 | 已登记原生实现及相应离线证据，真实执行和最终像素仍按各规格待验 |
+| `bmr_pending` | 384 | 包含尚未实现、已有实现未闭合，以及已有通过日志但尚未完成复核登记的项目 |
 | `mp_script_needs_parity_review` | 1 | 死宫DD190灰炸弹的精确禁攻宿主执行缺口 |
 | `excluded_existing_mp` | 45 | 原有MP斗兽奇弈，未导入BMR，不计入1214个迁移目标 |
 
 目标集合为1060个BossModule及154个ZoneModule，共1214个类型。525是元数据分组数。类型数、组件数、脚本入口数和副本数必须分别报告。
 
-当前源码 `tests/ScriptCompilation/ScriptCatalogRegression.cs` 的 `BUILT_IN_COUNT` 已改为272；正式规格最近登记的发现数为269，后续增加了两个楼层入口及M4入口。272是当前源码预期，不能直接表述为272个入口均已用最新生产DLL验证。
+当前 `BUILT_IN_COUNT=326`，且本轮同一生产DLL无筛选catalog01已实际发现并独立编译326个入口；不能将829个源类型写成829份脚本。
 
-501个待迁类型按原清单分类如下；分类沿用源元数据，不能直接当游戏版本或副本分类：
+384个待迁类型按当前生成清单分类如下，分类沿用源元数据：
 
 | 分类 | 待迁类型数 |
 |---|---:|
-| Foray | 140 |
 | Quest | 124 |
-| Alliance | 76 |
+| Alliance | 50 |
+| Foray | 72 |
 | VariantCriterion | 64 |
 | Savage | 28 |
-| DeepDungeon | 21 |
 | Extreme | 19 |
-| Raid | 14 |
+| Raid | 11 |
 | Ultimate | 8 |
 | Unreal | 4 |
 | Chaotic | 1 |
+| DeepDungeon | 1 |
 | GoldSaucer | 1 |
 | PVP | 1 |
 
-DeepDungeon的21项包括正统优雷卡10个Zone、朝圣路10个Zone，以及Quantum深想战1个类型。M4普通当前仍为 `bmr_pending`，尚未填写审计入口，尽管生产源码已经接线。
+DeepDungeon当前是Quantum深想战1个pending；EO/PT楼层及M4普通已在前批完成登记。对应合同与失败历史见各规格。
 
 ## 四 已完成批次与有效证据
 

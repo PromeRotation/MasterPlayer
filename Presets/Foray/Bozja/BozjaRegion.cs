@@ -3,10 +3,11 @@ using MasterPlayer.Replay;
 
 namespace MasterPlayer.Mechanics.Bozja;
 
-internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY)
+internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY, string? encounterKey = null)
 {
     internal BozjaEncounter[] Encounters { get; } = BozjaCatalog.Definitions
-        .Where(d => d.Territory == territory).Select(d => new BozjaEncounter(d)).ToArray();
+        .Where(d => d.Territory == territory && (encounterKey == null || d.Key == encounterKey))
+        .Select(d => new BozjaEncounter(d)).ToArray();
     internal List<BozjaEncounter> Loaded { get; } = [];
     internal BozjaEncounter? Selected { get; private set; }
     private readonly Dictionary<BozjaEncounter, long> versions = [];
@@ -15,7 +16,7 @@ internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY)
     private ulong managerPlayer;
 
     internal void Synchronize(ReplayActorState[] input, ReplayPartyMember[] party, ulong source,
-        DateTime now, bool update, Action? beforeUpdate = null, ReplayActiveFate? fate = null)
+        DateTime now, bool update, Action? beforeUpdate = null, ReplayActiveFate? fate = null, ushort cfc = 0)
     {
         if (!update)
         {
@@ -25,6 +26,8 @@ internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY)
             return;
         }
         var models = Loaded.Concat(Encounters).Distinct().ToArray();
+        foreach (var model in models) model.ContentFinderId = cfc;
+        foreach (var model in models) model.BeginCll3Frame();
         foreach (var model in models) model.Advance(now);
         var present = input.ToDictionary(a => a.Id);
         foreach (var old in actors.Where(kv => !present.TryGetValue(kv.Key, out var next)
@@ -46,7 +49,8 @@ internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY)
             // existing snapshot commits only after every callback succeeds.
             if (created) actors[value.Id] = (value, nextOrder);
             foreach (var model in models) model.PrepareActor(value, nextOrder);
-            var castChanged = BozjaEncounter.InputCastChanged(created ? null : previous.Actor, value);
+            var castChanged = BozjaEncounter.InputCastChanged(created ? null : previous.Actor, value,
+                Encounters.Any(e => e.UsesRawNpcClock));
             foreach (var model in models) model.FinishActorCast(value, castChanged);
             // ActorState installs CastInfo for every subscriber before Start.
             // A failed Start retains that physical cast, while Feed keeps the
@@ -65,11 +69,13 @@ internal sealed class BozjaRegion(uint territory = BozjaCatalog.TERRITORY)
         managerPlayer = party.FirstOrDefault(p => p.Slot == 0)?.EntityId ?? 0;
         Reconcile();
         beforeUpdate?.Invoke();
-        Update(now);
+        Update(now, true);
     }
 
-    internal void Update(DateTime now)
+    internal void Update(DateTime now, bool inputFrame = false)
     {
+        if (!inputFrame)
+            foreach (var model in Encounters) model.BeginCll3Frame();
         foreach (var model in Loaded.Concat(Encounters).Distinct().ToArray())
             model.Update(now, () => ++order);
         Reconcile();

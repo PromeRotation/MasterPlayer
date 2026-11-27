@@ -1,4 +1,5 @@
 using System.Numerics;
+using MasterPlayer.Mechanics.Dungeons;
 using MasterPlayer.Spatial.Geometry;
 using Host = PromeRotation.Spatial.Geometry;
 
@@ -20,7 +21,12 @@ internal static class HostDrawingGeometry
 
     private sealed class CustomGeometry(IGeometryShape shape) : Host.IGeometryShape, MasterPlayer.Drawing.ITriangulatedDrawingGeometry
     {
-        public IReadOnlyList<IReadOnlyList<Vector3>>? FillPolygons => shape is PolygonRegionGeometry region ? region.FillPolygons : null;
+        public IReadOnlyList<IReadOnlyList<Vector3>>? FillPolygons => shape switch
+        {
+            PolygonRegionGeometry region => region.FillPolygons,
+            AllianceArenaGeometry alliance => alliance.FillPolygons,
+            _ => null,
+        };
         public Host.GeometryKind Kind => (Host.GeometryKind)shape.Kind;
         public Vector3 Position => shape.Position;
         public float Rotation => shape.Rotation;

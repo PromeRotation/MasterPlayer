@@ -1,12 +1,55 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
+if (args.Length == 3 && args[0] == "--arachne-arenas")
+{
+    NativeDungeonArenaExport.RunArachne(args[1], args[2]);
+    return;
+}
+if (args.Length == 3 && args[0] == "--irminsul-arenas")
+{
+    NativeDungeonArenaExport.RunIrminsul(args[1], args[2]);
+    return;
+}
+if (args.Length == 3 && args[0] == "--ozma-arenas")
+{
+    NativeDungeonArenaExport.RunOzma(args[1], args[2]);
+    return;
+}
+
 if (args.Length == 3 && args[0] == "--dalriada-spirals")
 {
     NativeDungeonArenaExport.RunDalriadaSpirals(args[1], args[2]);
     return;
 }
 
+if (args.Length == 3 && args[0] == "--alliance-standard-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "alliance-standard");
+    return;
+}
+if (args.Length == 3 && args[0] == "--alliance-artillery-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "alliance-artillery");
+    return;
+}
+if (args.Length == 3 && args[0] == "--alliance-next-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "alliance-next");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--alliance-trash-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "alliance-trash");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "--baldesion-arenas")
+{
+    NativeDungeonArenaExport.Run(args[1], args[2], "baldesion");
+    return;
+}
 if (args.Length == 3 && args[0] == "--castrum-lacus-arenas")
 {
     NativeDungeonArenaExport.Run(args[1], args[2], "castrum-lacus");

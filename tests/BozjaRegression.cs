@@ -79,6 +79,8 @@ internal static partial class BozjaRegression
                 35 => new BossMod.Shadowbringers.Foray.Skirmish.ConflictingWithTheFirstLaw.ConflictingWithTheFirstLaw(W, W.Actors.Find(1)!),
                 36 => new BossMod.Shadowbringers.Foray.Skirmish.HeavyBootsOfLead.HeavyBootsOfLead(W, W.Actors.Find(1)!),
                 37 => new BossMod.Shadowbringers.Foray.Skirmish.PyromancerSupreme.PyromancerSupreme(W, W.Actors.Find(1)!),
+                39 => new BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL3Adrammelech.CLL3Adrammelech(W, W.Actors.Find(1)!),
+                40 => new BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL4Dawon.CLL4Dawon(W, W.Actors.Find(1)!),
                 _ => throw new ArgumentOutOfRangeException(nameof(definition)),
             };
             Sync();
@@ -183,6 +185,13 @@ internal static partial class BozjaRegression
         RunGauntlet(run);
         RunAlbeleo(run);
         RunSkirmishes(run);
+        RunCll3(run);
+        RunCll4(run);
+        RunArt(run);
+        RunOwain(run);
+        RunRaiden(run);
+        RunVirtue(run);
+        RunAllianceTrash(run);
         RunBozjaBlockers(run);
     }
 

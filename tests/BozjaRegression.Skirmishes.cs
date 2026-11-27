@@ -11,6 +11,7 @@ internal static partial class BozjaRegression
 {
     private static void RunSkirmishes(Action<string, Action> run)
     {
+        RunCll1(run);
         RunPyromancer(run);
         run("Bozja pending Skirmish two modules same-frame reset order and selection", SkirmishResetOrder);
         run("Bozja pending Skirmish creation old Party0 and source-viewer separation", SkirmishPartyGate);

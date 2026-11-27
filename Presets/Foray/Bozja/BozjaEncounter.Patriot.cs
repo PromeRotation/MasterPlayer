@@ -39,12 +39,20 @@ internal sealed partial class BozjaEncounter
         if (actor.ObservedTether == next) return;
         if (actor.ObservedTether.Target != 0)
         {
+            Cll1Tether(actor, actor.ObservedTether, true);
             CavalryUntethered(actor, actor.ObservedTether);
             SeekerTether(actor, actor.ObservedTether, true);
+            OwainTether(actor, actor.ObservedTether, true);
+            RaidenTether(actor, actor.ObservedTether, true);
+            VirtueTether(actor, actor.ObservedTether, true);
         }
         actor.ObservedTether = next;
+        if (next.Item2 is not (0 or 0xE0000000)) Cll1Tether(actor, next, false);
         if (next.Item2 is not (0 or 0xE0000000)) CavalryTethered(actor, next, creating);
         if (next.Item2 is not (0 or 0xE0000000)) SeekerTether(actor, next, false);
+        if (next.Item2 is not (0 or 0xE0000000)) OwainTether(actor, next, false);
+        if (next.Item2 is not (0 or 0xE0000000)) RaidenTether(actor, next, false);
+        if (next.Item2 is not (0 or 0xE0000000)) VirtueTether(actor, next, false);
         if (Active && tether != null && next.Item2 is not (0 or 0xE0000000)) PatriotTethered(actor, tether.Id);
     }
 
@@ -54,15 +62,23 @@ internal sealed partial class BozjaEncounter
         target = target == 0xE0000000 ? 0 : target;
         if (actor.ObservedTether.Target != 0)
         {
+            Cll1Tether(actor, actor.ObservedTether, true);
             CavalryUntethered(actor, actor.ObservedTether);
             SeekerTether(actor, actor.ObservedTether, true);
+            OwainTether(actor, actor.ObservedTether, true);
+            RaidenTether(actor, actor.ObservedTether, true);
+            VirtueTether(actor, actor.ObservedTether, true);
         }
         actor.ObservedTether = (id, target);
         // A real OpTether dispatches even when the value is unchanged. Only
         // frame snapshots are deduplicated; a zero target is Untethered only.
+        if (target != 0) Cll1Tether(actor, (id, target), false);
         if (target != 0) PatriotTethered(actor, id);
         if (target != 0) CavalryTethered(actor, (id, target));
         if (target != 0) SeekerTether(actor, (id, target), false);
+        if (target != 0) OwainTether(actor, (id, target), false);
+        if (target != 0) RaidenTether(actor, (id, target), false);
+        if (target != 0) VirtueTether(actor, (id, target), false);
     }
 
     internal void PatriotTethered(BozjaActor actor, uint id)

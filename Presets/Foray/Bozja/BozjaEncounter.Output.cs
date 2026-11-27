@@ -15,6 +15,20 @@ internal sealed partial class BozjaEncounter
         if (!Active) yield break;
         foreach (var rule in ActiveRules)
         {
+            if (!Cll1OutputEnabled(rule) || !Cll4OutputEnabled(rule)) continue;
+            foreach (var aoe in LightAoes(rule)) yield return aoe;
+            foreach (var aoe in HeavyAoes(rule)) yield return aoe;
+            foreach (var aoe in Cll1Aoes(rule)) yield return aoe;
+            foreach (var aoe in Cll4Aoes(rule)) yield return aoe;
+            foreach (var aoe in ArtAoes(rule)) yield return aoe;
+            if (viewer != null)
+                foreach (var aoe in VirtueAoes(viewer, rule)) yield return aoe;
+            if (rule.Kind == BozjaRuleKind.OwainElemental)
+                foreach (var aoe in OwainElements) yield return aoe;
+            if (rule.Kind is BozjaRuleKind.RaidenArena or BozjaRuleKind.RaidenLancing)
+                foreach (var cast in Casts.Where(c => c.Rule == rule)) yield return new(cast, false, true);
+            if (rule.Kind == BozjaRuleKind.Cll3Arena)
+                foreach (var cast in Casts.Where(c => c.Rule == rule)) yield return new(cast, false, true);
             foreach (var aoe in QueenAoes(viewer, rule)) yield return aoe;
             foreach (var aoe in BurnAoes(rule)) yield return aoe;
             foreach (var aoe in GraveAoes(rule)) yield return aoe;
@@ -75,12 +89,13 @@ internal sealed partial class BozjaEncounter
             var list = Casts.Where(c => c.Rule == rule).ToArray();
             for (var i = 0; i < list.Length; ++i)
             {
-                if (i >= rule.MaxCasts) break;
+                if (i >= rule.MaxCasts || !Cll1TimewindowVisible(rule, list, i)) break;
                 if (rule.Kind == BozjaRuleKind.VoidQuake && i != 0) break;
                 if (rule.Kind == BozjaRuleKind.Stormcall && i >= 2) break;
                 if (rule.Kind == BozjaRuleKind.Foreshadowing && list.Length == 5 && i != 0) break;
-                yield return new(list[i], rule.MaxDangerColor is { } max && list.Length > max && i < max,
-                    !rule.Safe && (rule.MaxRisky == null || i < rule.MaxRisky));
+                var risky = !rule.Safe && (rule.MaxRisky == null || i < rule.MaxRisky);
+                if (IsCll3 && rule.Kind == BozjaRuleKind.Charge) risky = list[i].Activation.AddSeconds(-1d) <= Now;
+                yield return new(list[i], rule.MaxDangerColor is { } max && list.Length > max && i < max, risky);
             }
         }
     }
@@ -102,6 +117,13 @@ internal sealed partial class BozjaEncounter
     {
         foreach (var tower in Towers)
         {
+            if (VirtueInvalidTower(tower.Rule))
+            {
+                // Source's background short-circuits before counting for a
+                // forbidden viewer. Its foreground has no valid outline.
+                yield return new(tower, !Soakers(tower).Contains(viewer), false, false);
+                continue;
+            }
             var allowed = Soakers(tower).Contains(viewer);
             var inside = Inside(tower, viewer);
             var count = NumInside(tower);
@@ -111,7 +133,7 @@ internal sealed partial class BozjaEncounter
         }
     }
 
-    internal IEnumerable<BozjaHint> Hints(BozjaActor viewer)
+    internal IEnumerable<BozjaHint> Hints(BozjaActor viewer, bool consumeOzmaState = true)
     {
         if (ConstructionCasts.Any(c => c.Contains(viewer.Actor.Position))) yield return new("GTFO from aoe!");
         if (!Active) yield break;
@@ -123,6 +145,23 @@ internal sealed partial class BozjaEncounter
         }
         foreach (var rule in ActiveRules)
         {
+            if (!Cll1OutputEnabled(rule) || !Cll4OutputEnabled(rule)) continue;
+            foreach (var hint in Cll1Hints(viewer, rule)) yield return hint;
+            foreach (var hint in Cll3Hints(viewer, rule)) yield return hint;
+            foreach (var hint in OzmaHints(viewer, rule, consumeOzmaState)) yield return hint;
+            foreach (var hint in DeathgazeHints(viewer, rule)) yield return hint;
+            foreach (var hint in ArtHints(viewer, rule)) yield return hint;
+            foreach (var hint in OwainHints(viewer, rule)) yield return hint;
+            foreach (var hint in RaidenHints(viewer, rule)) yield return hint;
+            foreach (var hint in CircleBaitHints(viewer, rule)) yield return hint;
+            foreach (var hint in VirtueHints(viewer, rule)) yield return hint;
+            if (rule.Kind == BozjaRuleKind.AllianceKnockback && !rule.KnockbackStopAtWall
+                && AllianceSimpleMovements(viewer, rule).Any(m => !Arena.Contains(m.To, 0)))
+                yield return new("About to be knocked into danger!");
+            if (rule.Kind == BozjaRuleKind.AlliancePull && AlliancePullMovements(viewer).Any(m => AlliancePullUnsafe(m.To)))
+                yield return new("About to be knocked into danger!");
+            if (rule.Kind == BozjaRuleKind.Cll4Wind && Cll4Movements(viewer).Any(m => !Arena.Contains(m.To, 0)))
+                yield return new("About to be knocked into danger!");
             foreach (var hint in DahuHints(viewer, rule)) yield return hint;
             foreach (var hint in PhantomHints(viewer, rule)) yield return hint;
             foreach (var hint in SavageDahuHints(viewer, rule)) yield return hint;
@@ -141,16 +180,18 @@ internal sealed partial class BozjaEncounter
                 foreach (var hint in GuardHints(viewer)) yield return hint;
             var list = Casts.Where(c => c.Rule == rule).ToArray();
             if (rule.Kind is not (BozjaRuleKind.SaunionBait or BozjaRuleKind.CuchFlesh or BozjaRuleKind.RobotOrder or BozjaRuleKind.QueenChess or BozjaRuleKind.Meteor or BozjaRuleKind.CrystalSight or BozjaRuleKind.LunarCry or BozjaRuleKind.SeekerBlade)
+                && !(IsCll1 && rule.Component == "WildCharges")
                 && Visible(viewer).Any(a => a.Cast.Rule == rule && a.Risky && a.Cast.Contains(viewer.Actor.Position)))
-                yield return new(rule.Kind == BozjaRuleKind.DeadLeaves ? "Go to different color!"
+                yield return new(rule.Kind == BozjaRuleKind.ArtChase ? "GTFO from chasing aoe!"
+                    : rule.Kind == BozjaRuleKind.DeadLeaves ? "Go to different color!"
                     : rule.Kind is BozjaRuleKind.Exaflare or BozjaRuleKind.PhantomExaflare or BozjaRuleKind.DiabloNox ? "GTFO from exaflare!"
-                    : rule.Kind is BozjaRuleKind.Pheromones or BozjaRuleKind.Juice or BozjaRuleKind.ShockSphere ? "GTFO from voidzone!" : "GTFO from aoe!");
+                    : IsLightArtillery && rule.Component == "FireVoidzone" || rule.Kind is BozjaRuleKind.Pheromones or BozjaRuleKind.Juice or BozjaRuleKind.ShockSphere ? "GTFO from voidzone!" : "GTFO from aoe!");
             if (rule.Kind == BozjaRuleKind.Meteor && Meteors.Count > 0 && meteorOrigin is { } origin
                 && !Meteors[0].Contains(viewer.Actor.Position) && DistanceSquared(viewer.Actor.Position, origin) < 900)
                 yield return new("Hide behind obstacle!");
             if (rule.Kind == BozjaRuleKind.CrystalSight && crystalSights.TryGetValue(rule, out var sight)
                 && sight.Safezones.FirstOrDefault() is { } safe && sight.Origin is { } sightOrigin
-                && !safe.Contains(viewer.Actor.Position) && DistanceSquared(viewer.Actor.Position, sightOrigin) < 3600)
+                && !safe.Contains(viewer.Actor.Position) && DistanceSquared(viewer.Actor.Position, sightOrigin) < (IsIrminsul ? 4900 : 3600))
                 yield return new("Hide behind obstacle!");
             if (rule.Kind == BozjaRuleKind.LunarCry && lunarSight.Safezones.FirstOrDefault() is { } lunarSafe
                 && lunarSight.Origin is { } lunarOrigin && !lunarSafe.Contains(viewer.Actor.Position)
@@ -211,6 +252,14 @@ internal sealed partial class BozjaEncounter
             if (!IsFire && !rule.GlobalHint && list.Length > 0 && rule.Kind == BozjaRuleKind.Raidwide) yield return new(rule.Hint ?? "Raidwide", false);
             if (!rule.GlobalHint && list.Length > 0 && rule.Kind == BozjaRuleKind.Tankbuster) yield return new("Tankbuster", false);
             if (rule.Kind != BozjaRuleKind.Tower || list.Length == 0) continue;
+            if (IsVirtue && (VirtueTethers(rule).Count == 0
+                || VirtueTethers(rule).Any(t => ReferenceEquals(t.Target, viewer)))) continue;
+            if (VirtueInvalidTower(rule))
+            {
+                if (list.Any(t => !Soakers(t).Contains(viewer) && Inside(t, viewer)))
+                    yield return new("GTFO from tower!");
+                continue;
+            }
             if (list.Any(t => !Soakers(t).Contains(viewer) && Inside(t, viewer)))
                 yield return new("GTFO from tower!");
             else if (list.FirstOrDefault(t => Soakers(t).Contains(viewer) && Inside(t, viewer)) is { } own)
@@ -233,6 +282,18 @@ internal sealed partial class BozjaEncounter
         }
         foreach (var rule in ActiveRules)
         {
+            if (!Cll1OutputEnabled(rule) || !Cll4OutputEnabled(rule)) continue;
+            foreach (var hint in Cll1GlobalHints(rule)) yield return hint;
+            if (rule.Kind == BozjaRuleKind.OwainCastHint && Casts.FirstOrDefault(c => c.Rule == rule) is { } timed)
+            {
+                var remaining = timed.Source.Cast is { } cast ? Total(cast) + .3f - timed.Source.Elapsed : 0;
+                yield return $"Ivory Palm is enraging! {remaining:f1}s left";
+            }
+            if (rule.Kind == BozjaRuleKind.TimedCastHint && Casts.FirstOrDefault(c => c.Rule == rule) is { } raidenEnrage)
+            {
+                var remaining = raidenEnrage.Source.Cast is { } cast ? Total(cast) + .3f - raidenEnrage.Source.Elapsed : 0;
+                yield return $"{rule.Hint} {remaining:f1}s left";
+            }
             if (rule.Kind == BozjaRuleKind.DiabloOrbs && DiabloOrbs.Count > 0) yield return "Soak the orbs!";
             if (rule.Kind == BozjaRuleKind.SaunionMind && saunionOneMind)
                 yield return $"Pull {Primary!.Actor.Name} & {Dawon?.Actor.Name} further apart!";
@@ -241,6 +302,7 @@ internal sealed partial class BozjaEncounter
             if (rule.Kind == BozjaRuleKind.GallowsMarch && Primary?.Cast?.ActionId == 24096)
                 yield return "Apply doom & march debuffs";
             if (rule.Kind == BozjaRuleKind.DahuBait && DahuBaits.Count > 0) yield return "Tankbuster cleave";
+            if (IsVirtue && rule.Kind == BozjaRuleKind.CircleBait && Casts.Any(c => c.Rule == rule)) yield return "Tankbuster cleave";
             if (rule.Kind == BozjaRuleKind.SeekerIconBait && rule.Component == "MercifulArc"
                 && SeekerBaits.Any(b => b.Rule == rule)) yield return "Tankbuster cleave";
             if (rule.GlobalHint && Casts.Any(c => c.Rule == rule))
@@ -275,6 +337,20 @@ internal sealed partial class BozjaEncounter
         if (IsFire && FireNavigationError != null) yield break;
         foreach (var rule in ActiveRules)
         {
+            if (!Cll1OutputEnabled(rule) || !Cll4OutputEnabled(rule)) continue;
+            foreach (var zone in LightNavigation(rule)) yield return zone;
+            foreach (var zone in HeavyNavigation(rule)) yield return zone;
+            foreach (var zone in Cll1Navigation(viewer, rule)) yield return zone;
+            foreach (var zone in Cll3Navigation(rule)) yield return zone;
+            foreach (var zone in Cll4Navigation(rule)) yield return zone;
+            foreach (var zone in ArtNavigation(viewer, rule)) yield return zone;
+            foreach (var zone in OwainNavigation(viewer, rule)) yield return zone;
+            foreach (var zone in RaidenNavigation(viewer, rule)) yield return zone;
+            foreach (var zone in CircleBaitNavigation(viewer, rule)) yield return zone;
+            foreach (var zone in VirtueNavigation(viewer, rule)) yield return zone;
+            if (rule.Kind == BozjaRuleKind.AlliancePull && Casts.FirstOrDefault(c => c.Rule == rule) is { } pull)
+                yield return new($"alliance/pull/{pull.Generation}", rule.Component, pull.Activation,
+                    new CircleTemplate(rule.Component == "Sucker" ? 23 : 20), pull.Origin, 0);
             foreach (var zone in GauntletNavigation(viewer, rule)) yield return zone;
             foreach (var zone in SaunionNavigation(viewer, rule)) yield return zone;
             if (IsDiablo)
@@ -337,13 +413,14 @@ internal sealed partial class BozjaEncounter
             if (rule.Kind == BozjaRuleKind.Pheromones)
                 foreach (var actor in Pheromones)
                 {
-                    float[] lengths = [1.5f, 3, 6, 9];
+                    var capsule = (BozjaCapsuleTemplate)rule.Shape!;
+                    float[] lengths = [capsule.Length * .5f, capsule.Length, 2 * capsule.Length, 3 * capsule.Length];
                     DateTime[] clocks = [Now.AddSeconds(1.1d), Now.AddSeconds(3d), Now.AddSeconds(10d), DateTime.MaxValue];
                     for (var i = 0; i < lengths.Length; ++i)
                         yield return new($"pheromone/{actor.BirthOrder}/{i}", rule.Component, clocks[i],
-                            new BozjaCapsuleTemplate(4, lengths[i]), actor.Actor.Position, actor.Actor.Rotation);
+                            new BozjaCapsuleTemplate(capsule.Radius, lengths[i]), actor.Actor.Position, actor.Actor.Rotation);
                     yield return new($"pheromone/{actor.BirthOrder}/obstacle", rule.Component, default,
-                        new CircleTemplate(4), actor.Actor.Position, 0, Obstacle: true);
+                        new CircleTemplate(capsule.Radius), actor.Actor.Position, 0, Obstacle: true);
                 }
             if (rule.Kind == BozjaRuleKind.Wind)
                 foreach (var zone in WindNavigation(viewer)) yield return zone;
@@ -387,6 +464,7 @@ internal sealed partial class BozjaEncounter
             if (rule.Kind is BozjaRuleKind.Stack or BozjaRuleKind.BombStack)
                 foreach (var zone in StackNavigation(viewer, rule)) yield return zone;
             if (rule.Kind != BozjaRuleKind.Tower || list.Length == 0) continue;
+            if (VirtueInvalidTower(rule)) continue;
             var inTower = list.Any(t => Inside(t, viewer) && NumInside(t) == 1);
             var join = new List<Vector3>();
             var forbidden = new List<BozjaCast>();
@@ -411,7 +489,12 @@ internal sealed partial class BozjaEncounter
     internal BozjaZone[] NavigationForHost(BozjaActor viewer)
     {
         var raw = Navigation(viewer).ToArray();
-        if (!IsSkirmish && !IsGauntlet && Definition.Key != "DAL1Sartauvoir" && !IsDiablo && !IsSaunion && !IsCuchulainn && !IsRobots && !IsGrave && !IsBurn && !IsQueen && !IsGuard && !IsSeeker && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.Pheromones or BozjaRuleKind.MagitekBitLasers or BozjaRuleKind.Gaze or BozjaRuleKind.CastGaze or BozjaRuleKind.Meteor or BozjaRuleKind.Countdown or BozjaRuleKind.Stormcall or BozjaRuleKind.Foreshadowing or BozjaRuleKind.Time or BozjaRuleKind.CrystalSight or BozjaRuleKind.ControlTower or BozjaRuleKind.Burn or BozjaRuleKind.ChargeTether or BozjaRuleKind.EndlessFrost or BozjaRuleKind.DahuRotation or BozjaRuleKind.PhantomExaflare or BozjaRuleKind.ColossusRotation)) return raw;
+        if (IsAllianceTrash)
+        {
+            SortActivations(raw, 0, raw.Length - 1, z => z.Activation);
+            return raw;
+        }
+        if (!IsBaldesion && !IsCll1 && !IsSkirmish && !IsGauntlet && Definition.Key != "DAL1Sartauvoir" && !IsDiablo && !IsSaunion && !IsCuchulainn && !IsRobots && !IsGrave && !IsBurn && !IsQueen && !IsGuard && !IsSeeker && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.Pheromones or BozjaRuleKind.MagitekBitLasers or BozjaRuleKind.Gaze or BozjaRuleKind.CastGaze or BozjaRuleKind.Meteor or BozjaRuleKind.Countdown or BozjaRuleKind.Stormcall or BozjaRuleKind.Foreshadowing or BozjaRuleKind.Time or BozjaRuleKind.CrystalSight or BozjaRuleKind.ControlTower or BozjaRuleKind.Burn or BozjaRuleKind.ChargeTether or BozjaRuleKind.EndlessFrost or BozjaRuleKind.DahuRotation or BozjaRuleKind.PhantomExaflare or BozjaRuleKind.ColossusRotation)) return raw;
         // AIHints.Normalize sorts all forbidden zones, including complements;
         // temporary obstacles have their own list and preserve source order.
         var zones = raw.Where(z => !z.Obstacle).ToArray();
@@ -424,22 +507,36 @@ internal sealed partial class BozjaEncounter
         if (!Active) yield break;
         foreach (var rule in ActiveRules)
         {
+            if (!Cll1OutputEnabled(rule) || !Cll4OutputEnabled(rule)) continue;
             foreach (var damage in SaunionDamage(rule)) yield return damage;
             foreach (var damage in SeekerDamage(rule)) yield return damage;
+            foreach (var damage in RaidenDamage(rule)) yield return damage;
+            foreach (var damage in CircleBaitDamage(rule)) yield return damage;
             var list = Casts.Where(c => c.Rule == rule).ToArray();
             if (rule.Kind == BozjaRuleKind.Tankbuster)
                 foreach (var cast in list)
                 {
-                    if (cast.Source.Cast is not { } spell) continue;
+                    // SingleTargetCast retains original caster references after
+                    // duplicate Start; its current CastInfo can be non-Spell.
+                    var spell = IsAllianceTrash ? cast.Source.RawCast : cast.Source.Cast;
+                    if (spell == null) continue;
                     var target = spell.TargetId == cast.Source.Actor.Id ? cast.Source.Actor.TargetId : spell.TargetId;
                     var slot = Party.Where(p => p.Slot is >= 0 and < 64).OrderBy(p => p.Slot)
                         .FirstOrDefault(p => p.EntityId == target)?.Slot;
-                    yield return new(slot is { } i ? 1UL << i : 0, Activation(cast.Source), "Tankbuster");
+                    var activation = IsAllianceTrash
+                        ? Now.AddSeconds(BurnRawTotal(spell) + .3f - cast.Source.RawElapsed)
+                        : Activation(cast.Source);
+                    yield return new(slot is { } i ? 1UL << i : 0, activation, "Tankbuster");
                 }
             if (rule.Kind == BozjaRuleKind.Raidwide)
                 foreach (var cast in list)
-                    yield return new(PartyMask(_ => true), Activation(cast.Source), "Raidwide");
-            if (rule.Kind == BozjaRuleKind.Tower && list.Length > 0)
+                {
+                    var activation = IsAllianceTrash
+                        ? AllianceRaidwideActivation(cast.Source)
+                        : Activation(cast.Source);
+                    yield return new(PartyMask(_ => true), activation, "Raidwide");
+                }
+            if (rule.Kind == BozjaRuleKind.Tower && list.Length > 0 && !VirtueInvalidTower(rule))
                 yield return new(PartyMask(a => list.Any(t => Soakers(t).Contains(viewer) && Inside(t, a))),
                     list[0].Activation, "Raidwide");
             if (rule.Kind == BozjaRuleKind.LightningRod && Mines.Count > 0) yield return MineDamage(viewer);
@@ -463,8 +560,9 @@ internal sealed partial class BozjaEncounter
     internal BozjaDamage[] DamageForHost(BozjaActor viewer)
     {
         var damage = Damage(viewer).ToList();
-        if (IsGauntlet || Definition.Key == "DAL1Sartauvoir" || IsDiablo || IsSaunion || IsCuchulainn || IsQueen || IsSeeker || Definition.Rules.Any(r => r.Kind is BozjaRuleKind.ControlTower or BozjaRuleKind.Burn or BozjaRuleKind.ChargeTether))
+        if (IsCll1 || IsGauntlet || Definition.Key == "DAL1Sartauvoir" || IsDiablo || IsSaunion || IsCuchulainn || IsQueen || IsSeeker || Definition.Rules.Any(r => r.Kind is BozjaRuleKind.ControlTower or BozjaRuleKind.Burn or BozjaRuleKind.ChargeTether))
             damage.Sort(static (a, b) => a.Activation.CompareTo(b.Activation));
+        if (IsCll3 || IsCll4 || IsBaldesion || IsAllianceTrash) damage.Sort(static (a, b) => a.Activation.CompareTo(b.Activation));
         return damage.ToArray();
     }
 

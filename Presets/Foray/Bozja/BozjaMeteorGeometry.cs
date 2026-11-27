@@ -20,11 +20,13 @@ internal sealed class BozjaMeteorGeometry
     private readonly float inverseCellHeight;
     private readonly Vector2[] rowRanges;
     private readonly List<(Vector2 A, Vector2 B)>[] rowEdges;
+    private readonly bool sourceIndexedDistance;
 
     internal BozjaMeteorGeometry(Vector3 center, Vector3 origin, IReadOnlyList<BozjaActor> blockers,
-        float range = 30, bool excludeHitboxes = true)
+        float range = 30, bool excludeHitboxes = true, bool sourceIndexedDistance = false)
     {
         this.center = center;
+        this.sourceIndexedDistance = sourceIndexedDistance;
         var shadows = new Paths64();
         var circles = new Paths64();
         foreach (var blocker in blockers)
@@ -123,6 +125,10 @@ internal sealed class BozjaMeteorGeometry
     internal IGeometryShape Display(float y)
         => new PolygonRegionGeometry(center with { Y = y }, exteriors, [], displayFill);
 
+    internal IReadOnlyList<IReadOnlyList<Vector3>> NavigationContours(float y)
+        => contours.Select(contour => (IReadOnlyList<Vector3>)contour
+            .Select(p => new Vector3(center.X + p.X, y, center.Z + p.Y)).ToArray()).ToArray();
+
     private int Row(float y) => Math.Clamp((int)((y - minimum.Y) * inverseCellHeight), 0, rowRanges.Length - 1);
 
     internal bool Contains(Vector3 point)
@@ -161,6 +167,7 @@ internal sealed class BozjaMeteorGeometry
     internal float ForbiddenDistance(float x, float z)
     {
         if (!Contains(new(x, 0, z))) return 0;
+        if (sourceIndexedDistance) return IndexedDistance(x, z);
         var best = float.MaxValue;
         foreach (var contour in contours)
             for (var i = 0; i < contour.Length; ++i)
@@ -176,6 +183,37 @@ internal sealed class BozjaMeteorGeometry
                 var ex = x - (ax + t * dx);
                 var ez = z - (az + t * dz);
                 best = MathF.Min(best, ex * ex + ez * ez);
+            }
+        return MathF.Sqrt(best);
+    }
+
+    private float IndexedDistance(float x, float z)
+    {
+        // The source SDF queries only edges whose five-unit cells contain the
+        // point. Preserve that finite candidate set, including empty cells.
+        var cellX = (int)MathF.Floor(x * .2f);
+        var cellZ = (int)MathF.Floor(z * .2f);
+        var best = float.MaxValue;
+        foreach (var contour in contours)
+            for (var i = 0; i < contour.Length; ++i)
+            {
+                var a = contour[(i + contour.Length - 1) % contour.Length];
+                var b = contour[i];
+                var ax = center.X + a.X;
+                var az = center.Z + a.Y;
+                var dx = b.X - a.X;
+                var dz = b.Y - a.Y;
+                var bx = ax + dx;
+                var bz = az + dz;
+                if (cellX < (int)MathF.Floor(Math.Min(ax, bx) * .2f)
+                    || cellX > (int)MathF.Floor(Math.Max(ax, bx) * .2f)
+                    || cellZ < (int)MathF.Floor(Math.Min(az, bz) * .2f)
+                    || cellZ > (int)MathF.Floor(Math.Max(az, bz) * .2f)) continue;
+                var inverse = 1f / (dx * dx + dz * dz + 1e-8f);
+                var t = Math.Clamp(((x - ax) * dx + (z - az) * dz) * inverse, 0f, 1f);
+                var ex = x - (ax + t * dx);
+                var ez = z - (az + t * dz);
+                best = Math.Min(best, ex * ex + ez * ez);
             }
         return MathF.Sqrt(best);
     }

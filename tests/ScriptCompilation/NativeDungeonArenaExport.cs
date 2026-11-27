@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
 
-internal static class NativeDungeonArenaExport
+internal static partial class NativeDungeonArenaExport
 {
     public static void RunDalriadaSpirals(string runtimePath, string destination)
     {
@@ -33,9 +33,14 @@ internal static class NativeDungeonArenaExport
         var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(runtimePath));
         var (className, folder) = group switch
         {
+            "alliance-standard" => ("AllianceStandardArenas", ""),
+            "alliance-artillery" => ("AllianceArtilleryArenas", ""),
+            "alliance-next" => ("AllianceNextArenas", ""),
+            "alliance-trash" => ("AllianceTrashArenas", ""),
             "delubrum" => ("DelubrumArenas", ""),
             "dalriada" => ("DalriadaArenas", ""),
             "castrum-lacus" => ("CastrumLacusArenas", ""),
+            "baldesion" => ("BaldesionArenas", ""),
             "thordan" => ("ThordanArenas", ""),
             "quantum" => ("QuantumArenaData", ""),
             "eureka" => ("EurekaOrthosArenas", ""),
@@ -115,6 +120,30 @@ internal static class NativeDungeonArenaExport
         var output = new StringBuilder($"// Generated from resolved runtime polygons using --{group}-arenas.\nusing System.Numerics;\nusing MasterPlayer.Spatial.Geometry;\n\nnamespace MasterPlayer.Mechanics.Dungeons;\n\ninternal static class {className}\n{{\n");
         (string Name, string Type)[] encounters = group switch
         {
+            "alliance-standard" => [
+                ("Forgall", "BossMod.Heavensward.Alliance.A22Forgall.A22Forgall"),
+                ("Headstone", "BossMod.Heavensward.Alliance.A23Headstone.A23Headstone"),
+                ("Calofisteri", "BossMod.Heavensward.Alliance.A25Calofisteri.A25Calofisteri")],
+            "alliance-artillery" => [
+                ("Stage3a", "BossMod.Shadowbringers.Alliance.A20HeavyArtilleryUnit.A20HeavyArtilleryUnit"),
+                ("Stage3b", "BossMod.Shadowbringers.Alliance.A20HeavyArtilleryUnit.A20HeavyArtilleryUnit")],
+            "alliance-next" => [
+                ("Detector", "BossMod.Dawntrail.Alliance.A20Detector.A20Detector"),
+                ("Jack", "BossMod.Dawntrail.Alliance.A20JaggedyEaredJack.A20JaggedyEaredJack"),
+                ("Kraken", "BossMod.Dawntrail.Alliance.A20Kraken.A20Kraken"),
+                ("Lions", "BossMod.Endwalker.Alliance.A10Lions.A10Lions"),
+                ("Rhalgr", "BossMod.Endwalker.Alliance.A10RhalgrEmissary.A10RhalgrEmissary")],
+            "alliance-trash" => [
+                ("Vanguard", "BossMod.Dawntrail.Alliance.A10Trash.VanguardPathfinder.A10VanguardPathfinder"),
+                ("Aquarius", "BossMod.Dawntrail.Alliance.A10Aquarius.A10Aquarius"),
+                ("Groundskeeper", "BossMod.Dawntrail.Alliance.A10Groundskeeper.A10Groundskeeper"),
+                ("Despot", "BossMod.Dawntrail.Alliance.A10Despot.A10Despot"),
+                ("AngelosFirst", "BossMod.Endwalker.Alliance.A30Trash2.A30Trash2Pack1")],
+            "baldesion" => [("Art", "BossMod.Stormblood.Foray.BaldesionArsenal.BA1Art.BA1Art"),
+                ("Owain", "BossMod.Stormblood.Foray.BaldesionArsenal.BA1Owain.BA1Owain"),
+                ("RaidenStarting", "BossMod.Stormblood.Foray.BaldesionArsenal.BA2Raiden.BA2Raiden"),
+                ("RaidenDefault", "BossMod.Stormblood.Foray.BaldesionArsenal.BA2Raiden.BA2Raiden"),
+                ("Virtue", "BossMod.Stormblood.Foray.BaldesionArsenal.BA3AbsoluteVirtue.BA3AbsoluteVirtue")],
             "delubrum" => [("Dahu", "BossMod.Shadowbringers.Foray.DelubrumReginae.Dahu"),
                 ("PhantomHazard", "BossMod.Shadowbringers.Foray.DelubrumReginae.Phantom"),
                 ("SeekerStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.TrinitySeeker"),
@@ -126,7 +155,13 @@ internal static class NativeDungeonArenaExport
                 ("GuardStarting", "BossMod.Shadowbringers.Foray.DelubrumReginae.QueensGuard"),
                 ("GuardDefault", "BossMod.Shadowbringers.Foray.DelubrumReginae.QueensGuard"),
                 ("QueenDefault", "BossMod.Shadowbringers.Foray.DelubrumReginae.Queen")],
-            "castrum-lacus" => [("Albeleo", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL2AlbeleoTheMaleficient.CLL2AlbeleoTheMaleficent")],
+            "castrum-lacus" => [("Albeleo", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL2AlbeleoTheMaleficient.CLL2AlbeleoTheMaleficent"),
+                ("Cll3Starting", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL3Adrammelech.CLL3Adrammelech"),
+                ("Cll3Default", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL3Adrammelech.CLL3Adrammelech"),
+                ("DawonStarting", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL4Dawon.CLL4Dawon"),
+                ("DawonDefault", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL4Dawon.CLL4Dawon"),
+                ("LyonStarting", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL4Dawon.CLL4Dawon"),
+                ("LyonDefault", "BossMod.Shadowbringers.Foray.CastrumLacusLitore.CLL4Dawon.CLL4Dawon")],
             "dalriada" => [("Colossus", "BossMod.Shadowbringers.Foray.TheDalriada.DAL04thLegionColossusRubricatus.DAL04thLegionColossusRubricatus"),
                 ("Cuchulainn", "BossMod.Shadowbringers.Foray.TheDalriada.DAL2Cuchulainn.DAL2Cuchulainn"),
                 ("Diablo", "BossMod.Shadowbringers.Foray.TheDalriada.DAL4DiabloArmament.DAL4DiabloArmament"),
@@ -380,14 +415,23 @@ internal static class NativeDungeonArenaExport
             if (group == "heavensward-quest") encounter = assembly.GetType("BossMod.Heavensward.Quest.MSQ." + type)!;
             if (group == "endwalker-quest") encounter = assembly.GetType("BossMod.Endwalker.Quest.MSQ." + type)!;
             if (group is "treasure-canals-lucky" or "treasure-cenote-rooms") encounter = assembly.GetType(type)!;
-            if (group is "ttokrrone" or "carnivale" or "hoh" or "eureka" or "quantum" or "thordan" or "delubrum" or "dalriada" or "castrum-lacus") encounter = assembly.GetType(type)!;
+            if (group is "ttokrrone" or "carnivale" or "hoh" or "eureka" or "quantum" or "thordan" or "delubrum" or "dalriada" or "castrum-lacus" or "baldesion") encounter = assembly.GetType(type)!;
+            if (group is "alliance-trash" or "alliance-next" or "alliance-artillery" or "alliance-standard") encounter = assembly.GetType(type, true)!;
             object bounds;
             object? customPolygon = null;
             object? customCenter = null;
             var fieldName = name switch
             {
+                "Stage3a" when group == "alliance-artillery" => "arena3a",
+                "Stage3b" when group == "alliance-artillery" => "Arena3b",
                 "Dahu" when group == "delubrum" => "arena",
                 "Diablo" when group == "dalriada" => "DefaultArena",
+                "Cll3Starting" when group == "castrum-lacus" => "startingArena",
+                "Cll3Default" when group == "castrum-lacus" => "DefaultArena",
+                "RaidenStarting" when group == "baldesion" => "startingArena",
+                "RaidenDefault" when group == "baldesion" => "DefaultArena",
+                _ when group == "castrum-lacus" && name.StartsWith("Dawon") => name + "Arena",
+                _ when group == "castrum-lacus" && name.StartsWith("Lyon") => name + "Arena",
                 _ when group is "dalriada" or "castrum-lacus" => "arena",
                 "SeekerStarting" when group == "delubrum" => "StartingArena",
                 "SeekerDefault" when group == "delubrum" => "DefaultArena",
@@ -743,7 +787,7 @@ internal static class NativeDungeonArenaExport
             dynamic resolvedCenter = customCenter ?? arena.Center;
             if (group == "delubrum" && name is "SeekerStarting" or "SeekerDefault" or "GuardStarting" or "GuardDefault")
                 output.Append(FormattableString.Invariant($"    internal const float {name}Radius = {(float)arena.Radius:R}f;\n"));
-            if (group is "dalriada" or "castrum-lacus")
+            if (group is "dalriada" or "castrum-lacus" or "baldesion" or "alliance-trash" or "alliance-next" or "alliance-artillery" or "alliance-standard")
                 output.Append(FormattableString.Invariant($"    internal const float {name}Radius = {(float)arena.Radius:R}f;\n"));
             if (group == "queen" && name == "XInsetHalf") resolvedPolygon = resolvedPolygon.Offset(-.5f);
             if (group == "queen" && name == "XInsetOne") resolvedPolygon = resolvedPolygon.Offset(-1f);
@@ -769,6 +813,11 @@ internal static class NativeDungeonArenaExport
                         ((float)triangle.C.X, (float)triangle.C.Z)]);
                 var position = FormattableString.Invariant($"new({(float)resolvedCenter.X:R}f, y, {(float)resolvedCenter.Z:R}f)");
                 var argument = "float y";
+                if (group == "alliance-artillery")
+                {
+                    argument += ", Vector3? center = null";
+                    position = "center ?? " + position;
+                }
                 if (group == "delubrum" && name.StartsWith("SeekerBlade"))
                 {
                     argument += ", Vector3? drawCenter = null";
@@ -798,6 +847,14 @@ internal static class NativeDungeonArenaExport
                 foreach (dynamic vertex in resolvedPolygon.Parts[0].Vertices)
                     output.Append(FormattableString.Invariant($"        new({(float)((float)arena.Center.X + (float)vertex.X):R}f, y, {(float)((float)arena.Center.Z + (float)vertex.Z):R}f),\n"));
                 output.Append(FormattableString.Invariant($"    ], new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f));\n\n"));
+                continue;
+            }
+            if (group == "alliance-standard")
+            {
+                output.Append(FormattableString.Invariant($"    internal static IGeometryShape {name}(float y) => new AllianceArenaGeometry(new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f), [\n"));
+                foreach (dynamic vertex in resolvedPolygon.Parts[0].Vertices)
+                    output.Append(FormattableString.Invariant($"        new({(float)vertex.X:R}f, {(float)vertex.Z:R}f),\n"));
+                output.Append("    ]);\n\n");
                 continue;
             }
             output.Append(FormattableString.Invariant($"    internal static IGeometryShape {name}(float y) => new LocalPolygonGeometry(new({(float)arena.Center.X:R}f, y, {(float)arena.Center.Z:R}f), 0, [\n"));

@@ -13,7 +13,7 @@ using PromeRotation.GreenMoveSystem;
 
 internal static class ScriptCatalogRegression
 {
-    internal const int BUILT_IN_COUNT = 296;
+    internal const int BUILT_IN_COUNT = 328;
     public static void Run(string pluginPath, IReadOnlyList<MetadataReference> references, bool scriptsOnly = false, bool dungeonsOnly = false)
     {
         var config = Directory.CreateTempSubdirectory("MasterPlayer-ScriptCatalog-");
@@ -64,6 +64,18 @@ internal static class ScriptCatalogRegression
             }
             foreach (var (id, territory) in new[] { ("sastasha", 1036u), ("tamtara", 1037u), ("copperbell", 1038u) })
                 Check(((uint[])Find("masterplayer.dungeon." + id).Metadata.Territorys).SequenceEqual([territory]), "Dungeon territory identity must match the remade duty.");
+            foreach (var (suffix, territory) in new[] { ("vanguard", 1248u), ("aquarius", 1248u), ("groundskeeper", 1248u),
+                ("despot", 1248u), ("serpent", 1178u), ("angelosfirst", 1178u), ("angelossecond", 1178u),
+                ("detector", 1304u), ("jack", 1304u), ("kraken", 1304u), ("lions", 1054u), ("rhalgr", 1054u), ("heavyartillery", 917u), ("lightartillery", 917u),
+                ("cuchulainn", 508u), ("forgall", 556u), ("headstone", 556u), ("ferdiadhollow", 627u), ("protoultima", 627u), ("diabolos", 627u), ("paradigmtrash", 966u), ("cetus", 508u), ("echidna", 508u), ("calofisteri", 556u), ("ozma", 556u), ("irminsulsawtooth", 508u), ("arachneeve", 556u), ("deathgazehollow", 627u) })
+            {
+                var id = "masterplayer.alliance." + suffix;
+                Check(((uint[])Find(id).Metadata.Territorys).SequenceEqual([territory]) && (bool)manager.IsScriptEnabled(id),
+                    "Alliance trash exact territory and empty configuration default " + suffix);
+                manager.SetScriptEnabled(id, false); Refresh();
+                Check(!(bool)manager.IsScriptEnabled(id), "Alliance explicit disable survives refresh " + suffix);
+                manager.SetScriptEnabled(id, true);
+            }
             foreach (var (floor, territory) in new[] { (10, 770u), (20, 771u), (30, 772u), (40, 782u), (50, 773u),
                 (60, 783u), (70, 774u), (80, 784u), (90, 775u) })
                 Check(((uint[])Find($"masterplayer.hoh.{floor}").Metadata.Territorys).SequenceEqual([territory])

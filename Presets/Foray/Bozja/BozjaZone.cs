@@ -6,13 +6,39 @@ using MasterPlayer.Spatial.SafeZone;
 namespace MasterPlayer.Mechanics.Bozja;
 
 // A tower join is an intersection of inverted circles, including the one-circle
-// case. It must use the existing finite sampler, rather than direct safe goals.
+// case. Navigation keeps it as a dangerous complement, rather than a safe goal.
 internal sealed record BozjaZone(string Key, string Component, DateTime Activation,
     GeometryTemplate? Shape, Vector3 Origin, float Rotation, Vector3[]? Join = null,
     float JoinRadius = 6, bool Goal = false, bool Obstacle = false, Vector3[]? Union = null)
 {
     internal float Distance(float x, float z)
     {
+        if (Shape is BozjaEnergyTemplate energy) return energy.Distance(x, z);
+        if (Shape is BozjaCll1MagnetTemplate cll1Magnet) return cll1Magnet.Distance(x, z);
+        if (Shape is BozjaCll1IntersectionTemplate cll1Intersection) return cll1Intersection.Distance(x, z);
+        if (Shape is DungeonCrossTemplate cross)
+        {
+            var (sin, cos) = Math.SinCos(Rotation);
+            var dx = x - Origin.X;
+            var dz = z - Origin.Z;
+            var along = dx * (float)sin + dz * (float)cos;
+            var side = dx * (float)cos - dz * (float)sin;
+            var pFront = along - cross.Length;
+            var pBack = -along - cross.Length;
+            var pLeft = side - cross.HalfWidth;
+            var pRight = -side - cross.HalfWidth;
+            var oFront = side - cross.Length;
+            var oBack = -side - cross.Length;
+            var oLeft = along - cross.HalfWidth;
+            var oRight = -along - cross.HalfWidth;
+            var p1 = pFront > pBack ? pFront : pBack;
+            var p2 = pLeft > pRight ? pLeft : pRight;
+            var p = p1 > p2 ? p1 : p2;
+            var o1 = oFront > oBack ? oFront : oBack;
+            var o2 = oLeft > oRight ? oLeft : oRight;
+            var o = o1 > o2 ? o1 : o2;
+            return p < o ? p : o;
+        }
         if (Shape is BozjaGauntletWindTemplate gauntletWind) return gauntletWind.Distance(x, z);
         if (Shape is BozjaGauntletArenaTemplate gauntletArena) return gauntletArena.Distance(x, z);
         if (Shape is BozjaDiabloOrbsTemplate orbs) return orbs.Distance(x, z);
@@ -90,6 +116,8 @@ internal sealed record BozjaZone(string Key, string Component, DateTime Activati
 
     internal IEnumerable<IGeometryShape> Convert(Vector3 center, float radius)
     {
+        if (Shape is BozjaEnergyTemplate) return GeometryGridSampler.Sample(center, radius, Distance);
+        if (Shape is BozjaCll1IntersectionTemplate cll1Intersection) return cll1Intersection.Convert(center, radius);
         if (Shape is BozjaGauntletWindTemplate gauntletWind) return gauntletWind.Convert(center, radius);
         // The source ring has a safe inner square. The old bridge's custom
         // polygon converter dropped holes; keep the actual source geometry.

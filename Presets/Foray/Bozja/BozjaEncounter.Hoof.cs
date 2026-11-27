@@ -54,7 +54,7 @@ internal sealed partial class BozjaEncounter
                     .OrderBy(p => p.Slot).FirstOrDefault(p => p.EntityId == id)?.Slot ?? -1, Activation(actor)));
         }
         else if (rule.Kind == BozjaRuleKind.CastGaze)
-            Eyes.Add(new(++serial, spell.Location with { Y = 0 }, Activation(actor), false, actor.Actor.Id, Precise: IsAlbeleo, Range: rule.GazeRange));
+            Eyes.Add(new(++serial, spell.Location with { Y = 0 }, Activation(actor), false, actor.Actor.Id, Precise: IsAlbeleo || IsAllianceTrash, Range: rule.GazeRange));
         else if (spell.ActionId == 20962)
             Eyes.Add(new(++serial, spell.Location with { Y = 0 }, Activation(actor), eyesInverted));
         else if (spell.ActionId == 20961)
@@ -130,6 +130,9 @@ internal sealed partial class BozjaEncounter
 
     internal float? Facing(ReplayActorState viewer)
     {
+        if (IsOwain)
+            return GazeDirections(viewer).FirstOrDefault() is var direction && direction != default
+                ? direction.Center + MathF.PI : null;
         if (IsCuchulainn)
         {
             if (!Actors.TryGetValue(viewer.Id, out var current)) return null;
@@ -162,6 +165,8 @@ internal sealed partial class BozjaEncounter
     internal int? TargetPriority(ReplayActorState actor)
     {
         if (!Active) return null;
+        if (IsAllianceTrash) return null;
+        if (IsOwain) return actor.Oid == 0x266B ? 1 : 0;
         if (IsFire) return FireTargetPriority(actor);
         if (IsSkirmish) return actor.Oid == Definition.PrimaryOid ? 1 : actor.InCombat ? 0 : -3;
         if (!IsAlbeleo && !Definition.Rules.Any(r => r.Kind == BozjaRuleKind.Gaze)) return null;

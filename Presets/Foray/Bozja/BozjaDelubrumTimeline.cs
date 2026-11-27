@@ -4,7 +4,7 @@ namespace MasterPlayer.Mechanics.Bozja;
 
 // Delubrum's actual cast/condition chains. Expected durations describe the
 // timeline; only Timeout and overdue component conditions advance by time.
-internal sealed class BozjaDelubrumTimeline
+internal sealed partial class BozjaDelubrumTimeline
 {
     private readonly BozjaEncounter encounter;
     private readonly List<(uint Id, float Expected, string Name, Func<bool> Ready,
@@ -18,7 +18,13 @@ internal sealed class BozjaDelubrumTimeline
     internal BozjaDelubrumTimeline(BozjaEncounter encounter)
     {
         this.encounter = encounter;
-        if (encounter.IsSavagePhantom) BuildPhantom();
+        if (encounter.IsLions) Add(0, 600, "???", () => false);
+        else if (encounter.IsRhalgr) BuildRhalgr();
+        else if (encounter.IsArt) BuildArt();
+        else if (encounter.IsOwain) BuildOwain();
+        else if (encounter.IsRaiden) BuildRaiden();
+        else if (encounter.IsVirtue) BuildVirtue();
+        else if (encounter.IsSavagePhantom) BuildPhantom();
         else BuildDahu();
     }
 
@@ -60,13 +66,15 @@ internal sealed class BozjaDelubrumTimeline
         if (Running) steps[index].Exit?.Invoke();
         Running = false;
         if (encounter.IsSavagePhantom) encounter.ClearPhantomComponents();
-        else encounter.ClearDahuComponents();
+        else if (encounter.IsSavageDahu) encounter.ClearDahuComponents();
+        else if (encounter.IsOwain) encounter.SetOwainImbas(false);
     }
 
     internal void Update()
     {
         if (!Running) return;
-        if (encounter.Primary is not { Destroyed: false, Actor: { Dead: false, Hp: > 0 } })
+        if (encounter.Primary is not { Destroyed: false, Actor.Dead: false }
+            || encounter.Primary.Actor.Hp == 0 && !(encounter.IsRaiden && encounter.RaidenPhase == 0))
         {
             Stop();
             return;
@@ -97,13 +105,17 @@ internal sealed class BozjaDelubrumTimeline
             var step = steps[i];
             end = end.AddSeconds(step.Expected);
             var hints = step.Hints;
-            if (step.Id == 2) hints |= ScriptTimelineHint.Raidwide;
-            if (step.Id == 0x30020) hints |= ScriptTimelineHint.DowntimeEnd;
+            if (encounter.IsSavagePhantom && step.Id == 2) hints |= ScriptTimelineHint.Raidwide;
+            if (encounter.IsSavagePhantom && step.Id == 0x30020) hints |= ScriptTimelineHint.DowntimeEnd;
             if (i + 1 < steps.Count && (step.Id & 0xFFFF0000) == (steps[i + 1].Id & 0xFFFF0000))
                 hints |= ScriptTimelineHint.GroupWithNext;
             entries.Add(new(step.Id, step.Name, "", end, hints));
         }
-        return new(0, encounter.Definition.Name, Elapsed, encounter.Now, entries);
+        var phase = encounter.IsRaiden ? encounter.RaidenPhase : 0;
+        var phaseName = (encounter.IsBaldesion || encounter.IsRhalgr) ? "Boss death" : encounter.Definition.Name;
+        if (encounter.IsLions) phaseName = "Single phase";
+        if (encounter.IsRaiden && phase == 0) phaseName = "P1";
+        return new(phase, phaseName, Elapsed, encounter.Now, entries);
     }
 
     private void Add(uint id, float expected, string name, Func<bool> ready, bool overdue = false,
@@ -114,6 +126,14 @@ internal sealed class BozjaDelubrumTimeline
     private void Start(uint id, float expected, uint[] actions, Action? enter = null)
         => Add(id, expected, "", () => encounter.Primary?.Actor.Cast != null, actions: actions, enter: enter,
             hints: ScriptTimelineHint.BossCastStart);
+
+    private void RawCast(uint id, float delay, float duration, uint[] actions, string name,
+        ScriptTimelineHint hints = default, Action? enter = null)
+    {
+        Start(id, delay, actions);
+        Add(id + 1, duration, name, () => encounter.Primary?.Actor.Cast == null,
+            enter: enter, hints: hints | ScriptTimelineHint.BossCastEnd);
+    }
 
     private void Cast(uint id, float delay, float duration, uint[] actions, Action? enter = null, string name = "", Action? exit = null)
     {

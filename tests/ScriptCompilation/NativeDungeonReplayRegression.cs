@@ -1156,6 +1156,14 @@ internal static partial class NativeDungeonReplayRegression
         RunCLL2Albeleo((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunBozjaSkirmishes((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunBozjaPyromancer((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCLL1Brionac((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCLL3Adrammelech((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunCLL4Dawon((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBaldesionArt((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBaldesionOwain((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBaldesionRaiden((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunBaldesionVirtue((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
+        RunAllianceTrash((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunZadnor((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunZadnorBurn((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);
         RunZadnorGrave((object)manager, (object)runtime, (object)controller, Load, Stop, Previews, Dangers);

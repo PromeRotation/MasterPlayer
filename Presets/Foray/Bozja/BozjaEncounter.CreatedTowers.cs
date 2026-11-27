@@ -7,8 +7,9 @@ internal sealed partial class BozjaEncounter
     private void CreatedTower(BozjaActor actor, BozjaRule rule)
     {
         if (!Active || !actor.NativeNpc || actor.Actor.Oid != rule.EnemyOid) return;
-        Casts.Add(new(++serial, rule, actor, DungeonEncounter.QuantizedDungeonPosition(actor.Actor.Position),
-            0, Now.AddSeconds(IsGauntlet ? 9d : 8.7d)));
+        Casts.Add(new(++serial, rule, actor, IsVirtue ? actor.Actor.Position : DungeonEncounter.QuantizedDungeonPosition(actor.Actor.Position),
+            0, Now.AddSeconds(IsVirtue ? 20d : IsGauntlet ? 9d : 8.7d))
+            { AllowedSoakers = IsVirtue ? [] : null });
     }
 
     private void CreatedTowerEffect(BozjaActor caster, uint action)

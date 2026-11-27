@@ -468,6 +468,7 @@ public sealed class ScriptManager : IDisposable
                 || Mechanics.PalaceOfTheDead.PalaceCatalog.IsScript(id)
                 || Mechanics.Dungeons.CastrumAbaniaCatalog.IsScript(id)
                  || Mechanics.Dungeons.ArrDungeonCatalog.IsScript(id)
+                 || Mechanics.Bozja.AllianceTrashCatalog.IsScript(id)
                  || id is "masterplayer.hoh.floors" or "masterplayer.eureka.floors" or "masterplayer.pilgrims.floors" or "masterplayer.foray.hydatos"
                      or "masterplayer.foray.bozja.south" or "masterplayer.foray.zadnor" or "masterplayer.foray.delubrum.normal" or "masterplayer.foray.delubrum.savage"
                  || Mechanics.Fates.CrescentFateCatalog.Definitions.Any(d => id == $"masterplayer.fate.{d.Name.ToLowerInvariant()}")

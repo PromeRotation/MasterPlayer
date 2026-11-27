@@ -22,6 +22,7 @@
     <Compile Include="..\Presets\Fates\Crescent\*.cs" Exclude="..\Presets\Fates\Crescent\CrescentFateScript.cs" Link="Fates\Crescent\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Foray\Hydatos\*.cs" Exclude="..\Presets\Foray\Hydatos\HydatosScript.cs" Link="Foray\Hydatos\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Foray\Bozja\*.cs" Exclude="..\Presets\Foray\Bozja\BozjaScript.cs" Link="Foray\Bozja\%(Filename)%(Extension)" />
+    <Compile Include="..\Presets\Alliance\Trash\*.cs" Link="Alliance\Trash\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\HallOfTheNovice\*.cs" Link="HallOfTheNovice\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\TreasureHunt\*.cs" Link="TreasureHunt\%(Filename)%(Extension)" />
     <Compile Include="..\Presets\Hunts\*.cs" Exclude="..\Presets\Hunts\SimpleHuntScript.cs" Link="Hunts\%(Filename)%(Extension)" />

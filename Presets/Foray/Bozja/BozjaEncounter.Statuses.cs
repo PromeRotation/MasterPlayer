@@ -6,7 +6,7 @@ internal sealed partial class BozjaEncounter
 {
     private void ObserveStatuses(BozjaActor actor)
     {
-        if (!IsGauntlet && !IsDiablo && !IsSaunion && !IsCuchulainn && !IsRobots && !IsQueen && !IsBurn && !IsGrave && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.DeadLeaves or BozjaRuleKind.Wind or BozjaRuleKind.BracingWind or BozjaRuleKind.BombStack or BozjaRuleKind.Stormcall or BozjaRuleKind.SeekerMercy or BozjaRuleKind.GuardParry)) return;
+        if (!IsAllianceTrash && !IsVirtue && !IsOwain && !IsCll4 && !IsCll3 && !IsCll1 && !IsGauntlet && !IsDiablo && !IsSaunion && !IsCuchulainn && !IsRobots && !IsQueen && !IsBurn && !IsGrave && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.DeadLeaves or BozjaRuleKind.Wind or BozjaRuleKind.BracingWind or BozjaRuleKind.BombStack or BozjaRuleKind.Stormcall or BozjaRuleKind.SeekerMercy or BozjaRuleKind.GuardParry)) return;
         var next = new ReplayStatus?[60];
         for (var i = 0; i < actor.Actor.Statuses.Length; ++i)
         {
@@ -37,6 +37,10 @@ internal sealed partial class BozjaEncounter
 
     private void Status(BozjaActor actor, ReplayStatus status, bool gain)
     {
+        OzmaStatus(actor, status, gain);
+        Cll1Status(actor, status, gain);
+        Cll3Status(actor, status, gain);
+        OwainStatus(status, gain);
         FireStatus(actor, status, gain);
         SaunionStatus(status, gain);
         DiabloStatus(actor, status, gain);
@@ -64,7 +68,7 @@ internal sealed partial class BozjaEncounter
 
     private void ImmuneStatus(BozjaActor actor, ReplayStatus status, bool gain)
     {
-        if (!IsGauntlet && !IsDiablo && !IsQueen && !IsSaunion && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.Wind or BozjaRuleKind.BracingWind)) return;
+        if (!IsAllianceTrash && !IsCll4 && !IsCll3 && !IsGauntlet && !IsDiablo && !IsQueen && !IsSaunion && !Definition.Rules.Any(r => r.Kind is BozjaRuleKind.Wind or BozjaRuleKind.BracingWind)) return;
         var slot = Party.FirstOrDefault(p => p.EntityId == actor.Actor.Id)?.Slot ?? -1;
         if (slot is < 0 or >= 64) return;
         var kind = status.Id switch

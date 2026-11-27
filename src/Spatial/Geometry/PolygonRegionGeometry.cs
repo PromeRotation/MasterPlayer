@@ -7,6 +7,7 @@ internal sealed class PolygonRegionGeometry : GeometryShape
 {
     private readonly Vector2[][] exteriors;
     private readonly Vector2[][] holes;
+    private readonly Vector2[][] triangles;
     private readonly IReadOnlyList<IReadOnlyList<Vector3>> contours;
     internal IReadOnlyList<IReadOnlyList<Vector3>> FillPolygons { get; }
 
@@ -19,9 +20,14 @@ internal sealed class PolygonRegionGeometry : GeometryShape
         // instead of rounding them to world floats before containment tests.
         this.exteriors = exteriors;
         this.holes = holes;
+        this.triangles = triangles;
         contours = boundaryContours ?? exteriors.Concat(holes).Select(p => (IReadOnlyList<Vector3>)World(p)).ToArray();
         FillPolygons = triangles.Select(p => (IReadOnlyList<Vector3>)World(p)).ToArray();
     }
+
+    internal PolygonRegionGeometry AtHeight(float y)
+        => new(Position with { Y = y }, exteriors, holes, triangles,
+            contours.Select(c => (IReadOnlyList<Vector3>)c.Select(p => p with { Y = y }).ToArray()).ToArray());
 
     public override GeometryKind Kind => GeometryKind.WorldPolygon;
     public override bool Contains(Vector3 point, float epsilon = GeometryHelper.DefaultEpsilon)

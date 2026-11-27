@@ -34,6 +34,14 @@ internal sealed partial class BozjaEncounter
                     rule.Shape is RayRectangleTemplate width ? width.MaxLocalX - width.MinLocalX : 6,
                     delta.Length()), Action = spell.ActionId,
             });
+            if (IsCll3 && Casts.Count(c => c.Rule == rule) == rule.ExpectedNumCasters)
+            {
+                var sorted = Casts.Where(c => c.Rule == rule).ToArray();
+                SortActivations(sorted, 0, sorted.Length - 1, c => c.Activation);
+                var index = 0;
+                for (var i = 0; i < Casts.Count; ++i)
+                    if (Casts[i].Rule == rule) Casts[i] = sorted[index++];
+            }
         }
         else if (rule.Kind == BozjaRuleKind.ForwardKnockback)
             CavalryKnockbacks.Add(new(++serial, rule, actor, spell.Location, spell.Rotation ?? 0, Activation(actor)));

@@ -38,6 +38,8 @@ internal sealed partial class BozjaEncounter
 
     internal void MapEffect(byte index, uint state)
     {
+        HeavyMap(index);
+        RhalgrMap(index, state);
         GuardMap(index, state);
         QueenMap(index, state);
         DiabloMap(index, state);

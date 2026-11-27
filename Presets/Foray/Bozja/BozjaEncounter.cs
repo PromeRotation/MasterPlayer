@@ -13,8 +13,10 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
     internal IGeometryShape Arena { get; private set; } = definition.Arena;
     internal IGeometryShape HostArena => IsSeeker ? SeekerHostArena : Arena is BozjaControlArena control ? control.HostBoundary : Arena;
     internal Vector3 Center { get; private set; } = definition.Center;
-    internal float SampleRadius => IsQueen ? queenRadius : IsGuard ? GuardSampleRadius : IsSeeker ? SeekerSampleRadius : Arena is BozjaControlArena control ? control.Radius
-        : IsGauntlet && Arena is RectangleGeometry rectangle ? rectangle.Width * .5f
+    internal float SampleRadius => IsArachne ? ArachneRadius : IsOzma ? OzmaRadius : IsHeavyArtillery ? HeavyRadius : IsRaiden && RaidenReduced ? BaldesionArenas.RaidenDefaultRadius
+        : IsCll4 ? Cll4Radius : IsCll3 && ReferenceEquals(Arena, BozjaCll3Catalog.Reduced) ? 25
+        : IsQueen ? queenRadius : IsGuard ? GuardSampleRadius : IsSeeker ? SeekerSampleRadius : Arena is BozjaControlArena control ? control.Radius
+        : (IsGauntlet || IsCll1) && Arena is RectangleGeometry rectangle ? rectangle.Width * .5f
         : Arena is CircleGeometry circle ? circle.Radius : Definition.SampleRadius;
     internal Dictionary<ulong, BozjaActor> Actors { get; } = [];
     internal List<BozjaCast> Casts { get; } = [];
@@ -48,7 +50,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         {
             if (actor.Cast is { } cast && time > actor.Clock)
                 actor.Elapsed = MathF.Min(actor.Elapsed + (float)(time - actor.Clock).TotalSeconds, Total(cast));
-            if ((IsBurn || IsGauntlet) && actor.RawCast is { } raw && time > actor.Clock)
+            if ((IsBurn || IsGauntlet || IsAllianceTrash) && actor.RawCast is { } raw && time > actor.Clock)
                 actor.RawElapsed = MathF.Min(actor.RawElapsed + (float)(time - actor.Clock).TotalSeconds, BurnRawTotal(raw));
             actor.Clock = time;
         }
@@ -58,6 +60,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         ulong sourcePlayer, DateTime now, bool update = true, IReadOnlyDictionary<ulong, long>? births = null,
         Func<long>? nextPendingOrder = null, bool observeTethers = true)
     {
+        BeginCll3Frame();
         Advance(now);
         // This component reads creation order and the previous Party in its
         // callbacks. Only the Framework snapshot may commit those inputs;
@@ -90,8 +93,12 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         old.Actor = old.Actor with { InCombat = false };
         if (old.ObservedTether.Target != 0)
         {
+            Cll1Tether(old, old.ObservedTether, true);
             CavalryUntethered(old, old.ObservedTether);
             SeekerTether(old, old.ObservedTether, true);
+            OwainTether(old, old.ObservedTether, true);
+            RaidenTether(old, old.ObservedTether, true);
+            VirtueTether(old, old.ObservedTether, true);
             old.ObservedTether = default;
         }
     }
@@ -113,6 +120,10 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         pheromones?.Remove(old);
         graveSpheres?.Remove(old);
         bits?.Remove(old);
+        Cll1Destroyed(old);
+        Cll4Destroyed(old);
+        ArtDestroyed(old);
+        OwainDestroyed(old);
         BehemothDestroyed(old);
         SaunionDestroyed(old);
         DiabloDestroyed(old);
@@ -120,6 +131,8 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         GuardRemoved(old);
         FireDestroyed(old);
         CrystalDestroyed(old);
+        HeavyEnergy.Remove(old);
+        lightFire?.Remove(old);
         bloodyWraiths?.Remove(old);
         mistyWraiths?.Remove(old);
         dahuAdds?.Remove(old);
@@ -161,12 +174,18 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             DiabloCreated(actor);
             GauntletCreated(actor);
             PyromancerCreated(actor);
+            Cll1Created(actor);
+            Cll3Created(actor);
+            Cll4Created(actor);
+            ArtCreated(actor);
+            OwainCreated(actor);
             if (value.Oid == Definition.PrimaryOid)
             {
+                ConstructHeavy(actor);
                 if (!IsSaunion && !IsGauntlet && Primary is { Destroyed: true } previous && previous.Actor.Id == value.Id)
                     Primary = actor;
                 else if (Primary == null && !Definition.OnlyLoadIfTargetable
-                    && Actors.GetValueOrDefault(IsSkirmish ? Party.FirstOrDefault(p => p.Slot == 0)?.EntityId ?? 0 : SourcePlayerId) is { Destroyed: false } oldSource
+                    && Actors.GetValueOrDefault(UsesManagerParty0 ? Party.FirstOrDefault(p => p.Slot == 0)?.EntityId ?? 0 : SourcePlayerId) is { Destroyed: false } oldSource
                     && Vector3.DistanceSquared(oldSource.Actor.Position, value.Position) <= 500 * 500)
                     Load(actor);
                 else
@@ -191,7 +210,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             Rotation = observed.Rotation ?? value.Rotation,
         } : null;
 
-    internal static bool InputCastChanged(ReplayActorState? committed, ReplayActorState value)
+    internal static bool InputCastChanged(ReplayActorState? committed, ReplayActorState value, bool rawTotal = false)
     {
         var previous = committed?.Cast;
         var current = value.Cast;
@@ -200,7 +219,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             || previous.ActionId != current.ActionId || (previous.IsSpell != false) != (current.IsSpell != false)
             || Target(previous) != Target(current) || previous.Location != current.Location
             || (previous.Rotation ?? committed!.Rotation) != (current.Rotation ?? value.Rotation)
-            || Total(previous) != Total(current);
+            || (rawTotal ? BurnRawTotal(previous) != BurnRawTotal(current) : LegacyTotal(previous) != LegacyTotal(current));
     }
 
     internal void FinishActorCast(ReplayActorState value, bool? inputCastChanged = null)
@@ -242,7 +261,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
 
     internal void CompleteSynchronize(ReplayPartyMember[] roster, ulong sourcePlayer)
     {
-        Party = IsSkirmish ? roster.Where(p => p.Slot is >= 0 and < 8).OrderBy(p => p.Slot).ToArray() : roster;
+        Party = UsesManagerParty0 ? roster.Where(p => p.Slot >= 0 && p.Slot < (IsDeathgaze ? 64 : 8)).OrderBy(p => p.Slot).ToArray() : roster;
         SourcePlayerId = sourcePlayer;
         ThermalSequenceError = null;
         DiabloSequenceError = null;
@@ -252,7 +271,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
     {
         Advance(now);
         // BossModuleManager pauses module Update while the actual Party[0] actor is absent.
-        var viewerId = IsSkirmish ? Party.FirstOrDefault(p => p.Slot == 0)?.EntityId ?? 0 : SourcePlayerId;
+        var viewerId = UsesManagerParty0 ? Party.FirstOrDefault(p => p.Slot == 0)?.EntityId ?? 0 : SourcePlayerId;
         if (Actors.GetValueOrDefault(viewerId) is not { } viewer) return;
         for (var i = pending.Count - 1; i >= 0; --i)
         {
@@ -261,6 +280,8 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             {
                 pending.RemoveAt(i);
                 PyromancerConstructions.Remove(candidate);
+                Cll1Constructions.Remove(candidate);
+                heavyConstructions.Remove(candidate);
             }
             else if (Primary == null && (!Definition.OnlyLoadIfTargetable || candidate.Actor.Targetable)
                 && Vector3.DistanceSquared(viewer.Actor.Position, candidate.Actor.Position) <= 500 * 500)
@@ -272,10 +293,30 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         if (Primary is not { } primary) return;
         var wasActive = Active;
         if (!wipeInProgress) UpdateSkirmishArena();
-        if (!Active && !Completed && !wipeInProgress && (primary.Actor.Targetable || Definition.PullWhileUntargetable) && primary.Actor.InCombat
+        if (!Active && !Completed && !wipeInProgress
+            && (IsAllianceTrash ? AlliancePullReady : (primary.Actor.Targetable || Definition.PullWhileUntargetable) && primary.Actor.InCombat)
             && (!IsSkirmish || currentFate != null) && InPullArea(viewer.Actor.Position))
         {
             Active = true;
+            if (IsArt)
+            {
+                ArtTimeline = new(this);
+                ArtTimeline.Begin();
+            }
+            if (IsOwain)
+            {
+                OwainTimeline = new(this);
+                OwainTimeline.Begin();
+            }
+            if (IsRaiden) BeginRaiden();
+            if (IsVirtue) BeginVirtue();
+            if (IsAllianceTrash) AlliancePhase = 0;
+            if (IsRhalgr) BeginRhalgr();
+            if (IsLions)
+            {
+                LionsTimeline = new(this);
+                LionsTimeline.Begin();
+            }
             PyromancerEnterPhase();
             if (IsSavagePhantom)
             {
@@ -288,6 +329,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
                 DahuTimeline.Begin();
             }
             if (IsCrystals) _ = Crystals.ToArray();
+            if (IsIrminsul) _ = IrminsulBlockers.Count;
             if (Definition.Rules.Any(r => r.Kind == BozjaRuleKind.Time))
                 timeBombs = Actors.Values.Where(a => a.Actor.Oid == 0x1EB17B).ToList();
             if (Definition.Rules.Any(r => r.Component == "GraspingRancor"))
@@ -297,8 +339,26 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             if (IsDiablo) BeginDiablo();
             if (IsGauntlet) ActivateGauntletPhase();
             foreach (var rule in ActiveRules.Where(_ => !IsSavageDahu && !IsSaunion && !IsDiablo && !IsGauntlet))
+            {
+                PrepareCll1Rule(rule);
                 foreach (var actor in Actors.Values)
                 {
+                    if (IsHeavyArtillery && rule.Component == "Energy") HeavyCreated(actor);
+                    if (IsCll1)
+                    {
+                        BeginCll1Rule(rule, actor);
+                        continue;
+                    }
+                    if (IsCll3)
+                    {
+                        BeginCll3Rule(actor, rule);
+                        continue;
+                    }
+                    if (IsCll4)
+                    {
+                        BeginCll4Rule(actor, rule);
+                        continue;
+                    }
                     if (rule.Kind == BozjaRuleKind.ArenaChange) Created(actor);
                     if (rule.Kind == BozjaRuleKind.GraveArena) GraveCreated(actor);
                     if (rule.Kind == BozjaRuleKind.RobotArena) RobotCreated(actor);
@@ -308,9 +368,13 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
                     if (rule.Kind == BozjaRuleKind.SeekerMoon && actor.NativeNpc) SeekerCreated(actor);
                     if (rule.Kind == BozjaRuleKind.GuardAboveBoard && actor.NativeNpc) GuardBoardCreated(actor);
                     FrostCreated(actor, rule);
+                    if (IsVirtue && actor.ObservedTether.Id != 0)
+                        VirtueTether(actor, actor.ObservedTether, false, rule);
                     if (actor.Cast != null) Start(actor, rule);
                     if (rule.Kind is BozjaRuleKind.BurnEscort or BozjaRuleKind.BurnWeakpoint)
                         foreach (var status in actor.Statuses.OfType<ReplayStatus>()) BurnStatus(actor, status, true, rule.Kind);
+                    if (rule.Kind == BozjaRuleKind.OzmaBomb)
+                        foreach (var status in actor.Statuses.OfType<ReplayStatus>()) OzmaStatus(actor, status, true);
                     if (rule.Kind == BozjaRuleKind.GallowsMarch)
                         foreach (var status in actor.Statuses.OfType<ReplayStatus>()) GraveStatus(actor, status, true);
                     if (rule.Kind == BozjaRuleKind.RobotMarch)
@@ -321,7 +385,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
                         foreach (var status in actor.Statuses.OfType<ReplayStatus>()) GuardStatus(actor, status, true);
                     if (rule.Kind is BozjaRuleKind.QueenDoom or BozjaRuleKind.QueenChess or BozjaRuleKind.QueenMeansEnds)
                         foreach (var status in actor.Statuses.OfType<ReplayStatus>()) QueenStatus(actor, status, true, rule.Kind);
-                    if (rule.Kind == BozjaRuleKind.QueenKnockback)
+                    if (rule.Kind is BozjaRuleKind.QueenKnockback or BozjaRuleKind.AlliancePull or BozjaRuleKind.AllianceKnockback)
                         foreach (var status in actor.Statuses.OfType<ReplayStatus>()) ImmuneStatus(actor, status, true);
                     if (actor.NativeNpc && !actor.Actor.Targetable) GuardUntargetable(actor, rule);
                     if (rule.Kind is BozjaRuleKind.DeadLeaves or BozjaRuleKind.Wind or BozjaRuleKind.BracingWind or BozjaRuleKind.BombStack or BozjaRuleKind.Stormcall or BozjaRuleKind.SeekerMercy)
@@ -330,9 +394,12 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
                         PatriotTethered(actor, actor.ObservedTether.Id);
                     if (rule.Kind == BozjaRuleKind.ChargeTether && actor.ObservedTether.Target != 0)
                         CavalryTethered(actor, actor.ObservedTether);
+                    if (rule.Kind == BozjaRuleKind.OwainGaze && actor.ObservedTether.Id != 0)
+                        OwainTether(actor, actor.ObservedTether, false);
                     if (rule.Kind == BozjaRuleKind.SeekerChains && actor.ObservedTether.Target != 0)
                         SeekerTether(actor, actor.ObservedTether, false);
                 }
+            }
         }
         if (Active && !wipeInProgress) UpdateSaunion();
         if (Active && !wipeInProgress) UpdateGauntlet();
@@ -342,8 +409,27 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             Completed = true;
             Casts.Clear();
         }
+        if (Active && IsArt && PrimaryPhaseComplete(primary))
+        {
+            Active = false;
+            Completed = true;
+            ClearArt();
+            Casts.Clear();
+        }
+        if (Active && IsOwain && PrimaryPhaseComplete(primary))
+        {
+            Active = false;
+            Completed = true;
+            ClearOwain();
+            Casts.Clear();
+        }
         if (Active)
         {
+            UpdateAllianceTrash();
+            UpdateRaiden();
+            UpdateVirtue();
+            UpdateArt();
+            OwainTimeline?.Update();
             PhantomTimeline?.Update();
             DahuTimeline?.Update();
             if (IsFire) UpdateFire();
@@ -361,13 +447,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             UpdateQueen();
             UpdateRobots();
             UpdateColossus();
+            UpdateCll3();
         }
-        if (Active && !IsFire && !IsSaunion && !IsGauntlet && !wipeInProgress && PrimaryPhaseComplete(primary))
+        if (Active && !IsAllianceTrash && !IsVirtue && !IsRaiden && !IsFire && !IsSaunion && !IsGauntlet && !wipeInProgress && PrimaryPhaseComplete(primary))
         {
             Active = false;
             Completed = true;
             Casts.Clear();
         }
+        UpdateCll1();
         if (Active && SkirmishWantsReset(viewer))
         {
             // Manager appends the reconstructed module to its live loop and
@@ -383,12 +471,16 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         if (!Active && Vector3.DistanceSquared(viewer.Actor.Position, primary.Actor.Position) > 500 * 500)
         {
             PyromancerConstructions.Remove(primary);
+            Cll1Constructions.Remove(primary);
+            heavyConstructions.Remove(primary);
             if (!primary.Destroyed)
             {
                 // Manager ActorAdded appends a newly constructed module after
                 // all Created callbacks; its queue age is no longer actor age.
                 primary.PendingOrder = nextPendingOrder?.Invoke() ?? ++birthOrder;
                 ReconstructPyromancer(primary);
+                ConstructCll1(primary);
+                ConstructHeavy(primary);
                 pending.Add(primary);
             }
             Primary = null;
@@ -399,6 +491,8 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         {
             retired.Add(primary);
             PyromancerConstructions.Remove(primary);
+            Cll1Constructions.Remove(primary);
+            heavyConstructions.Remove(primary);
             Primary = null;
             Active = false;
             Completed = true;
@@ -409,6 +503,12 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
     private void Load(BozjaActor primary, bool fromPending = false, bool fromReset = false)
     {
         Casts.Clear();
+        AllianceLioness = null;
+        LionsTimeline?.Stop();
+        LionsTimeline = null;
+        ClearRhalgr();
+        HeavyEnergy.Clear();
+        ClearLightArtillery();
         ClearPatriot();
         ClearMetalFox();
         ClearHoof();
@@ -417,6 +517,7 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         ClearShadows();
         ClearTime();
         ClearCrystals();
+        irminsulBlockers = null;
         ClearHashmal();
         ClearAida();
         ClearCavalry();
@@ -435,6 +536,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         ClearSaunion();
         ClearDiablo();
         ClearGauntlet();
+        ClearCll3();
+        ClearCll4();
+        ClearArt();
+        ClearOwain();
+        ClearRaiden();
+        ClearVirtue();
+        ClearOzma();
+        ClearArachne();
+        ClearDeathgaze();
         hands = null;
         pheromones = null;
         tenderStatuses = jealousStatuses = 0;
@@ -444,7 +554,9 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         interruptHints.Clear();
         NumFinishedStacks = 0;
         Primary = primary;
+        ResetHeavyArena(primary);
         ResetSkirmishArena(primary);
+        RestoreCll1Arena();
         ++LoadVersion;
         LoadOrder = fromPending || fromReset ? primary.PendingOrder : primary.BirthOrder;
         LoadedFromPending = fromPending;
@@ -461,7 +573,56 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
     private void Start(BozjaActor actor, BozjaRule rule)
     {
         if (!Active || !actor.NativeNpc || actor.Cast is not { } cast || !rule.Actions.Contains(cast.ActionId)) return;
+        if (StartAllianceTrash(actor, rule) || StartRhalgr(rule)) return;
+        if (rule.Kind == BozjaRuleKind.TimedCastHint)
+        {
+            Casts.Add(new(++serial, rule, actor, cast.Location, 0, Activation(actor)));
+            return;
+        }
+        if (rule.Kind == BozjaRuleKind.CircleBait)
+        {
+            StartCircleBait(actor, rule);
+            return;
+        }
+        if (rule.Kind is BozjaRuleKind.VirtueAurora
+            or BozjaRuleKind.VirtueRays or BozjaRuleKind.VirtueCounter)
+        {
+            StartVirtue(actor, rule);
+            return;
+        }
+        if (rule.Kind is BozjaRuleKind.RaidenArena or BozjaRuleKind.RaidenSpread or BozjaRuleKind.RaidenLancing
+            or BozjaRuleKind.RaidenChains)
+        {
+            StartRaiden(actor, rule);
+            return;
+        }
+        if (rule.Kind is BozjaRuleKind.OwainElemental or BozjaRuleKind.OwainCastHint or BozjaRuleKind.OwainCleave)
+        {
+            StartOwain(actor, rule);
+            return;
+        }
+        if (rule.Kind is BozjaRuleKind.ArtLegend or BozjaRuleKind.ArtPredict or BozjaRuleKind.ArtChase)
+        {
+            StartArt(actor, rule);
+            return;
+        }
         if (rule.Kind == BozjaRuleKind.Tower && rule.EnemyOid != 0) return;
+        if (rule.Kind is BozjaRuleKind.Cll4Arena or BozjaRuleKind.Cll4Hammer or BozjaRuleKind.Cll4Plumes
+            or BozjaRuleKind.Cll4Obey or BozjaRuleKind.Cll4Wind)
+        {
+            StartCll4(actor, rule);
+            return;
+        }
+        if (rule.Kind is BozjaRuleKind.Cll3Arena or BozjaRuleKind.Cll3Water or BozjaRuleKind.Cll3StayMove)
+        {
+            StartCll3(actor, rule);
+            return;
+        }
+        if (IsCll1 && rule.Kind == BozjaRuleKind.Cll1Custom)
+        {
+            StartCll1(actor, rule);
+            return;
+        }
         if (IsGauntlet && rule.Kind is BozjaRuleKind.GauntletArena or BozjaRuleKind.GauntletImpact
             or BozjaRuleKind.GauntletTerminus or BozjaRuleKind.GauntletUnseen or BozjaRuleKind.GauntletDonut
             or BozjaRuleKind.GauntletTurbine or BozjaRuleKind.GauntletStorm or BozjaRuleKind.GauntletWind or BozjaRuleKind.GauntletPain)
@@ -685,6 +846,31 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         if (!Active) return;
         foreach (var rule in ActiveRules)
         {
+            if (FinishAllianceTrash(actor, rule, spell)
+                || IsRhalgr && rule.Component is "BoltsFromTheBlue" or "DestructiveCharge") continue;
+            if (rule.Kind is BozjaRuleKind.OwainElemental or BozjaRuleKind.OwainSpirit or BozjaRuleKind.OwainGaze or BozjaRuleKind.OwainCleave) continue;
+            if (rule.Kind == BozjaRuleKind.OwainCastHint)
+            {
+                if (rule.Actions.Contains(spell.ActionId))
+                {
+                    var hintIndex = Casts.FindIndex(c => c.Rule == rule && ReferenceEquals(c.Source, actor));
+                    if (hintIndex >= 0) Casts.RemoveAt(hintIndex);
+                }
+                continue;
+            }
+            if (rule.Kind is BozjaRuleKind.ArtLegend or BozjaRuleKind.ArtPredict or BozjaRuleKind.ArtStay or BozjaRuleKind.ArtChase) continue;
+            if (rule.Kind is BozjaRuleKind.Cll4Arena or BozjaRuleKind.Cll4Hammer or BozjaRuleKind.Cll4Plumes
+                or BozjaRuleKind.Cll4Obey or BozjaRuleKind.Cll4Wind)
+            {
+                FinishCll4(actor, rule, spell);
+                continue;
+            }
+            if (rule.Kind is BozjaRuleKind.Cll3Arena or BozjaRuleKind.Cll3StayMove) continue;
+            if (IsCll1 && rule.Kind == BozjaRuleKind.Cll1Custom)
+            {
+                FinishCll1(spell, rule);
+                continue;
+            }
             if (IsQueen) FinishQueen(actor, spell, rule);
             if (IsGauntlet && rule.Kind is BozjaRuleKind.GauntletArena or BozjaRuleKind.GauntletImpact
                 or BozjaRuleKind.GauntletTerminus or BozjaRuleKind.GauntletUnseen or BozjaRuleKind.GauntletDonut
@@ -707,7 +893,25 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
                 }
                 continue;
             }
+            if (rule.Kind == BozjaRuleKind.CircleBait)
+            {
+                FinishCircleBait(actor, rule, spell);
+                continue;
+            }
+            if (rule.Kind is BozjaRuleKind.VirtueAurora or BozjaRuleKind.VirtueRays)
+            {
+                FinishVirtue(actor, rule, spell);
+                continue;
+            }
             if (!rule.GroupedFinish && !rule.Actions.Contains(spell.ActionId)) continue;
+            if (rule.Kind is BozjaRuleKind.RaidenArena or BozjaRuleKind.RaidenSpread or BozjaRuleKind.RaidenLancing
+                or BozjaRuleKind.RaidenChains) continue;
+            if (rule.Kind == BozjaRuleKind.TimedCastHint)
+            {
+                var hintIndex = Casts.FindIndex(c => c.Rule == rule && ReferenceEquals(c.Source, actor));
+                if (hintIndex >= 0) Casts.RemoveAt(hintIndex);
+                continue;
+            }
             if (rule.Kind == BozjaRuleKind.Tower && rule.EnemyOid != 0) continue;
             if (rule.Kind == BozjaRuleKind.SaunionPlumes)
             {
@@ -870,10 +1074,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             {
                 retired.Add(Primary);
                 PyromancerConstructions.Remove(Primary);
+                Cll1Constructions.Remove(Primary);
+                heavyConstructions.Remove(Primary);
             }
             Primary = null;
             Active = false;
             Casts.Clear();
+            ClearRhalgr();
+            HeavyEnergy.Clear();
+            ClearLightArtillery();
             ClearPatriot();
             ClearMetalFox();
             ClearHoof();
@@ -898,6 +1107,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
             ClearSaunion();
             ClearDiablo();
             ClearGauntlet();
+            ClearCll3();
+            ClearCll4();
+            ClearArt();
+            ClearOwain();
+            ClearRaiden();
+            ClearVirtue();
+            ClearOzma();
+            ClearArachne();
+            ClearDeathgaze();
             interruptHints.Clear();
         }
         else if (command == 0x40000011) wipeInProgress = false;
@@ -909,9 +1127,16 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         currentFate = null;
         ResetSkirmishArena(null);
         PyromancerConstructions.Clear();
+        Cll1Constructions.Clear();
+        heavyConstructions.Clear();
         Active = Completed = wipeInProgress = false;
         Casts.Clear(); Actors.Clear(); pending.Clear(); retired.Clear(); Party = [];
+        irminsulBlockers = null;
+        cll3PreviousPositions.Clear();
         diabloCommitted.Clear();
+        ClearRhalgr();
+        HeavyEnergy.Clear();
+        ClearLightArtillery();
         ClearPatriot();
         ClearMetalFox();
         ClearHoof();
@@ -940,6 +1165,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
         ClearSaunion();
         ClearDiablo();
         ClearGauntlet();
+        ClearCll3();
+        ClearCll4();
+        ClearArt();
+        ClearOwain();
+        ClearRaiden();
+        ClearVirtue();
+        ClearOzma();
+        ClearArachne();
+        ClearDeathgaze();
         hands = null;
         pheromones = null;
         tenderStatuses = jealousStatuses = 0;
@@ -952,12 +1186,15 @@ internal sealed partial class BozjaEncounter(BozjaDefinition definition)
     internal DateTime Activation(BozjaActor actor, double extra = 0)
         => actor.Cast == null ? default : Now.AddSeconds(Total(actor.Cast) + .3f - actor.Elapsed + extra);
     private bool InPullArea(Vector3 position)
-        => IsSkirmish ? DistanceSquared(position, Center) <= SampleRadius * SampleRadius : Definition.SquarePull
+        => IsArt || IsOwain ? DistanceSquared(position, Center) < 1e4f
+            : IsSkirmish ? DistanceSquared(position, Center) <= SampleRadius * SampleRadius : Definition.SquarePull
             ? MathF.Abs(position.X - Center.X) <= Definition.PullRadius && MathF.Abs(position.Z - Center.Z) <= Definition.PullRadius
             : DistanceSquared(position, Center) <= Definition.PullRadius * Definition.PullRadius;
-    private static float Total(ReplayCast cast)
-        => Math.Max(.05f, cast.TotalTime ?? (float)(cast.FinishAt - cast.StartedAt).TotalSeconds - .3f);
-    private static bool SameCast(ReplayCast? a, ReplayCast? b)
+    private float Total(ReplayCast cast)
+        => UsesRawNpcClock ? BurnRawTotal(cast) : LegacyTotal(cast);
+    private static float LegacyTotal(ReplayCast cast)
+        => Math.Max(.05f, BurnRawTotal(cast));
+    private bool SameCast(ReplayCast? a, ReplayCast? b)
         => a == null ? b == null : b != null && a.ActionId == b.ActionId && a.TargetId == b.TargetId
             && a.Location == b.Location && a.Rotation == b.Rotation && Total(a) == Total(b);
     internal static bool NewActor(ReplayActorState a, ReplayActorState b)

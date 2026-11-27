@@ -38,6 +38,9 @@ internal sealed partial class BozjaEncounter
 
     internal void EAnim(ulong source, uint state)
     {
+        ArtAnimation(source, state);
+        RaidenAnimation(source, state);
+        VirtueAnimation(source, state);
         PhantomAnimation(source, state);
         SaunionAnimation(source, state);
         if (!Active || !Definition.Rules.Any(r => r.Kind == BozjaRuleKind.Time)

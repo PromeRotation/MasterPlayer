@@ -20,7 +20,7 @@ internal sealed partial class BozjaEncounter
 
     private void ObserveBurnRawCast(BozjaActor actor)
     {
-        if (!IsBurn && !IsGauntlet) return;
+        if (!IsBurn && !IsGauntlet && !IsAllianceTrash) return;
         var next = actor.Actor.Cast is { } raw ? raw with
         {
             Rotation = raw.Rotation ?? actor.Actor.Rotation,
@@ -217,5 +217,8 @@ internal sealed partial class BozjaEncounter
     }
 
     internal IEnumerable<BozjaEye> EyesFor(BozjaActor? viewer)
-        => viewer == null ? Eyes : Eyes.Concat(BurnEyes(viewer)).Concat(GauntletEyes(viewer));
+    {
+        if (IsCll4 && Cll4DawonArena) return [];
+        return viewer == null ? Eyes : Eyes.Concat(BurnEyes(viewer)).Concat(GauntletEyes(viewer)).Concat(OwainEyes(viewer));
+    }
 }

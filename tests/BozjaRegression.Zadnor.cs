@@ -118,7 +118,7 @@ internal static partial class BozjaRegression
     {
         var south = new BozjaRegion();
         var zadnor = new BozjaRegion(975);
-        Check(south.Encounters.Length == 15 && zadnor.Encounters.Length == 16
+        Check(south.Encounters.Length == 18 && zadnor.Encounters.Length == 16
             && south.Encounters.All(e => e.Definition.Territory == 920)
             && zadnor.Encounters.All(e => e.Definition.Territory == 975), "CE51 territory model isolation.");
         Check(BozjaCatalog.Owns(975, 0x319A) && !BozjaCatalog.Owns(920, 0x319A)

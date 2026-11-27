@@ -1,4 +1,5 @@
 using System.Numerics;
+using MasterPlayer.Mechanics.Dungeons;
 using MasterPlayer.Spatial.Geometry;
 
 namespace MasterPlayer.Radar;
@@ -25,8 +26,13 @@ internal readonly record struct RadarArenaLayout(RadarProjection Projection, IRe
         var scale = Math.Max(halfSize - 4, 1) / extent;
         var projection = new RadarProjection(center, screenCenter, scale, rotation);
         var outlines = contours.Select(c => (IReadOnlyList<Vector2>)c.Select(projection.Project).ToArray()).ToArray();
-        var fill = boundary is PolygonRegionGeometry region
-            ? region.FillPolygons.Select(c => (IReadOnlyList<Vector2>)c.Select(projection.Project).ToArray()).ToArray() : null;
+        var triangles = boundary switch
+        {
+            PolygonRegionGeometry region => region.FillPolygons,
+            AllianceArenaGeometry alliance => alliance.FillPolygons,
+            _ => null,
+        };
+        var fill = triangles?.Select(c => (IReadOnlyList<Vector2>)c.Select(projection.Project).ToArray()).ToArray();
         return new(projection, contour.Select(projection.Project).ToArray(), worldRadius, outlines, fill);
     }
 }

@@ -29,6 +29,11 @@ internal sealed partial class BozjaEncounter
             if (IsSaunion) return saunionRules;
             if (IsSavageDahu) return dahuActiveRules;
             if (IsSavagePhantom) return Definition.Rules.Where(r => phantomComponents.Contains(r.Component));
+            if (IsOwain) return Definition.Rules.Where(r => r.Component != "LegendaryImbas" || OwainImbasActive);
+            if (IsRaiden) return raidenRules;
+            if (IsVirtue) return virtueRules;
+            if (IsRhalgr) return rhalgrRules;
+            if (IsAllianceTrash) return AllianceRules;
             return Definition.Rules;
         }
     }

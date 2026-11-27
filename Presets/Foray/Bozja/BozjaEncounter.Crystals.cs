@@ -9,6 +9,7 @@ internal sealed partial class BozjaEncounter
 {
     private List<BozjaActor>? dimCrystals;
     private List<BozjaActor>? corruptedCrystals;
+    private List<BozjaActor>? irminsulBlockers;
     private readonly Dictionary<BozjaRule, BozjaSight> crystalSights = [];
     private readonly List<(BozjaCast Cast, int Stage)> earthSequences = [];
     private readonly List<BozjaCast> earthPublished = [];
@@ -19,7 +20,10 @@ internal sealed partial class BozjaEncounter
     private int earthCount;
     private static readonly GeometryTemplate[] earthShapes =
         [new CircleTemplate(10), new DonutTemplate(10, 20), new DonutTemplate(20, 30)];
-    internal bool IsCrystals => Definition.Rules.Any(r => r.Kind == BozjaRuleKind.CrystalSight);
+    private static readonly GeometryTemplate[] arachneEarthShapes =
+        [new CircleTemplate(10.5f), new DonutTemplate(10.5f, 20.5f), new DonutTemplate(20.5f, 30.5f)];
+    internal bool IsCrystals => !IsIrminsul && Definition.Rules.Any(r => r.Kind == BozjaRuleKind.CrystalSight);
+    private List<BozjaActor> IrminsulBlockers => irminsulBlockers ??= Actors.Values.Where(a => a.Actor.Oid == 0x13F1).ToList();
     private List<BozjaActor> DimCrystals => dimCrystals ??= Actors.Values.Where(a => a.Actor.Oid == 0x31CD).ToList();
     private List<BozjaActor> CorruptedCrystals => corruptedCrystals ??= Actors.Values.Where(a => a.Actor.Oid == 0x31CE).ToList();
     internal IEnumerable<BozjaActor> Crystals => DimCrystals.Concat(CorruptedCrystals);
@@ -43,12 +47,14 @@ internal sealed partial class BozjaEncounter
     {
         if (actor.Actor.Oid == 0x31CD) dimCrystals?.Add(actor);
         if (actor.Actor.Oid == 0x31CE) corruptedCrystals?.Add(actor);
+        if (actor.Actor.Oid == 0x13F1) irminsulBlockers?.Add(actor);
     }
 
     private void CrystalDestroyed(BozjaActor actor)
     {
         dimCrystals?.Remove(actor);
         corruptedCrystals?.Remove(actor);
+        irminsulBlockers?.Remove(actor);
     }
 
     private void RefreshCrystalSight(BozjaSight sight)
@@ -56,12 +62,16 @@ internal sealed partial class BozjaEncounter
         BozjaActor? earliest = null;
         var remaining = double.MaxValue;
         foreach (var caster in sight.Casters)
-            if (caster.Cast is { } cast && Total(cast) - caster.Elapsed < remaining)
+        {
+            var cast = IsIrminsul ? caster.RawCast : caster.Cast;
+            var elapsed = IsIrminsul ? caster.RawElapsed : caster.Elapsed;
+            if (cast != null && Total(cast) - elapsed < remaining)
             {
-                remaining = Total(cast) - caster.Elapsed;
+                remaining = Total(cast) - elapsed;
                 earliest = caster;
             }
-        sight.Origin = earliest?.Cast?.Location;
+        }
+        sight.Origin = IsIrminsul ? earliest?.RawCast?.Location : earliest?.Cast?.Location;
     }
 
     private void StartCrystals(BozjaActor actor, BozjaRule rule)
@@ -72,15 +82,21 @@ internal sealed partial class BozjaEncounter
             if (!crystalSights.TryGetValue(rule, out var sight)) crystalSights[rule] = sight = new();
             sight.Casters.Add(actor);
             RefreshCrystalSight(sight);
-            var blockers = (rule.EnemyOid == 0x31CD ? DimCrystals : CorruptedCrystals)
+            List<BozjaActor> candidates;
+            if (IsIrminsul) candidates = IrminsulBlockers;
+            else if (rule.EnemyOid == 0x31CD) candidates = DimCrystals;
+            else candidates = CorruptedCrystals;
+            var blockers = candidates
                 .Where(a => !a.Actor.Dead).ToArray();
             if (sight.Origin is { } origin && blockers.Length != 0)
                 sight.Safezones.Add(new(++serial, rule, actor, Center, 0, Activation(actor))
                 {
-                    ShapeOverride = new BozjaMeteorTemplate(new(Center, origin, blockers, 60, false)),
+                    ShapeOverride = new BozjaMeteorTemplate(new(Center, origin, blockers, IsIrminsul ? 70 : 60, false,
+                        sourceIndexedDistance: IsIrminsul)),
                 });
         }
-        else if (rule.Kind == BozjaRuleKind.Earthbreaker && spell.ActionId == 24082)
+        else if (rule.Kind == BozjaRuleKind.Earthbreaker
+            && (spell.ActionId == rule.Actions[0] || IsCll3 && spell.ActionId == 20359))
             earthSequences.Add((new(++serial, rule, actor, spell.Location, 0, Activation(actor)), 0));
     }
 
@@ -95,14 +111,15 @@ internal sealed partial class BozjaEncounter
         }
         else if (rule.Kind == BozjaRuleKind.Earthbreaker && earthSequences.Count > 0)
         {
-            var stage = spell.ActionId switch { 24082 => 0, 24083 => 1, 24084 => 2, _ => -1 };
+            var stage = Array.IndexOf(rule.Actions, spell.ActionId);
+            if (IsCll3 && stage >= 0) stage %= 3;
             if (stage < 0) return;
             ++NumEarthCasts;
             var index = earthSequences.FindIndex(s => s.Stage == stage && AlmostEqual(s.Cast.Origin, spell.Location));
             if (index < 0) return;
             var sequence = earthSequences[index];
             if (stage == 2) earthSequences.RemoveAt(index);
-            else earthSequences[index] = (sequence.Cast with { Activation = Now.AddSeconds(2d) }, stage + 1);
+            else earthSequences[index] = (sequence.Cast with { Activation = Now.AddSeconds(IsCll4 ? 1.5d : 2d) }, stage + 1);
         }
         else if (rule.Kind is BozjaRuleKind.CrystalSpread or BozjaRuleKind.Spread)
         {
@@ -120,13 +137,18 @@ internal sealed partial class BozjaEncounter
         earthVersion = NumEarthCasts;
         earthPublished.Clear();
         foreach (var (cast, stage) in earthSequences)
-            earthPublished.Add(cast with { ShapeOverride = earthShapes[stage] });
+            earthPublished.Add(cast with { ShapeOverride = (IsArachne ? arachneEarthShapes : earthShapes)[stage] });
     }
 
     internal void Icon(ulong source, uint icon, ulong target)
     {
         if (Actors.GetValueOrDefault(source) is { } iconActor)
         {
+            DeathgazeIcon(iconActor, icon);
+            Cll1Icon(iconActor, icon, target);
+            ArtIcon(iconActor, icon, target);
+            OwainIcon(iconActor, icon);
+            RaidenIcon(iconActor, icon);
             DahuIcon(iconActor, icon);
             RobotIcon(iconActor, icon);
             BurnIcon(iconActor, icon);
@@ -146,7 +168,7 @@ internal sealed partial class BozjaEncounter
         if (rule.Kind == BozjaRuleKind.Earthbreaker)
             foreach (var cast in earthPublished) yield return new(cast, false, true);
         if (rule.Kind == BozjaRuleKind.CrystalSight && crystalSights.TryGetValue(rule, out var sight)
-            && sight.Safezones.FirstOrDefault() is { } safe) yield return new(safe, false, true);
+            && sight.Safezones.FirstOrDefault() is { } safe) yield return new(safe, false, true, IsIrminsul);
     }
 
     internal IEnumerable<BozjaCast> CrystalSpreads()
